@@ -4,14 +4,14 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "hypercube-esn"
-version = "0.3.1"
+version = "1.0.0"
 description = "Python bindings for HypercubeESN: reservoir computing on Boolean hypercube graphs"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.21"]
 license = "Apache-2.0"
 readme = "README.md"
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
