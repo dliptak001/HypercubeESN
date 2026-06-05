@@ -22,7 +22,7 @@ import numpy as np
 
 from ._core import _ESN
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = ["ESN"]
 
 # Valid hypercube dimensions (matches the C++ Reservoir::Create [5, 16] check).

@@ -2,14 +2,20 @@
 
 [![Build wheels](https://github.com/dliptak001/HypercubeESN/actions/workflows/wheels.yml/badge.svg)](https://github.com/dliptak001/HypercubeESN/actions/workflows/wheels.yml)
 
-Python bindings for a reservoir computer whose neurons live on a Boolean hypercube — a
-DIM-dimensional graph where each vertex is addressed by a DIM-bit binary
-index, with all connectivity defined by XOR operations on those indices.
-**Neuron states are continuous real values** (driven through `tanh`
-nonlinearity); only the *addressing scheme* is binary. No adjacency list
-is stored. N = 2^DIM neurons (DIM 5-16, i.e. 32 to 65,536 neurons).
-DIM-invariant hyperparameters: the same spectral radius and input_scaling
-work at every DIM.
+Python bindings for **HypercubeESN** — an Echo State Network whose reservoir is a
+Boolean hypercube. Each neuron sits on a vertex and connects only to its
+Hamming-distance-1 neighbors, with every adjacency resolved by a single XOR on
+the vertex's binary index: a deterministic O(1) lookup that stores nothing at
+all. There is no adjacency list to build, store, or serialize — the connectivity
+is implicit in the indices. The neurons themselves stay familiar continuous
+`tanh` units; only the *addressing* is binary, the dynamics fully real-valued.
+
+That same implicit addressing extends into time: each update also reaches back
+through an addressable delay line of its neighbors' last M states, so temporal
+memory is intrinsic to the topology — memory by construction rather than by luck.
+N = 2^DIM neurons (DIM 5-16, i.e. 32 to 65,536), with DIM-invariant
+hyperparameters: the same spectral radius and input scaling work at every
+dimension.
 
 ## Installation
 

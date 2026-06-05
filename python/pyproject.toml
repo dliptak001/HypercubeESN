@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "hypercube-esn"
-version = "0.3.0"
+version = "0.3.1"
 description = "Python bindings for HypercubeESN: reservoir computing on Boolean hypercube graphs"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.21"]
@@ -51,6 +51,7 @@ test-requires = ["pytest>=7.0", "numpy>=1.21"]
 test-command = "pytest {project}/python/tests -v --tb=short --import-mode=importlib"
 
 [tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 before-all = "yum install -y gcc-toolset-13-gcc-c++"
