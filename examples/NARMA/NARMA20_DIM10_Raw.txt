@@ -1,0 +1,90 @@
+=== HypercubeESN: NARMA-20 history_depth (M) x seed sweep ===
+
+Task: reproduce the NARMA-20 output y(t) from its white input u(t),
+sweeping the reservoir delay-line depth M while holding the
+target series fixed -- an isolated test of memory depth.
+
+  Variant: tanh-wrapped (fixed coeffs -- honest order-scaling)
+  Series:  warmup=300  collect=8000  (train=6400, test=1600)
+  Coeffs:  alpha=0.3 beta=0.05 gamma=1.5 delta=0.1  u in [0, 0.5]
+
+  Config: DIM=10 N=1024  sr=0.92 leak=1 input_scaling=0.5
+  Training: 600 epochs, batch=128, lr=0.0015 (cosine, floor=1.5e-05)
+  Sweep M:  1 2 4 8 16 24 32 48
+  Seeds:    73895 73896 73897 73898 73899
+
+  === seed 73895  (1/5) ===
+    M= 1: NRMSE=0.6957  R2=0.5160  (75.2s)
+    M= 2: NRMSE=0.4791  R2=0.7705  (74.1s)
+    M= 4: NRMSE=0.3285  R2=0.8921  (69.3s)
+    M= 8: NRMSE=0.2640  R2=0.9303  (70.4s)
+    M=16: NRMSE=0.1973  R2=0.9611  (69.7s)
+    M=24: NRMSE=0.1755  R2=0.9692  (78.7s)
+    M=32: NRMSE=0.1740  R2=0.9697  (72.6s)
+    M=48: NRMSE=0.2485  R2=0.9383  (76.0s)
+
+  === seed 73896  (2/5) ===
+    M= 1: NRMSE=0.7672  R2=0.4115  (71.5s)
+    M= 2: NRMSE=0.4026  R2=0.8379  (75.5s)
+    M= 4: NRMSE=0.2722  R2=0.9259  (75.6s)
+    M= 8: NRMSE=0.2482  R2=0.9384  (67.4s)
+    M=16: NRMSE=0.2093  R2=0.9562  (71.4s)
+    M=24: NRMSE=0.1756  R2=0.9692  (72.9s)
+    M=32: NRMSE=0.1875  R2=0.9648  (69.3s)
+    M=48: NRMSE=0.2509  R2=0.9370  (72.1s)
+
+  === seed 73897  (3/5) ===
+    M= 1: NRMSE=0.7360  R2=0.4583  (72.0s)
+    M= 2: NRMSE=0.3672  R2=0.8652  (66.7s)
+    M= 4: NRMSE=0.3162  R2=0.9000  (74.2s)
+    M= 8: NRMSE=0.2320  R2=0.9462  (71.3s)
+    M=16: NRMSE=0.2106  R2=0.9556  (77.7s)
+    M=24: NRMSE=0.1681  R2=0.9717  (76.3s)
+    M=32: NRMSE=0.1831  R2=0.9665  (78.0s)
+    M=48: NRMSE=0.2474  R2=0.9388  (75.3s)
+
+  === seed 73898  (4/5) ===
+    M= 1: NRMSE=0.6084  R2=0.6298  (81.1s)
+    M= 2: NRMSE=0.3970  R2=0.8424  (74.3s)
+    M= 4: NRMSE=0.2980  R2=0.9112  (79.2s)
+    M= 8: NRMSE=0.2529  R2=0.9361  (72.2s)
+    M=16: NRMSE=0.2208  R2=0.9513  (73.4s)
+    M=24: NRMSE=0.1698  R2=0.9712  (78.4s)
+    M=32: NRMSE=0.1836  R2=0.9663  (85.5s)
+    M=48: NRMSE=0.2475  R2=0.9388  (73.6s)
+
+  === seed 73899  (5/5) ===
+    M= 1: NRMSE=0.6398  R2=0.5907  (70.5s)
+    M= 2: NRMSE=0.3940  R2=0.8448  (72.4s)
+    M= 4: NRMSE=0.3054  R2=0.9067  (82.9s)
+    M= 8: NRMSE=0.2682  R2=0.9281  (72.6s)
+    M=16: NRMSE=0.2151  R2=0.9537  (74.2s)
+    M=24: NRMSE=0.1729  R2=0.9701  (66.5s)
+    M=32: NRMSE=0.1807  R2=0.9674  (71.2s)
+    M=48: NRMSE=0.2499  R2=0.9375  (69.4s)
+
+=== NARMA-20 history_depth x seed sweep  (DIM=10, N=1024, 5 seeds, train mean 0.7493) ===
+       M     mean      std      min      max
+    ----  -------  -------  -------  -------
+       1   0.6894   0.0657   0.6084   0.7672
+       2   0.4080   0.0420   0.3672   0.4791
+       4   0.3040   0.0212   0.2722   0.3285
+       8   0.2531   0.0143   0.2320   0.2682
+      16   0.2106   0.0087   0.1973   0.2208
+      24   0.1724   0.0034   0.1681   0.1756
+      32   0.1818   0.0050   0.1740   0.1875
+      48   0.2488   0.0016   0.2474   0.2509
+
+  Raw NRMSE (rows M, cols seed):
+       M      73895      73896      73897      73898      73899
+       1     0.6957     0.7672     0.7360     0.6084     0.6398
+       2     0.4791     0.4026     0.3672     0.3970     0.3940
+       4     0.3285     0.2722     0.3162     0.2980     0.3054
+       8     0.2640     0.2482     0.2320     0.2529     0.2682
+      16     0.1973     0.2093     0.2106     0.2208     0.2151
+      24     0.1755     0.1756     0.1681     0.1698     0.1729
+      32     0.1740     0.1875     0.1831     0.1836     0.1807
+      48     0.2485     0.2509     0.2474     0.2475     0.2499
+
+Reconstruction quality should track memory depth, saturating once
+M >= the NARMA order (the delay line can then hold the full lag history).
