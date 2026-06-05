@@ -81,7 +81,7 @@ reservoir computing.
 
 A random reservoir graph is an arbitrary object: it must be generated, stored,
 and trusted. The hypercube is none of those — its structure is a mathematical
-given, and that gives the architecture properties a random graph cannot:
+given, and that gives the architecture properties a random graph cannot realize:
 
 **Zero storage overhead.** No adjacency list, ever. A random reservoir keeps three
 arrays — states, weights, and the graph wiring them together; the hypercube keeps
