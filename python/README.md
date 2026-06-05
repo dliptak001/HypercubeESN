@@ -41,7 +41,7 @@ print(f"NRMSE = {esn.nrmse():.6f}")
 ## Features
 
 - **Simple API** -- `fit()` handles warmup, run, and train in one call
-- **DIM 5-16** -- 32 to 65,536 neurons, DIM-invariant defaults
+- **DIM 5-16** -- 32 to 65,536 neurons
 - **HCNN readout** -- learned convolutional readout on raw reservoir state
 - **Multi-input** -- multiple input channels via contiguous-block driving
 - **Streaming mode** -- online training for real-time applications
