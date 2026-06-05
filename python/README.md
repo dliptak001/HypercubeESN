@@ -13,9 +13,7 @@ is implicit in the indices. The neurons themselves stay familiar continuous
 That same implicit addressing extends into time: each update also reaches back
 through an addressable delay line of its neighbors' last M states, so temporal
 memory is intrinsic to the topology — memory by construction rather than by luck.
-N = 2^DIM neurons (DIM 5-16, i.e. 32 to 65,536), with DIM-invariant
-hyperparameters: the same spectral radius and input scaling work at every
-dimension.
+N = 2^DIM neurons (DIM 5-16, i.e. 32 to 65,536).
 
 ## Installation
 
