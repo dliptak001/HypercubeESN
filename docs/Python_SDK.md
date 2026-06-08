@@ -281,7 +281,7 @@ Use this between independent sequences: clear the collected data, then `warmup()
 
 ##### `train(targets)`
 
-Train the HCNN readout using `len(targets)` training samples from the start of the collected states. The readout configuration is the one supplied at construction time (the `readout_*` keyword arguments).
+Train the HCNN readout on training samples taken from the start of the collected states. For single-output readouts the sample count is `len(targets)`. For multi-output readouts (`num_outputs > 1`) targets are laid out `[sample][output]` row-major, so the sample count is `len(targets) // num_outputs`. The readout configuration is the one supplied at construction time (the `readout_*` keyword arguments).
 
 **Parameters:**
 
@@ -290,7 +290,7 @@ Train the HCNN readout using `len(targets)` training samples from the start of t
 | `targets` | `ndarray` | — | Target values. Regression: `(train_size,)` or `(train_size · num_outputs,)`. Classification: `(train_size,)` float class labels. |
 
 **Notes:**
-- Raises `ValueError` if `len(targets) > num_collected`.
+- Raises `ValueError` if the implied `train_size` (`len(targets) // num_outputs`) exceeds `num_collected`, or if `len(targets)` is not a multiple of `num_outputs`.
 - Calling `train()` again replaces the previous solution entirely.
 - To change the readout architecture or training schedule, construct a new `ESN` with different `readout_*` arguments.
 
@@ -468,7 +468,7 @@ signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 The Python bindings validate arguments at the boundary and raise clear exceptions:
 
-- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected`, or input array size not divisible by `num_inputs`.
+- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), or input array size not divisible by `num_inputs`.
 - **`IndexError`** — `predict_raw(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
 
 These checks happen before calling into C++, so you get a Python traceback instead of a crash.
