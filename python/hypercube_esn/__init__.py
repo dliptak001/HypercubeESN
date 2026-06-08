@@ -367,6 +367,35 @@ class ESN:
         """
         return self._impl.predict_raw(timestep)
 
+    def predict_live_raw(self) -> float:
+        """Predict from the reservoir's current live state (single output).
+
+        For autoregressive / closed-loop inference loops: drive the reservoir
+        one step (``run``/``warmup``), then read the prediction here without
+        touching the collected-state buffer.
+
+        Returns
+        -------
+        float
+            Continuous prediction value. Use :meth:`predict_live_raw_multi`
+            when the readout has more than one output.
+        """
+        return self._impl.predict_live_raw()
+
+    def predict_live_raw_multi(self) -> np.ndarray:
+        """Multi-output predict from the reservoir's current live state.
+
+        The closed-loop feedback primitive for multi-output readouts: after
+        driving the reservoir one step, returns every channel's prediction so
+        they can be fed back together.
+
+        Returns
+        -------
+        ndarray
+            1D array of shape ``(num_outputs,)`` with float32 predictions.
+        """
+        return self._impl.predict_live_raw_multi()
+
     def predictions(self) -> np.ndarray:
         """Return predictions for all collected timesteps.
 

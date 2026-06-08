@@ -105,15 +105,26 @@ PYBIND11_MODULE(_core, m)
         .def("train", [](ESN& self,
                          py::array_t<float, py::array::c_style | py::array::forcecast> targets) {
             auto buf = targets.request();
-            size_t n = static_cast<size_t>(buf.size);
+            size_t total = static_cast<size_t>(buf.size);
             const float* ptr = static_cast<const float*>(buf.ptr);
 
-            if (n > self.NumCollected())
+            // targets is laid out [sample][output] row-major, so the number of
+            // training samples is total / num_outputs. For single-output this is
+            // a no-op; for multi-output it converts the flattened buffer length
+            // back into the sample count ESN::Train expects.
+            size_t K = self.NumOutputs();
+            if (total % K != 0)
                 throw std::invalid_argument(
-                    "train_size (" + std::to_string(n) +
+                    "targets length (" + std::to_string(total) +
+                    ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
+            size_t train_size = total / K;
+
+            if (train_size > self.NumCollected())
+                throw std::invalid_argument(
+                    "train_size (" + std::to_string(train_size) +
                     ") exceeds num_collected (" + std::to_string(self.NumCollected()) + ")");
 
-            self.Train(ptr, n);
+            self.Train(ptr, train_size);
         },
             py::arg("targets"),
             "Train the HCNN readout on collected states.\n"
