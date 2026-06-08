@@ -167,6 +167,11 @@ float ESN::PredictRaw(size_t timestep) const
         throw std::out_of_range(
             "ESN::PredictRaw: timestep (" + std::to_string(timestep) +
             ") >= num_collected (" + std::to_string(num_collected_) + ")");
+    if (readout_.NumOutputs() != 1)
+        throw std::invalid_argument(
+            "ESN::PredictRaw(timestep): scalar prediction requires num_outputs == 1 "
+            "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
+            "). Use PredictRaw(timestep, float*) for multi-output readouts.");
     return readout_.PredictRaw(ReadoutInput(timestep));
 }
 
@@ -181,6 +186,11 @@ void ESN::PredictRaw(size_t timestep, float* output) const
 
 float ESN::PredictLiveRaw() const
 {
+    if (readout_.NumOutputs() != 1)
+        throw std::invalid_argument(
+            "ESN::PredictLiveRaw(): scalar prediction requires num_outputs == 1 "
+            "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
+            "). Use PredictLiveRaw(float*) / predict_live_raw_multi instead.");
     CopyLiveState(scratch_subsampled_.data());
     return readout_.PredictRaw(scratch_subsampled_.data());
 }

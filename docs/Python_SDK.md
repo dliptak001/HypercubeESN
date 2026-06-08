@@ -307,11 +307,13 @@ Return the raw continuous prediction for a single collected timestep.
 
 **Returns:** Continuous float prediction. For regression: the predicted value. For binary classification (single output): threshold at 0.0. For multi-class classification: a single logit (use `accuracy()` for evaluation, which applies argmax internally).
 
+**Requires `num_outputs == 1`.** Scalar prediction raises `ValueError` for multi-output readouts. Evaluate multi-output collected predictions with `r2()` / `nrmse()` (which score all channels), or use the live path `predict_live_raw_multi()`.
+
 ---
 
 ##### `predictions() → ndarray`
 
-Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`.
+Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`. Requires `num_outputs == 1` (one scalar per timestep); raises `ValueError` for multi-output readouts — use `r2()` / `nrmse()` to evaluate those across all channels.
 
 ---
 
@@ -419,7 +421,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 | `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |
 | `train_live_batch_regression(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (regression). |
 | `copy_live_state()` | Copy current subsampled reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
-| `predict_live_raw()` | Scalar prediction from current live state. |
+| `predict_live_raw()` | Scalar prediction from current live state. Requires `num_outputs == 1` (raises `ValueError` otherwise). |
 | `predict_live_raw_multi()` | Multi-output prediction from current live state. Returns `(num_outputs,)` array. |
 
 #### Reservoir State Management
@@ -468,7 +470,7 @@ signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 The Python bindings validate arguments at the boundary and raise clear exceptions:
 
-- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), or input array size not divisible by `num_inputs`.
+- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), input array size not divisible by `num_inputs`, or a scalar predictor (`predict_raw`, `predict_live_raw`, `predictions`) called on a multi-output readout (`num_outputs > 1`).
 - **`IndexError`** — `predict_raw(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
 
 These checks happen before calling into C++, so you get a Python traceback instead of a crash.

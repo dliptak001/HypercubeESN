@@ -245,9 +245,13 @@ void Readout::PredictRaw(const float* state, float* output) const
 float Readout::PredictRaw(const float* state) const
 {
     assert(num_outputs_ == 1);
-    float out;
-    PredictRaw(state, &out);
-    return out;
+    // Write into the correctly-sized scratch buffer, not a single stack float:
+    // the float* overload writes num_outputs_ values, so a &float target would
+    // overflow the stack for a multi-output readout in release builds (where the
+    // assert above is compiled out). Callers needing every channel must use the
+    // float* overload. scratch_pred_ is sized to num_outputs_ in build_architecture().
+    PredictRaw(state, scratch_pred_.data());
+    return scratch_pred_[0];
 }
 
 int Readout::PredictClass(const float* state) const

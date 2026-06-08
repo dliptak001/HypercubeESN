@@ -22,7 +22,7 @@ import numpy as np
 
 from ._core import _ESN
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 __all__ = ["ESN"]
 
 # Valid hypercube dimensions (matches the C++ Reservoir::Create [5, 16] check).
@@ -364,6 +364,14 @@ class ESN:
         -------
         float
             Continuous prediction value.
+
+        Raises
+        ------
+        ValueError
+            If the readout has more than one output. Scalar prediction
+            requires ``num_outputs == 1``; multi-output collected predictions
+            are obtained via :meth:`r2` / :meth:`nrmse` (which score all
+            channels) or the live path :meth:`predict_live_raw_multi`.
         """
         return self._impl.predict_raw(timestep)
 
@@ -377,8 +385,13 @@ class ESN:
         Returns
         -------
         float
-            Continuous prediction value. Use :meth:`predict_live_raw_multi`
-            when the readout has more than one output.
+            Continuous prediction value.
+
+        Raises
+        ------
+        ValueError
+            If the readout has more than one output. Use
+            :meth:`predict_live_raw_multi` for multi-output readouts.
         """
         return self._impl.predict_live_raw()
 
@@ -403,6 +416,13 @@ class ESN:
         -------
         ndarray
             1D array of shape ``(num_collected,)`` with float32 predictions.
+
+        Raises
+        ------
+        ValueError
+            If the readout has more than one output (this returns one scalar
+            per timestep). Use :meth:`r2` / :meth:`nrmse` to evaluate
+            multi-output readouts across all channels.
         """
         return self._impl.predictions()
 
