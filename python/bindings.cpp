@@ -21,13 +21,16 @@ PYBIND11_MODULE(_core, m)
         // per-call config overrides.
         .def(py::init([](size_t dim, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
+                         bool verbose,
                          float output_fraction,
                          int readout_num_outputs, const char* readout_task,
                          int readout_num_layers, int readout_conv_channels,
                          int readout_epochs, int readout_batch_size,
                          float readout_lr_max, float readout_lr_min_frac,
                          int readout_lr_decay_epochs, float readout_weight_decay,
-                         unsigned readout_seed, bool readout_verbose) {
+                         float readout_momentum, const char* readout_activation,
+                         unsigned readout_seed, bool readout_verbose,
+                         bool readout_verbose_train_acc) {
             ESNConfig cfg;
             cfg.reservoir.dim              = dim;
             cfg.reservoir.seed             = seed;
@@ -36,6 +39,7 @@ PYBIND11_MODULE(_core, m)
             cfg.reservoir.leak_rate        = leak_rate;
             cfg.reservoir.num_inputs       = num_inputs;
             cfg.reservoir.history_depth    = history_depth;
+            cfg.reservoir.verbose          = verbose;
             cfg.output_fraction            = output_fraction;
             cfg.readout.num_outputs        = readout_num_outputs;
             cfg.readout.task               = (std::strcmp(readout_task, "classification") == 0)
@@ -49,8 +53,18 @@ PYBIND11_MODULE(_core, m)
             cfg.readout.lr_min_frac        = readout_lr_min_frac;
             cfg.readout.lr_decay_epochs    = readout_lr_decay_epochs;
             cfg.readout.weight_decay       = readout_weight_decay;
+            cfg.readout.momentum           = readout_momentum;
+            // String -> ReadoutActivation, mirroring the readout_task pattern above.
+            if      (std::strcmp(readout_activation, "relu")       == 0) cfg.readout.activation = ReadoutActivation::RELU;
+            else if (std::strcmp(readout_activation, "leaky_relu") == 0) cfg.readout.activation = ReadoutActivation::LEAKY_RELU;
+            else if (std::strcmp(readout_activation, "none")       == 0) cfg.readout.activation = ReadoutActivation::NONE;
+            else if (std::strcmp(readout_activation, "tanh")       == 0) cfg.readout.activation = ReadoutActivation::TANH;
+            else throw std::invalid_argument(
+                std::string("readout_activation must be one of "
+                            "'tanh', 'relu', 'leaky_relu', 'none' (got '") + readout_activation + "')");
             cfg.readout.seed               = readout_seed;
             cfg.readout.verbose            = readout_verbose;
+            cfg.readout.verbose_train_acc  = readout_verbose_train_acc;
             return std::make_unique<ESN>(cfg);
         }),
             py::arg("dim"),
@@ -60,6 +74,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("leak_rate")                = 1.0f,
             py::arg("num_inputs")               = 1ULL,
             py::arg("history_depth")            = 16ULL,
+            py::arg("verbose")                  = true,
             py::arg("output_fraction")          = 1.0f,
             py::arg("readout_num_outputs")      = 1,
             py::arg("readout_task")             = "regression",
@@ -67,12 +82,15 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_conv_channels")    = 16,
             py::arg("readout_epochs")           = 200,
             py::arg("readout_batch_size")       = 32,
-            py::arg("readout_lr_max")           = 0.005f,
-            py::arg("readout_lr_min_frac")      = 0.1f,
+            py::arg("readout_lr_max")           = 0.0015f,
+            py::arg("readout_lr_min_frac")      = 0.01f,
             py::arg("readout_lr_decay_epochs")  = 0,
             py::arg("readout_weight_decay")     = 0.0f,
+            py::arg("readout_momentum")         = 0.0f,
+            py::arg("readout_activation")       = "tanh",
             py::arg("readout_seed")             = 42u,
-            py::arg("readout_verbose")          = false)
+            py::arg("readout_verbose")          = false,
+            py::arg("readout_verbose_train_acc") = false)
 
         // ── Reservoir driving ──
         .def("warmup", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {
@@ -159,6 +177,12 @@ PYBIND11_MODULE(_core, m)
             auto sbuf = states.request();
             auto tbuf = targets.request();
             size_t count = static_cast<size_t>(tbuf.size);
+            size_t M = self.NumOutputVerts();
+            if (static_cast<size_t>(sbuf.size) != count * M)
+                throw std::invalid_argument(
+                    "states size (" + std::to_string(sbuf.size) +
+                    ") must equal count * num_output_verts (" + std::to_string(count) +
+                    " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
             self.TrainLiveBatch(static_cast<const float*>(sbuf.ptr),
                                 static_cast<const int*>(tbuf.ptr),
                                 count, lr, weight_decay);
@@ -173,6 +197,11 @@ PYBIND11_MODULE(_core, m)
                                               py::array_t<float, py::array::c_style | py::array::forcecast> target,
                                               float lr, float weight_decay) {
             auto buf = target.request();
+            size_t K = self.NumOutputs();
+            if (static_cast<size_t>(buf.size) != K)
+                throw std::invalid_argument(
+                    "target size (" + std::to_string(buf.size) +
+                    ") must equal num_outputs (" + std::to_string(K) + ")");
             self.TrainLiveStepRegression(static_cast<const float*>(buf.ptr), lr, weight_decay);
         },
             py::arg("target"), py::arg("lr"), py::arg("weight_decay") = 0.0f,
@@ -186,7 +215,17 @@ PYBIND11_MODULE(_core, m)
             auto sbuf = states.request();
             auto tbuf = targets.request();
             size_t K = self.NumOutputs();
+            if (static_cast<size_t>(tbuf.size) % K != 0)
+                throw std::invalid_argument(
+                    "targets size (" + std::to_string(tbuf.size) +
+                    ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
             size_t count = static_cast<size_t>(tbuf.size) / K;
+            size_t M = self.NumOutputVerts();
+            if (static_cast<size_t>(sbuf.size) != count * M)
+                throw std::invalid_argument(
+                    "states size (" + std::to_string(sbuf.size) +
+                    ") must equal count * num_output_verts (" + std::to_string(count) +
+                    " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
             self.TrainLiveBatchRegression(static_cast<const float*>(sbuf.ptr),
                                           static_cast<const float*>(tbuf.ptr),
                                           count, lr, weight_decay);
@@ -226,6 +265,44 @@ PYBIND11_MODULE(_core, m)
             self.PredictLiveRaw(arr.mutable_data());
             return arr;
         }, "Multi-output live predict: returns (num_outputs,) float array.")
+
+        .def("predict_raw_multi", [](const ESN& self, size_t timestep) {
+            if (timestep >= self.NumCollected())
+                throw std::out_of_range(
+                    "timestep (" + std::to_string(timestep) +
+                    ") >= num_collected (" + std::to_string(self.NumCollected()) + ")");
+            size_t K = self.NumOutputs();
+            py::array_t<float> arr(K);
+            self.PredictRaw(timestep, arr.mutable_data());
+            return arr;
+        }, py::arg("timestep"),
+           "Multi-output prediction for a collected timestep: returns (num_outputs,) array.")
+
+        .def("predictions_multi", [](const ESN& self) {
+            size_t T = self.NumCollected();
+            size_t K = self.NumOutputs();
+            py::array_t<float> arr({T, K});
+            float* ptr = arr.mutable_data();
+            for (size_t t = 0; t < T; ++t)
+                self.PredictRaw(t, ptr + t * K);
+            return arr;
+        }, "Multi-output predictions for all collected timesteps: (num_collected, num_outputs) array.")
+
+        .def("predict_from_state", [](const ESN& self,
+                                      py::array_t<float, py::array::c_style | py::array::forcecast> state) {
+            auto buf = state.request();
+            size_t M = self.NumOutputVerts();
+            if (static_cast<size_t>(buf.size) != M)
+                throw std::invalid_argument(
+                    "state size (" + std::to_string(buf.size) +
+                    ") must equal num_output_verts (" + std::to_string(M) + ")");
+            size_t K = self.NumOutputs();
+            py::array_t<float> arr(K);
+            self.PredictFromState(static_cast<const float*>(buf.ptr), arr.mutable_data());
+            return arr;
+        }, py::arg("state"),
+           "Run the readout on a caller-supplied (num_output_verts,) state.\n"
+           "Returns (num_outputs,) float array.")
 
         .def("r2", [](const ESN& self,
                       py::array_t<float, py::array::c_style | py::array::forcecast> targets,

@@ -32,6 +32,21 @@ def fitted(sine):
 
 
 @pytest.fixture(scope="module")
+def multi_output(sine):
+    """A trained 3-output regression ESN, reused by multi-output tests.
+
+    Targets must be index-aligned with the collected states (one row per
+    state), so slice off the warmup prefix: states cover ``sine[warmup:]``.
+    """
+    warmup = 100
+    channels = np.stack([sine, 0.5 * sine, -sine], axis=1).astype(np.float32)
+    targets = channels[warmup:]  # one target per collected state
+    esn = ESN(dim=5, readout_num_outputs=3, readout_epochs=60, verbose=False)
+    esn.fit(sine, targets=targets, warmup=warmup, train_frac=0.7)
+    return esn
+
+
+@pytest.fixture(scope="module")
 def classifier(sine):
     """A trained 2-class classifier, reused by classification tests."""
     labels = np.where(sine >= 0, 1.0, 0.0).astype(np.float32)
@@ -113,6 +128,114 @@ class TestMultiInput:
         esn = ESN(dim=5, num_inputs=4)
         with pytest.raises(Exception, match="divisible"):
             esn.warmup(np.ones(10, dtype=np.float32))
+
+
+# ── Multi-output regression (collected + live retrieval) ──
+
+class TestMultiOutput:
+
+    def test_metrics(self, multi_output):
+        assert multi_output.num_outputs == 3
+        assert multi_output.r2() > 0.80, f"R² too low: {multi_output.r2()}"
+
+    def test_predict_raw_multi(self, multi_output):
+        p = multi_output.predict_raw_multi(0)
+        assert p.shape == (3,)
+        assert p.dtype == np.float32
+
+    def test_predictions_multi(self, multi_output):
+        allp = multi_output.predictions_multi()
+        assert allp.shape == (multi_output.num_collected, 3)
+        # row 0 of the bulk call must equal the single-timestep call
+        np.testing.assert_allclose(allp[0], multi_output.predict_raw_multi(0), atol=1e-5)
+
+    def test_predict_from_state_matches_live(self, multi_output):
+        state = multi_output.copy_live_state()
+        assert state.shape == (multi_output.num_output_verts,)
+        from_state = multi_output.predict_from_state(state)
+        live = multi_output.predict_live_raw_multi()
+        assert from_state.shape == (3,)
+        np.testing.assert_allclose(from_state, live, atol=1e-5)
+
+    def test_scalar_predictors_reject_multi_output(self, multi_output):
+        with pytest.raises(ValueError, match="num_outputs"):
+            multi_output.predict_raw(0)
+        with pytest.raises(ValueError, match="num_outputs"):
+            multi_output.predict_live_raw()
+        with pytest.raises(ValueError, match="num_outputs"):
+            multi_output.predictions()
+
+
+# ── Config parity: every C++ SDK config field is settable from Python ──
+
+class TestConfigParity:
+
+    def test_new_readout_config_kwargs(self):
+        esn = ESN(dim=5, verbose=False, readout_activation="relu",
+                  readout_momentum=0.9, readout_verbose_train_acc=False)
+        assert esn.verbose is False
+
+    @pytest.mark.parametrize("act", ["tanh", "relu", "leaky_relu", "none"])
+    def test_activation_values(self, act):
+        ESN(dim=5, verbose=False, readout_activation=act)
+
+    def test_invalid_activation(self):
+        with pytest.raises(ValueError, match="readout_activation"):
+            ESN(dim=5, verbose=False, readout_activation="sigmoid")
+
+    def test_verbose_persisted(self):
+        esn = ESN(dim=5, verbose=False)
+        loaded = pickle.loads(pickle.dumps(esn))
+        assert loaded.verbose is False
+
+
+# ── Streaming-API buffer-size validation (clean errors, not OOB) ──
+
+class TestStreamingValidation:
+
+    def test_step_regression_wrong_target_size(self):
+        esn = ESN(dim=5, readout_num_outputs=3, verbose=False)
+        with pytest.raises(ValueError, match="num_outputs"):
+            esn.train_live_step_regression(np.zeros(1, dtype=np.float32), lr=0.01)
+
+    def test_batch_regression_targets_not_multiple(self):
+        esn = ESN(dim=5, readout_num_outputs=3, verbose=False)
+        states = np.zeros((2, esn.num_output_verts), dtype=np.float32)
+        with pytest.raises(ValueError, match="multiple of num_outputs"):
+            esn.train_live_batch_regression(states, np.zeros(7, dtype=np.float32), lr=0.01)
+
+    def test_batch_regression_states_mismatch(self):
+        esn = ESN(dim=5, readout_num_outputs=2, verbose=False)
+        states = np.zeros((2, esn.num_output_verts), dtype=np.float32)  # 2 rows
+        targets = np.zeros((3, 2), dtype=np.float32)                    # 3 samples
+        with pytest.raises(ValueError, match="num_output_verts"):
+            esn.train_live_batch_regression(states, targets, lr=0.01)
+
+    def test_batch_classification_states_mismatch(self):
+        esn = ESN(dim=5, readout_num_outputs=2, readout_task="classification",
+                  verbose=False)
+        states = np.zeros((2, esn.num_output_verts), dtype=np.float32)
+        with pytest.raises(ValueError, match="num_output_verts"):
+            esn.train_live_batch(states, np.zeros(3, dtype=np.int32), lr=0.01)
+
+
+# ── Surface parity: public wrapper exposes the full C++ method surface ──
+
+class TestSurfaceParity:
+
+    EXPECTED = [
+        "warmup", "run", "clear_states", "reset_reservoir_only", "fit", "train",
+        "init_online", "train_live_step", "train_live_batch",
+        "train_live_step_regression", "train_live_batch_regression",
+        "copy_live_state", "predict_raw", "predict_raw_multi",
+        "predict_live_raw", "predict_live_raw_multi", "predict_from_state",
+        "predictions", "predictions_multi", "r2", "nrmse", "accuracy",
+        "selected_states", "save", "load",
+    ]
+
+    @pytest.mark.parametrize("name", EXPECTED)
+    def test_method_present(self, name):
+        assert callable(getattr(ESN, name, None)), f"ESN.{name} missing"
 
 
 # ── Classification head (shared trained classifier) ──

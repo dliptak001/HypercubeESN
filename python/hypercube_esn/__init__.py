@@ -22,7 +22,7 @@ import numpy as np
 
 from ._core import _ESN
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 __all__ = ["ESN"]
 
 # Valid hypercube dimensions (matches the C++ Reservoir::Create [5, 16] check).
@@ -66,6 +66,8 @@ class ESN:
     history_depth : int
         Delay-line depth M: how many past output slices the readout sees,
         in [1, 64]. Deeper lines extend short-range temporal memory. Default: 16.
+    verbose : bool
+        Print the one-line reservoir construction banner. Default: True.
     output_fraction : float
         Fraction of N vertices used as readout features, in (0.0, 1.0]. Default: 1.0.
         Reduce for large dim to control readout cost via sub-hypercube selection.
@@ -83,17 +85,25 @@ class ESN:
     readout_batch_size : int
         Mini-batch size. Default: 32.
     readout_lr_max : float
-        Peak learning rate (cosine schedule). Keep <= 0.005 to avoid NaN. Default: 0.005.
+        Peak learning rate (cosine schedule). Keep <= 0.005 to avoid NaN. Default: 0.0015.
     readout_lr_min_frac : float
-        LR floor as a fraction of lr_max. Default: 0.1.
+        LR floor as a fraction of lr_max. Default: 0.01.
     readout_lr_decay_epochs : int
         Cosine decay horizon. 0 = use ``readout_epochs``. Default: 0.
     readout_weight_decay : float
         L2 regularization on CNN weights. Default: 0.0.
+    readout_momentum : float
+        Heavy-ball SGD momentum. 0 = plain SGD; 0.9 is typical for CNN
+        training. Default: 0.0.
+    readout_activation : str
+        Per-Conv-layer activation: "tanh" (default), "relu", "leaky_relu",
+        or "none".
     readout_seed : int
         CNN weight initialization seed. Default: 42.
     readout_verbose : bool
         Print per-epoch LR / loss to stdout. Default: False.
+    readout_verbose_train_acc : bool
+        Also print training accuracy/MSE each epoch. Default: False.
 
     Examples
     --------
@@ -128,6 +138,7 @@ class ESN:
         leak_rate: float = 1.0,
         num_inputs: int = 1,
         history_depth: int = 16,
+        verbose: bool = True,
         output_fraction: float = 1.0,
         readout_num_outputs: int = 1,
         readout_task: str = "regression",
@@ -135,15 +146,19 @@ class ESN:
         readout_conv_channels: int = 16,
         readout_epochs: int = 200,
         readout_batch_size: int = 32,
-        readout_lr_max: float = 0.005,
-        readout_lr_min_frac: float = 0.1,
+        readout_lr_max: float = 0.0015,
+        readout_lr_min_frac: float = 0.01,
         readout_lr_decay_epochs: int = 0,
         readout_weight_decay: float = 0.0,
+        readout_momentum: float = 0.0,
+        readout_activation: str = "tanh",
         readout_seed: int = 42,
         readout_verbose: bool = False,
+        readout_verbose_train_acc: bool = False,
     ):
         if not (_DIM_MIN <= dim <= _DIM_MAX):
             raise ValueError(f"dim must be {_DIM_MIN}-{_DIM_MAX}, got {dim}")
+        self._verbose = verbose
         self._readout_kwargs = {
             "readout_num_outputs": readout_num_outputs,
             "readout_task": readout_task,
@@ -155,8 +170,11 @@ class ESN:
             "readout_lr_min_frac": readout_lr_min_frac,
             "readout_lr_decay_epochs": readout_lr_decay_epochs,
             "readout_weight_decay": readout_weight_decay,
+            "readout_momentum": readout_momentum,
+            "readout_activation": readout_activation,
             "readout_seed": readout_seed,
             "readout_verbose": readout_verbose,
+            "readout_verbose_train_acc": readout_verbose_train_acc,
         }
         self._impl = _ESN(
             dim=dim,
@@ -166,6 +184,7 @@ class ESN:
             leak_rate=leak_rate,
             num_inputs=num_inputs,
             history_depth=history_depth,
+            verbose=verbose,
             output_fraction=output_fraction,
             **self._readout_kwargs,
         )
@@ -207,6 +226,15 @@ class ESN:
         self._impl.clear_states()
         self._targets = None
         self._train_size = None
+
+    def reset_reservoir_only(self) -> None:
+        """Zero the reservoir's live internal state only.
+
+        Collected states and the trained readout are preserved. Useful for
+        episodic tasks where each sequence should start from a clean reservoir
+        without discarding previously collected training data.
+        """
+        self._impl.reset_reservoir_only()
 
     def fit(
         self,
@@ -369,11 +397,26 @@ class ESN:
         ------
         ValueError
             If the readout has more than one output. Scalar prediction
-            requires ``num_outputs == 1``; multi-output collected predictions
-            are obtained via :meth:`r2` / :meth:`nrmse` (which score all
-            channels) or the live path :meth:`predict_live_raw_multi`.
+            requires ``num_outputs == 1``; use :meth:`predict_raw_multi` for
+            multi-output readouts.
         """
         return self._impl.predict_raw(timestep)
+
+    def predict_raw_multi(self, timestep: int) -> np.ndarray:
+        """Multi-output prediction for a single collected timestep.
+
+        Parameters
+        ----------
+        timestep : int
+            Index into collected states, in [0, num_collected).
+
+        Returns
+        -------
+        ndarray
+            1D array of shape ``(num_outputs,)`` with float32 predictions.
+            Works for any ``num_outputs`` (including 1).
+        """
+        return self._impl.predict_raw_multi(timestep)
 
     def predict_live_raw(self) -> float:
         """Predict from the reservoir's current live state (single output).
@@ -409,6 +452,22 @@ class ESN:
         """
         return self._impl.predict_live_raw_multi()
 
+    def predict_from_state(self, state: np.ndarray) -> np.ndarray:
+        """Run the readout on a caller-supplied reservoir state.
+
+        Parameters
+        ----------
+        state : ndarray
+            A subsampled reservoir state of shape ``(num_output_verts,)``,
+            e.g. one returned by :meth:`copy_live_state`. Converted to float32.
+
+        Returns
+        -------
+        ndarray
+            1D array of shape ``(num_outputs,)`` with float32 predictions.
+        """
+        return self._impl.predict_from_state(_to_float32(state))
+
     def predictions(self) -> np.ndarray:
         """Return predictions for all collected timesteps.
 
@@ -421,10 +480,21 @@ class ESN:
         ------
         ValueError
             If the readout has more than one output (this returns one scalar
-            per timestep). Use :meth:`r2` / :meth:`nrmse` to evaluate
-            multi-output readouts across all channels.
+            per timestep). Use :meth:`predictions_multi` to retrieve all
+            channels, or :meth:`r2` / :meth:`nrmse` to evaluate them.
         """
         return self._impl.predictions()
+
+    def predictions_multi(self) -> np.ndarray:
+        """Return multi-output predictions for all collected timesteps.
+
+        Returns
+        -------
+        ndarray
+            2D array of shape ``(num_collected, num_outputs)`` with float32
+            predictions. Works for any ``num_outputs`` (including 1).
+        """
+        return self._impl.predictions_multi()
 
     def r2(
         self,
@@ -562,6 +632,114 @@ class ESN:
         """
         return self._impl.selected_states()
 
+    # ── Streaming / online training ──
+
+    def init_online(self, warmup_inputs: np.ndarray) -> None:
+        """Initialize the readout for online (streaming) training.
+
+        Runs ``warmup_inputs`` through the reservoir to reach a representative
+        state, then builds the readout CNN. Call before any ``train_live_*``
+        method. Uses the readout configuration supplied at construction.
+
+        Parameters
+        ----------
+        warmup_inputs : ndarray
+            Warmup signal. Same shape convention as :meth:`warmup`.
+        """
+        self._impl.init_online(_to_float32(warmup_inputs))
+
+    def copy_live_state(self) -> np.ndarray:
+        """Copy the current subsampled reservoir state.
+
+        Returns
+        -------
+        ndarray
+            1D array of shape ``(num_output_verts,)``. Accumulate these across
+            steps to build the ``states`` batch for ``train_live_batch*``.
+        """
+        return self._impl.copy_live_state()
+
+    def train_live_step(
+        self, target_class: float, lr: float, weight_decay: float = 0.0
+    ) -> None:
+        """Single-sample online classification step on the live reservoir state.
+
+        Parameters
+        ----------
+        target_class : float
+            Class index as a float (0.0, 1.0, ...).
+        lr : float
+            Learning rate for this step.
+        weight_decay : float, optional
+            L2 weight decay. Default 0.0.
+        """
+        self._impl.train_live_step(target_class, lr, weight_decay)
+
+    def train_live_batch(
+        self,
+        states: np.ndarray,
+        targets: np.ndarray,
+        lr: float,
+        weight_decay: float = 0.0,
+    ) -> None:
+        """Mini-batch online classification step on pre-accumulated states.
+
+        Parameters
+        ----------
+        states : ndarray
+            Shape ``(count, num_output_verts)`` of states from
+            :meth:`copy_live_state`. Converted to float32.
+        targets : ndarray
+            Shape ``(count,)`` of integer class indices.
+        lr : float
+            Learning rate.
+        weight_decay : float, optional
+            L2 weight decay. Default 0.0.
+        """
+        targets = np.ascontiguousarray(targets, dtype=np.int32)
+        self._impl.train_live_batch(_to_float32(states), targets, lr, weight_decay)
+
+    def train_live_step_regression(
+        self, target: np.ndarray, lr: float, weight_decay: float = 0.0
+    ) -> None:
+        """Single-sample online regression step on the live reservoir state.
+
+        Parameters
+        ----------
+        target : ndarray
+            Shape ``(num_outputs,)`` target values. Converted to float32.
+        lr : float
+            Learning rate.
+        weight_decay : float, optional
+            L2 weight decay. Default 0.0.
+        """
+        self._impl.train_live_step_regression(_to_float32(target), lr, weight_decay)
+
+    def train_live_batch_regression(
+        self,
+        states: np.ndarray,
+        targets: np.ndarray,
+        lr: float,
+        weight_decay: float = 0.0,
+    ) -> None:
+        """Mini-batch online regression step on pre-accumulated states.
+
+        Parameters
+        ----------
+        states : ndarray
+            Shape ``(count, num_output_verts)`` of states from
+            :meth:`copy_live_state`. Converted to float32.
+        targets : ndarray
+            Shape ``(count, num_outputs)`` target values. Converted to float32.
+        lr : float
+            Learning rate.
+        weight_decay : float, optional
+            L2 weight decay. Default 0.0.
+        """
+        self._impl.train_live_batch_regression(
+            _to_float32(states), _to_float32(targets), lr, weight_decay
+        )
+
     @property
     def dim(self) -> int:
         """Hypercube dimension."""
@@ -623,6 +801,11 @@ class ESN:
         return self._impl.input_scaling
 
     @property
+    def verbose(self) -> bool:
+        """Whether the reservoir prints its construction banner."""
+        return self._verbose
+
+    @property
     def train_size(self) -> int | None:
         """Number of training samples from ``fit()``, or None."""
         return self._train_size
@@ -645,7 +828,12 @@ class ESN:
 
     # ── Persistence ──
 
-    _PERSISTENCE_VERSION = 1
+    # Bumped to 2 in 1.1.0: the serialized config gained the `verbose` field and
+    # new readout_kwargs keys (readout_momentum, readout_activation,
+    # readout_verbose_train_acc). Bumping ensures an older library rejects a
+    # newer pickle with the friendly "Upgrade hypercube-esn" message in
+    # __setstate__ rather than crashing on unexpected __init__ kwargs.
+    _PERSISTENCE_VERSION = 2
 
     def __getstate__(self) -> dict:
         """Serialize ESN state for pickling.
@@ -663,6 +851,7 @@ class ESN:
             "leak_rate": self.leak_rate,
             "num_inputs": self.num_inputs,
             "history_depth": self.history_depth,
+            "verbose": self._verbose,
             "output_fraction": self.output_fraction,
             "readout_kwargs": dict(self._readout_kwargs),
             "readout_state": self._impl._get_readout_state(),
@@ -686,6 +875,7 @@ class ESN:
             leak_rate=state["leak_rate"],
             num_inputs=state["num_inputs"],
             history_depth=state["history_depth"],
+            verbose=state.get("verbose", True),
             output_fraction=state["output_fraction"],
             **readout_kwargs,
         )

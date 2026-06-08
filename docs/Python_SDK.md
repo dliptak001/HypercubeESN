@@ -169,6 +169,7 @@ Creates the reservoir and computes output selection parameters from `output_frac
 | `leak_rate` | `float` | `1.0` | Leaky integrator coefficient. 1.0 = full replacement. < 1.0 adds smoothing. |
 | `num_inputs` | `int` | `1` | Number of input channels. Channel k drives the contiguous vertex block `[k·N/num_inputs, (k+1)·N/num_inputs)`. |
 | `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |
+| `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. Set `False` to silence it. |
 | `output_fraction` | `float` | `1.0` | Fraction of N vertices used as readout features, in (0.0, 1.0]. |
 
 **Readout (HCNN) parameters:**
@@ -181,12 +182,15 @@ Creates the reservoir and computes output selection parameters from `output_frac
 | `readout_conv_channels` | `int` | `16` | Base channels (doubles per layer). |
 | `readout_epochs` | `int` | `200` | Training epochs. |
 | `readout_batch_size` | `int` | `32` | Mini-batch size. |
-| `readout_lr_max` | `float` | `0.005` | Cosine annealing peak learning rate. Keep <= 0.005 to avoid NaN. |
-| `readout_lr_min_frac` | `float` | `0.1` | Floor = lr_max · lr_min_frac. |
+| `readout_lr_max` | `float` | `0.0015` | Cosine annealing peak learning rate. Keep <= 0.005 to avoid NaN. |
+| `readout_lr_min_frac` | `float` | `0.01` | Floor = lr_max · lr_min_frac. |
 | `readout_lr_decay_epochs` | `int` | `0` | Cosine decay horizon. 0 = use `readout_epochs`. |
 | `readout_weight_decay` | `float` | `0.0` | L2 weight decay. |
+| `readout_momentum` | `float` | `0.0` | Heavy-ball SGD momentum. 0 = plain SGD; 0.9 typical for CNN training. |
+| `readout_activation` | `str` | `"tanh"` | Per-Conv-layer activation: `"tanh"`, `"relu"`, `"leaky_relu"`, or `"none"`. |
 | `readout_seed` | `int` | `42` | CNN weight initialization seed. |
 | `readout_verbose` | `bool` | `False` | Print per-epoch learning rate. |
+| `readout_verbose_train_acc` | `bool` | `False` | Also print training accuracy/MSE each epoch. |
 
 ---
 
@@ -307,13 +311,34 @@ Return the raw continuous prediction for a single collected timestep.
 
 **Returns:** Continuous float prediction. For regression: the predicted value. For binary classification (single output): threshold at 0.0. For multi-class classification: a single logit (use `accuracy()` for evaluation, which applies argmax internally).
 
-**Requires `num_outputs == 1`.** Scalar prediction raises `ValueError` for multi-output readouts. Evaluate multi-output collected predictions with `r2()` / `nrmse()` (which score all channels), or use the live path `predict_live_raw_multi()`.
+**Requires `num_outputs == 1`.** Scalar prediction raises `ValueError` for multi-output readouts — use `predict_raw_multi()` instead.
+
+---
+
+##### `predict_raw_multi(timestep) → ndarray`
+
+Multi-output prediction for a single collected timestep. Returns a 1D float32 array of shape `(num_outputs,)`. Works for any `num_outputs` (including 1).
+
+**Parameters:**
+- `timestep` — Index into collected states, in [0, num_collected).
 
 ---
 
 ##### `predictions() → ndarray`
 
-Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`. Requires `num_outputs == 1` (one scalar per timestep); raises `ValueError` for multi-output readouts — use `r2()` / `nrmse()` to evaluate those across all channels.
+Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`. Requires `num_outputs == 1` (one scalar per timestep); raises `ValueError` for multi-output readouts — use `predictions_multi()` to retrieve all channels, or `r2()` / `nrmse()` to evaluate them.
+
+---
+
+##### `predictions_multi() → ndarray`
+
+Multi-output predictions for all collected timesteps as a 2D float32 array of shape `(num_collected, num_outputs)`. Works for any `num_outputs` (including 1).
+
+---
+
+##### `predict_from_state(state) → ndarray`
+
+Run the readout on a caller-supplied subsampled reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_live_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
 
 ---
 
