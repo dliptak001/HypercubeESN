@@ -66,6 +66,12 @@ class ESN:
     history_depth : int
         Delay-line depth M: how many past output slices the readout sees,
         in [1, 64]. Deeper lines extend short-range temporal memory. Default: 16.
+    history_floor : float
+        Depth taper K in [0.1, 1.0]: recurrent weights are linearly scaled from
+        just below 1.0 at the most-recent history slice down to K at the deepest,
+        so older states influence the next state less. Applied before the
+        spectral-radius rescale (which normalizes overall magnitude). 1.0 = no
+        taper (default); has no effect when history_depth == 1.
     verbose : bool
         Print the one-line reservoir construction banner. Default: True.
     output_fraction : float
@@ -138,6 +144,7 @@ class ESN:
         leak_rate: float = 1.0,
         num_inputs: int = 1,
         history_depth: int = 16,
+        history_floor: float = 1.0,
         verbose: bool = True,
         output_fraction: float = 1.0,
         readout_num_outputs: int = 1,
@@ -184,6 +191,7 @@ class ESN:
             leak_rate=leak_rate,
             num_inputs=num_inputs,
             history_depth=history_depth,
+            history_floor=history_floor,
             verbose=verbose,
             output_fraction=output_fraction,
             **self._readout_kwargs,
@@ -781,6 +789,11 @@ class ESN:
         return self._impl.history_depth
 
     @property
+    def history_floor(self) -> float:
+        """Depth taper K: deepest-history recurrent weight scale (1.0 = no taper)."""
+        return self._impl.history_floor
+
+    @property
     def seed(self) -> int:
         """RNG seed used to initialize reservoir weights."""
         return self._impl.seed
@@ -833,7 +846,9 @@ class ESN:
     # readout_verbose_train_acc). Bumping ensures an older library rejects a
     # newer pickle with the friendly "Upgrade hypercube-esn" message in
     # __setstate__ rather than crashing on unexpected __init__ kwargs.
-    _PERSISTENCE_VERSION = 2
+    # Bumped to 3: the serialized config gained the `history_floor` depth-taper
+    # field.
+    _PERSISTENCE_VERSION = 3
 
     def __getstate__(self) -> dict:
         """Serialize ESN state for pickling.
@@ -851,6 +866,7 @@ class ESN:
             "leak_rate": self.leak_rate,
             "num_inputs": self.num_inputs,
             "history_depth": self.history_depth,
+            "history_floor": self.history_floor,
             "verbose": self._verbose,
             "output_fraction": self.output_fraction,
             "readout_kwargs": dict(self._readout_kwargs),
@@ -875,6 +891,7 @@ class ESN:
             leak_rate=state["leak_rate"],
             num_inputs=state["num_inputs"],
             history_depth=state["history_depth"],
+            history_floor=state.get("history_floor", 1.0),
             verbose=state.get("verbose", True),
             output_fraction=state["output_fraction"],
             **readout_kwargs,

@@ -18,7 +18,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       leak_rate_(cfg.leak_rate),
       input_scaling_(cfg.input_scaling),
       verbose_(cfg.verbose),
-      history_depth_(cfg.history_depth)
+      history_depth_(cfg.history_depth),
+      history_floor_(cfg.history_floor)
 {
     if (dim_ < 5 || dim_ > 16)
         throw std::invalid_argument("dim must be in 5 <= dim <= 16");
@@ -37,6 +38,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
                                     "(otherwise InjectInput drops the remainder vertices)");
     if (history_depth_ < 1 || history_depth_ > 64)
         throw std::invalid_argument("history_depth must be in [1, 64]");
+    if (history_floor_ < 0.1f || history_floor_ > 1.0f)
+        throw std::invalid_argument("history_floor must be in [0.1, 1.0]");
 
     num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/);
 
@@ -68,6 +71,24 @@ void Reservoir::Initialize()
     const float w_scaling = 1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
     for (size_t i = 0; i < num_weights_ - num_input_weights_; i++)
         (*pW++) = static_cast<float>(dist(rng)) * w_scaling;
+
+    // Depth taper: linearly down-weight older history so a deeper (older) slice
+    // contributes less. Slice i is scaled by factor(i) = 1 - (1-K)*(i+1)/M, ramping
+    // from just below 1.0 at the most-recent slice (i=0) to K=history_floor_ at the
+    // deepest (i=M-1). The recurrent block is laid out [vertex][slice][dim] (mirrors
+    // UpdateState). Done BEFORE the spectral-radius solve, which rescales the whole
+    // block by one scalar and so preserves this relative per-slice profile. K==1.0
+    // is the identity; M==1 is one uniform factor the SR solve fully absorbs.
+    std::vector<float> depth_factor(history_depth_);
+    for (size_t i = 0; i < history_depth_; ++i)
+        depth_factor[i] = 1.0f - (1.0f - history_floor_)
+                                     * static_cast<float>(i + 1)
+                                     / static_cast<float>(history_depth_);
+    float* pRec = vtx_weight_.get() + num_input_weights_;
+    for (size_t v = 0; v < n_; ++v)
+        for (size_t i = 0; i < history_depth_; ++i)
+            for (size_t j = 0; j < dim_; ++j)
+                (*pRec++) *= depth_factor[i];
 
     const float target = spectral_radius_;
     const size_t MN = history_depth_ * n_;
@@ -127,10 +148,10 @@ void Reservoir::Initialize()
     realized_spectral_radius_ = post_sr;
     if (verbose_)
         std::printf("[Reservoir DIM=%zu M=%zu seed=%llu leak=%.3g in_scale=%.3g "
-                    "SR target=%.4f post=%.4f (secant iters=%d)]\n",
+                    "hist_floor=%.3g SR target=%.4f post=%.4f (secant iters=%d)]\n",
                     dim_, history_depth_,
                     static_cast<unsigned long long>(rng_seed_),
-                    leak_rate_, input_scaling_,
+                    leak_rate_, input_scaling_, history_floor_,
                     target, post_sr, sr_iters);
 }
 
@@ -202,6 +223,7 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.input_scaling   = input_scaling_;
     cfg.num_inputs      = num_inputs_;
     cfg.history_depth   = history_depth_;
+    cfg.history_floor   = history_floor_;
     cfg.verbose         = verbose_;
     return cfg;
 }

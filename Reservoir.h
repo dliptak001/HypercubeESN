@@ -15,6 +15,7 @@ struct ReservoirConfig
     float input_scaling = 0.5f; // DIM-invariant input drive: weights carry a 1/sqrt(DIM) fan-in normalization, so a given value yields the same tanh drive at any DIM
     size_t num_inputs = 1;
     size_t history_depth = 16;
+    float history_floor = 1.0f; // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
     bool verbose = true;
 };
 
@@ -141,6 +142,7 @@ private:
     float realized_spectral_radius_ = 0.0f; // set by Initialize() after rescale
     bool verbose_ = true;
     size_t history_depth_ = 1;
+    float history_floor_ = 1.0f; // cfg.history_floor — deepest-history taper scale K
     size_t num_weights_ = 0;
 
     void Initialize();

@@ -274,13 +274,15 @@ class TestPersistence:
 
     def test_preserves_config(self):
         esn = ESN(dim=8, seed=123, spectral_radius=0.85, input_scaling=0.05,
-                  leak_rate=0.7, history_depth=8, num_inputs=2, output_fraction=0.5)
+                  leak_rate=0.7, history_depth=8, num_inputs=2, output_fraction=0.5,
+                  history_floor=0.4)
         loaded = pickle.loads(pickle.dumps(esn))
         assert loaded.dim == 8
         assert loaded.seed == 123
         assert loaded.history_depth == 8
         assert loaded.num_inputs == 2
         assert loaded.output_fraction == pytest.approx(0.5)
+        assert loaded.history_floor == pytest.approx(0.4)
 
     def test_classification_roundtrip(self, classifier):
         esn, sine, labels = classifier

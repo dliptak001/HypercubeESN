@@ -346,6 +346,17 @@ recurrent block is rescaled so the companion operator's radius matches the targe
 Only the recurrent block is touched; the decoupled input block stays fixed at
 `input_scaling`/√DIM, so input drive and recurrent dynamics tune independently.
 
+**Optional depth taper (`history_floor`).** Between those two steps — after the
+`1/√(DIM·M)` fill, before the radius rescale — each slice's weights can be
+linearly tapered so older history contributes less: slice `i` is scaled by
+`1 − (1−K)·(i+1)/M`, ramping from just below 1.0 at the most-recent slice to the
+floor `K = history_floor` (in [0.1, 1.0]) at the deepest. Because the subsequent
+rescale multiplies the entire recurrent block by a single scalar, it preserves
+this *relative* per-slice profile while still hitting the target radius. Two clean
+no-ops fall out: `K = 1.0` (the default) is the identity, and at `M = 1` the taper
+is a single uniform factor the rescale fully absorbs — so deep-history bit-for-bit
+preservation at M = 1 is unaffected.
+
 The rescale is a **secant root-find** on the weight scale, not a single multiply —
 because for M > 1 the companion operator's dominant eigenvalue is a *nonlinear*
 function of that scale (a longer operator's spectrum doesn't move linearly under

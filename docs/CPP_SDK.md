@@ -224,6 +224,7 @@ struct ReservoirConfig
     float    input_scaling   = 0.5f;   // DIM-invariant input drive
     size_t   num_inputs      = 1;
     size_t   history_depth   = 16;
+    float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
     bool     verbose         = true;
 };
 
@@ -244,7 +245,8 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(-1,1) then scaled by `input_scaling / √DIM`; the `1/√DIM` fan-in normalization makes a given value deliver the same `tanh` drive at any DIM (**DIM-invariant by construction** — not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3). |
 | `num_inputs` | `size_t` | `1` | Number of input channels; must divide N evenly. In multi-input mode (K channels), channel k drives the contiguous vertex block `[k*N/K, (k+1)*N/K)`. |
 | `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
-| `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… SR target=… post=… (secant iters=…)]`). |
+| `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
+| `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
 
 > **Note:** `output_fraction` (reservoir->readout subsampling) lives on `ESNConfig`, not `ReservoirConfig` — the reservoir does not consume it. See [ESN](#esn). `float output_fraction = 1.0` — fraction of N vertices used as readout features, in range (0.0, 1.0]; must yield a power-of-2 stride. At 0.5, a stride-selected sub-hypercube of N/2 vertices is passed to the readout. The mapping is lossy: intermediate values round down to the nearest power-of-2 stride (e.g. `0.4` → effectively `0.5`), and values that would yield a non-power-of-2 stride (e.g. `0.3`) throw. Exactly-honored values: `{1.0, 0.5, 0.25, 0.125, 0.0625, ...}`.
 
