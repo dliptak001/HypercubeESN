@@ -156,6 +156,17 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     const float* iw = vtx_weight_.get() + v * dim_; // input block
     const float* w = &vtx_weight_[num_input_weights_] + v * dim_ * history_depth_; // recurrent block
 
+    // Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
+    // For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
+    // every vertex, so all dim gathered values are identical and this collapses to
+    // input * (sum of iw[0..dim)) — a single multiply against a per-vertex
+    // precomputed weight-row-sum would suffice, making the dim-way gather here
+    // wasted work. We keep the general form on purpose: with num_inputs_ > 1 the
+    // neighbors of a vertex near a channel-block boundary straddle different
+    // channels and carry DIFFERENT injected values, so the per-neighbor gather is
+    // load-bearing and cannot be collapsed. The single-input waste is dim-1 extra
+    // FMAs per vertex per step — negligible against the recurrent block below
+    // (dim * history_depth) — so it isn't worth a second specialized code path.
     for (size_t i = 0; i < dim_; i++)
         s += vtx_input_[v ^ NearestMask(i)] * iw[i];
 
