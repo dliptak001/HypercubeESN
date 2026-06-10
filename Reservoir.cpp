@@ -247,9 +247,6 @@ void Reservoir::InjectFeedback(const size_t channel, const float feedback)
     if (channel >= num_feedback_channels_)
         throw std::invalid_argument("InjectFeedback: channel out of range [0, num_feedback_channels)");
 
-    if (num_feedback_channels_ == 0)
-        throw std::invalid_argument("InjectFeedback: num_feedback_channels must be > 0");
-
     const size_t block = n_ / num_feedback_channels_;
     const size_t v_end = (channel + 1) * block;
     for (size_t v = channel * block; v < v_end; ++v)

@@ -13,15 +13,14 @@ struct ReservoirConfig
     float spectral_radius = 0.99f;
     float leak_rate = 1.0f; // 1.0 = full replacement, <1.0 = leaky integrator
     float input_scaling = 0.5f;
-    // DIM-invariant input drive: weights carry a 1/sqrt(DIM) fan-in normalization, so a given value yields the same tanh drive at any DIM
     size_t num_inputs = 1;
     size_t history_depth = 16;
     float history_floor = 1.0f;
     // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
     bool verbose = true;
 
-    size_t num_feedback_channels = 0; // number of feedback sources
-    float feedback_scaling = 0.5f;
+    size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely (must divide N = 2^dim evenly when > 0)
+    float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -39,9 +38,19 @@ struct ReservoirConfig
 /// structure. Recurrent weights are rescaled at construction to a target
 /// spectral radius.
 ///
+/// An optional feedback path (@c ReservoirConfig::num_feedback_channels > 0)
+/// adds a second per-vertex driver buffer, mechanically identical to the input
+/// path: its own weight block, summed into each neuron via the same dim-neighbor
+/// gather, injected by @ref InjectFeedback and consumed each @ref Step. It is the
+/// closed-loop hook (e.g. routing a readout-derived signal back in); with zero
+/// channels it is a no-op — no weights are allocated and the open-loop
+/// realization is unchanged. Note the feedback block sits OUTSIDE the
+/// spectral-radius estimate, so it does not bound closed-loop stability.
+///
 /// Lifetime: non-copyable and non-movable; obtain instances via @ref Create.
-/// Per-step contract: @ref InjectInput (optional) then @ref Step; the injected
-/// input is consumed and cleared by each Step.
+/// Per-step contract: @ref InjectInput and/or @ref InjectFeedback (both optional)
+/// then @ref Step; the injected input and feedback are consumed and cleared by
+/// each Step.
 class Reservoir
 {
 public:
@@ -107,6 +116,16 @@ public:
     /// Neuron count N = 2^Dim() (the length of the @ref Outputs feature vector).
     [[nodiscard]] size_t Size() const { return n_; }
 
+    /// @brief Stage the feedback signal for one channel ahead of the next @ref Step.
+    /// The closed-loop analogue of @ref InjectInput: channel @p channel drives the
+    /// contiguous vertex block [channel * N/num_feedback_channels,
+    /// (channel+1) * N/num_feedback_channels) through the separate feedback weight
+    /// block. Like input, feedback is cleared by every @ref Step, so call this each
+    /// timestep a feedback drive is desired (typically with the previous step's
+    /// readout-derived value y(t-1), since y(t) does not yet exist when Step needs
+    /// it). Requires the reservoir to have been built with num_feedback_channels > 0.
+    /// @throws std::invalid_argument if feedback is not configured
+    ///         (num_feedback_channels == 0) or @p channel >= num_feedback_channels.
     void InjectFeedback(size_t channel, float feedback);
 
 private:
