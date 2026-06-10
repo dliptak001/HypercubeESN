@@ -109,8 +109,6 @@ public:
 
     void InjectFeedback(size_t channel, float feedback);
 
-    bool enable_feedback_ = false;
-
 private:
     explicit Reservoir(const ReservoirConfig& cfg);
 

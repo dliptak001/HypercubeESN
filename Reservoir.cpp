@@ -197,7 +197,7 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     // recurrent block
 
     const float* fw = nullptr;
-    if (enable_feedback_ && num_feedback_weights_ > 0)
+    if (num_feedback_channels_ > 0)
         fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
 
     // Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
@@ -249,9 +249,6 @@ void Reservoir::InjectFeedback(const size_t channel, const float feedback)
 
     if (num_feedback_channels_ == 0)
         throw std::invalid_argument("InjectFeedback: num_feedback_channels must be > 0");
-
-    if (enable_feedback_ == false)
-        return; // soft exit
 
     const size_t block = n_ / num_feedback_channels_;
     const size_t v_end = (channel + 1) * block;
@@ -332,7 +329,7 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
         for (size_t v = 0; v < n_; v++)
         {
             float s = 0.0f;
-            const float* w = &vtx_weight_[num_input_weights_] + v * dim_ * history_depth_;
+            const float* w = &vtx_weight_[num_input_weights_ + num_feedback_weights_] + v * dim_ * history_depth_;
             for (size_t j = 0; j < history_depth_; j++)
             {
                 const float* x_j = x.data() + j * n_;
