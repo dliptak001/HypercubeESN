@@ -20,7 +20,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       verbose_(cfg.verbose),
       history_depth_(cfg.history_depth),
       history_floor_(cfg.history_floor),
-      num_feedback_channels_(cfg.num_feedback_channels)
+      num_feedback_channels_(cfg.num_feedback_channels),
+      feedback_scaling_(cfg.feedback_scaling)
 {
     if (dim_ < 5 || dim_ > 16)
         throw std::invalid_argument("dim must be in 5 <= dim <= 16");
@@ -41,10 +42,11 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
         throw std::invalid_argument("history_depth must be in [1, 64]");
     if (history_floor_ < 0.1f || history_floor_ > 1.0f)
         throw std::invalid_argument("history_floor must be in [0.1, 1.0]");
-    if (num_feedback_channels_ <= 0)
-        throw std::invalid_argument("num_feedback_channels_ must be >= 0");
+    if (num_feedback_channels_ > 0 && n_ % num_feedback_channels_ != 0)
+        throw std::invalid_argument("num_feedback_channels must divide N = 2^dim evenly "
+            "(otherwise InjectFeedback drops the remainder vertices)");
 
-    num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/ + 1 /*feedback*/);
+    num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/ + (num_feedback_channels_ > 0) /*feedback*/);
 
     vtx_input_.reset(AllocAligned(n_));
     vtx_state_.reset(AllocAligned(n_));
@@ -52,8 +54,9 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     vtx_weight_.reset(AllocAligned(num_weights_));
     slice_ptrs_.reset(new float*[history_depth_]);
 
-    num_feedback_weights_ = n_ * dim_;
-    vtx_feedback_.reset(AllocAligned(n_));
+    num_feedback_weights_ = num_feedback_channels_ > 0 ? n_ * dim_ : 0;
+    if (num_feedback_channels_ > 0)
+        vtx_feedback_.reset(AllocAligned(n_));
 
     Initialize();
 }
@@ -74,6 +77,8 @@ void Reservoir::Initialize()
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(rng)) * in_scaling;
 
+    // if num_feedback_channels_ == 0 then num_feedback_weights_ == 0 so this section's loop
+    // is bypassed - ok
     const float feedback_scaling = feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_feedback_weights_; ++i)
         (*pW++) = static_cast<float>(dist(rng)) * feedback_scaling;
@@ -179,16 +184,21 @@ void Reservoir::Step()
 
     std::memcpy(slice_ptrs_[0], vtx_state_.get(), n_ * sizeof(float));
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
+
+    if (num_feedback_channels_ > 0)
+        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
 }
 
 void Reservoir::UpdateState(size_t v, float old_output_v)
 {
     float s = 0.0f;
-
     const float* iw = vtx_weight_.get() + v * dim_; // input block
-    const float* fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
     const float* w = &vtx_weight_[num_input_weights_ + num_feedback_weights_] + v * dim_ * history_depth_;
     // recurrent block
+
+    const float* fw = nullptr;
+    if (enable_feedback_ && num_feedback_weights_ > 0)
+        fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
 
     // Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
     // For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
@@ -204,6 +214,12 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     for (size_t i = 0; i < dim_; i++)
         s += vtx_input_[v ^ NearestMask(i)] * iw[i];
 
+    if (fw != nullptr)
+    {
+        for (size_t i = 0; i < dim_; i++)
+            s += vtx_feedback_[v ^ NearestMask(i)] * fw[i];
+    }
+
     for (size_t i = 0; i < history_depth_; i++)
     {
         const float* pSlice = slice_ptrs_[i];
@@ -216,7 +232,7 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
 
-void Reservoir::InjectInput(size_t channel, float input)
+void Reservoir::InjectInput(const size_t channel, const float input)
 {
     if (channel >= num_inputs_)
         throw std::invalid_argument("InjectInput: channel out of range [0, num_inputs)");
@@ -224,6 +240,23 @@ void Reservoir::InjectInput(size_t channel, float input)
     const size_t v_end = (channel + 1) * block;
     for (size_t v = channel * block; v < v_end; ++v)
         vtx_input_[v] = input;
+}
+
+void Reservoir::InjectFeedback(const size_t channel, const float feedback)
+{
+    if (channel >= num_feedback_channels_)
+        throw std::invalid_argument("InjectFeedback: channel out of range [0, num_feedback_channels)");
+
+    if (num_feedback_channels_ == 0)
+        throw std::invalid_argument("InjectFeedback: num_feedback_channels must be > 0");
+
+    if (enable_feedback_ == false)
+        return; // soft exit
+
+    const size_t block = n_ / num_feedback_channels_;
+    const size_t v_end = (channel + 1) * block;
+    for (size_t v = channel * block; v < v_end; ++v)
+        vtx_feedback_[v] = feedback;
 }
 
 ReservoirConfig Reservoir::GetConfig() const
@@ -238,6 +271,8 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.history_depth = history_depth_;
     cfg.history_floor = history_floor_;
     cfg.verbose = verbose_;
+    cfg.num_feedback_channels = num_feedback_channels_;
+    cfg.feedback_scaling = feedback_scaling_;
     return cfg;
 }
 
@@ -245,6 +280,10 @@ void Reservoir::Reset()
 {
     std::memset(vtx_state_.get(), 0, n_ * sizeof(float));
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
+
+    if (num_feedback_channels_ > 0)
+        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
+
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));
 
     for (size_t i = 0; i < history_depth_; i++)

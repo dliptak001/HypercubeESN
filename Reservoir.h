@@ -19,7 +19,9 @@ struct ReservoirConfig
     float history_floor = 1.0f;
     // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
     bool verbose = true;
+
     size_t num_feedback_channels = 0; // number of feedback sources
+    float feedback_scaling = 0.5f;
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -105,6 +107,8 @@ public:
     /// Neuron count N = 2^Dim() (the length of the @ref Outputs feature vector).
     [[nodiscard]] size_t Size() const { return n_; }
 
+    void InjectFeedback(size_t channel, float feedback);
+
     bool enable_feedback_ = false;
 
 private:
@@ -151,9 +155,9 @@ private:
     size_t num_weights_ = 0;
 
     /**** feedback ****/
-    size_t num_feedback_channels_ = 1;
+    size_t num_feedback_channels_ = 0;
     float feedback_scaling_ = 1.0f;
-    size_t num_feedback_weights_ = 0; // n_ * dim_ — size of the input-weight block
+    size_t num_feedback_weights_ = 0; // n_ * dim_ — size of the feedback-weight block
     std::unique_ptr<float[], AlignedFree> vtx_feedback_;
 
     void Initialize();
