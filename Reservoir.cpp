@@ -64,24 +64,24 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
 void Reservoir::Initialize()
 {
     std::mt19937_64 rng(rng_seed_);
+    std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
     Reset();
 
     float* pW = vtx_weight_.get();
+
     // Input weights: 1/sqrt(dim) normalizes the dim-neighbor input fan-in so a given
     // input_scaling delivers DIM-invariant input drive. Unlike the recurrent block
     // (w_scaling, below) there is NO history factor: the input path has no delay
     // line — it sums dim neighbor inputs per vertex (UpdateState), independent of M.
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
-        (*pW++) = static_cast<float>(dist(rng)) * in_scaling;
+        (*pW++) = static_cast<float>(dist(fb_rng)) * in_scaling;
 
-    // if num_feedback_channels_ == 0 then num_feedback_weights_ == 0 so this section's loop
-    // is bypassed - ok
     const float feedback_scaling = feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_feedback_weights_; ++i)
-        (*pW++) = static_cast<float>(dist(rng)) * feedback_scaling;
+        (*pW++) = static_cast<float>(dist(fb_rng)) * feedback_scaling;
 
     const float w_scaling = 1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
     for (size_t i = 0; i < num_weights_ - num_input_weights_ - num_feedback_weights_; i++)
