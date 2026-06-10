@@ -12,11 +12,14 @@ struct ReservoirConfig
     uint64_t seed = 73895;
     float spectral_radius = 0.99f;
     float leak_rate = 1.0f; // 1.0 = full replacement, <1.0 = leaky integrator
-    float input_scaling = 0.5f; // DIM-invariant input drive: weights carry a 1/sqrt(DIM) fan-in normalization, so a given value yields the same tanh drive at any DIM
+    float input_scaling = 0.5f;
+    // DIM-invariant input drive: weights carry a 1/sqrt(DIM) fan-in normalization, so a given value yields the same tanh drive at any DIM
     size_t num_inputs = 1;
     size_t history_depth = 16;
-    float history_floor = 1.0f; // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
+    float history_floor = 1.0f;
+    // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
     bool verbose = true;
+    size_t num_feedback_channels = 0; // number of feedback sources
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -102,6 +105,8 @@ public:
     /// Neuron count N = 2^Dim() (the length of the @ref Outputs feature vector).
     [[nodiscard]] size_t Size() const { return n_; }
 
+    bool enable_feedback_ = false;
+
 private:
     explicit Reservoir(const ReservoirConfig& cfg);
 
@@ -125,15 +130,15 @@ private:
 
     uint64_t rng_seed_;
 
-    size_t dim_ = 0;                // hypercube dimension (ReservoirConfig::dim)
-    size_t n_ = 0;                  // neuron count N = 2^dim_
-    size_t num_input_weights_ = 0;  // n_ * dim_ — size of the input-weight block
+    size_t dim_ = 0; // hypercube dimension (ReservoirConfig::dim)
+    size_t n_ = 0; // neuron count N = 2^dim_
+    size_t num_input_weights_ = 0; // n_ * dim_ — size of the input-weight block
 
     std::unique_ptr<float[], AlignedFree> vtx_input_;
     std::unique_ptr<float[], AlignedFree> vtx_state_;
     std::unique_ptr<float[], AlignedFree> vtx_output_history_;
     std::unique_ptr<float[], AlignedFree> vtx_weight_;
-    std::unique_ptr<float*[]>             slice_ptrs_;
+    std::unique_ptr<float*[]> slice_ptrs_;
 
     size_t num_inputs_ = 1;
     float spectral_radius_ = 0.99f;
@@ -144,6 +149,12 @@ private:
     size_t history_depth_ = 1;
     float history_floor_ = 1.0f; // cfg.history_floor — deepest-history taper scale K
     size_t num_weights_ = 0;
+
+    /**** feedback ****/
+    size_t num_feedback_channels_ = 1;
+    float feedback_scaling_ = 1.0f;
+    size_t num_feedback_weights_ = 0; // n_ * dim_ — size of the input-weight block
+    std::unique_ptr<float[], AlignedFree> vtx_feedback_;
 
     void Initialize();
     void UpdateState(size_t v, float old_output_v);

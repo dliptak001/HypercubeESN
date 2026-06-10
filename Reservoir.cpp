@@ -19,7 +19,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       input_scaling_(cfg.input_scaling),
       verbose_(cfg.verbose),
       history_depth_(cfg.history_depth),
-      history_floor_(cfg.history_floor)
+      history_floor_(cfg.history_floor),
+      num_feedback_channels_(cfg.num_feedback_channels)
 {
     if (dim_ < 5 || dim_ > 16)
         throw std::invalid_argument("dim must be in 5 <= dim <= 16");
@@ -35,19 +36,24 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
         throw std::invalid_argument("num_inputs must be >= 1");
     if (n_ % num_inputs_ != 0)
         throw std::invalid_argument("num_inputs must divide N = 2^dim evenly "
-                                    "(otherwise InjectInput drops the remainder vertices)");
+            "(otherwise InjectInput drops the remainder vertices)");
     if (history_depth_ < 1 || history_depth_ > 64)
         throw std::invalid_argument("history_depth must be in [1, 64]");
     if (history_floor_ < 0.1f || history_floor_ > 1.0f)
         throw std::invalid_argument("history_floor must be in [0.1, 1.0]");
+    if (num_feedback_channels_ <= 0)
+        throw std::invalid_argument("num_feedback_channels_ must be >= 0");
 
-    num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/);
+    num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/ + 1 /*feedback*/);
 
     vtx_input_.reset(AllocAligned(n_));
     vtx_state_.reset(AllocAligned(n_));
     vtx_output_history_.reset(AllocAligned(n_ * history_depth_));
     vtx_weight_.reset(AllocAligned(num_weights_));
     slice_ptrs_.reset(new float*[history_depth_]);
+
+    num_feedback_weights_ = n_ * dim_;
+    vtx_feedback_.reset(AllocAligned(n_));
 
     Initialize();
 }
@@ -68,8 +74,12 @@ void Reservoir::Initialize()
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(rng)) * in_scaling;
 
+    const float feedback_scaling = feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
+    for (size_t i = 0; i < num_feedback_weights_; ++i)
+        (*pW++) = static_cast<float>(dist(rng)) * feedback_scaling;
+
     const float w_scaling = 1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
-    for (size_t i = 0; i < num_weights_ - num_input_weights_; i++)
+    for (size_t i = 0; i < num_weights_ - num_input_weights_ - num_feedback_weights_; i++)
         (*pW++) = static_cast<float>(dist(rng)) * w_scaling;
 
     // Depth taper: linearly down-weight older history so a deeper (older) slice
@@ -82,9 +92,9 @@ void Reservoir::Initialize()
     std::vector<float> depth_factor(history_depth_);
     for (size_t i = 0; i < history_depth_; ++i)
         depth_factor[i] = 1.0f - (1.0f - history_floor_)
-                                     * static_cast<float>(i + 1)
-                                     / static_cast<float>(history_depth_);
-    float* pRec = vtx_weight_.get() + num_input_weights_;
+            * static_cast<float>(i + 1)
+            / static_cast<float>(history_depth_);
+    float* pRec = vtx_weight_.get() + num_input_weights_ + num_feedback_weights_;
     for (size_t v = 0; v < n_; ++v)
         for (size_t i = 0; i < history_depth_; ++i)
             for (size_t j = 0; j < dim_; ++j)
@@ -110,7 +120,7 @@ void Reservoir::Initialize()
     auto eval_sr = [&](float s)
     {
         const float rel = s / applied_scale;
-        for (size_t i = num_input_weights_; i < num_weights_; ++i) vtx_weight_[i] *= rel;
+        for (size_t i = num_input_weights_ + num_feedback_weights_; i < num_weights_; ++i) vtx_weight_[i] *= rel;
         applied_scale = s;
         return EstimateSpectralRadius(sr_x, sr_y);
     };
@@ -174,8 +184,11 @@ void Reservoir::Step()
 void Reservoir::UpdateState(size_t v, float old_output_v)
 {
     float s = 0.0f;
+
     const float* iw = vtx_weight_.get() + v * dim_; // input block
-    const float* w = &vtx_weight_[num_input_weights_] + v * dim_ * history_depth_; // recurrent block
+    const float* fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
+    const float* w = &vtx_weight_[num_input_weights_ + num_feedback_weights_] + v * dim_ * history_depth_;
+    // recurrent block
 
     // Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
     // For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
@@ -216,15 +229,15 @@ void Reservoir::InjectInput(size_t channel, float input)
 ReservoirConfig Reservoir::GetConfig() const
 {
     ReservoirConfig cfg;
-    cfg.dim             = dim_;
-    cfg.seed            = rng_seed_;
+    cfg.dim = dim_;
+    cfg.seed = rng_seed_;
     cfg.spectral_radius = spectral_radius_; // configured target, not realized
-    cfg.leak_rate       = leak_rate_;
-    cfg.input_scaling   = input_scaling_;
-    cfg.num_inputs      = num_inputs_;
-    cfg.history_depth   = history_depth_;
-    cfg.history_floor   = history_floor_;
-    cfg.verbose         = verbose_;
+    cfg.leak_rate = leak_rate_;
+    cfg.input_scaling = input_scaling_;
+    cfg.num_inputs = num_inputs_;
+    cfg.history_depth = history_depth_;
+    cfg.history_floor = history_floor_;
+    cfg.verbose = verbose_;
     return cfg;
 }
 
@@ -264,15 +277,15 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
     // cluster. We track the running geometric mean and stop when it stops
     // moving across a spaced check -- the SMOOTHED mean, not the oscillating
     // instantaneous norm.
-    constexpr int   kMaxIters     = 1500;  // hard cap (warm-started across secant evals)
-    constexpr int   kBurnIn       = 32;    // align x with the dominant subspace first
-    constexpr int   kCheckSpacing = 50;    // compare the running mean this many steps apart
-    constexpr float kTolRel       = 1e-4f; // break when the running mean is this stable
+    constexpr int kMaxIters = 1500; // hard cap (warm-started across secant evals)
+    constexpr int kBurnIn = 32; // align x with the dominant subspace first
+    constexpr int kCheckSpacing = 50; // compare the running mean this many steps apart
+    constexpr float kTolRel = 1e-4f; // break when the running mean is this stable
 
-    float  rho_ring[kCheckSpacing] = {};
+    float rho_ring[kCheckSpacing] = {};
     double sum_log = 0.0;
-    int    n_acc   = 0;
-    float  rho     = 0.0f;
+    int n_acc = 0;
+    float rho = 0.0f;
 
     for (int iter = 0; iter < kMaxIters; ++iter)
     {
@@ -298,7 +311,7 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
         float norm = 0.0f;
         for (size_t k = 0; k < MN; k++) norm += y[k] * y[k];
         norm = std::sqrt(norm);
-        if (norm <= 1e-30f) return 0.0f;   // nilpotent / zeroed operator
+        if (norm <= 1e-30f) return 0.0f; // nilpotent / zeroed operator
 
         const float inv = 1.0f / norm;
         for (size_t k = 0; k < MN; k++) x[k] = y[k] * inv;
