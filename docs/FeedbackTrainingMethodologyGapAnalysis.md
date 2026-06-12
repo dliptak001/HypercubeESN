@@ -181,7 +181,11 @@ should also be said explicitly.
 
 - **B1. Serialization:** `ESN::GetReadoutState`/`SetReadoutState`
   handles one readout. Two-readout checkpointing is not in the §8
-  tracker at all.
+  tracker at all. *(Resolved June 2026: §8 gains a two-readout
+  checkpointing row — `GetFeedbackState`/`SetFeedbackState` mirroring
+  the existing pair; `F` is persist-worthy from construction per §6.15;
+  Adam moments are not serialized for either readout — a stated,
+  accepted v1 limitation.)*
 - **B2. Pass-1 cadence left as an either/or:**
   "(`TrainLiveStepRegression`, or mini-batch accumulation across
   cycles)" — v1 should commit to one (per-step online is the natural
