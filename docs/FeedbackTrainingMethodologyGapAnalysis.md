@@ -112,6 +112,20 @@ deployed loop's very first `f` evaluation has no network to call. When
 `F.InitOnline()` happens (construction? `ESN::InitOnline`?) is
 unspecified.
 
+> **Resolved (June 2026): new §6.15** (cross-refs in §6.8 and both §8
+> ESN rows). Three decisions: (1) `F`'s CNN is built **eagerly at ESN
+> construction** whenever `num_feedback_channels > 0` — no "built yet?"
+> state, the before-first-step constraint holds by construction; stated
+> consequence: the random `F` is checkpoint-worthy immediately
+> (`IsTrained()` set), which is correct since §6.8's random `F` is the
+> live policy. (2) **Warmup runs closed-loop with `F` frozen** — the
+> §6.9 distribution-jump argument telescoped back one boundary; the
+> §6.13 `force_zero` flag applies during warmup too. (3) `P`'s init is
+> unchanged (after warmup) — only `F` has the ordering constraint. Plus
+> the tracker inversion made explicit: closed-loop warmup is the first
+> consumer of the closed-loop step driver, so that capability precedes
+> all training orchestration.
+
 ### A5. The probe error metric is only defined for regression `P`
 
 §3 defines the probe metric as squared error of `P`'s prediction.

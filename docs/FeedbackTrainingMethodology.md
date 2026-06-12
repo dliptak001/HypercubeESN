@@ -438,7 +438,9 @@ during training, and there is no train/deploy distribution switch. Keep
 `feedback_scaling` small enough that random early feedback cannot destabilize
 the reservoir (its per-neuron effect is bounded by the `tanh` in `UpdateState`
 regardless), and the §6.11 clamp tames the untrained output's magnitude as
-well.
+well. "From step one" includes warmup: the warmup phase runs the same closed
+loop with `F` frozen, and `F`'s network is built at ESN construction so it
+exists before the first step it feeds — §6.15.
 
 ### 6.9 Schedule and convergence: pre-train P, then alternate
 
@@ -693,6 +695,59 @@ Both ε and lr are educated guesses with stated reasoning, not measured
 values — nothing has run yet. They are defaults-with-tuning-signals (accept
 rate, creep rate, realization fraction), not blessed constants.
 
+### 6.15 Initialization and warmup under the closed loop
+
+Three decisions, fixing the init-order trap in the current seam:
+`ESN::InitOnline` today runs `Warmup` *then* builds the readout's CNN
+(`Readout::InitOnline` is what constructs the network). For `P` that order is
+harmless — it predicts nothing until after warmup. For `F` it is exactly
+backwards: §6.8 has `F` driving the loop from step one, so its network must
+exist before the first `Step` it feeds.
+
+**1. `F`'s CNN is built eagerly, at ESN construction, whenever feedback is
+configured** (`num_feedback_channels > 0`). No "built yet?" state to track,
+and `F` exists before its first `PredictRaw` by construction — the
+before-first-step constraint cannot be violated. Stated consequence:
+`Readout::InitOnline` sets `IsTrained()`, which `GetReadoutState` uses as its
+persist-worthy test, so an eagerly built random `F` is checkpoint-worthy
+immediately. That is correct, not an accident — §6.8's random `F` *is* the
+live policy, and reproducibility wants it captured. (Feeds the two-readout
+serialization extension in §8.)
+
+**2. Warmup runs closed-loop, with `F` frozen.** The §6.9 argument telescopes
+back one boundary: pre-training with `f ≡ 0` was rejected because it hands
+alternation a `P` trained on dynamics that vanish when the loop closes —
+likewise, an open-loop warmup relaxes the reservoir onto the open-loop
+attractor, and the state distribution jumps the moment pre-training closes
+the loop. Warmup must settle the **joint** (reservoir, `F`) state:
+
+```
+            ┌──────────────────────────┐
+            │   x ──F₀──► tanh ──► f   │     F₀ frozen (random, clamped —
+            ▼                          │     the §6.8 noise injection)
+      u ──► [Step] ──► x ──────────────┘
+            ... settles onto the joint (reservoir, F₀) attractor
+```
+
+Each warmup step runs the same closed-loop driver as deployment:
+evaluate `F` on the live state, clamp (§6.11), `InjectFeedback`, inject
+input, `Step`. No probes, no `F` updates, no `P` involvement. The §6.13
+`force_zero` flag applies during warmup too — the lesion arm must warm up
+the same way it runs. And warmup's job is only to kill the zero-state
+transient: it cannot and need not anticipate the attractor under the
+eventually-trained `F`; the gapless committed trajectory (§6.5) adapts
+continuously as `F` learns.
+
+**3. `P`'s initialization is unchanged**: `Readout::InitOnline` after warmup,
+as today. Only `F` has the before-first-step constraint — do not "fix" both.
+The resulting `ESN::InitOnline` sequence: `F` already exists (ctor) →
+closed-loop warmup → build `P`.
+
+Implementation-order corollary for §8: closed-loop warmup is the **first
+consumer** of the closed-loop step driver — it executes before any training,
+any probe, any Pass-1 step. The driver cannot be deferred to "the training
+part" of the implementation.
+
 ---
 
 ## 7. Critique of the concept itself
@@ -800,8 +855,8 @@ flag: `force_zero_feedback`).
 | Capability | Where | Status | Notes |
 |---|---|---|---|
 | State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
-| Second readout instance | `ESN` | pending | `F` constructed from a `feedback ReadoutConfig` (Regression, 1 output) sharing the subsample geometry. |
-| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). |
+| Second readout instance | `ESN` | pending | `F` constructed from `ESNConfig::feedback.readout` (Regression, 1 output) sharing the subsample geometry; CNN built eagerly at ESN construction (§6.15). |
+| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). First consumer is closed-loop warmup in `ESN::InitOnline` (§6.15) — build this before any training orchestration. |
 | Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). |
 | Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). |
 
