@@ -238,6 +238,9 @@ should also be said explicitly.
 - **C2. §1's commit range is stale:** "(commits `a8a350a..cf33018`)" is
   cited for the complete mechanism list, but that list includes
   `TakeSnapshot`/`RestoreSnapshot`, which landed later in `696d762`.
+  *(Resolved June 2026: `696d762` is the immediate next Reservoir commit
+  after `cf33018`, so the range extends contiguously — §1 now cites
+  `a8a350a..696d762`, covering every bullet in the list.)*
 - **C3. §2's table specifies `ReadoutActivation::TANH` for `F` with no
   cross-reference to §6.11.** Since the entire point of §6.11 is that
   this field does *not* bound the output (it is per-Conv-layer), citing

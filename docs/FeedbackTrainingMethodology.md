@@ -14,7 +14,7 @@
 ## 1. What exists today (Reservoir level)
 
 The Reservoir already has the complete feedback *mechanism* (branch `feedback`,
-commits `a8a350a..cf33018`):
+commits `a8a350a..696d762`):
 
 - `ReservoirConfig::num_feedback_channels` (0 = path disabled, no allocation) and
   `ReservoirConfig::feedback_scaling` (DIM-invariant `1/sqrt(dim)` fan-in
