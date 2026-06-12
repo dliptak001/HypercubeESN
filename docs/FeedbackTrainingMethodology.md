@@ -470,6 +470,23 @@ state-distribution jump at the phase boundary. (Pre-training with `f ≡ 0`
 instead would hand alternation a `P` trained on dynamics that vanish the moment
 `F`'s output starts flowing.)
 
+**`P`'s lr policy** (the streaming-horizon problem: `CosineLR` needs a horizon
+an open-ended stream lacks). The pre-train phase runs cosine annealing over a
+**declared budget**, `feedback.pretrain_steps` (§6.14, default 10 000) — the
+declared length doubles as the fixed-budget backstop this section already
+wants, one knob serving both jobs. The cosine's floor is set to
+`feedback.p_lr`, the **constant** lr `P` keeps for the entire alternation
+phase (default 5e-4), so the schedule decays smoothly *into* the alternation
+constant — no lr discontinuity at the phase boundary, the lr-space analogue
+of the no-distribution-jump principle above. Plateau-based early exit
+(validation, §6.17) is allowed; lr then simply reaches `p_lr` sooner. Why
+5e-4 and not the conventional cosine floor: `lr_max × lr_min_frac` = 1.5e-5
+would be ~13× *slower* than `F`'s 2e-4, inverting §7.3's timescale ordering —
+`P` must remain the faster learner. 5e-4 is 2.5× `F`'s rate and ≈ `lr_max`/3:
+fast enough to track `F`-induced state drift, slow enough to be a fine-tune.
+Defaults-with-tuning-signals per §6.14's honesty clause — watch validation
+loss for §7.3 oscillation.
+
 Convergence criteria (defaults):
 
 - Primary: the task's validation loss on a held-out stream plateaus — NRMSE
@@ -642,11 +659,13 @@ holding `F`'s `ReadoutConfig` plus the scheme's own knobs and the §6.13 flag:
 
 ```cpp
 struct FeedbackConfig {
-    ReadoutConfig readout;        // F (dim / num_outputs / task forced by ESN)
-    float epsilon    = 0.05f;     // probe perturbation, pre-clamp space (§6.11)
-    float margin     = 0.0f;      // accept margin (§6.6)
-    float lr         = 2e-4f;     // F's constant Adam learning rate
-    bool  force_zero = false;     // runtime lesion flag (§6.13)
+    ReadoutConfig readout;          // F (dim / num_outputs / task forced by ESN)
+    float epsilon       = 0.05f;    // probe perturbation, pre-clamp space (§6.11)
+    float margin        = 0.0f;     // accept margin (§6.6)
+    float lr            = 2e-4f;    // F's constant Adam learning rate
+    size_t pretrain_steps = 10000;  // P pre-train budget = cosine horizon (§6.9)
+    float p_lr          = 5e-4f;    // P's constant alternation lr (§6.9)
+    bool  force_zero    = false;    // runtime lesion flag (§6.13)
 };
 ```
 
@@ -673,6 +692,8 @@ Defaults, with the reasoning on record:
 | `feedback.epsilon` | 0.05 (sane range 0.01–0.2) | Rationale below. |
 | `feedback.lr` | 2e-4, constant | Rationale below. |
 | `feedback.margin` | 0 | Already specced (§6.6). |
+| `feedback.pretrain_steps` | 10 000 | `P`'s pre-train budget; doubles as the cosine horizon and the §6.9 phase backstop. |
+| `feedback.p_lr` | 5e-4, constant | `P`'s alternation lr; the pre-train cosine anneals into it. Full rationale in §6.9. |
 | `reservoir.feedback_scaling` | 0.5 (unchanged) | Matches `input_scaling`'s 0.5, so at `\|f\| ~ \|u\|` the feedback drive is commensurate with the input drive — a sane first operating point. Drop to 0.25 if the §7.6 state-norm monitor shows growth; do **not** pre-shrink it, or a null result is uninterpretable (signal too weak vs. idea wrong). |
 
 **Why ε = 0.05 — what ε actually controls.** ε is *not* a noise-immunity

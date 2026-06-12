@@ -15,8 +15,8 @@
 >
 > **Update (June 2026): all six A-items are resolved** — each carries an
 > inline "Resolved" block recording the decision and where it was
-> codified (§6.2 commit-time corollary, §6.13–§6.17). B3 is half-settled
-> (`F`'s lr); B1/B2/B4/B5, C1–C4, and D1/D2 remain open.
+> codified (§6.2 commit-time corollary, §6.13–§6.17). B1–B3 are resolved
+> inline below; B4/B5, C1–C4, and D1/D2 remain open.
 
 ---
 
@@ -195,9 +195,13 @@ should also be said explicitly.
   a non-v1 variant.)*
 - **B3. `P`'s lr schedule in streaming mode:** `CosineLR` needs a
   horizon; an open-ended stream has none. Both the pre-train phase and
-  the alternation phase need a stated lr policy for `P`. *(The analogous
-  question for `F` is settled by §6.14 — constant lr; `P`'s policy
-  remains open.)*
+  the alternation phase need a stated lr policy for `P`. *(Resolved June
+  2026 — `F`: constant 2e-4, §6.14. `P`: §6.9 — pre-train cosine over a
+  declared `pretrain_steps` budget (default 10 000, doubling as the
+  phase backstop), annealing into a constant alternation lr `p_lr`
+  (default 5e-4; the conventional cosine floor 1.5e-5 would invert
+  §7.3's timescale ordering vs. `F`'s 2e-4), no lr discontinuity at the
+  phase boundary. Both knobs live in `ESNConfig::feedback`.)*
 - **B4. Tie-breaking and boundary equality:** `E+ == E−` (pick which
   sign?) and `min(E+, E−) == E0` exactly (reject, per strict `<`?) —
   trivial, but a deterministic spec matters for reproducibility, and
