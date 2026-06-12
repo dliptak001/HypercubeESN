@@ -210,6 +210,52 @@ int main(int argc, char* argv[])
                 base.feedback.readout.num_layers, base.feedback.readout.conv_channels,
                 base.feedback.readout.seed);
 
+    // ---- Margin sweep mode (§6.6 ratchet check) ------------------------------
+    // Run 2 found the zero-margin accept test is a saturation ratchet: the
+    // deterministic probes resolve arbitrarily small differences, so accepts
+    // keep firing at the ~2/3 chance floor even with the lever at 0, each one
+    // committing a full-eps creep further out. A positive margin makes those
+    // noise-level differences reject. Sweep on the two run-2 runaway seeds;
+    // success = saturation 0% at end with healthy accepts still firing.
+    if (argc > 1 && std::strcmp(argv[1], "--margin-sweep") == 0)
+    {
+        const float margins[] = {1e-6f, 1e-5f, 1e-4f};
+        const uint64_t runaway_seeds[] = {73895, 73896};
+        struct Cell { float margin; uint64_t seed; ArmResult r; };
+        std::vector<Cell> cells;
+        for (const float m : margins)
+            for (const uint64_t sd : runaway_seeds)
+            {
+                ESNConfig cfg = base;
+                cfg.reservoir.seed = sd;
+                cfg.readout.seed = 42 + static_cast<unsigned>(sd - 73895);
+                cfg.feedback.readout.seed = 43 + static_cast<unsigned>(sd - 73895);
+                cfg.reservoir.feedback_scaling = 0.5f;
+                cfg.feedback.margin = m;
+                std::printf("\n=== margin %.0e, seed %llu ===\n",
+                            m, static_cast<unsigned long long>(sd));
+                cells.push_back({m, sd,
+                                 RunArm(cfg, "LIVE", train_u, train_y, val_u, val_y, B)});
+            }
+
+        std::printf("\n=== margin sweep summary (run-2 zero-margin endpoints: "
+                    "sat 100%%, mean_f -6.0 / +5.0) ===\n");
+        std::printf("  %8s  %10s  %8s  %6s  %8s  %8s  %8s  %9s\n",
+                    "margin", "seed", "tail10", "acc%", "sat%", "mean_f", "std_thf", "mean_e0");
+        for (const auto& c : cells)
+        {
+            const auto& t = c.r.final_tel;
+            std::printf("  %8.0e  %10llu  %8.5f  %5.1f%%  %7.1f%%  %+8.4f  %8.4f  %9.3e\n",
+                        c.margin, static_cast<unsigned long long>(c.seed),
+                        c.r.tail_nrmse, 100.0 * t.accept_rate,
+                        100.0 * t.saturation_frac, t.mean_f,
+                        std::sqrt(t.var_tanh_f), t.mean_e0);
+        }
+        std::printf("\n  Read: ratchet dead when sat%% = 0 and |mean_f| stays small; "
+                    "margin too strangling when acc%% collapses toward 0.\n");
+        return 0;
+    }
+
     // ---- Paired seed sweep ---------------------------------------------------
     struct SeedResult { uint64_t seed; ArmResult live, ctrl; };
     std::vector<SeedResult> results;
