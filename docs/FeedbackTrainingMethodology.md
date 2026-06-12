@@ -143,7 +143,10 @@ One **cycle** = one Pass 1 + one Pass 2.
 
 1. The reservoir is at committed state `S0`. Present the next training example:
    inject the input `u` *and* the current feedback signal `f = F(x)` (§2.1;
-   from cycle 0 this is `F`'s live output, §6.8), then `Step`.
+   from cycle 0 this is `F`'s live output, §6.8), then `Step`. `f = F(x)` is
+   always the **live output of the current `F`** — after an accepted Pass-2
+   cycle that is the *post-update* readout, recomputed at commit time; it is
+   never the probe winner `f*` and never the cached `Sf` (§6.2).
 2. Train `P` on the resulting (state, target) pair exactly as today
    (`TrainLiveStepRegression`, or mini-batch accumulation across cycles).
 3. `F` is not touched. The reservoir state advances for real (no restore).
@@ -164,7 +167,7 @@ example.
 | f | **Accept/reject:** if `min(E+, E−) < E0 − margin`, the winning perturbation direction is a locally verified improvement. Set `f* = Sf ± ε` (winning sign). |
 | g | **Train `F` (one regression step):** input = subsampled features of **`Sx`** (the decision-time state, *not* any post-step probe state — §6.4), target = `f*`. |
 | h | If neither probe beats baseline by the margin, train nothing this cycle. |
-| i | Restore `Sx`. Return to Pass 1, which consumes `(u', y')` *for real* (§6.5 — the probe example is re-presented as the next Pass-1 example, preserving stream continuity). |
+| i | Restore `Sx`. Return to Pass 1, which consumes `(u', y')` *for real* (§6.5 — the probe example is re-presented as the next Pass-1 example, preserving stream continuity). The feedback that commit injects is `F`'s live post-update output, not `f*` (§6.2). |
 
 Per §6.11, every injected feedback value passes through the `tanh` clamp at
 the seam; `Sf`, `±ε`, and the training target `f*` all live in the pre-clamp
@@ -195,9 +198,10 @@ PASS 2 on example k+1:
     probe E0:  S1 --inject u_k+1, f=Sf----> Step, P forward: e = 0.0412
     probe E+:  S1 --inject u_k+1, f=Sf+ε--> Step, P forward: e = 0.0398   <- improvement
     probe E-:  S1 --inject u_k+1, f=Sf-ε--> Step, P forward: e = 0.0421
-    accept +ε:  train F one step:  F(subsampled S1) → Sf + ε
+    accept +ε:  train F one step:  F(subsampled S1) → Sf + ε     (F becomes F′)
     restore S1
-PASS 1 on example k+1:  (re-presented, committed for real)                    → state S2
+PASS 1 on example k+1:  inject u_k+1, f = F′(S1)  (live post-update output,
+                        §6.2 — not Sf+ε); re-presented, committed for real   → state S2
 PASS 2 on example k+2:  ...
 ```
 
@@ -278,6 +282,28 @@ deployment-time feedback (`F(x)`).
 live output — it is the frozen scalar `Sf ± ε`. With `H = 1` that deviation is
 exactly the perturbation under test, applied for exactly one step; it is
 inherent to probing.
+
+*Commit-time corollary (after an accepted cycle):* step g trains `F` *before*
+step i's restore-and-commit, so by commit time `F` has moved to `F′`. The
+Pass-1 commit nevertheless injects the **live post-update output `F′(Sx)`** —
+not the verified winner `f* = Sf ± ε`, and not the stale `Sf`.
+
+*Alternative considered and rejected:* committing `f*` ("commit what you
+verified"). The certificate it honors is weak — at zero margin ~2/3 of accepts
+are pure chance (§6.6); the scheme's correctness lives in `F`'s regression
+averaging across cycles, not in any single probe outcome. Committing the live
+output instead keeps the committed trajectory exactly on-policy (the property
+this section stakes the design on) and keeps Pass 1 a single uniform code
+path: `f = F(x)` whether the preceding cycle accepted or rejected — identical
+to the deployed loop of §2.1, with no `f*`-or-nothing handoff across the pass
+boundary. The risk is bounded by tested values: one update step lands
+`F′(Sx)` (to first order) between the probed `Sf` and `Sf ± ε`, so at ε scale
+its error sits between tested endpoints. A single Adam step can overshoot
+`f*` slightly, putting `F′(Sx)` marginally outside the probed interval — an
+O(ε), self-correcting excursion worth a telemetry footnote alongside the
+§6.11 saturation watch, not a guard. Operationally: the per-cycle `Sf` cache
+is probes-only — the commit performs a fresh `F` forward (+1 small-`F`
+forward per cycle, negligible against the ~4× overhead of §5).
 
 ### 6.3 All probes replay the same example
 

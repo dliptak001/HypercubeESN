@@ -39,6 +39,15 @@ nearly harmless, but A (commit what you verified) and B (stay strictly
 on-policy, consistent with §6.2) are both defensible and the doc must
 pick one.
 
+> **Resolved (June 2026): option B.** The commit injects the live
+> post-update `F′(Sx)`, codified in §4 (Pass-1 step 1 and step i), §5,
+> and §6.2 (commit-time corollary, with option A as the recorded
+> rejected alternative). Rationale: the per-cycle certificate option A
+> honors is ~2/3 chance at zero margin (§6.6), while option B preserves
+> the on-policy property §6.2 stakes the design on and gives one uniform
+> commit path for accepted and rejected cycles. The `Sf` cache is
+> probes-only; the commit does a fresh `F` forward.
+
 ### A2. The `f ≡ 0` kill-switch has no defined mechanism
 
 §9.1 requires "feedback configured but `f ≡ 0` forced" and §7.6 mandates
