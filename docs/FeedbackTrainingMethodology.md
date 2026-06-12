@@ -75,6 +75,18 @@ Jaeger-style output feedback (`W_fb` feeds the task output back; here the fed-ba
 signal is a free auxiliary control signal with no predefined semantics — its only
 job is to reduce primary task error).
 
+One structural property carried over from `feedback_mechanisms.md`: with a
+single broadcast channel (v1 — one scalar driving all N vertices), every
+vertex's dim-neighbor feedback gather collapses — all neighbors stage the same
+scalar, so the effective injection at vertex `v` is `f × (Σᵢ w_{v,i})`, a
+per-vertex *gain* rather than a `dim`-dimensional gather. The feedback block's
+effective expressivity in v1 is one fixed random N-vector of gains — exactly
+the rank-1-style structure §2.3's comparison hinges on, so this is the
+intended mechanism, not a defect. The headroom if v1's single channel proves
+limiting: `num_feedback_channels > 1` breaks the collapse (per-channel vertex
+blocks stage different scalars), at the cost of `F` growing to
+`num_outputs = num_channels`.
+
 ### 2.3 Differentiation from the nearest prior art
 
 The nearest prior art is Ehlers, Nurdin & Soh (2025), "Improving the

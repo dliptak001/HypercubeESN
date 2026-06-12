@@ -257,6 +257,10 @@ should also be said explicitly.
   projection is the intended mechanism, and it is precisely the rank-1
   structure §2.3 compares against), but a known documented risk of the
   mechanism should appear in the methodology that deploys it.
+  *(Resolved June 2026: §2.2 now carries the collapse note — effective
+  injection `f × (Σᵢ w_{v,i})`, expressivity = one fixed random
+  N-vector of per-vertex gains, intended-not-defect, with
+  `num_feedback_channels > 1` named as the collapse-breaking headroom.)*
 
 ## D. Conceptual risks §7 does not yet flag
 
