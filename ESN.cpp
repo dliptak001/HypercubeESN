@@ -315,7 +315,12 @@ ESN::FeedbackCycleInfo ESN::TrainFeedbackCycleImpl(const float* input,
         {
             info.accepted = true;
             info.sign = (ep < em) ? 1.0f : -1.0f;
-            const float f_star = sf + info.sign * fb.epsilon; // pre-clamp target (§6.11)
+            // Pre-clamp target (§6.11), boxed to the clamp's usable region:
+            // the wall is what bounds the chance-accept random walk — when
+            // drift pushes Sf toward the box, outward creeps clamp back to
+            // the wall while inward creeps remain full-size.
+            const float f_star = std::clamp(sf + info.sign * fb.epsilon,
+                                            -fb.f_box, fb.f_box);
             feedback_readout_->TrainOnlineStepRegression(
                 fb_decision_state_.data(), &f_star, fb.lr, fb.readout.weight_decay);
             (info.sign > 0.0f ? fb_accepts_pos_ : fb_accepts_neg_)++;

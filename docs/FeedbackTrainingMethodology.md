@@ -616,6 +616,24 @@ Consequences:
   weight decay on `F` is the cheap counter, and the lever-compensating
   adaptive ε is on §6.7's upgrade list.
 
+*Amendment from the first §9.4 campaign — the creep target is **boxed**:*
+`f* = clamp(Sf ± ε, ±f_box)`, default `f_box = 1.5` (lever at the wall:
+`1 − tanh²(1.5) ≈ 0.18`, probes stay alive). The saturation regime this
+section warned about turned out to be the *typical* outcome, not an edge
+case: at `H = 1` the chance-floor accepts (§6.6) are a random walk in `F`'s
+output with a full-ε step per accept and **no restoring force anywhere** —
+the clamp's saturation region is simply the walk's absorbing boundary
+(observed: seed-random drift to `mean_f` −6.0 / +5.0). The §6.6 margin
+cannot bound the walk, only thin its steps — and in practice not even that:
+the probe's relative loss delta is `≈ 2·δŷ/(ŷ−y)`, whose denominator shrinks
+with `P`'s residual, so accepts clear even a 5% relative margin at lever
+0.001. Weight decay at sane values is orders too weak
+(per-step shrink = `lr · wd ≈ 2e-8`). The box is the anchor: outward creeps
+at the wall clamp back to the wall, inward creeps remain full-size, so the
+walk reflects instead of absorbing. `Sf` itself can transiently exceed the
+box through generalization, but every accepted target pulls it back toward
+the live region.
+
 ### 6.12 Scope: streaming mode only
 
 Feedback training is offered **only in streaming mode** in v1; batch mode stays
@@ -723,6 +741,7 @@ struct FeedbackConfig {
     float epsilon       = 0.05f;    // probe perturbation, pre-clamp space (§6.11)
     float margin        = 0.0f;     // RELATIVE accept margin r: min < E0·(1−r) (§6.6 as amended)
     float lr            = 2e-4f;    // F's constant Adam learning rate
+    float f_box         = 1.5f;     // pre-clamp creep-target bound (§6.11 amendment)
     size_t pretrain_steps = 10000;  // P pre-train budget = cosine horizon (§6.9)
     float p_lr          = 5e-4f;    // P's constant alternation lr (§6.9)
     bool  force_zero    = false;    // runtime lesion flag (§6.13)
@@ -751,6 +770,7 @@ Defaults, with the reasoning on record:
 | `feedback.readout.weight_decay` | 0 | Telemetry-gated (§6.11, §7): promote to ~1e-4 only if the raw `\|F(x)\|` saturation watch fires. |
 | `feedback.epsilon` | 0.05 (sane range 0.01–0.2) | Rationale below. |
 | `feedback.lr` | 2e-4, constant | Rationale below. |
+| `feedback.f_box` | 1.5 | Pre-clamp creep-target bound, `f* = clamp(Sf ± ε, ±f_box)` — anchors the H=1 chance-accept random walk whose absorbing boundary is otherwise clamp saturation (§6.11 amendment). Lever at the wall ≈ 0.18. |
 | `feedback.margin` | 0 | Relative (§6.6 as amended): accept iff `min(E+, E−) < E0 · (1 − margin)`. Default 0 retained for the no-op/kill-switch arguments; experiments should set a few percent — the §6.6 ratchet amendment documents why an absolute margin cannot work. |
 | `feedback.pretrain_steps` | 10 000 | `P`'s pre-train budget; doubles as the cosine horizon and the §6.9 phase backstop. |
 | `feedback.p_lr` | 5e-4, constant | `P`'s alternation lr; the pre-train cosine anneals into it. Full rationale in §6.9. |
