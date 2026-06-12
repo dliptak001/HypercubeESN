@@ -352,6 +352,12 @@ public:
     /// readout F exists; equivalent to reservoir.num_feedback_channels > 0).
     [[nodiscard]] bool HasFeedback() const { return feedback_readout_ != nullptr; }
 
+    /// Raw (pre-clamp) F(x) from the most recent @ref StepLive evaluation —
+    /// the diagnostic hook for correlating F's signal against task
+    /// quantities on a caller-driven stream. 0 until the first StepLive
+    /// with feedback configured.
+    [[nodiscard]] float LastFeedbackRaw() const { return last_fb_raw_; }
+
     /// §6.13 runtime lesion flag, settable between training and evaluation
     /// (e.g. train with the loop live, then lesion it to measure how much of
     /// the trained system's performance the closed loop carries). See

@@ -32,6 +32,8 @@
 
 namespace
 {
+    constexpr size_t kNarmaOrder = 30;
+
     struct Budgets
     {
         size_t warmup = 500; ///< W: InitOnline warmup = §6.17 validation washout.
@@ -57,8 +59,39 @@ namespace
         double best_nrmse = 0.0;
         double tail_nrmse = 0.0; ///< Mean of the last (up to) 10 validation points — the paired-comparison metric (single-point "final" is a lottery draw from an oscillating series).
         double lesioned_nrmse = 0.0; ///< force_zero re-validation of the trained system.
+        double sigma_corr = 0.0; ///< corr(tanh F(x), Σy over the NARMA order) on the validation drive — the mechanistic diagnostic: is F learning the recurrence's global scalar?
         ESN::FeedbackTelemetry final_tel;
     };
+
+    /// Drive the validation stream once more and correlate F's per-step
+    /// post-clamp output against the NARMA running sum Σ y(t..t−order+1) —
+    /// the global scalar the recurrence actually uses, and the quantity a
+    /// broadcast scalar feedback is architecturally matched to carry.
+    /// Destroys the reservoir's live state; call only when done training.
+    double SigmaCorrDrive(ESN& esn, const std::vector<float>& val_u,
+                          const std::vector<float>& val_y, size_t washout)
+    {
+        esn.ResetReservoirOnly();
+        double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+        size_t n = 0;
+        for (size_t t = 0; t < val_u.size(); ++t)
+        {
+            esn.StepLive(&val_u[t]);
+            if (t < washout || t + 1 < kNarmaOrder) continue;
+            const double x = std::tanh(esn.LastFeedbackRaw());
+            double y = 0.0;
+            for (size_t i = 0; i < kNarmaOrder; ++i)
+                y += val_y[t - i];
+            sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+            ++n;
+        }
+        const double dn = static_cast<double>(n);
+        const double cov = sxy / dn - (sx / dn) * (sy / dn);
+        const double vx = sxx / dn - (sx / dn) * (sx / dn);
+        const double vy = syy / dn - (sy / dn) * (sy / dn);
+        if (vx <= 0.0 || vy <= 0.0) return 0.0; // flat F or flat target: no correlation defined
+        return cov / std::sqrt(vx * vy);
+    }
 
     /// One telemetry table row. NaN-sentinel gauges are gated on the integer
     /// fields (window/accepts) — std::isnan is folded to false under this
@@ -142,8 +175,14 @@ namespace
         r.lesioned_nrmse = esn.ValidateClosedLoop(val_u.data(), val_y.data(), val_count);
         esn.SetForceZeroFeedback(false);
 
-        std::printf("  arm %s: tail10=%.5f  final=%.5f  best=%.5f  lesioned-eval=%.5f\n",
-                    label, r.tail_nrmse, r.final_nrmse, r.best_nrmse, r.lesioned_nrmse);
+        // Mechanistic diagnostic (destroys reservoir state — last thing).
+        // CTRL arms give the frozen-random-F baseline correlation for free.
+        r.sigma_corr = SigmaCorrDrive(esn, val_u, val_y, B.warmup);
+
+        std::printf("  arm %s: tail10=%.5f  final=%.5f  best=%.5f  lesioned-eval=%.5f  "
+                    "corr(tanhF,Sigma_y)=%+.3f\n",
+                    label, r.tail_nrmse, r.final_nrmse, r.best_nrmse, r.lesioned_nrmse,
+                    r.sigma_corr);
         return r;
     }
 } // namespace
@@ -157,12 +196,11 @@ int main(int argc, char* argv[])
         B = {200, 300, 1200, 500, 300, 1, "smoke"};
 
     constexpr size_t DIM = 8;
-    constexpr size_t narma_order = 30;
     constexpr uint64_t data_seed_train = 1939; // matches the batch NARMA example
     constexpr uint64_t data_seed_val = 7331; // held-out: never trained on
 
     std::printf("=== HypercubeESN: NARMA-%zu streaming feedback A/B (S9.4) ===\n",
-                narma_order);
+                kNarmaOrder);
     std::printf("Preset: %s  (W=%zu, pretrain=%zu, alternation=%zu, "
                 "val every %zu, %zu scored, %zu seeds)\n",
                 B.label, B.warmup, B.pretrain, B.alternation,
@@ -175,11 +213,11 @@ int main(int argc, char* argv[])
     const size_t train_len = B.warmup + B.pretrain + B.alternation;
     const size_t val_len = B.warmup + B.val_scored;
 
-    NARMA_N_Generator<float> gen_train(narma_order, data_seed_train,
+    NARMA_N_Generator<float> gen_train(kNarmaOrder, data_seed_train,
                                        0.3f, 0.05f, 1.5f, 0.1f, 0.0f, 0.5f,
                                        /*tanh_wrap=*/true);
     auto [train_u, train_y] = gen_train.generate_prediction_task(train_len);
-    NARMA_N_Generator<float> gen_val(narma_order, data_seed_val,
+    NARMA_N_Generator<float> gen_val(kNarmaOrder, data_seed_val,
                                      0.3f, 0.05f, 1.5f, 0.1f, 0.0f, 0.5f,
                                      /*tanh_wrap=*/true);
     auto [val_u, val_y] = gen_val.generate_prediction_task(val_len);
@@ -263,6 +301,54 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    // ---- F learning-rate sweep mode (§6.14 realization rule) ----------------
+    // Run 3 (healthy F: box + 2% margin) still shows realization 0.013–0.049,
+    // 3–10x below the §6.14 target band 0.1–0.3 — F learns at a crawl. The
+    // spec's own rule: tune feedback.lr toward the band. Sweep lr on one
+    // wall-prone seed (73895) and one center seed (73897); read realization
+    // into the band, std_thf (does faster learning buy more state-dependence),
+    // sat% (box still holding), and corr(tanh F, Σy) (is what it learns
+    // faster the useful scalar).
+    if (argc > 1 && std::strcmp(argv[1], "--flr-sweep") == 0)
+    {
+        const float lrs[] = {5e-4f, 1e-3f, 2e-3f};
+        const uint64_t lr_seeds[] = {73895, 73897};
+        struct Cell { float lr; uint64_t seed; ArmResult r; };
+        std::vector<Cell> cells;
+        for (const float lr : lrs)
+            for (const uint64_t sd : lr_seeds)
+            {
+                ESNConfig cfg = base;
+                cfg.reservoir.seed = sd;
+                cfg.readout.seed = 42 + static_cast<unsigned>(sd - 73895);
+                cfg.feedback.readout.seed = 43 + static_cast<unsigned>(sd - 73895);
+                cfg.reservoir.feedback_scaling = 0.5f;
+                cfg.feedback.lr = lr;
+                std::printf("\n=== feedback.lr %.0e, seed %llu ===\n",
+                            lr, static_cast<unsigned long long>(sd));
+                cells.push_back({lr, sd,
+                                 RunArm(cfg, "LIVE", train_u, train_y, val_u, val_y, B)});
+            }
+
+        std::printf("\n=== F-lr sweep summary (run-3 endpoints at lr 2e-4: "
+                    "realiz 0.013-0.049) ===\n");
+        std::printf("  %8s  %10s  %8s  %6s  %6s  %8s  %8s  %8s  %9s\n",
+                    "f_lr", "seed", "tail10", "acc%", "sat%", "mean_f", "std_thf",
+                    "realiz", "corrSigma");
+        for (const auto& c : cells)
+        {
+            const auto& t = c.r.final_tel;
+            std::printf("  %8.0e  %10llu  %8.5f  %5.1f%%  %5.1f%%  %+8.4f  %8.4f  %8.3f  %+9.3f\n",
+                        c.lr, static_cast<unsigned long long>(c.seed),
+                        c.r.tail_nrmse, 100.0 * t.accept_rate,
+                        100.0 * t.saturation_frac, t.mean_f,
+                        std::sqrt(t.var_tanh_f), t.mean_realization, c.r.sigma_corr);
+        }
+        std::printf("\n  Read: pick the lr that lands realization in 0.1-0.3 with sat%% = 0; "
+                    "corrSigma tells whether F is learning the recurrence's global scalar.\n");
+        return 0;
+    }
+
     // ---- Paired seed sweep ---------------------------------------------------
     struct SeedResult { uint64_t seed; ArmResult live, ctrl; };
     std::vector<SeedResult> results;
@@ -294,7 +380,7 @@ int main(int argc, char* argv[])
 
     // ---- Aggregate report (pre-registered verdict rules) ---------------------
     std::printf("\n=== A/B summary: NARMA-%zu, %zu seed(s), tail10 validation NRMSE ===\n",
-                narma_order, results.size());
+                kNarmaOrder, results.size());
     std::printf("  %10s  %9s  %9s  %9s  %9s  %9s  %9s\n",
                 "seed", "LIVEtail", "CTRLtail", "delta", "LIVEbest", "CTRLbest", "lesioned");
     size_t wins = 0;
