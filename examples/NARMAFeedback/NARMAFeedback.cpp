@@ -195,6 +195,10 @@ int main(int argc, char* argv[])
     base.reservoir.num_feedback_channels = 1;
     base.readout.task = ReadoutTask::Regression;
     base.feedback.pretrain_steps = B.pretrain;
+    // Campaign configuration: the §6.11-amendment creep-target box (default
+    // f_box = 1.5) plus a small relative margin — verified to kill the
+    // saturation ratchet on the run-2 runaway seeds (sat 0%, accepts alive).
+    base.feedback.margin = 0.02f;
     // §6.11's prescribed counter to the saturation runaway run 1 observed
     // (mean_f drifted to −3.3, saturation watch at 100%, lever 0.006): a
     // little weight decay on F pulls the raw output back toward the
