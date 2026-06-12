@@ -5,6 +5,7 @@
 #include <memory>
 #include <new>
 #include <span>
+#include <vector>
 
 struct ReservoirConfig
 {
@@ -127,6 +128,37 @@ public:
     /// @throws std::invalid_argument if feedback is not configured
     ///         (num_feedback_channels == 0) or @p channel >= num_feedback_channels.
     void InjectFeedback(size_t channel, float feedback);
+
+    /// @brief Copyable capture of the reservoir's persistent dynamical state:
+    /// the live vertex state plus every history slice in logical age order
+    /// (slice 0 = most recent). The per-step staged drives (input/feedback)
+    /// are NOT captured — they are consumed and cleared by every @ref Step, so
+    /// a snapshot taken between steps has nothing staged. Weights are not
+    /// included: a snapshot is only meaningful for the reservoir it was taken
+    /// from (or one built from an identical config).
+    struct Snapshot
+    {
+        std::vector<float> state; ///< live vertex state, N floats
+        std::vector<float> history; ///< N * history_depth floats, slice-major, most recent slice first
+    };
+
+    /// @brief Capture the persistent dynamical state (state + history ring).
+    /// Call between steps (per-step staged input/feedback are not captured).
+    /// History slices are stored in logical age order regardless of the ring's
+    /// current rotation, so the snapshot is canonical: snapshots of identical
+    /// dynamics compare equal even when taken at different ring phases.
+    [[nodiscard]] Snapshot TakeSnapshot() const;
+
+    /// @brief Bit-exact restore of a state captured by @ref TakeSnapshot.
+    /// Copies the state and history back, re-homes the slice ring to the
+    /// canonical rotation, and clears any staged input/feedback — so the
+    /// post-restore trajectory depends only on the snapshot and subsequent
+    /// injections: restoring and replaying the same inputs reproduces the
+    /// identical trajectory bit-for-bit. This is the branch-point primitive
+    /// for feedback-training probes (docs/FeedbackTrainingMethodology.md).
+    /// @throws std::invalid_argument if the snapshot's buffer sizes do not
+    ///         match this reservoir's N and history_depth.
+    void RestoreSnapshot(const Snapshot& snap);
 
 private:
     explicit Reservoir(const ReservoirConfig& cfg);

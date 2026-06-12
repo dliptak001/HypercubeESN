@@ -253,6 +253,41 @@ void Reservoir::InjectFeedback(const size_t channel, const float feedback)
         vtx_feedback_[v] = feedback;
 }
 
+Reservoir::Snapshot Reservoir::TakeSnapshot() const
+{
+    Snapshot s;
+    s.state.assign(vtx_state_.get(), vtx_state_.get() + n_);
+    s.history.resize(n_ * history_depth_);
+    // Copy slice-by-slice through slice_ptrs_ so the snapshot is in logical
+    // age order (slice 0 first) no matter where the ring rotation stands.
+    for (size_t i = 0; i < history_depth_; ++i)
+        std::memcpy(s.history.data() + i * n_, slice_ptrs_[i], n_ * sizeof(float));
+    return s;
+}
+
+void Reservoir::RestoreSnapshot(const Snapshot& snap)
+{
+    if (snap.state.size() != n_ || snap.history.size() != n_ * history_depth_)
+        throw std::invalid_argument(
+            "RestoreSnapshot: snapshot sizes do not match this reservoir "
+            "(expected state=N, history=N*history_depth)");
+
+    std::memcpy(vtx_state_.get(), snap.state.data(), n_ * sizeof(float));
+    std::memcpy(vtx_output_history_.get(), snap.history.data(),
+                n_ * history_depth_ * sizeof(float));
+
+    // The snapshot is in logical age order, so re-home the ring to the
+    // canonical rotation (slice i at buffer block i).
+    for (size_t i = 0; i < history_depth_; ++i)
+        slice_ptrs_[i] = &vtx_output_history_[i * n_];
+
+    // Staged drives are not part of a snapshot; clear them so the post-restore
+    // trajectory depends only on the snapshot and subsequent injections.
+    std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
+    if (num_feedback_channels_ > 0)
+        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
+}
+
 ReservoirConfig Reservoir::GetConfig() const
 {
     ReservoirConfig cfg;
