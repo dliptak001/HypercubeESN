@@ -42,7 +42,7 @@ feedback readout** `F`:
 | Component | Role | Config |
 |---|---|---|
 | Primary readout `P` | The task readout, exactly as today | `cfg.readout` (task-specific) |
-| Feedback readout `F` | Computes the scalar feedback signal from reservoir state | `ReadoutTask::Regression`, `num_outputs = 1`, `ReadoutActivation::TANH`, same `dim` as `P` (the stride-subsampled geometry) |
+| Feedback readout `F` | Computes the scalar feedback signal from reservoir state | `ReadoutTask::Regression`, `num_outputs = 1`, `ReadoutActivation::TANH` *(per-Conv-layer only — this does **not** bound `F`'s output; the output bound is the ESN-seam clamp, §6.11)*, same `dim` as `P` (the stride-subsampled geometry) |
 
 Both readouts consume the **same stride-subsampled feature vector**
 (`NumOutputVerts()` floats) the ESN already produces via `CopyLiveState`.

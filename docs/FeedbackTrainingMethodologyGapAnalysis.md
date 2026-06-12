@@ -245,7 +245,9 @@ should also be said explicitly.
   cross-reference to §6.11.** Since the entire point of §6.11 is that
   this field does *not* bound the output (it is per-Conv-layer), citing
   it un-annotated in the architecture table invites exactly the
-  misreading the doc elsewhere dismantles.
+  misreading the doc elsewhere dismantles. *(Resolved June 2026: the §2
+  row now carries the inline annotation — per-Conv-layer only, output
+  bound is the §6.11 seam clamp — matching the §6.14 defaults table.)*
 - **C4. The single-channel broadcast collapse is not carried over.**
   `feedback_mechanisms.md` explicitly flags that a broadcast scalar
   makes every vertex's dim-neighbor gather collapse (the effective
