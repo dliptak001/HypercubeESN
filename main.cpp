@@ -1,17 +1,23 @@
 /// @file main.cpp
-/// @brief Reservoir snapshot/restore fidelity diagnostics.
+/// @brief Feedback-training verification diagnostics
+/// (docs/FeedbackTrainingMethodology.md §9).
 ///
-/// Verification item 2 of docs/FeedbackTrainingMethodology.md §9: snapshot ->
-/// drive N steps -> restore -> replay the same N inputs must reproduce the
-/// identical trajectory bit-for-bit. The restore is the branch-point primitive
-/// the Pass-2 feedback probes stand on, so equality here is exact (memcmp),
-/// not approximate.
+/// Item 2 — snapshot/restore fidelity: snapshot -> drive N steps -> restore ->
+/// replay the same N inputs must reproduce the identical trajectory
+/// bit-for-bit. The restore is the branch-point primitive the Pass-2 feedback
+/// probes stand on, so equality here is exact (memcmp), not approximate.
+///
+/// Item 1 — no-op regression for the closed-loop step driver (ESN::StepLive):
+/// with feedback configured but f = 0 forced (each §6.13 kill mechanism in
+/// turn), the trajectory must match the open-loop ESN; with the loop live it
+/// must not.
 
 #include <cstdio>
 #include <cstring>
 #include <random>
 #include <vector>
 
+#include "ESN.h"
 #include "Reservoir.h"
 
 namespace
@@ -136,6 +142,112 @@ namespace
                         label, warm_steps, replay_steps, r->Size(), cfg.history_depth, num_fb);
         return failures;
     }
+
+    /// Value equality, not memcmp: the dead-feedback arms add exact-zero terms
+    /// to the per-vertex sums, which can flip a zero's sign bit without
+    /// changing the value. operator== treats +-0 as equal and NaN as unequal,
+    /// both of which are the semantics this comparison wants.
+    bool ValueIdentical(const std::vector<float>& a, const std::vector<float>& b)
+    {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i)
+            if (a[i] != b[i]) return false;
+        return true;
+    }
+
+    /// §9 item 1: no-op regression + sanity for the closed-loop step driver.
+    /// Returns the number of failed checks (0 = pass).
+    int TestClosedLoopDriver()
+    {
+        int failures = 0;
+        constexpr size_t kSteps = 60;
+
+        ESNConfig base;
+        base.reservoir.dim = 6;
+        base.reservoir.history_depth = 4;
+        base.reservoir.verbose = false;
+
+        std::mt19937_64 rng(0xC105ED);
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        std::vector<float> inputs(kSteps * base.reservoir.num_inputs);
+        for (float& v : inputs) v = dist(rng);
+
+        auto run_states = [&](const ESNConfig& cfg, bool lesion_at_runtime = false)
+        {
+            ESN esn(cfg);
+            if (esn.HasFeedback() != (cfg.reservoir.num_feedback_channels > 0))
+            {
+                std::printf("  [driver] FAIL: HasFeedback() disagrees with num_feedback_channels\n");
+                ++failures;
+            }
+            if (lesion_at_runtime) esn.SetForceZeroFeedback(true);
+            esn.Run(inputs.data(), kSteps);
+            return esn.SelectedStates();
+        };
+
+        const std::vector<float> open_loop = run_states(base);
+
+        ESNConfig fb = base;
+        fb.reservoir.num_feedback_channels = 1; // feedback_scaling stays at its live 0.5 default
+
+        // §6.13 config arm: weights drawn then scaled to zero. Same RNG draws,
+        // every injected f contributes exactly 0 -> must match open-loop.
+        ESNConfig dead_weights = fb;
+        dead_weights.reservoir.feedback_scaling = 0.0f;
+        if (!ValueIdentical(open_loop, run_states(dead_weights)))
+        {
+            std::printf("  [driver] FAIL: feedback_scaling=0 arm differs from open-loop\n");
+            ++failures;
+        }
+
+        // §6.13 runtime arm: live weights, value forced to 0 at the clamp seam.
+        ESNConfig lesioned = fb;
+        lesioned.feedback.force_zero = true;
+        if (!ValueIdentical(open_loop, run_states(lesioned)))
+        {
+            std::printf("  [driver] FAIL: force_zero arm differs from open-loop\n");
+            ++failures;
+        }
+
+        // Same lesion applied through the runtime setter instead of config.
+        if (!ValueIdentical(open_loop, run_states(fb, /*lesion_at_runtime=*/true)))
+        {
+            std::printf("  [driver] FAIL: SetForceZeroFeedback(true) arm differs from open-loop\n");
+            ++failures;
+        }
+
+        // Live arm: the loop must actually act — the eagerly built random F
+        // (S6.8) injects nonzero tanh(F(x)) from step one.
+        if (ValueIdentical(open_loop, run_states(fb)))
+        {
+            std::printf("  [driver] FAIL: live closed loop had no effect on the trajectory\n");
+            ++failures;
+        }
+
+        // v1 validation: more than one feedback channel must throw at the ESN
+        // seam (the Reservoir itself accepts any channel count dividing N).
+        ESNConfig two = fb;
+        two.reservoir.num_feedback_channels = 2;
+        bool threw = false;
+        try
+        {
+            ESN esn(two);
+        }
+        catch (const std::invalid_argument&)
+        {
+            threw = true;
+        }
+        if (!threw)
+        {
+            std::printf("  [driver] FAIL: num_feedback_channels=2 did not throw\n");
+            ++failures;
+        }
+
+        if (failures == 0)
+            std::printf("  [driver] PASS (%zu steps, N=%u, both kill arms = open-loop, live arm diverges)\n",
+                        kSteps, 1u << base.reservoir.dim);
+        return failures;
+    }
 } // namespace
 
 int main()
@@ -162,9 +274,12 @@ int main()
     fb.feedback_scaling = 0.4f;
     failures += TestConfig("dim8 M7 +feedback", fb, 37, 50);
 
+    std::printf("=== ESN closed-loop step driver (no-op regression) ===\n");
+    failures += TestClosedLoopDriver();
+
     if (failures == 0)
     {
-        std::printf("All snapshot/restore checks passed.\n");
+        std::printf("All checks passed.\n");
         return 0;
     }
     std::printf("%d check(s) FAILED.\n", failures);
