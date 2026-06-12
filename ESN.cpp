@@ -43,6 +43,18 @@ ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry
     return rc;
 }
 
+ReadoutConfig ESN::MakeFeedbackReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry& geo)
+{
+    // F sees the same stride-subsampled state as P, so it shares the
+    // geometry-forced dim; its output shape is fixed by the scheme — one
+    // scalar regression head, whatever P's task is (§6.14, §6.16).
+    ReadoutConfig rc = cfg.feedback.readout;
+    rc.dim = geo.dim;
+    rc.num_outputs = 1;
+    rc.task = ReadoutTask::Regression;
+    return rc;
+}
+
 ESN::ESN(const ESNConfig& cfg)
     // Compute geometry once here (this also validates output_fraction, before
     // any member is constructed), then hand it to the delegating-target ctor.
@@ -64,30 +76,52 @@ ESN::ESN(const ESNConfig& cfg, const ReadoutGeometry& geo)
     output_stride_    = geo.output_stride;
     num_output_verts_ = geo.num_output_verts;
     scratch_subsampled_.resize(num_output_verts_);
+
+    if (cfg.reservoir.num_feedback_channels > 0)
+    {
+        if (cfg.reservoir.num_feedback_channels != 1)
+            throw std::invalid_argument(
+                "ESN: feedback training (v1) supports exactly 1 feedback channel "
+                "(num_feedback_channels=" +
+                std::to_string(cfg.reservoir.num_feedback_channels) + ")");
+        feedback_readout_ = std::make_unique<Readout>(MakeFeedbackReadoutConfig(cfg, geo));
+        // Eager CNN build (§6.15): F must exist before the first closed-loop
+        // Step it feeds — warmup is already a consumer. The resulting random
+        // F is the live policy from cycle 0 (§6.8) and is persist-worthy
+        // immediately (IsTrained() is set here, by design).
+        feedback_readout_->InitOnline();
+    }
+}
+
+void ESN::StepLive(const float* inputs)
+{
+    if (feedback_readout_)
+    {
+        CopyLiveState(scratch_subsampled_.data());
+        const float raw = feedback_readout_->PredictRaw(scratch_subsampled_.data());
+        // force_zero overrides the value at the clamp seam only — F was still
+        // evaluated above, keeping the lesion arm compute-matched (§6.13).
+        const float f = esn_config_.feedback.force_zero ? 0.0f : std::tanh(raw);
+        reservoir_->InjectFeedback(0, f);
+    }
+    for (size_t ch = 0; ch < num_inputs_; ++ch)
+        reservoir_->InjectInput(ch, inputs[ch]);
+    reservoir_->Step();
 }
 
 void ESN::Warmup(const float* inputs, size_t num_steps)
 {
-    const size_t K = num_inputs_;
     for (size_t s = 0; s < num_steps; ++s)
-    {
-        for (size_t ch = 0; ch < K; ++ch)
-            reservoir_->InjectInput(ch, inputs[s * K + ch]);
-        reservoir_->Step();
-    }
+        StepLive(inputs + s * num_inputs_);
 }
 
 void ESN::Run(const float* inputs, size_t num_steps)
 {
-    const size_t K = num_inputs_;
     const size_t M = num_output_verts_;
     states_.resize((num_collected_ + num_steps) * M);
     for (size_t s = 0; s < num_steps; ++s)
     {
-        for (size_t ch = 0; ch < K; ++ch)
-            reservoir_->InjectInput(ch, inputs[s * K + ch]);
-        reservoir_->Step();
-
+        StepLive(inputs + s * num_inputs_);
         CopyLiveState(states_.data() + (num_collected_ + s) * M);
     }
     num_collected_ += num_steps;

@@ -5,6 +5,30 @@
 #include "Reservoir.h"
 #include "Readout.h"
 
+/// ESN-side configuration of the closed-loop feedback training scheme
+/// (docs/FeedbackTrainingMethodology.md §6.14). Holds F's ReadoutConfig plus
+/// the scheme's own knobs and the §6.13 runtime lesion flag. This block does
+/// NOT enable the feedback path: `reservoir.num_feedback_channels > 0` is the
+/// single enablement switch (§6.13); when that is 0 this block is inert.
+struct FeedbackConfig
+{
+    /// F's architecture/training parameters. The ESN forces `dim` (the shared
+    /// subsample geometry), `num_outputs = 1` and `task = Regression`; the
+    /// batch-path fields (epochs, batch_size, lr_max/lr_min_frac/
+    /// lr_decay_epochs, momentum) are ignored in streaming v1. Defaults per
+    /// §6.14: 1 layer, 8 channels (small capacity is the regularizer against
+    /// memorizing sparse accept samples), seed 43 (off P's 42 to avoid
+    /// twin-init in degenerate same-shape configs).
+    ReadoutConfig readout{.num_layers = 1, .conv_channels = 8, .seed = 43};
+
+    float epsilon = 0.05f; ///< Probe perturbation, pre-clamp space (§6.11, §6.14).
+    float margin = 0.0f; ///< Accept margin; 0 = any strict improvement accepts (§6.6).
+    float lr = 2e-4f; ///< F's constant Adam learning rate (§6.14).
+    size_t pretrain_steps = 10000; ///< P pre-train budget = its cosine horizon (§6.9).
+    float p_lr = 5e-4f; ///< P's constant alternation lr; the pre-train cosine anneals into it (§6.9).
+    bool force_zero = false; ///< Runtime lesion flag: inject 0 at the clamp seam (§6.13).
+};
+
 struct ESNConfig
 {
     ReservoirConfig reservoir;
@@ -20,6 +44,11 @@ struct ESNConfig
     /// yield a non-power-of-2 stride (e.g. 0.3 -> stride 3) are rejected. The
     /// exactly-honored values are {1.0, 0.5, 0.25, 0.125, 0.0625, ...}.
     float output_fraction = 1.0f;
+
+    /// Closed-loop feedback training scheme (§6.14). Inert unless
+    /// `reservoir.num_feedback_channels > 0`. Declared last so existing
+    /// designated initializers of the fields above stay valid.
+    FeedbackConfig feedback;
 };
 
 
@@ -41,15 +70,30 @@ public:
     //  Reservoir driving
     // ---------------------------------------------------------------
 
+    /// @brief One timestep on the live reservoir — the closed-loop step
+    /// driver (docs/FeedbackTrainingMethodology.md §2.1, §6.15). With
+    /// feedback configured (@ref HasFeedback): evaluate F frozen on the
+    /// current subsampled live state, clamp f = tanh(F(x)) (§6.11),
+    /// InjectFeedback, inject this step's inputs (NumInputs() floats), Step.
+    /// Without feedback this is exactly inject-inputs + Step (open loop).
+    /// Under cfg.feedback.force_zero, 0 is injected in place of tanh(F(x)) —
+    /// F is still evaluated, so the lesion arm stays compute-matched to the
+    /// live arm (§6.13). No readout training occurs here.
+    void StepLive(const float* inputs);
+
     /// @brief Drive the reservoir for @p num_steps without recording states
     /// (washes out the initial transient). @p inputs is row-major,
     /// num_steps * NumInputs() floats, row-major (NumInputs() values per
-    /// timestep, one per channel).
+    /// timestep, one per channel). Steps via @ref StepLive, so a
+    /// feedback-configured ESN warms up closed-loop onto the joint
+    /// (reservoir, F) attractor (§6.15).
     void Warmup(const float* inputs, size_t num_steps);
 
     /// @brief Drive the reservoir for @p num_steps and append the subsampled
     /// state at each step to the collected-states buffer (for batch Train /
     /// R2 / NRMSE / Accuracy). @p inputs has the same layout as @ref Warmup.
+    /// Steps via @ref StepLive — with feedback configured the collected
+    /// states are closed-loop states under the current (frozen) F.
     void Run(const float* inputs, size_t num_steps);
 
     /// @brief Discard the collected-states buffer and free its memory. The
@@ -154,6 +198,17 @@ public:
     /// Reservoir neuron count N = 2^Dim().
     [[nodiscard]] size_t Size() const { return n_; }
 
+    /// True when the closed-loop feedback path is active (the feedback
+    /// readout F exists; equivalent to reservoir.num_feedback_channels > 0).
+    [[nodiscard]] bool HasFeedback() const { return feedback_readout_ != nullptr; }
+
+    /// §6.13 runtime lesion flag, settable between training and evaluation
+    /// (e.g. train with the loop live, then lesion it to measure how much of
+    /// the trained system's performance the closed loop carries). See
+    /// @ref StepLive for the injection semantics.
+    void SetForceZeroFeedback(bool on) { esn_config_.feedback.force_zero = on; }
+    [[nodiscard]] bool GetForceZeroFeedback() const { return esn_config_.feedback.force_zero; }
+
     // --- Config & persistence ---
 
     [[nodiscard]] ESNConfig GetConfig() const;
@@ -170,6 +225,11 @@ public:
 private:
     std::unique_ptr<Reservoir> reservoir_;
     Readout readout_;
+    /// F — the feedback readout (docs/FeedbackTrainingMethodology.md §3).
+    /// Null unless reservoir.num_feedback_channels > 0; when present, its CNN
+    /// is built eagerly at ESN construction (§6.15) so it exists before the
+    /// first closed-loop Step it feeds.
+    std::unique_ptr<Readout> feedback_readout_;
     ESNConfig esn_config_;
 
     size_t n_ = 0; // reservoir neuron count N = 2^dim
@@ -189,6 +249,7 @@ private:
 
     static ReadoutGeometry ComputeReadoutGeometry(size_t dim, float output_fraction);
     static ReadoutConfig MakeReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry& geo);
+    static ReadoutConfig MakeFeedbackReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry& geo);
 
     // Delegating-target ctor: receives the geometry computed once by the public
     // ctor, so ComputeReadoutGeometry is not run again for the member init.
