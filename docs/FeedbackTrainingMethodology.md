@@ -1048,9 +1048,9 @@ rejecting chance accepts (§6.6).
 | Capability | Where | Status | Notes |
 |---|---|---|---|
 | State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
-| Second readout instance | `ESN` | pending | `F` constructed from `ESNConfig::feedback.readout` (Regression, 1 output) sharing the subsample geometry; CNN built eagerly at ESN construction (§6.15). |
+| Second readout instance | `ESN` | **DONE** (`a251855`) | `F` constructed from `ESNConfig::feedback.readout` (Regression, 1 output) sharing the subsample geometry; CNN built eagerly at ESN construction (§6.15), with the v1 `num_feedback_channels == 1` validation at the ESN seam. |
 | Two-readout checkpointing | `ESN` | pending | `GetFeedbackState`/`SetFeedbackState` mirroring the existing `GetReadoutState`/`SetReadoutState` pair (same weights-blob + `is_trained` shape). `F` is persist-worthy from construction (§6.15). Neither pair serializes Adam moments — already true of `P` today — so a resumed run restarts optimizer state: a stated, accepted v1 limitation, consistent with §6.10's noise-tolerance stance. |
-| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). First consumer is closed-loop warmup in `ESN::InitOnline` (§6.15) — build this before any training orchestration. |
+| Closed-loop stepping | `ESN` | **DONE** (`a251855`) | `ESN::StepLive`: evaluates `F` frozen, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`; degenerates to inject-inputs + `Step` with feedback unconfigured. Includes the `force_zero` runtime override at the clamp seam (§6.13) — `F` still evaluated, lesion arm compute-matched — settable via `SetForceZeroFeedback`. `Warmup` and `Run` delegate to it, so closed-loop warmup in `ESN::InitOnline` (§6.15) falls out and batch collection under a frozen `F` is closed-loop too. Verified by the §9.1 diagnostics in `main.cpp` (`822d40b`). |
 | Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). Owns the §6.17 validation driver (snapshot-bracketed, zero-reset, closed-loop; cadence `N_val`). |
 | Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). **Exposure:** a POD `FeedbackTelemetry` accumulated by the ESN — per-cycle ring buffer over the last 1000 cycles (`E0/E+/E−`, accept/sign, `Sf`, raw `\|F\|`, realization fraction) plus lifetime counters — read via a const accessor; no callbacks or stdout in v1 (a verbose printer is a caller-side wrapper, and the §6.9/§6.14 consumers need values, not log lines). **Windows:** §7.4 variance over committed-trajectory `F(x)` only (probe evaluations are off-trajectory), sliding window = 1000 cycles, aligned with `N_val` (§6.17) so each validation point carries one fresh variance reading; the same window sizes the ring buffer. **Saturation watch:** fraction of windowed cycles with raw `\|F(x)\| > 2.0` — the probe lever is `ε·(1 − tanh²(Sf))` and `1 − tanh²(2.0) ≈ 0.07`, i.e. probes retain <7% of nominal ε effect. §6.11's weight decay (~1e-4) recommended when that fraction exceeds ~0.5; also report the windowed mean lever `1 − tanh²(F(x))` — the degradation is smooth (§6.11), so the gauge should be too. **Drift watch (§7.8):** windowed mean of `F(x)` and accept-sign balance — both free derivatives of the ring buffer. Telemetry observes; the experimenter acts. |
 
@@ -1059,7 +1059,11 @@ rejecting chance accepts (§6.6).
 1. **No-op regression:** `num_feedback_channels = 0` paths byte-identical to
    `main`; with feedback configured but `f ≡ 0` forced — each §6.13 mechanism
    in turn: `feedback_scaling = 0`, and the `force_zero_feedback` flag —
-   results match open-loop.
+   results match open-loop. *(Implemented and passing — `main.cpp`
+   diagnostics: both kill arms (plus the runtime-setter variant) reproduce
+   the open-loop trajectory value-exactly, the live arm diverges, and
+   `num_feedback_channels = 2` throws. Value equality rather than memcmp:
+   the dead arms add exact-zero terms that can flip a zero's sign bit.)*
 2. **Snapshot fidelity:** snapshot → N steps → restore → N steps reproduces the
    identical trajectory bit-for-bit. *(Implemented and passing — `main.cpp`
    diagnostics: restore+replay memcmp-identical, Take→Restore→Take identity,
