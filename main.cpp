@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 #include "ESN.h"
@@ -248,6 +249,91 @@ namespace
                         kSteps, 1u << base.reservoir.dim);
         return failures;
     }
+
+    /// Two-readout checkpointing (§8): F's photo must carry F's brain — a
+    /// fresh ESN with a *different* F seed, restored from another ESN's
+    /// feedback state, must reproduce that ESN's closed-loop trajectory.
+    /// Returns the number of failed checks (0 = pass).
+    int TestTwoReadoutCheckpointing()
+    {
+        int failures = 0;
+        constexpr size_t kSteps = 60;
+
+        ESNConfig fb;
+        fb.reservoir.dim = 6;
+        fb.reservoir.history_depth = 4;
+        fb.reservoir.verbose = false;
+        fb.reservoir.num_feedback_channels = 1;
+
+        std::mt19937_64 rng(0x0F0F0F);
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        std::vector<float> inputs(kSteps * fb.reservoir.num_inputs);
+        for (float& v : inputs) v = dist(rng);
+
+        ESN a(fb);
+        const ESN::ReadoutState f_photo = a.GetFeedbackState();
+        if (!f_photo.is_trained || f_photo.weights.empty())
+        {
+            std::printf("  [checkpoint] FAIL: eagerly built F is not persist-worthy (S6.15)\n");
+            ++failures;
+        }
+        a.Run(inputs.data(), kSteps);
+        const std::vector<float> trace_a = a.SelectedStates();
+
+        // A different F seed must change the closed-loop trajectory...
+        ESNConfig other = fb;
+        other.feedback.readout.seed = 99;
+        ESN b(other);
+        b.Run(inputs.data(), kSteps);
+        if (ValueIdentical(trace_a, b.SelectedStates()))
+        {
+            std::printf("  [checkpoint] FAIL: different F seed left the trajectory unchanged\n");
+            ++failures;
+        }
+
+        // ...and restoring A's photo over it must restore A's trajectory.
+        ESN c(other);
+        c.SetFeedbackState(f_photo);
+        c.Run(inputs.data(), kSteps);
+        if (!ValueIdentical(trace_a, c.SelectedStates()))
+        {
+            std::printf("  [checkpoint] FAIL: restored F does not reproduce the source trajectory\n");
+            ++failures;
+        }
+
+        // Without feedback configured, both methods must throw.
+        ESNConfig open = fb;
+        open.reservoir.num_feedback_channels = 0;
+        ESN d(open);
+        bool threw_get = false, threw_set = false;
+        try { (void)d.GetFeedbackState(); } catch (const std::logic_error&) { threw_get = true; }
+        try { d.SetFeedbackState(f_photo); } catch (const std::logic_error&) { threw_set = true; }
+        if (!threw_get || !threw_set)
+        {
+            std::printf("  [checkpoint] FAIL: Get/SetFeedbackState did not throw without feedback\n");
+            ++failures;
+        }
+
+        // Weights() staleness regression (exercised through P's public seam):
+        // photos taken before and after further online training must differ —
+        // the blob has to re-sync from the live network on every call.
+        ESN e(fb);
+        e.InitOnline(inputs.data(), kSteps);
+        const float target = 0.5f;
+        e.TrainLiveStepRegression(&target, /*lr=*/1e-3f, /*weight_decay=*/0.0f);
+        const ESN::ReadoutState p1 = e.GetReadoutState();
+        e.TrainLiveStepRegression(&target, /*lr=*/1e-3f, /*weight_decay=*/0.0f);
+        const ESN::ReadoutState p2 = e.GetReadoutState();
+        if (p1.weights == p2.weights)
+        {
+            std::printf("  [checkpoint] FAIL: checkpoint is stale after further online training\n");
+            ++failures;
+        }
+
+        if (failures == 0)
+            std::printf("  [checkpoint] PASS (F photo round-trips across F seeds; stale-blob regression holds)\n");
+        return failures;
+    }
 } // namespace
 
 int main()
@@ -276,6 +362,9 @@ int main()
 
     std::printf("=== ESN closed-loop step driver (no-op regression) ===\n");
     failures += TestClosedLoopDriver();
+
+    std::printf("=== ESN two-readout checkpointing ===\n");
+    failures += TestTwoReadoutCheckpointing();
 
     if (failures == 0)
     {
