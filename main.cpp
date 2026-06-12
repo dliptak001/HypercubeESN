@@ -646,6 +646,9 @@ namespace
             // Gauge ranges on the live arm.
             const bool ranges_ok =
                 IsFiniteBits(t.var_f) && t.var_f >= 0.0 &&
+                IsFiniteBits(t.var_tanh_f) && t.var_tanh_f >= 0.0 &&
+                t.mean_tanh_f >= -1.0 && t.mean_tanh_f <= 1.0 &&
+                t.var_tanh_f <= t.var_f + 1e-12 && // tanh is a contraction
                 t.saturation_frac >= 0.0 && t.saturation_frac <= 1.0 &&
                 t.mean_lever > 0.0 && t.mean_lever <= 1.0 &&
                 IsFiniteBits(t.mean_e0) &&

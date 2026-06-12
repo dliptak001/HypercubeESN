@@ -384,14 +384,16 @@ ESN::FeedbackTelemetry ESN::GetFeedbackTelemetry() const
     t.accepts = fb_accepts_pos_ + fb_accepts_neg_;
     t.window = std::min(t.cycles, kFeedbackTelemetryWindow);
 
-    t.accept_rate = t.sign_balance = t.mean_f = t.var_f = t.mean_abs_f =
+    t.accept_rate = t.sign_balance = t.mean_f = t.var_f =
+        t.mean_tanh_f = t.var_tanh_f = t.mean_abs_f =
         t.saturation_frac = t.mean_lever = t.mean_realization = t.mean_e0 =
         t.state_rms_mean = t.state_rms_max = nan;
     if (t.window == 0) return t;
 
     const size_t w = t.window;
     size_t w_accepts = 0, w_pos = 0, w_sat = 0;
-    double sum_f = 0.0, sum_f2 = 0.0, sum_abs = 0.0, sum_lever = 0.0;
+    double sum_f = 0.0, sum_f2 = 0.0, sum_th = 0.0, sum_th2 = 0.0;
+    double sum_abs = 0.0, sum_lever = 0.0;
     double sum_e0 = 0.0, sum_real = 0.0, sum_rms = 0.0, max_rms = 0.0;
     for (size_t i = t.cycles - w; i < t.cycles; ++i)
     {
@@ -401,6 +403,8 @@ ESN::FeedbackTelemetry ESN::GetFeedbackTelemetry() const
         sum_f2 += f * f;
         sum_abs += std::fabs(f);
         const double th = std::tanh(f);
+        sum_th += th;
+        sum_th2 += th * th;
         sum_lever += 1.0 - th * th;
         if (std::fabs(f) > kFeedbackSaturationRawAbs) ++w_sat;
         sum_e0 += r.e0;
@@ -417,6 +421,8 @@ ESN::FeedbackTelemetry ESN::GetFeedbackTelemetry() const
     t.accept_rate = static_cast<double>(w_accepts) / dw;
     t.mean_f = sum_f / dw;
     t.var_f = std::max(0.0, sum_f2 / dw - t.mean_f * t.mean_f);
+    t.mean_tanh_f = sum_th / dw;
+    t.var_tanh_f = std::max(0.0, sum_th2 / dw - t.mean_tanh_f * t.mean_tanh_f);
     t.mean_abs_f = sum_abs / dw;
     t.saturation_frac = static_cast<double>(w_sat) / dw;
     t.mean_lever = sum_lever / dw;

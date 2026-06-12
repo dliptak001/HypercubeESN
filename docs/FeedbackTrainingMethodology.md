@@ -977,6 +977,14 @@ spec in §8); if it collapses, the state-conditional claim is unsupported. This
 is the cheapest falsification test of the whole idea and should be in the
 first experiment.
 
+*Amendment from the first §9.4 run:* the gauge must be measured **post-clamp**
+— variance of `tanh(F(x))`, the signal the reservoir actually receives. Raw
+pre-clamp variance can stay large while the §6.11 clamp flattens the injected
+signal to a near-constant: run 1 ended with raw std 0.16 (> ε) but post-clamp
+std ≈ 0.001 at `mean_f ≈ −3.3` — a glorified bias that the raw gauge
+misclassified as state-dependent. Telemetry now reports both (`var_f`,
+`var_tanh_f`); attribution uses the post-clamp one.
+
 ### 7.5 What it plausibly *can* do
 
 For balance: trained state feedback through the input pathway has published

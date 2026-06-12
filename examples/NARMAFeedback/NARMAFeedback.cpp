@@ -20,6 +20,7 @@
 /// harness reuses its NARMA_N_Generator (tanh-wrapped NARMA-30, canonical
 /// coefficients) in streaming form.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -54,6 +55,7 @@ namespace
         std::vector<ValPoint> curve;
         double final_nrmse = 0.0;
         double best_nrmse = 0.0;
+        double tail_nrmse = 0.0; ///< Mean of the last (up to) 10 validation points — the paired-comparison metric (single-point "final" is a lottery draw from an oscillating series).
         double lesioned_nrmse = 0.0; ///< force_zero re-validation of the trained system.
         ESN::FeedbackTelemetry final_tel;
     };
@@ -70,8 +72,8 @@ namespace
             std::printf("  %s\n", "(no alternation cycles yet)");
             return;
         }
-        std::printf("  %5.1f%%  %9.3e  %+8.4f  %4.1f%%  %5.3f",
-                    100.0 * t.accept_rate, t.var_f, t.mean_f,
+        std::printf("  %5.1f%%  %8.4f  %+8.4f  %4.1f%%  %5.3f",
+                    100.0 * t.accept_rate, std::sqrt(t.var_tanh_f), t.mean_f,
                     100.0 * t.saturation_frac, t.mean_lever);
         if (t.accept_rate > 0.0)
             std::printf("  %6.3f  %+6.3f", t.mean_realization, t.sign_balance);
@@ -82,8 +84,10 @@ namespace
 
     void PrintHeader()
     {
-        std::printf("  %7s  %-3s  %8s  %6s  %9s  %8s  %5s  %5s  %6s  %6s  %7s\n",
-                    "example", "ph", "valNRMSE", "acc%", "var_f", "mean_f",
+        // std_thf = std of the committed POST-clamp tanh(F(x)) — the §7.4
+        // attribution gauge in the space the reservoir sees.
+        std::printf("  %7s  %-3s  %8s  %6s  %8s  %8s  %5s  %5s  %6s  %6s  %7s\n",
+                    "example", "ph", "valNRMSE", "acc%", "std_thf", "mean_f",
                     "sat%", "lever", "realiz", "sgnbal", "rms_max");
     }
 
@@ -125,6 +129,11 @@ namespace
 
         r.final_nrmse = r.curve.back().nrmse;
         r.final_tel = r.curve.back().tel;
+        const size_t tail = std::min<size_t>(10, r.curve.size());
+        double tail_sum = 0.0;
+        for (size_t j = r.curve.size() - tail; j < r.curve.size(); ++j)
+            tail_sum += r.curve[j].nrmse;
+        r.tail_nrmse = tail_sum / static_cast<double>(tail);
 
         // LESION: same trained system, loop value forced dead at the seam.
         // For CTRL this must match its own validation (the weights are dead
@@ -133,8 +142,8 @@ namespace
         r.lesioned_nrmse = esn.ValidateClosedLoop(val_u.data(), val_y.data(), val_count);
         esn.SetForceZeroFeedback(false);
 
-        std::printf("  arm %s: final=%.5f  best=%.5f  lesioned-eval=%.5f\n",
-                    label, r.final_nrmse, r.best_nrmse, r.lesioned_nrmse);
+        std::printf("  arm %s: tail10=%.5f  final=%.5f  best=%.5f  lesioned-eval=%.5f\n",
+                    label, r.tail_nrmse, r.final_nrmse, r.best_nrmse, r.lesioned_nrmse);
         return r;
     }
 } // namespace
@@ -186,13 +195,18 @@ int main(int argc, char* argv[])
     base.reservoir.num_feedback_channels = 1;
     base.readout.task = ReadoutTask::Regression;
     base.feedback.pretrain_steps = B.pretrain;
+    // §6.11's prescribed counter to the saturation runaway run 1 observed
+    // (mean_f drifted to −3.3, saturation watch at 100%, lever 0.006): a
+    // little weight decay on F pulls the raw output back toward the
+    // clamp's live region. Telemetry observed; this is the experimenter acting.
+    base.feedback.readout.weight_decay = 1e-4f;
 
     std::printf("Config: DIM=%zu N=%u M=%zu sr=%.2f  feedback: eps=%.3f lr=%.0e "
-                "p_lr=%.0e margin=%g  F: %dx%dch seed-base %u\n",
+                "p_lr=%.0e margin=%g F_wd=%.0e  F: %dx%dch seed-base %u\n",
                 DIM, 1u << DIM, base.reservoir.history_depth,
                 base.reservoir.spectral_radius,
                 base.feedback.epsilon, base.feedback.lr, base.feedback.p_lr,
-                base.feedback.margin,
+                base.feedback.margin, base.feedback.readout.weight_decay,
                 base.feedback.readout.num_layers, base.feedback.readout.conv_channels,
                 base.feedback.readout.seed);
 
@@ -219,44 +233,47 @@ int main(int argc, char* argv[])
         sr.live = RunArm(live, "LIVE", train_u, train_y, val_u, val_y, B);
         sr.ctrl = RunArm(ctrl, "CTRL", train_u, train_y, val_u, val_y, B);
 
-        const double delta = sr.ctrl.final_nrmse - sr.live.final_nrmse;
-        std::printf("  seed %llu paired delta (CTRL - LIVE, >0 = live wins): %+0.5f\n",
+        const double delta = sr.ctrl.tail_nrmse - sr.live.tail_nrmse;
+        std::printf("  seed %llu paired tail10 delta (CTRL - LIVE, >0 = live wins): %+0.5f\n",
                     static_cast<unsigned long long>(sr.seed), delta);
         results.push_back(std::move(sr));
     }
 
     // ---- Aggregate report (pre-registered verdict rules) ---------------------
-    std::printf("\n=== A/B summary: NARMA-%zu, %zu seed(s), final validation NRMSE ===\n",
+    std::printf("\n=== A/B summary: NARMA-%zu, %zu seed(s), tail10 validation NRMSE ===\n",
                 narma_order, results.size());
     std::printf("  %10s  %9s  %9s  %9s  %9s  %9s  %9s\n",
-                "seed", "LIVE", "CTRL", "delta", "LIVEbest", "CTRLbest", "lesioned");
+                "seed", "LIVEtail", "CTRLtail", "delta", "LIVEbest", "CTRLbest", "lesioned");
     size_t wins = 0;
     double delta_sum = 0.0, var_sum = 0.0;
     for (const auto& s : results)
     {
-        const double delta = s.ctrl.final_nrmse - s.live.final_nrmse;
+        const double delta = s.ctrl.tail_nrmse - s.live.tail_nrmse;
         wins += delta > 0.0;
         delta_sum += delta;
-        var_sum += s.live.final_tel.var_f;
+        var_sum += s.live.final_tel.var_tanh_f;
         std::printf("  %10llu  %9.5f  %9.5f  %+9.5f  %9.5f  %9.5f  %9.5f\n",
                     static_cast<unsigned long long>(s.seed),
-                    s.live.final_nrmse, s.ctrl.final_nrmse, delta,
+                    s.live.tail_nrmse, s.ctrl.tail_nrmse, delta,
                     s.live.best_nrmse, s.ctrl.best_nrmse, s.live.lesioned_nrmse);
     }
     const double n = static_cast<double>(results.size());
     const double mean_delta = delta_sum / n;
     const double mean_var = var_sum / n;
-    const double mean_std_f = std::sqrt(std::max(0.0, mean_var));
+    const double mean_std_thf = std::sqrt(std::max(0.0, mean_var));
     const float eps = base.feedback.epsilon;
 
-    std::printf("\n  mean paired delta: %+0.5f   live wins: %zu/%zu   "
-                "mean var_f: %.3e (std %.4f vs eps %.3f)\n",
-                mean_delta, wins, results.size(), mean_var, mean_std_f, eps);
+    std::printf("\n  mean paired tail10 delta: %+0.5f   live wins: %zu/%zu   "
+                "mean var_tanh_f: %.3e (std %.4f vs eps %.3f)\n",
+                mean_delta, wins, results.size(), mean_var, mean_std_thf, eps);
 
-    // §7.4 attribution: "material" variation = F's committed output varies by
-    // at least a probe step across visited states (heuristic yardstick).
+    // §7.4 attribution, in the POST-clamp space the reservoir sees:
+    // "material" variation = the injected signal varies across visited states
+    // by at least a probe step (heuristic yardstick). Raw pre-clamp variance
+    // is the wrong gauge — the clamp can flatten a wandering F to a
+    // near-constant (run 1: raw std 0.16, post-clamp std ~0.001).
     const bool consistent_win = wins * 5 >= results.size() * 4; // >= 4/5
-    const bool material_var = mean_std_f >= static_cast<double>(eps);
+    const bool material_var = mean_std_thf >= static_cast<double>(eps);
     if (consistent_win && mean_delta > 0.0 && material_var)
         std::printf("  VERDICT: state-dependent signal — LIVE wins consistently and "
                     "F varies materially across states (S7.4). Proceed to Lorenz.\n");

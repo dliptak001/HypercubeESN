@@ -267,7 +267,9 @@ public:
         double accept_rate = 0.0; ///< §6.9 convergence diagnostic: decay toward the ~2/3 chance floor = F locally optimal.
         double sign_balance = 0.0; ///< §7.8 drift watch: (accepts_pos − accepts_neg) / accepts, windowed. Sustained one-sidedness = self-referential drift.
         double mean_f = 0.0; ///< §7.8 drift watch: windowed mean of committed raw F(x).
-        double var_f = 0.0; ///< §7.4 honesty check: ≈ 0 means F is a glorified bias, not a state-dependent signal.
+        double var_f = 0.0; ///< Windowed variance of committed raw (pre-clamp) F(x).
+        double mean_tanh_f = 0.0; ///< Windowed mean of tanh(F(x)) — the injected signal's mean.
+        double var_tanh_f = 0.0; ///< §7.4 honesty check, in the space the reservoir SEES: variance of the committed post-clamp tanh(F(x)). Raw var_f can be large while the clamp flattens the injected signal to a near-constant (first A/B run: raw std 0.16 but post-clamp std ~0.001 at mean_f ≈ −3.3) — attribute wins with THIS gauge. ≈ 0 means glorified bias.
         double mean_abs_f = 0.0; ///< §6.11 magnitude.
         double saturation_frac = 0.0; ///< §6.11: fraction of cycles with raw |F| > kFeedbackSaturationRawAbs. > ~0.5 → enable F weight decay ~1e-4.
         double mean_lever = 0.0; ///< §6.11: windowed mean of 1 − tanh²(F(x)) — the smooth gauge for the smooth degradation.
