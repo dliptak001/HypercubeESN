@@ -93,6 +93,7 @@ ESN::ESN(const ESNConfig& cfg, const ReadoutGeometry& geo)
 
         fb_decision_state_.resize(num_output_verts_);
         fb_pred_.resize(readout_.NumOutputs());
+        fb_ring_.resize(kFeedbackTelemetryWindow);
     }
 }
 
@@ -109,7 +110,10 @@ void ESN::StepLive(const float* inputs)
     if (feedback_readout_)
     {
         CopyLiveState(scratch_subsampled_.data());
-        InjectFeedbackClamped(feedback_readout_->PredictRaw(scratch_subsampled_.data()));
+        // Cached as telemetry's f_commit (the §7.4 on-trajectory value):
+        // the commit's F-forward doubles as the measurement, no second pass.
+        last_fb_raw_ = feedback_readout_->PredictRaw(scratch_subsampled_.data());
+        InjectFeedbackClamped(last_fb_raw_);
     }
     for (size_t ch = 0; ch < num_inputs_; ++ch)
         reservoir_->InjectInput(ch, inputs[ch]);
@@ -309,6 +313,7 @@ ESN::FeedbackCycleInfo ESN::TrainFeedbackCycleImpl(const float* input,
             const float f_star = sf + info.sign * fb.epsilon; // pre-clamp target (§6.11)
             feedback_readout_->TrainOnlineStepRegression(
                 fb_decision_state_.data(), &f_star, fb.lr, fb.readout.weight_decay);
+            (info.sign > 0.0f ? fb_accepts_pos_ : fb_accepts_neg_)++;
         }
     }
 
@@ -334,8 +339,113 @@ ESN::FeedbackCycleInfo ESN::TrainFeedbackCycleImpl(const float* input,
         readout_.TrainOnlineStep(scratch_subsampled_.data(), target_class,
                                  p_lr, esn_config_.readout.weight_decay);
 
+    if (!info.pretrain)
+    {
+        // One telemetry record per alternation cycle, written post-commit so
+        // f_commit (StepLive's cached raw F′(Sx)) and the §7.6 state RMS
+        // describe the committed trajectory.
+        FeedbackCycleRecord rec;
+        rec.e0 = info.e0;
+        rec.e_plus = info.e_plus;
+        rec.e_minus = info.e_minus;
+        rec.sf = info.sf;
+        rec.f_commit = last_fb_raw_;
+        rec.realization = info.accepted
+                              ? std::fabs(last_fb_raw_ - info.sf) / fb.epsilon
+                              : std::numeric_limits<float>::quiet_NaN();
+        const float* state = reservoir_->Outputs();
+        double ss = 0.0;
+        for (size_t v = 0; v < n_; ++v)
+            ss += static_cast<double>(state[v]) * static_cast<double>(state[v]);
+        rec.state_rms = static_cast<float>(std::sqrt(ss / static_cast<double>(n_)));
+        rec.accepted = info.accepted;
+        rec.sign = info.sign;
+
+        const size_t cycle_idx = fb_examples_ - fb.pretrain_steps;
+        fb_ring_[cycle_idx % kFeedbackTelemetryWindow] = rec;
+    }
+
     ++fb_examples_;
     return info;
+}
+
+ESN::FeedbackTelemetry ESN::GetFeedbackTelemetry() const
+{
+    if (!feedback_readout_)
+        throw std::logic_error(
+            "ESN::GetFeedbackTelemetry: feedback not configured (num_feedback_channels == 0)");
+
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+    FeedbackTelemetry t;
+    t.pretrain_examples = std::min(fb_examples_, esn_config_.feedback.pretrain_steps);
+    t.cycles = fb_examples_ - t.pretrain_examples;
+    t.accepts_pos = fb_accepts_pos_;
+    t.accepts_neg = fb_accepts_neg_;
+    t.accepts = fb_accepts_pos_ + fb_accepts_neg_;
+    t.window = std::min(t.cycles, kFeedbackTelemetryWindow);
+
+    t.accept_rate = t.sign_balance = t.mean_f = t.var_f = t.mean_abs_f =
+        t.saturation_frac = t.mean_lever = t.mean_realization = t.mean_e0 =
+        t.state_rms_mean = t.state_rms_max = nan;
+    if (t.window == 0) return t;
+
+    const size_t w = t.window;
+    size_t w_accepts = 0, w_pos = 0, w_sat = 0;
+    double sum_f = 0.0, sum_f2 = 0.0, sum_abs = 0.0, sum_lever = 0.0;
+    double sum_e0 = 0.0, sum_real = 0.0, sum_rms = 0.0, max_rms = 0.0;
+    for (size_t i = t.cycles - w; i < t.cycles; ++i)
+    {
+        const FeedbackCycleRecord& r = fb_ring_[i % kFeedbackTelemetryWindow];
+        const double f = r.f_commit;
+        sum_f += f;
+        sum_f2 += f * f;
+        sum_abs += std::fabs(f);
+        const double th = std::tanh(f);
+        sum_lever += 1.0 - th * th;
+        if (std::fabs(f) > kFeedbackSaturationRawAbs) ++w_sat;
+        sum_e0 += r.e0;
+        sum_rms += r.state_rms;
+        max_rms = std::max(max_rms, static_cast<double>(r.state_rms));
+        if (r.accepted)
+        {
+            ++w_accepts;
+            if (r.sign > 0.0f) ++w_pos;
+            sum_real += r.realization;
+        }
+    }
+    const double dw = static_cast<double>(w);
+    t.accept_rate = static_cast<double>(w_accepts) / dw;
+    t.mean_f = sum_f / dw;
+    t.var_f = std::max(0.0, sum_f2 / dw - t.mean_f * t.mean_f);
+    t.mean_abs_f = sum_abs / dw;
+    t.saturation_frac = static_cast<double>(w_sat) / dw;
+    t.mean_lever = sum_lever / dw;
+    t.mean_e0 = sum_e0 / dw;
+    t.state_rms_mean = sum_rms / dw;
+    t.state_rms_max = max_rms;
+    if (w_accepts > 0)
+    {
+        t.sign_balance = (static_cast<double>(w_pos) -
+                          static_cast<double>(w_accepts - w_pos)) / static_cast<double>(w_accepts);
+        t.mean_realization = sum_real / static_cast<double>(w_accepts);
+    }
+    return t;
+}
+
+std::vector<ESN::FeedbackCycleRecord> ESN::GetFeedbackHistory() const
+{
+    if (!feedback_readout_)
+        throw std::logic_error(
+            "ESN::GetFeedbackHistory: feedback not configured (num_feedback_channels == 0)");
+
+    const size_t cycles =
+        fb_examples_ - std::min(fb_examples_, esn_config_.feedback.pretrain_steps);
+    const size_t w = std::min(cycles, kFeedbackTelemetryWindow);
+    std::vector<FeedbackCycleRecord> out;
+    out.reserve(w);
+    for (size_t i = cycles - w; i < cycles; ++i)
+        out.push_back(fb_ring_[i % kFeedbackTelemetryWindow]);
+    return out;
 }
 
 ESN::FeedbackCycleInfo ESN::TrainFeedbackCycle(const float* input, const float* target)

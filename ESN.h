@@ -214,6 +214,81 @@ public:
     [[nodiscard]] size_t NumFeedbackExamples() const { return fb_examples_; }
 
     // ---------------------------------------------------------------
+    //  Feedback telemetry (§8: telemetry observes; the experimenter acts)
+    // ---------------------------------------------------------------
+
+    /// Sliding window over the last cycles, sized to align with the §6.17
+    /// validation cadence default (N_val = 1000) so each validation point
+    /// carries one fresh telemetry reading. Fixed constant, not config —
+    /// §6.14's minimal-hyperparameter discipline.
+    static constexpr size_t kFeedbackTelemetryWindow = 1000;
+
+    /// §6.11 saturation watch threshold on raw |F(x)|: the probe lever is
+    /// ε·(1 − tanh²(Sf)) and 1 − tanh²(2.0) ≈ 0.07 — past here probes retain
+    /// <7% of their nominal ε effect.
+    static constexpr float kFeedbackSaturationRawAbs = 2.0f;
+
+    /// One ring-buffer entry, recorded per alternation cycle (pretrain
+    /// examples run no probes and are counted, not recorded).
+    struct FeedbackCycleRecord
+    {
+        float e0 = 0.0f; ///< Baseline probe loss.
+        float e_plus = 0.0f; ///< +ε probe loss.
+        float e_minus = 0.0f; ///< −ε probe loss.
+        float sf = 0.0f; ///< Decision-time operating point F(Sx), raw (pre-clamp).
+        float f_commit = 0.0f; ///< Committed raw F′(Sx) — the §7.4 on-trajectory value. Under force_zero this is F's COMPUTED output (the injection was 0): the lesioned arm stays introspectable (§6.13).
+        float realization = 0.0f; ///< §6.14 step-realization |F′(Sx) − Sf| / ε; NaN when rejected.
+        float state_rms = 0.0f; ///< RMS of the full committed reservoir state (§7.6 stability monitor).
+        bool accepted = false;
+        float sign = 0.0f; ///< +1/−1 when accepted, else 0.
+    };
+
+    /// Derived snapshot over the lifetime counters and the current window.
+    /// POD; windowed fields are NaN while the window is empty, and
+    /// mean_realization / sign_balance are NaN when no cycle in the window
+    /// accepted. Each gauge's action threshold is documented at its field.
+    ///
+    /// @warning Consumers compiled with -ffast-math / -ffinite-math-only
+    /// (this project's own Release targets are): gcc folds std::isnan to
+    /// false there, hiding these sentinels. Either gate on the integer
+    /// fields instead (window == 0, accepts == 0 — they encode the same
+    /// conditions) or test NaN at the bit level.
+    struct FeedbackTelemetry
+    {
+        // -- lifetime --
+        size_t pretrain_examples = 0;
+        size_t cycles = 0; ///< Alternation cycles run (= ring records ever written).
+        size_t accepts = 0;
+        size_t accepts_pos = 0; ///< Accepted +ε cycles.
+        size_t accepts_neg = 0; ///< Accepted −ε cycles.
+
+        // -- window (last min(cycles, kFeedbackTelemetryWindow) cycles) --
+        size_t window = 0;
+        double accept_rate = 0.0; ///< §6.9 convergence diagnostic: decay toward the ~2/3 chance floor = F locally optimal.
+        double sign_balance = 0.0; ///< §7.8 drift watch: (accepts_pos − accepts_neg) / accepts, windowed. Sustained one-sidedness = self-referential drift.
+        double mean_f = 0.0; ///< §7.8 drift watch: windowed mean of committed raw F(x).
+        double var_f = 0.0; ///< §7.4 honesty check: ≈ 0 means F is a glorified bias, not a state-dependent signal.
+        double mean_abs_f = 0.0; ///< §6.11 magnitude.
+        double saturation_frac = 0.0; ///< §6.11: fraction of cycles with raw |F| > kFeedbackSaturationRawAbs. > ~0.5 → enable F weight decay ~1e-4.
+        double mean_lever = 0.0; ///< §6.11: windowed mean of 1 − tanh²(F(x)) — the smooth gauge for the smooth degradation.
+        double mean_realization = 0.0; ///< §6.14 lr tuning signal: target ~0.1–0.3 (creep), ≈ 1 means commits degenerate to committing f*.
+        double mean_e0 = 0.0; ///< Windowed mean baseline probe loss (P's error level on-stream).
+        double state_rms_mean = 0.0; ///< §7.6 stability monitor (mean over window).
+        double state_rms_max = 0.0; ///< §7.6 stability monitor (max over window). Growth → drop feedback_scaling.
+    };
+
+    /// Derived telemetry snapshot; computed on demand by scanning the ring
+    /// (≤ kFeedbackTelemetryWindow entries — no incremental sums to corrupt).
+    /// No callbacks, no stdout: consumers need values, not log lines (§8).
+    /// @throws std::logic_error if feedback is not configured.
+    [[nodiscard]] FeedbackTelemetry GetFeedbackTelemetry() const;
+
+    /// Chronological copy (oldest first) of the current ring window — the
+    /// E0/E+/E− traces and friends, for plotting and post-hoc analysis.
+    /// @throws std::logic_error if feedback is not configured.
+    [[nodiscard]] std::vector<FeedbackCycleRecord> GetFeedbackHistory() const;
+
+    // ---------------------------------------------------------------
     //  Prediction & evaluation
     // ---------------------------------------------------------------
 
@@ -328,6 +403,12 @@ private:
     size_t warmup_count_ = 0; // W given to InitOnline — reused as the §6.17 validation washout
     std::vector<float> fb_decision_state_; // subsample(Sx): F's training input (§6.4); survives probe clobbering of scratch_subsampled_
     std::vector<float> fb_pred_; // P-forward output buffer for probes/validation
+
+    /**** feedback telemetry ****/
+    std::vector<FeedbackCycleRecord> fb_ring_; // kFeedbackTelemetryWindow slots, indexed cycles % window
+    size_t fb_accepts_pos_ = 0; // lifetime accept counters (windowed counts are scanned from the ring)
+    size_t fb_accepts_neg_ = 0;
+    float last_fb_raw_ = 0.0f; // raw F(x) from StepLive's last evaluation — the f_commit cache (no second F-forward)
 
     /// The §6.11 clamp seam: inject tanh(raw) on channel 0, or 0 under the
     /// §6.13 force_zero lesion flag. Every feedback injection — StepLive
