@@ -175,7 +175,7 @@ example.
 | c | `E0` = probe loss `L` (§3) of `P`'s prediction against `y'`. |
 | d | Restore `Sx`. **Positive probe:** same input `u'` with feedback `Sf + ε`; `E+`. |
 | e | Restore `Sx`. **Negative probe:** same input with `Sf − ε`; `E−`. Both directions are always probed (§6.6). |
-| f | **Accept/reject:** if `min(E+, E−) < E0 − margin`, the winning perturbation direction is a locally verified improvement. Set `f* = Sf ± ε` (winning sign). |
+| f | **Accept/reject:** if `min(E+, E−) < E0 − margin` **and** `E+ ≠ E−`, the winning perturbation direction is a locally verified improvement. Set `f* = Sf ± ε` (winning sign). Every exact equality rejects — the strict `<` and the tie rule are both deliberate (§6.6). |
 | g | **Train `F` (one regression step):** input = subsampled features of **`Sx`** (the decision-time state, *not* any post-step probe state — §6.4), target = `f*`. |
 | h | If neither probe beats baseline by the margin, train nothing this cycle. |
 | i | Restore `Sx`. Return to Pass 1, which consumes `(u', y')` *for real* (§6.5 — the probe example is re-presented as the next Pass-1 example, preserving stream continuity). The feedback that commit injects is `F`'s live post-update output, not `f*` (§6.2). |
@@ -416,6 +416,24 @@ drift. A **margin** is therefore a purity/throughput knob, not a correctness
 requirement — it trades fewer chance-trained cycles against a lower accept rate
 on real effects. The margin is configurable with default 0, to be promoted to a
 small relative value only if telemetry shows `F` training dominated by jitter.
+
+**Exact equalities reject — all of them.** The accept comparison is strictly
+`<`, deliberately: equality with the baseline carries no evidence of
+improvement, and the strictness is load-bearing for the §6.13 kill-switch
+(bit-identical probes must never train `F`). An exact direction tie
+`E+ == E− < E0 − margin` likewise rejects: a tie carries no verified
+*direction*, and the direction is the only information the cycle exists to
+extract. A fixed tie-break sign would reintroduce exactly the systematic bias
+this section rejects in the asymmetric probe; an alternating sign trains `F`
+on a coin flip. The cost is nil: on healthy dynamics, an exact float tie
+between losses computed from two *different* post-step states is a
+measure-zero coincidence. And in the one regime where ties become common —
+deep §6.11 saturation — `tanh` monotonicity makes all three probes
+bit-identical (equal rounded endpoints pin everything between, including
+`tanh(Sf)`), so the direction tie collapses into baseline-equality rejection
+anyway; the correct responder there is the saturation telemetry, not the
+accept rule. Every path is deterministic: same state, same stream, same
+decision.
 
 ### 6.7 The hunt strategy: plain ±ε creep, knowingly naive
 

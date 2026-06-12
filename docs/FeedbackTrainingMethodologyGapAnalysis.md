@@ -15,8 +15,8 @@
 >
 > **Update (June 2026): all six A-items are resolved** — each carries an
 > inline "Resolved" block recording the decision and where it was
-> codified (§6.2 commit-time corollary, §6.13–§6.17). B1–B3 are resolved
-> inline below; B4/B5, C1–C4, and D1/D2 remain open.
+> codified (§6.2 commit-time corollary, §6.13–§6.17). B1–B4 are resolved
+> inline below; B5, C1–C4, and D1/D2 remain open.
 
 ---
 
@@ -206,6 +206,12 @@ should also be said explicitly.
   sign?) and `min(E+, E−) == E0` exactly (reject, per strict `<`?) —
   trivial, but a deterministic spec matters for reproducibility, and
   §6.11 notes deep saturation produces exactly these equalities.
+  *(Resolved June 2026: every exact equality rejects — §4 step f and a
+  new §6.6 paragraph. The strict `<` is load-bearing for the §6.13
+  kill-switch; a direction tie has no verified direction, and a fixed
+  tie-break sign would reintroduce the asymmetry bias §6.6 already
+  rejects. In the saturation regime, `tanh` monotonicity collapses
+  direction ties into baseline equality anyway.)*
 - **B5. Telemetry plumbing and thresholds:** §8 lists *what* to log but
   not how it is exposed (return struct per cycle? callback? stdout?),
   over what window the §7.4 variance is computed, or what raw `|F(x)|`
