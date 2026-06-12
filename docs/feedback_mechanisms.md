@@ -113,9 +113,10 @@ Closest prior art, ranked by proximity:
    through state feedback," *Neural Networks* 184:107101** —
    <https://arxiv.org/abs/2312.15141>. **Closest mechanism.** Augments the input as
    `u_k → u_k + Vᵀx_k`, feeding a function of the reservoir state back through the
-   input pathway. *But* `Vᵀx_k` is a **trained, multi-dimensional** projection
-   optimized against the task, not a fixed scalar homeostatic metric — right
-   plumbing (state→input), different semantics. The single nearest reference.
+   input pathway. *But* `Vᵀx_k` is a **trained linear projection of the full
+   state** (scalar output; `V` optimized against the task by batch gradient
+   descent), not a fixed scalar homeostatic metric — right plumbing
+   (state→input), different semantics. The single nearest reference.
 2. **Schubert & Gros (2021), "Local homeostatic regulation of the spectral radius of
    echo-state networks," *Front. Comput. Neurosci.* 15:587721** ("flow control") —
    <https://pmc.ncbi.nlm.nih.gov/articles/PMC7958921/>. **Closest intent:**

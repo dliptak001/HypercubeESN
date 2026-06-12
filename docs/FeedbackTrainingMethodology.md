@@ -75,9 +75,12 @@ Jaeger-style output feedback (`W_fb` feeds the task output back; here the fed-ba
 signal is a free auxiliary control signal with no predefined semantics — its only
 job is to reduce primary task error). The nearest prior art is Ehlers, Nurdin &
 Soh (2025) — trained state feedback through the input pathway — which reported
-real performance gains; see `feedback_mechanisms.md` §Related-work. The novelty
-here is **how `F` is trained**: not by closed-form optimization, but by local
-perturbation search (§4).
+real performance gains; see `feedback_mechanisms.md` §Related-work. Their
+fed-back signal is likewise a scalar, but computed by a *linear* gain (`Vᵀx`,
+trained by gradient descent) and injected through the shared input weights;
+here the scalar comes from a *nonlinear* readout through a dedicated weight
+block, and the novelty is **how `F` is trained**: not by gradient optimization
+of a feedback gain, but by local perturbation search (§4).
 
 ## 3. Definitions
 
@@ -572,8 +575,9 @@ falsification test of the whole idea and should be in the first experiment.
 ### 7.5 What it plausibly *can* do
 
 For balance: trained state feedback through the input pathway has published
-evidence of real gains (Ehlers et al. 2025 — though theirs is a closed-form
-trained linear projection, not perturbation search). Mechanistically, a
+evidence of real gains (Ehlers et al. 2025 — though theirs is a scalar linear
+gain `Vᵀx` trained by batch gradient descent, not a nonlinear readout trained
+by perturbation search). Mechanistically, a
 state-dependent scalar drive can modulate the reservoir's effective operating
 point — pushing it toward/away from saturation depending on context, a knob the
 open-loop ESN simply does not have. Tasks where error correlates with the
