@@ -322,6 +322,27 @@ void ESN::SetReadoutState(const ReadoutState& state)
     readout_.SetState(state.weights);
 }
 
+ESN::ReadoutState ESN::GetFeedbackState() const
+{
+    if (!feedback_readout_)
+        throw std::logic_error(
+            "ESN::GetFeedbackState: feedback not configured (num_feedback_channels == 0)");
+    ReadoutState s;
+    s.is_trained = feedback_readout_->IsTrained();
+    const auto& w = feedback_readout_->Weights();
+    s.weights.assign(w.begin(), w.end());
+    return s;
+}
+
+void ESN::SetFeedbackState(const ReadoutState& state)
+{
+    if (!feedback_readout_)
+        throw std::logic_error(
+            "ESN::SetFeedbackState: feedback not configured (num_feedback_channels == 0)");
+    if (!state.is_trained) return;
+    feedback_readout_->SetState(state.weights);
+}
+
 // ---------------------------------------------------------------
 //  HCNN sub-hypercube subsampling helpers
 // ---------------------------------------------------------------

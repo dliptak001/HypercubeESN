@@ -222,6 +222,17 @@ public:
     [[nodiscard]] ReadoutState GetReadoutState() const;
     void SetReadoutState(const ReadoutState& state);
 
+    /// Two-readout checkpointing (docs/FeedbackTrainingMethodology.md §8):
+    /// F's counterpart of GetReadoutState/SetReadoutState — same weights-blob
+    /// + is_trained shape, so caller-side serialization stays uniform. F is
+    /// persist-worthy from construction (§6.15: the eagerly built random F
+    /// IS the live policy from cycle 0). Adam moments are not serialized for
+    /// either readout, so a resumed run restarts optimizer state — a stated,
+    /// accepted v1 limitation. Both throw std::logic_error when feedback is
+    /// not configured (@ref HasFeedback is false).
+    [[nodiscard]] ReadoutState GetFeedbackState() const;
+    void SetFeedbackState(const ReadoutState& state);
+
 private:
     std::unique_ptr<Reservoir> reservoir_;
     Readout readout_;
