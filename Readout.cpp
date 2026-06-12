@@ -334,7 +334,10 @@ double Readout::Accuracy(const float* states, const float* labels,
 
 const std::vector<double>& Readout::Weights() const
 {
-    if (weights_blob_.empty() && net_) {
+    // Always re-sync from the live network: online training mutates the net
+    // without touching the blob, so a lazily cached blob goes stale between
+    // checkpoints taken around TrainOnline* calls.
+    if (net_) {
         auto fw = net_->GetWeights();
         weights_blob_.assign(fw.begin(), fw.end());
     }
@@ -352,9 +355,14 @@ void Readout::rebuild_from_blob()
 {
     if (weights_blob_.empty() || config_.dim == 0) return;
 
-    // Reconstruct the network from stored config if needed.
+    // Reconstruct the network from stored config if needed. Mirror
+    // InitOnline's optimizer setup: HCNN layers default to SGD with no
+    // prepared buffers, and a readout restored from a blob must be able to
+    // resume online training, not just predict.
     if (!net_) {
         build_architecture();
+        net_->SetOptimizer(hcnn::OptimizerType::ADAM);
+        net_->PrepareBuffers();
     }
 
     std::vector<float> fw(weights_blob_.begin(), weights_blob_.end());
