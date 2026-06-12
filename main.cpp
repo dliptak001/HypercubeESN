@@ -537,6 +537,173 @@ namespace
                         "no-op equivalence, liveness, validation bracket)\n");
         return failures;
     }
+
+    /// Bit-level NaN/finite tests: this TU compiles with -ffast-math, under
+    /// which gcc folds std::isnan to false and std::isfinite to true — the
+    /// telemetry's NaN sentinels are invisible to the standard predicates.
+    bool IsNaNBits(double v)
+    {
+        uint64_t bits;
+        std::memcpy(&bits, &v, sizeof bits);
+        return (bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL &&
+               (bits & 0x000FFFFFFFFFFFFFULL) != 0;
+    }
+
+    bool IsFiniteBits(double v)
+    {
+        uint64_t bits;
+        std::memcpy(&bits, &v, sizeof bits);
+        return (bits & 0x7FF0000000000000ULL) != 0x7FF0000000000000ULL;
+    }
+
+    /// Feedback telemetry (§8): counter exactness, ring wraparound, gauge
+    /// ranges, the lesioned-arm introspection property, and guards.
+    /// Returns the number of failed checks (0 = pass).
+    int TestTelemetry()
+    {
+        int failures = 0;
+        constexpr size_t kWarm = 16;
+        constexpr size_t kPre = 10;
+        constexpr size_t kAltCycles = 1100; // exceeds the 1000-entry window
+
+        ESNConfig cfg;
+        cfg.reservoir.dim = 6;
+        cfg.reservoir.history_depth = 4;
+        cfg.reservoir.verbose = false;
+        cfg.reservoir.num_feedback_channels = 1;
+        cfg.feedback.pretrain_steps = kPre;
+
+        std::mt19937_64 rng(0x7E1E0E72);
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        std::vector<float> warm(kWarm);
+        for (float& v : warm) v = dist(rng);
+        const size_t total = kPre + kAltCycles;
+        std::vector<float> inputs(total), targets(total);
+        for (float& v : inputs) v = dist(rng);
+        for (float& v : targets) v = dist(rng);
+
+        ESN esn(cfg);
+        esn.InitOnline(warm.data(), kWarm);
+
+        // Empty window: NaN gauges, zero counters.
+        {
+            const auto t = esn.GetFeedbackTelemetry();
+            if (t.window != 0 || t.cycles != 0 || !IsNaNBits(t.accept_rate))
+            {
+                std::printf("  [telemetry] FAIL: empty-window snapshot not NaN/zero\n");
+                ++failures;
+            }
+        }
+
+        size_t accepts = 0, accepts_pos = 0;
+        ESN::FeedbackCycleInfo last{};
+        for (size_t i = 0; i < kPre + 50; ++i)
+        {
+            last = esn.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+            accepts += last.accepted;
+            accepts_pos += last.accepted && last.sign > 0.0f;
+        }
+
+        // Counter exactness against the FeedbackCycleInfo stream, pre-wrap.
+        {
+            const auto t = esn.GetFeedbackTelemetry();
+            const auto h = esn.GetFeedbackHistory();
+            const bool ok =
+                t.pretrain_examples == kPre && t.cycles == 50 && t.window == 50 &&
+                t.accepts == accepts && t.accepts_pos == accepts_pos &&
+                t.accept_rate == static_cast<double>(accepts) / 50.0 &&
+                h.size() == 50 &&
+                h.back().e0 == last.e0 && h.back().sf == last.sf &&
+                h.back().accepted == last.accepted;
+            if (!ok)
+            {
+                std::printf("  [telemetry] FAIL: counters/history disagree with the cycle stream\n");
+                ++failures;
+            }
+        }
+
+        for (size_t i = kPre + 50; i < total; ++i)
+        {
+            last = esn.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+            accepts += last.accepted;
+        }
+
+        // Wraparound: window pinned at 1000, history chronological, lifetime
+        // counters keep counting.
+        {
+            const auto t = esn.GetFeedbackTelemetry();
+            const auto h = esn.GetFeedbackHistory();
+            const bool ok =
+                t.cycles == kAltCycles && t.window == 1000 && t.accepts == accepts &&
+                h.size() == 1000 &&
+                h.back().e0 == last.e0 && h.back().sf == last.sf;
+            if (!ok)
+            {
+                std::printf("  [telemetry] FAIL: ring wraparound broke window/history/counters\n");
+                ++failures;
+            }
+
+            // Gauge ranges on the live arm.
+            const bool ranges_ok =
+                IsFiniteBits(t.var_f) && t.var_f >= 0.0 &&
+                t.saturation_frac >= 0.0 && t.saturation_frac <= 1.0 &&
+                t.mean_lever > 0.0 && t.mean_lever <= 1.0 &&
+                IsFiniteBits(t.mean_e0) &&
+                t.state_rms_mean > 0.0 && t.state_rms_max >= t.state_rms_mean &&
+                (t.accepts == 0 ||
+                 (IsFiniteBits(t.mean_realization) && t.mean_realization > 0.0 &&
+                  t.sign_balance >= -1.0 && t.sign_balance <= 1.0));
+            if (!ranges_ok)
+            {
+                std::printf("  [telemetry] FAIL: live-arm gauge out of range\n");
+                ++failures;
+            }
+        }
+
+        // Lesioned-arm introspection (§6.13): dead weights -> zero accepts,
+        // NaN accept-derived gauges, yet F's computed output is still
+        // observable (finite mean/var of f_commit).
+        {
+            ESNConfig dead = cfg;
+            dead.reservoir.feedback_scaling = 0.0f;
+            dead.feedback.pretrain_steps = 0;
+            ESN d(dead);
+            d.InitOnline(warm.data(), kWarm);
+            for (size_t i = 0; i < 50; ++i)
+                (void)d.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+            const auto t = d.GetFeedbackTelemetry();
+            const bool ok =
+                t.accept_rate == 0.0 && IsNaNBits(t.mean_realization) &&
+                IsNaNBits(t.sign_balance) &&
+                IsFiniteBits(t.mean_f) && IsFiniteBits(t.var_f) &&
+                IsFiniteBits(t.mean_abs_f);
+            if (!ok)
+            {
+                std::printf("  [telemetry] FAIL: lesioned arm not introspectable as specified\n");
+                ++failures;
+            }
+        }
+
+        // Guard: no feedback configured -> throws.
+        {
+            ESNConfig open = cfg;
+            open.reservoir.num_feedback_channels = 0;
+            ESN o(open);
+            bool threw = false;
+            try { (void)o.GetFeedbackTelemetry(); }
+            catch (const std::logic_error&) { threw = true; }
+            if (!threw)
+            {
+                std::printf("  [telemetry] FAIL: GetFeedbackTelemetry without feedback did not throw\n");
+                ++failures;
+            }
+        }
+
+        if (failures == 0)
+            std::printf("  [telemetry] PASS (counters exact, 1000-cycle ring wraps, gauges in range, "
+                        "lesioned arm introspectable)\n");
+        return failures;
+    }
 } // namespace
 
 int main()
@@ -571,6 +738,9 @@ int main()
 
     std::printf("=== ESN feedback training orchestration ===\n");
     failures += TestTrainingOrchestration();
+
+    std::printf("=== ESN feedback telemetry ===\n");
+    failures += TestTelemetry();
 
     if (failures == 0)
     {
