@@ -470,7 +470,9 @@ Convergence criteria (defaults):
 
 - Primary: the task's validation loss on a held-out stream plateaus — NRMSE
   for regression, cross-entropy for classification (§6.16) — the usual
-  criterion, applied to the alternation phase as a whole.
+  criterion, applied to the alternation phase as a whole. The evaluation
+  protocol that makes this measurable without destroying the training
+  trajectory is §6.17.
 - Diagnostic the scheme gives for free: **probe acceptance rate** decaying to
   the chance floor (~2/3 at zero margin, §6.1) — neither direction helps
   anymore, i.e. `F` is locally optimal at the visited states. Log from day one.
@@ -791,6 +793,57 @@ survive intact: under the §6.13 kill-switch the post-step probe states are
 bit-identical, hence identical logits, hence identical cross-entropy — and
 §9.3's ε = 0 sanity check holds for either loss the same way.
 
+### 6.17 Validation protocol: snapshot-bracketed, zero-reset, closed-loop
+
+§6.9's convergence criterion scores a held-out validation stream — but
+driving the reservoir through it would destroy the training-trajectory state
+the gapless stream (§6.5) depends on. The protocol, built entirely from
+existing primitives:
+
+```
+training:   ... cycle n ──commit──► S_n          ── cycle n+1 ──► ...
+                              │                  ▲
+                   Sv = TakeSnapshot()    RestoreSnapshot(Sv)
+                              │                  │
+validation: ResetReservoirOnly()                 │
+            ──closed-loop washout: W steps, unscored──►
+            ──closed-loop scoring: NRMSE / CE (§6.16)──┘
+            F frozen, P frozen, no probes, force_zero respected
+```
+
+- **Cycle-boundary timing.** Validation may run only after a Pass-1 commit,
+  before the next Pass-2 snapshot — the protected state is the committed
+  `S_n`, and stream continuity is trivially whole.
+- **Snapshot-bracketed; only the reservoir needs protecting.**
+  `TakeSnapshot`/`RestoreSnapshot` are bit-exact and re-home the slice ring
+  (§8). Validation is forward-only, so `P`'s and `F`'s weights *and their
+  Adam moments* are untouched by construction. One snapshot, one restore,
+  training resumes gapless.
+- **Closed-loop with the current frozen `F`.** The deployed loop of §2.1 —
+  `f = tanh(F(x))` per step, no probes, no training — because the criterion
+  scores the system that would actually deploy. The §6.13 `force_zero` flag
+  applies during validation too (same principle as warmup, §6.15: each arm
+  validates the way it runs); no special-casing for the kill-switch arms.
+- **Entry state: zero-reset, then washout — not continue-from-training-state.**
+  The washout (first `W` validation steps driven closed-loop, unscored) is
+  needed either way to kill the cross-stream transient. But entering from the
+  live training state makes two successive evaluations differ both in learner
+  weights *and* in entry state — noise in the very series the plateau
+  criterion watches. `ResetReservoirOnly()` first makes every evaluation
+  start bit-identically, so consecutive validation scores differ **only**
+  because `F`/`P` changed. It costs nothing: the washout was already paid
+  for. `W` reuses the warmup count passed to `InitOnline` — same washout
+  job, same magnitude, no new hyperparameter.
+- **Fixed held-out segment, periodic cadence.** The same validation segment
+  every evaluation — never trained on, deterministic, comparable. Cadence:
+  every `N_val` cycles, default 1000. Each evaluation costs
+  `len(validation)` closed-loop steps (~1× per step, no probe overhead —
+  cheap relative to the ~4× training cycles, but not free).
+
+The validation driver is the second consumer of the closed-loop step driver
+(after §6.15's warmup). The §9.5 stability soak inherits the same
+snapshot-bracket pattern for free if it ever interleaves with training.
+
 ---
 
 ## 7. Critique of the concept itself
@@ -900,7 +953,7 @@ flag: `force_zero_feedback`).
 | State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
 | Second readout instance | `ESN` | pending | `F` constructed from `ESNConfig::feedback.readout` (Regression, 1 output) sharing the subsample geometry; CNN built eagerly at ESN construction (§6.15). |
 | Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). First consumer is closed-loop warmup in `ESN::InitOnline` (§6.15) — build this before any training orchestration. |
-| Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). |
+| Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). Owns the §6.17 validation driver (snapshot-bracketed, zero-reset, closed-loop; cadence `N_val`). |
 | Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). |
 
 ## 9. Verification plan (when implemented)

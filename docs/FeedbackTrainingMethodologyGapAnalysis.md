@@ -12,6 +12,11 @@
 > implementer must resolve before coding (A), 5 secondary
 > underspecifications (B), 4 doc inconsistencies (C), and 2 conceptual
 > risks §7 does not yet flag (D).**
+>
+> **Update (June 2026): all six A-items are resolved** — each carries an
+> inline "Resolved" block recording the decision and where it was
+> codified (§6.2 commit-time corollary, §6.13–§6.17). B3 is half-settled
+> (`F`'s lr); B1/B2/B4/B5, C1–C4, and D1/D2 remain open.
 
 ---
 
@@ -157,6 +162,21 @@ before validation, restore after — the primitive exists) is never
 stated, and validation runs closed-loop with the current `F`, which
 should also be said explicitly.
 
+> **Resolved (June 2026): new §6.17** (cross-refs in §6.9 and the §8
+> orchestration row). Snapshot-bracketed validation at cycle boundaries
+> only: `TakeSnapshot` → `ResetReservoirOnly` → closed-loop washout of
+> `W` unscored steps (`W` reuses `InitOnline`'s warmup count — no new
+> hyperparameter) → closed-loop scoring with `F` and `P` frozen
+> (`force_zero` respected, same principle as §6.15 warmup) →
+> `RestoreSnapshot`. The zero-reset is the non-obvious part: entering
+> from the live training state would make successive evaluations differ
+> in both weights and entry state, putting noise in the very series the
+> plateau criterion watches; resetting makes scores differ only because
+> `F`/`P` changed. Fixed held-out segment, cadence `N_val` (default
+> 1000 cycles). Only the reservoir needs protecting — validation is
+> forward-only, so readout weights and Adam moments are untouched by
+> construction.
+
 ## B. Secondary underspecifications
 
 - **B1. Serialization:** `ESN::GetReadoutState`/`SetReadoutState`
@@ -239,3 +259,8 @@ actually stall an implementer mid-task (A1 and A2 especially — one is a
 semantic fork in the inner loop, the other is a verification dependency
 with no owner); B and C are an afternoon of doc edits; D1/D2 are two
 paragraphs in §7.
+
+**As of June 2026 the blocking layer is clear: A1–A6 are all resolved**
+(decisions codified in the methodology — §6.2 commit-time corollary and
+§6.13–§6.17). What stands between this analysis and a clean sheet is
+the afternoon of B/C doc edits and the two D paragraphs.
