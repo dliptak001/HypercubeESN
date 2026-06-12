@@ -135,6 +135,19 @@ spec-wise. Either scope v1 to regression tasks explicitly or define the
 classification probe loss (e.g. cross-entropy). Related: for
 multi-output regression, MSE-across-outputs should be stated.
 
+> **Resolved (June 2026): both tasks, multi-output, from v1 — new §6.16
+> plus a rewritten §3 probe-loss definition.** The probe loss `L` is
+> per-task: regression = MSE across outputs; classification = softmax
+> cross-entropy of the target label from `P`'s logits (log-sum-exp
+> stabilized) — not 0/1 accuracy, which is a step function at ε scale
+> (accepts would never fire and the feedback path would be structurally
+> dead for classification). `F` is untouched by `P`'s task — always
+> `Regression`/1-output per §6.14. The exact-equality arguments (§6.13
+> kill-switch, §9.3 ε = 0 sanity) survive for either loss. §6.9's
+> convergence criterion generalized (NRMSE / validation CE), §9.3 runs
+> per task, and §9.4 gains a classification arm (StreamingText
+> next-char). Regression-specific wording generalized in §4 and §6.1.
+
 ### A6. Validation evaluation breaks stream continuity; the doc doesn't say how to avoid it
 
 §6.9's primary convergence criterion is held-out validation NRMSE — but

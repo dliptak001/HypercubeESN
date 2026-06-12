@@ -125,14 +125,20 @@ exists to answer.
   `Sf = F(Sx)`, the feedback readout's own output at the decision-time state,
   evaluated once per cycle and reused across the cycle's probes (§6.2).
 - **`ε`** — the probe perturbation magnitude (hyperparameter, possibly adaptive).
-- **Probe error metric** — **MSE** of the primary readout on the probe example;
-  with `H = 1` this is simply the squared error of the one prediction. All
-  probes within one cycle score the *same target(s)*, so the NRMSE
-  normalization (`1/σ(targets)`) is a common constant and MSE orders the probes
-  identically at lower cost — and for a single timestep NRMSE is not even
-  well-defined (one target has zero variance). NRMSE is still the metric
-  *reported* for validation and benchmarks (§9); only the internal probe
-  comparisons use MSE.
+- **Probe loss `L`** — the scalar error of the primary readout on the probe
+  example, defined per task; both tasks and multi-output are supported from
+  v1 (§6.16):
+  - *Regression* (`num_outputs ≥ 1` targets): **MSE across outputs** — the
+    mean of the squared errors of the timestep's `num_outputs` predictions.
+    All probes within one cycle score the *same target(s)*, so the NRMSE
+    normalization (`1/σ(targets)`) is a common constant and MSE orders the
+    probes identically at lower cost — and for a single timestep NRMSE is not
+    even well-defined (one target has zero variance). NRMSE is still the
+    metric *reported* for validation and benchmarks (§9); only the internal
+    probe comparisons use MSE.
+  - *Classification* (`num_outputs` classes): **softmax cross-entropy of the
+    target label**, computed from `P`'s logits (`PredictRaw`), log-sum-exp
+    stabilized. Deliberately *not* 0/1 accuracy — rationale in §6.16.
 
 ## 4. Training procedure
 
@@ -148,7 +154,8 @@ One **cycle** = one Pass 1 + one Pass 2.
    cycle that is the *post-update* readout, recomputed at commit time; it is
    never the probe winner `f*` and never the cached `Sf` (§6.2).
 2. Train `P` on the resulting (state, target) pair exactly as today
-   (`TrainLiveStepRegression`, or mini-batch accumulation across cycles).
+   (`TrainLiveStepRegression` / `TrainLiveStep` per task, or mini-batch
+   accumulation across cycles).
 3. `F` is not touched. The reservoir state advances for real (no restore).
 
 ### Pass 2 — feedback readout training (primary held fixed)
@@ -161,7 +168,7 @@ example.
 |---|---|
 | a | Snapshot `Sx`; evaluate `Sf = F(Sx)` once. |
 | b | **Baseline probe:** inject `u'` and feedback `Sf`; `Step`; forward-pass `P`; **no training**. |
-| c | `E0` = squared error of `P`'s prediction against `y'`. |
+| c | `E0` = probe loss `L` (§3) of `P`'s prediction against `y'`. |
 | d | Restore `Sx`. **Positive probe:** same input `u'` with feedback `Sf + ε`; `E+`. |
 | e | Restore `Sx`. **Negative probe:** same input with `Sf − ε`; `E−`. Both directions are always probed (§6.6). |
 | f | **Accept/reject:** if `min(E+, E−) < E0 − margin`, the winning perturbation direction is a locally verified improvement. Set `f* = Sf ± ε` (winning sign). |
@@ -221,9 +228,9 @@ a data-driven rethink.
 
 ### 6.1 Example granularity: one timestep (H = 1)
 
-An example is a single timestep, the probe error is a single squared error, and
-there is no window hyperparameter to tune — the simplest mechanism that can
-work. Any move away from `H = 1` must be **data-driven** (triggered by the
+An example is a single timestep, the probe error is a single scalar probe loss
+(§3), and there is no window hyperparameter to tune — the simplest mechanism
+that can work. Any move away from `H = 1` must be **data-driven** (triggered by the
 telemetry below), not by untested hypothesis.
 
 `H = 1` is more defensible than the noise concern suggests:
@@ -255,8 +262,8 @@ Costs accepted with eyes open, and the telemetry that triggers a rethink:
   against 50%. *Watch:* accept rate indistinguishable from the chance floor
   over a long run.
 - *Fallback, recorded but not to be built yet:* `H`-step probe windows (8–32),
-  MSE over the window, feedback held constant during probes, `F` trained on the
-  window's first decision state only. Adopt only if validation NRMSE shows no
+  probe loss accumulated over the window, feedback held constant during probes,
+  `F` trained on the window's first decision state only. Adopt only if validation NRMSE shows no
   gain AND the telemetry above is flat.
 
 ### 6.2 The operating point is on-policy: Sf = F(Sx)
@@ -461,7 +468,8 @@ instead would hand alternation a `P` trained on dynamics that vanish the moment
 
 Convergence criteria (defaults):
 
-- Primary: NRMSE on a held-out validation stream plateaus — the usual
+- Primary: the task's validation loss on a held-out stream plateaus — NRMSE
+  for regression, cross-entropy for classification (§6.16) — the usual
   criterion, applied to the alternation phase as a whole.
 - Diagnostic the scheme gives for free: **probe acceptance rate** decaying to
   the chance floor (~2/3 at zero margin, §6.1) — neither direction helps
@@ -748,6 +756,41 @@ consumer** of the closed-loop step driver — it executes before any training,
 any probe, any Pass-1 step. The driver cannot be deferred to "the training
 part" of the implementation.
 
+### 6.16 The probe loss is task-general; F is task-agnostic
+
+Both `ReadoutTask`s — and multi-output for both — are supported from v1. The
+probe machinery touches `P`'s task at exactly one point: step c's scalar loss
+`L`. The accept test needs nothing from `L` beyond a total order on the three
+probes, and the §6.6 chance-accept analysis relies on the exchangeability of
+the probes under noise, not on any property of squared error — so the rest of
+the scheme (snapshot/probe/accept, `F`'s creep targets, the §6.10 update
+path) is loss-agnostic by construction.
+
+| `P`'s task | Probe loss `L` | Reported metric (§9) |
+|---|---|---|
+| Regression, `num_outputs ≥ 1` | MSE across outputs | NRMSE |
+| Classification, `num_outputs` classes | softmax cross-entropy of the target label, from `P`'s logits, log-sum-exp stabilized | accuracy (validation CE as the convergence criterion, §6.9) |
+
+**Why cross-entropy and not accuracy.** 0/1 accuracy is a step function of
+the logits: at ε scale, a probe perturbation almost never flips the argmax in
+a single step, so `E+ = E− = E0` nearly every cycle, accepts essentially
+never fire, and `F` never trains — the feedback path would be structurally
+dead for classification tasks. Cross-entropy is smooth in the logits: a probe
+that moves the target class's margin registers immediately, even when the
+decision is unchanged. It is also strictly proper, so probe improvements are
+improvements of the predictive distribution, not artifacts of the loss.
+Accuracy stays the *reported* benchmark metric; it is too coarse to drive
+either the probes or the §6.9 plateau criterion.
+
+Two consistency notes. First, **`F` is untouched by `P`'s task**: the
+feedback readout is always `Regression`, `num_outputs = 1` (§6.14 forces
+this) — its output is the feedback signal, which has no task semantics —
+so Pass 2's `TrainOnlineStepRegression` on `F` (§6.10) is correct under a
+classification `P` as well. Second, the exact-equality arguments elsewhere
+survive intact: under the §6.13 kill-switch the post-step probe states are
+bit-identical, hence identical logits, hence identical cross-entropy — and
+§9.3's ε = 0 sanity check holds for either loss the same way.
+
 ---
 
 ## 7. Critique of the concept itself
@@ -872,8 +915,8 @@ flag: `force_zero_feedback`).
    staged-injection isolation, size-mismatch throw; three configs incl.
    2-channel feedback, Release build.)*
 3. **Probe sanity:** with `ε = 0`, all three probes return the identical
-   squared error (this also exercises snapshot fidelity through the full probe
-   path).
+   probe loss (this also exercises snapshot fidelity through the full probe
+   path; run once per task — MSE and cross-entropy, §6.16).
 4. **A/B benchmark:** NARMA-30 and sine prediction, feedback-trained vs.
    open-loop, multiple seeds — the same harness as the existing M-sweep. Report
    NRMSE deltas *with* the §7.4 variance telemetry, so a win can be attributed
@@ -881,5 +924,8 @@ flag: `force_zero_feedback`).
    of §6.13 doubles as the compute-matched control (same ~4× probe overhead,
    signal provably dead). These benchmarks run on the
    batch harness today; with v1 streaming-only (§6.12), they need streaming
-   variants — the readout already supports online regression.
+   variants — the readout already supports online regression. Add a
+   **classification arm** (streaming next-char on the StreamingText example
+   is the natural candidate): report accuracy, drive convergence on
+   validation cross-entropy (§6.16).
 5. **Stability soak:** long closed-loop free runs; assert bounded state norms.
