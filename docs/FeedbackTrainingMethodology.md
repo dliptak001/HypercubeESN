@@ -611,13 +611,87 @@ flag is on *during* training, every probe injects the same 0, the
 exact-equality argument above applies, and `F` freezes automatically — no
 separate "disable Pass 2" machinery is needed, only this documented
 consequence. The flag lives in the ESN-side feedback configuration block
-(alongside the `F`/probe hyperparameters), defaults off, and is settable
+(§6.14: `ESNConfig::feedback.force_zero`), defaults off, and is settable
 between training and evaluation.
 
 This is not the removed toggle returning. That toggle duplicated the
 Reservoir's own existence-gating one layer down; this flag overrides a value
 at the single layer that computes it, and the Reservoir's
 `num_feedback_channels`-gates-everything invariant stays intact.
+
+### 6.14 Config surface and defaults
+
+The ESN-side configuration is one nested block, `ESNConfig::feedback`,
+holding `F`'s `ReadoutConfig` plus the scheme's own knobs and the §6.13 flag:
+
+```cpp
+struct FeedbackConfig {
+    ReadoutConfig readout;        // F (dim / num_outputs / task forced by ESN)
+    float epsilon    = 0.05f;     // probe perturbation, pre-clamp space (§6.11)
+    float margin     = 0.0f;      // accept margin (§6.6)
+    float lr         = 2e-4f;     // F's constant Adam learning rate
+    bool  force_zero = false;     // runtime lesion flag (§6.13)
+};
+```
+
+Enablement stays where it already lives: `reservoir.num_feedback_channels > 0`
+(v1: the ESN ctor validates `== 1` when feedback training is used) — no second
+on/off flag, the same single-source-of-truth discipline as §6.13. The ESN
+forces `dim` (the shared subsample geometry, exactly as `MakeReadoutConfig`
+already does for `P`), `num_outputs = 1`, and `task = Regression` on `F`'s
+config; the batch-path fields (`epochs`, `batch_size`,
+`lr_max`/`lr_min_frac`/`lr_decay_epochs`, `momentum`) are ignored for `F` in
+streaming v1 and documented as such. `F` reuses the full `ReadoutConfig`
+rather than a slimmed struct so checkpoint serialization stays uniform — the
+two-readout `GetReadoutState` extension will want that.
+
+Defaults, with the reasoning on record:
+
+| Knob | Default | Rationale |
+|---|---|---|
+| `feedback.readout.num_layers` | 1 | §7.7's hint, promoted to spec. |
+| `feedback.readout.conv_channels` | 8 | Half of `P`'s 16. `F` learns one scalar from sparse, autocorrelated samples (one per accepted cycle); small capacity *is* the regularizer against §7.7's memorization risk. |
+| `feedback.readout.activation` | `TANH` | Matches the §2 table. Per-Conv-layer only — it does **not** bound `F`'s output (§6.11). |
+| `feedback.readout.seed` | 43 | No must-differ constraint: `F` and `P` have different architectures, so identical seeds are harmless. Defaulting off `P`'s 42 avoids accidental twin-init in degenerate same-shape configs. Determinism is the only requirement. |
+| `feedback.readout.weight_decay` | 0 | Telemetry-gated (§6.11, §7): promote to ~1e-4 only if the raw `\|F(x)\|` saturation watch fires. |
+| `feedback.epsilon` | 0.05 (sane range 0.01–0.2) | Rationale below. |
+| `feedback.lr` | 2e-4, constant | Rationale below. |
+| `feedback.margin` | 0 | Already specced (§6.6). |
+| `reservoir.feedback_scaling` | 0.5 (unchanged) | Matches `input_scaling`'s 0.5, so at `\|f\| ~ \|u\|` the feedback drive is commensurate with the input drive — a sane first operating point. Drop to 0.25 if the §7.6 state-norm monitor shows growth; do **not** pre-shrink it, or a null result is uninterpretable (signal too weak vs. idea wrong). |
+
+**Why ε = 0.05 — what ε actually controls.** ε is *not* a noise-immunity
+knob: the probes are deterministic same-state, same-example replays (§6.3),
+so even a tiny ε yields an exact error ordering within a cycle. What ε sets
+is (a) the **creep rate** — `F`'s target moves at most ε per accepted cycle —
+and (b) **locality** — how far the probe linearization and the §6.11 clamp
+curvature can be trusted. Sized as a fraction of the usable range: post-clamp
+the signal lives in (−1, 1), and near the origin ε = 0.05 is a ~5% step —
+roughly 20 net-directional accepts to traverse half the usable range, fast
+enough to observe learning, slow enough for §7.3's timescale separation. The
+floor of the sane range (0.01) is a float32 consideration: probe deltas must
+stay above rounding noise in `P`'s forward pass. The ceiling (0.2) is where
+the D-series lever mismatch (post-clamp lever `≈ ε·(1 − tanh²(Sf))` vs.
+constant pre-clamp creep) and the clamp curvature stop being second-order.
+Fixed in v1; adaptive ε stays on the §6.7 upgrade list.
+
+**Why lr = 2e-4, constant — and the §6.2 interaction.** Constant because the
+stream is open-ended: `CosineLR` needs a horizon that does not exist. (This
+resolves `F`'s half of the streaming-lr question; `P`'s streaming lr policy
+is a separate open item.) Magnitude: ~7× below `P`'s `lr_max = 0.0015`,
+implementing §7.3's "make `F`'s effective timescale much slower than `P`'s."
+The lr also controls what fraction of the ε step the commit realizes (§6.2
+commit-time corollary): `F′(Sx)` lands lr-dependently between `Sf` and `f*`.
+Too high, and one Adam step reaches the target — the commit degenerates into
+committing `f*`, forfeiting the averaging that the §6.6 chance-accept
+tolerance relies on; too low, and accepted improvements barely register. The
+tuning signal is the **step-realization fraction** `|F′(Sx) − Sf| / ε`
+(telemetry, §8) — tune lr toward ~0.1–0.3. Adam's moment estimates on single
+samples at irregular intervals (§6.10's known caveat) make the realized
+fraction unpredictable a priori — telemetry, not faith.
+
+Both ε and lr are educated guesses with stated reasoning, not measured
+values — nothing has run yet. They are defaults-with-tuning-signals (accept
+rate, creep rate, realization fraction), not blessed constants.
 
 ---
 
@@ -713,8 +787,8 @@ flag: `force_zero_feedback`).
   accordingly.
 - The scheme trains `F` only at committed-trajectory states (one per cycle).
   `F` generalizes from sparse, temporally correlated samples; the CNN may
-  memorize. Capacity of `F` should be small (e.g. `num_layers = 1`, modest
-  channels).
+  memorize. Capacity of `F` should be small — specced as defaults in §6.14
+  (`num_layers = 1`, `conv_channels = 8`).
 - Snapshot/restore must be exact (bit-for-bit), or probe comparisons inherit a
   systematic offset. Restoring must also re-home the slice-ring rotation, not
   just the buffer contents. (Both properties hold and are tested — see §8.)
@@ -728,8 +802,8 @@ flag: `force_zero_feedback`).
 | State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
 | Second readout instance | `ESN` | pending | `F` constructed from a `feedback ReadoutConfig` (Regression, 1 output) sharing the subsample geometry. |
 | Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). |
-| Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). |
-| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6). |
+| Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). |
+| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). |
 
 ## 9. Verification plan (when implemented)
 

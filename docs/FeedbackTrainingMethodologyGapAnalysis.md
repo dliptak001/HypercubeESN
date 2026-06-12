@@ -84,6 +84,23 @@ depends on a capability that no §8 tracker row builds.
 §8 lists them as "hyperparameters" and stops. The margin is the only
 knob with a stated default (0).
 
+> **Resolved (June 2026): new §6.14.** Config surface is a nested
+> `ESNConfig::feedback` block — `F`'s full `ReadoutConfig` plus
+> `epsilon`, `margin`, `lr`, and the §6.13 `force_zero` flag — with
+> enablement still gated solely on `num_feedback_channels > 0` (v1
+> validates `== 1`) and the ESN forcing `dim`/`num_outputs`/`task` on
+> `F` exactly as it does for `P`. Defaults: `num_layers = 1`,
+> `conv_channels = 8`, `seed = 43` (no must-differ constraint —
+> determinism only), `weight_decay = 0` (telemetry-gated), **ε = 0.05**
+> (sane range 0.01–0.2; ε sets creep rate and locality, not noise
+> immunity — probes are deterministic replays), **`F` lr = 2e-4
+> constant** (no horizon for cosine; ~7× slower than `P` per §7.3;
+> tuned via a new step-realization-fraction telemetry item in §8), and
+> `feedback_scaling` stays at 0.5. Explicitly flagged as
+> defaults-with-tuning-signals, not measured values. Side effect: the
+> `F` half of B3 (lr schedule in streaming mode) is resolved; `P`'s
+> streaming lr policy remains open.
+
 ### A4. Warmup / `InitOnline` semantics under the closed loop are unaddressed
 
 `ESN::InitOnline` drives a warmup phase before any training. §6.8/§6.9
@@ -124,7 +141,9 @@ should also be said explicitly.
   pair to §6.10).
 - **B3. `P`'s lr schedule in streaming mode:** `CosineLR` needs a
   horizon; an open-ended stream has none. Both the pre-train phase and
-  the alternation phase need a stated lr policy for `P`.
+  the alternation phase need a stated lr policy for `P`. *(The analogous
+  question for `F` is settled by §6.14 — constant lr; `P`'s policy
+  remains open.)*
 - **B4. Tie-breaking and boundary equality:** `E+ == E−` (pick which
   sign?) and `min(E+, E−) == E0` exactly (reject, per strict `<`?) —
   trivial, but a deterministic spec matters for reproducibility, and
