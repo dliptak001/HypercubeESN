@@ -571,8 +571,8 @@ Consequences:
 - *Side effect to watch:* if the raw `|F(x)|` drifts deep into tanh saturation,
   `tanh(Sf ± ε) ≈ tanh(Sf)` and the probes lose their lever — accepts stall not
   because `F` is optimal but because the clamp has flattened the
-  perturbation. Add raw `|F(x)|` magnitude to the telemetry set; a little
-  weight decay on `F` is the cheap counter if it occurs.
+  perturbation. Add raw `|F(x)|` magnitude to the telemetry set (threshold and
+  window — §8); a little weight decay on `F` is the cheap counter if it occurs.
 
 ### 6.12 Scope: streaming mode only
 
@@ -946,9 +946,10 @@ a learned global bias drive — because the per-state signal is too noisy to lea
 and a constant is the noise-floor solution of the regression. That outcome isn't
 a blow-up (a small constant drive is harmless and occasionally even useful), but
 it would mean the entire probe machinery bought nothing a bias term couldn't.
-**Telemetry to detect it:** track the variance of `F(x)` across states; if it
-collapses, the state-conditional claim is unsupported. This is the cheapest
-falsification test of the whole idea and should be in the first experiment.
+**Telemetry to detect it:** track the variance of `F(x)` across states (window
+spec in §8); if it collapses, the state-conditional claim is unsupported. This
+is the cheapest falsification test of the whole idea and should be in the
+first experiment.
 
 ### 7.5 What it plausibly *can* do
 
@@ -998,7 +999,7 @@ flag: `force_zero_feedback`).
 | Two-readout checkpointing | `ESN` | pending | `GetFeedbackState`/`SetFeedbackState` mirroring the existing `GetReadoutState`/`SetReadoutState` pair (same weights-blob + `is_trained` shape). `F` is persist-worthy from construction (§6.15). Neither pair serializes Adam moments — already true of `P` today — so a resumed run restarts optimizer state: a stated, accepted v1 limitation, consistent with §6.10's noise-tolerance stance. |
 | Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). First consumer is closed-loop warmup in `ESN::InitOnline` (§6.15) — build this before any training orchestration. |
 | Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). Owns the §6.17 validation driver (snapshot-bracketed, zero-reset, closed-loop; cadence `N_val`). |
-| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). |
+| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). **Exposure:** a POD `FeedbackTelemetry` accumulated by the ESN — per-cycle ring buffer over the last 1000 cycles (`E0/E+/E−`, accept/sign, `Sf`, raw `\|F\|`, realization fraction) plus lifetime counters — read via a const accessor; no callbacks or stdout in v1 (a verbose printer is a caller-side wrapper, and the §6.9/§6.14 consumers need values, not log lines). **Windows:** §7.4 variance over committed-trajectory `F(x)` only (probe evaluations are off-trajectory), sliding window = 1000 cycles, aligned with `N_val` (§6.17) so each validation point carries one fresh variance reading; the same window sizes the ring buffer. **Saturation watch:** fraction of windowed cycles with raw `\|F(x)\| > 2.0` — the probe lever is `ε·(1 − tanh²(Sf))` and `1 − tanh²(2.0) ≈ 0.07`, i.e. probes retain <7% of nominal ε effect. §6.11's weight decay (~1e-4) recommended when that fraction exceeds ~0.5. Telemetry observes; the experimenter acts. |
 
 ## 9. Verification plan (when implemented)
 

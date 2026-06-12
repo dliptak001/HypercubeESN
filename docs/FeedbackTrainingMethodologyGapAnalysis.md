@@ -15,8 +15,8 @@
 >
 > **Update (June 2026): all six A-items are resolved** — each carries an
 > inline "Resolved" block recording the decision and where it was
-> codified (§6.2 commit-time corollary, §6.13–§6.17). B1–B4 are resolved
-> inline below; B5, C1–C4, and D1/D2 remain open.
+> codified (§6.2 commit-time corollary, §6.13–§6.17). All B items are
+> resolved inline below; C1–C4 and D1/D2 remain open.
 
 ---
 
@@ -217,7 +217,13 @@ should also be said explicitly.
   over what window the §7.4 variance is computed, or what raw `|F(x)|`
   level counts as "saturation" for the §6.11 watch. The A/B benchmark
   (§9.4) should also state whether it controls for the ~4× compute
-  overhead.
+  overhead. *(Resolved June 2026 in the §8 telemetry row: POD
+  `FeedbackTelemetry` accumulated by the ESN, const-accessor exposure,
+  no callbacks/stdout in v1; ring buffer and §7.4 variance window =
+  1000 cycles, aligned with `N_val`; saturation = raw `|F(x)| > 2.0`
+  (probe lever `1 − tanh² ≈ 0.07`), weight-decay responder suggested
+  past 50% of the window. The compute-overhead control was already
+  closed by A2 — §6.13's scaling-zero arm, noted in §9.4.)*
 
 ## C. Doc inconsistencies (against the code or itself)
 
