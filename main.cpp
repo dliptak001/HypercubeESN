@@ -12,6 +12,7 @@
 /// turn), the trajectory must match the open-loop ESN; with the loop live it
 /// must not.
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -334,6 +335,208 @@ namespace
             std::printf("  [checkpoint] PASS (F photo round-trips across F seeds; stale-blob regression holds)\n");
         return failures;
     }
+
+    /// Training orchestration (§4): probe sanity (§9.3), kill-switch freeze,
+    /// no-op equivalence to a hand-rolled stream loop, liveness, and the
+    /// §6.17 validation bracket. Returns the number of failed checks.
+    int TestTrainingOrchestration()
+    {
+        int failures = 0;
+        constexpr size_t kWarm = 16;
+        constexpr size_t kCycles = 300;
+
+        ESNConfig base;
+        base.reservoir.dim = 6;
+        base.reservoir.history_depth = 4;
+        base.reservoir.verbose = false;
+        base.reservoir.num_feedback_channels = 1;
+        base.feedback.pretrain_steps = 0; // straight to alternation unless a test overrides
+
+        std::mt19937_64 rng(0x07C4E57A);
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        std::vector<float> warm(kWarm);
+        for (float& v : warm) v = dist(rng);
+        std::vector<float> inputs(kCycles), targets(kCycles);
+        for (float& v : inputs) v = dist(rng);
+        for (float& v : targets) v = dist(rng);
+        std::vector<int> labels(kCycles);
+        for (int& v : labels) v = static_cast<int>(rng() % 3);
+
+        // --- §9.3 probe sanity, regression: ε = 0 -> all three probes
+        // identical, every cycle rejects. ---
+        {
+            ESNConfig cfg = base;
+            cfg.feedback.epsilon = 0.0f;
+            ESN esn(cfg);
+            esn.InitOnline(warm.data(), kWarm);
+            bool ok = true;
+            for (size_t i = 0; i < 50 && ok; ++i)
+            {
+                const auto c = esn.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+                ok = !c.accepted && c.e0 == c.e_plus && c.e0 == c.e_minus;
+            }
+            if (!ok)
+            {
+                std::printf("  [orchestration] FAIL: eps=0 probes not identical / accepted (regression)\n");
+                ++failures;
+            }
+        }
+
+        // --- §9.3 probe sanity, classification: same property under CE. ---
+        {
+            ESNConfig cfg = base;
+            cfg.feedback.epsilon = 0.0f;
+            cfg.readout.task = ReadoutTask::Classification;
+            cfg.readout.num_outputs = 3;
+            ESN esn(cfg);
+            esn.InitOnline(warm.data(), kWarm);
+            bool ok = true;
+            for (size_t i = 0; i < 50 && ok; ++i)
+            {
+                const auto c = esn.TrainFeedbackCycle(inputs.data() + i, labels[i]);
+                ok = !c.accepted && c.e0 == c.e_plus && c.e0 == c.e_minus;
+            }
+            if (!ok)
+            {
+                std::printf("  [orchestration] FAIL: eps=0 probes not identical / accepted (classification)\n");
+                ++failures;
+            }
+            // Task-mismatch guard while we have a classification ESN at hand.
+            bool threw = false;
+            try { (void)esn.TrainFeedbackCycle(inputs.data(), targets.data()); }
+            catch (const std::invalid_argument&) { threw = true; }
+            if (!threw)
+            {
+                std::printf("  [orchestration] FAIL: regression overload on classification P did not throw\n");
+                ++failures;
+            }
+        }
+
+        // --- §6.13 kill-switch freeze: dead feedback weights -> every cycle
+        // rejects on exact equality and F's weights never move. ---
+        {
+            ESNConfig cfg = base;
+            cfg.reservoir.feedback_scaling = 0.0f; // ε stays at its live 0.05 default
+            ESN esn(cfg);
+            esn.InitOnline(warm.data(), kWarm);
+            const auto f_before = esn.GetFeedbackState();
+            bool ok = true;
+            for (size_t i = 0; i < 50 && ok; ++i)
+                ok = !esn.TrainFeedbackCycle(inputs.data() + i, targets.data() + i).accepted;
+            if (!ok || esn.GetFeedbackState().weights != f_before.weights)
+            {
+                std::printf("  [orchestration] FAIL: feedback_scaling=0 arm accepted or trained F\n");
+                ++failures;
+            }
+        }
+
+        // --- No-op equivalence: a force_zero orchestrated run must leave P
+        // bit-identical to a hand-rolled StepLive + per-step-train loop with
+        // the same §6.9 lr schedule — the probe bracket perturbs nothing. ---
+        {
+            ESNConfig cfg = base;
+            cfg.feedback.force_zero = true;
+            cfg.feedback.pretrain_steps = 10;
+
+            ESN a(cfg);
+            a.InitOnline(warm.data(), kWarm);
+            std::vector<ESN::FeedbackCycleInfo> infos;
+            for (size_t i = 0; i < 30; ++i)
+                infos.push_back(a.TrainFeedbackCycle(inputs.data() + i, targets.data() + i));
+
+            // Replay with the lrs A reported. (The cosine cannot be
+            // recomputed here bit-exactly: under -ffast-math the inline
+            // CosineLR contracts differently per translation unit, up to
+            // 1 ulp — what this test pins is the state trajectory and the
+            // training calls, not the lr formula.)
+            ESN b(cfg);
+            b.InitOnline(warm.data(), kWarm);
+            for (size_t i = 0; i < 30; ++i)
+            {
+                b.StepLive(inputs.data() + i);
+                b.TrainLiveStepRegression(targets.data() + i, infos[i].p_lr, cfg.readout.weight_decay);
+            }
+
+            if (a.GetReadoutState().weights != b.GetReadoutState().weights)
+            {
+                std::printf("  [orchestration] FAIL: force_zero orchestration != hand-rolled stream loop\n");
+                ++failures;
+            }
+
+            // §6.9 schedule shape: starts at lr_max, anneals monotonically
+            // into the alternation constant p_lr with no discontinuity.
+            bool shape_ok = infos[0].p_lr == cfg.readout.lr_max && infos[0].pretrain;
+            for (size_t i = 1; i < 10; ++i)
+                shape_ok = shape_ok && infos[i].p_lr < infos[i - 1].p_lr && infos[i].pretrain;
+            for (size_t i = 10; i < 30; ++i)
+                shape_ok = shape_ok && infos[i].p_lr == cfg.feedback.p_lr && !infos[i].pretrain;
+            if (!shape_ok)
+            {
+                std::printf("  [orchestration] FAIL: pretrain lr schedule shape wrong (S6.9)\n");
+                ++failures;
+            }
+        }
+
+        // --- Liveness: the live arm accepts some but not all cycles, and F
+        // actually trains. ---
+        {
+            ESN esn(base);
+            esn.InitOnline(warm.data(), kWarm);
+            const auto f_before = esn.GetFeedbackState();
+            size_t accepts = 0;
+            for (size_t i = 0; i < kCycles; ++i)
+                accepts += esn.TrainFeedbackCycle(inputs.data() + i, targets.data() + i).accepted;
+            if (accepts == 0 || accepts == kCycles)
+            {
+                std::printf("  [orchestration] FAIL: live accept rate degenerate (%zu/%zu)\n",
+                            accepts, kCycles);
+                ++failures;
+            }
+            if (esn.GetFeedbackState().weights == f_before.weights)
+            {
+                std::printf("  [orchestration] FAIL: live arm accepted but F never trained\n");
+                ++failures;
+            }
+        }
+
+        // --- §6.17 validation bracket: validating mid-training must not
+        // change the subsequent trajectory; the score itself is
+        // deterministic. ---
+        {
+            ESN a(base), b(base);
+            a.InitOnline(warm.data(), kWarm);
+            b.InitOnline(warm.data(), kWarm);
+
+            for (size_t i = 0; i < 20; ++i)
+            {
+                (void)a.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+                (void)b.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+            }
+            const double v1 = a.ValidateClosedLoop(inputs.data(), targets.data(), 48);
+            const double v2 = a.ValidateClosedLoop(inputs.data(), targets.data(), 48);
+            if (!(v1 == v2) || !std::isfinite(v1))
+            {
+                std::printf("  [orchestration] FAIL: validation score not deterministic/finite\n");
+                ++failures;
+            }
+            for (size_t i = 20; i < 40; ++i)
+            {
+                (void)a.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+                (void)b.TrainFeedbackCycle(inputs.data() + i, targets.data() + i);
+            }
+            if (a.GetReadoutState().weights != b.GetReadoutState().weights ||
+                a.GetFeedbackState().weights != b.GetFeedbackState().weights)
+            {
+                std::printf("  [orchestration] FAIL: validation perturbed the training trajectory\n");
+                ++failures;
+            }
+        }
+
+        if (failures == 0)
+            std::printf("  [orchestration] PASS (eps=0 sanity x2 tasks, kill-switch freeze, "
+                        "no-op equivalence, liveness, validation bracket)\n");
+        return failures;
+    }
 } // namespace
 
 int main()
@@ -365,6 +568,9 @@ int main()
 
     std::printf("=== ESN two-readout checkpointing ===\n");
     failures += TestTwoReadoutCheckpointing();
+
+    std::printf("=== ESN feedback training orchestration ===\n");
+    failures += TestTrainingOrchestration();
 
     if (failures == 0)
     {
