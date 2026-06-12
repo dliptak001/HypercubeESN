@@ -15,8 +15,8 @@
 >
 > **Update (June 2026): all six A-items are resolved** — each carries an
 > inline "Resolved" block recording the decision and where it was
-> codified (§6.2 commit-time corollary, §6.13–§6.17). All B and C items
-> and D1 are resolved inline below; D2 remains open.
+> codified (§6.2 commit-time corollary, §6.13–§6.17). **Every item in
+> this analysis — A, B, C, and D — is now resolved inline below.**
 
 ---
 
@@ -294,6 +294,16 @@ and saturation telemetry would eventually catch it, but the doc treats
 it as a binary cliff when it is a smooth degradation; an adaptive-ε note
 in §6.7's upgrade list would close it.
 
+> **Resolved (June 2026): three targeted edits, no new section.**
+> §6.11's side-effect bullet now states the smooth decay (lever
+> `1 − tanh²(Sf)` = 0.42 / 0.18 / 0.07 at `|Sf|` = 1 / 1.5 / 2.0;
+> mismatch ratio `1/(1 − tanh²)`) in place of the cliff framing.
+> §6.7's upgrade list gains the lever-aware adaptive-ε flavor (scale
+> pre-clamp ε by `1/(1 − tanh²(Sf))`, capped — uncapped it re-derives
+> the saturation explosion from the other side). The §8 saturation
+> watch additionally reports the windowed mean lever, a continuous
+> gauge for a continuous degradation.
+
 ---
 
 ## Bottom line
@@ -304,7 +314,9 @@ semantic fork in the inner loop, the other is a verification dependency
 with no owner); B and C are an afternoon of doc edits; D1/D2 are two
 paragraphs in §7.
 
-**As of June 2026 the blocking layer is clear: A1–A6 are all resolved**
-(decisions codified in the methodology — §6.2 commit-time corollary and
-§6.13–§6.17). What stands between this analysis and a clean sheet is
-the afternoon of B/C doc edits and the two D paragraphs.
+**As of June 2026 the sheet is clean: every item — A1–A6, B1–B5, C1–C4,
+D1–D2 — is resolved**, each with an inline block recording the decision
+and where it was codified (§6.2 commit-time corollary, §6.13–§6.17,
+§7.8, and targeted edits throughout). The methodology is implementable
+end-to-end; the §8 tracker is the remaining work, and it is code, not
+spec.

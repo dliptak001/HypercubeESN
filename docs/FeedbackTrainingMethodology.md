@@ -468,8 +468,11 @@ data shows the creep is the bottleneck.
 the time comes, in rough order of sophistication: verified line search after a
 win (re-probe `Sf ± 2ε, ±4ε…` while improvement continues — each probe cheap,
 target *tested* not extrapolated); amplified targets `f* = Sf ± λε`
-(extrapolated, riskier); adaptive ε (shrink as the accept rate falls);
-multi-point or stochastic probe patterns. None of these change the rest of the
+(extrapolated, riskier); adaptive ε — shrink as the accept rate falls, or the
+lever-aware flavor: scale the pre-clamp ε by `1/(1 − tanh²(Sf))`, capped, so
+the *post-clamp tested effect* stays constant across the operating range
+(§6.11's smooth lever decay; uncapped, it re-derives the saturation explosion
+from the other side); multi-point or stochastic probe patterns. None of these change the rest of the
 methodology — they only change how far `f*` lands from `Sf`.
 
 ### 6.8 No bootstrap phase: F drives the loop from cycle 0
@@ -583,11 +586,19 @@ Consequences:
   `F(Sx)`, the probes inject `tanh(Sf ± ε)`, and `F`'s regression target is the
   raw `f* = Sf ± ε`. The clamp is part of the *injection* path, not the
   learning path — `F` never has to invert it.
-- *Side effect to watch:* if the raw `|F(x)|` drifts deep into tanh saturation,
-  `tanh(Sf ± ε) ≈ tanh(Sf)` and the probes lose their lever — accepts stall not
-  because `F` is optimal but because the clamp has flattened the
-  perturbation. Add raw `|F(x)|` magnitude to the telemetry set (threshold and
-  window — §8); a little weight decay on `F` is the cheap counter if it occurs.
+- *Side effect to watch:* the probe's lever shrinks **continuously** as
+  `|Sf|` grows — the actual post-clamp perturbation is
+  `tanh(Sf ± ε) − tanh(Sf) ≈ ε·(1 − tanh²(Sf))`, and the lever factor is
+  already 0.42 at `|Sf| = 1`, 0.18 at 1.5, 0.07 at 2.0 — while the creep
+  target stays a full pre-clamp ε. The *tested* effect and the *trained* step
+  therefore diverge smoothly (mismatch ratio `1/(1 − tanh²(Sf))`), well
+  before "deep" saturation; accepts keep committing full-ε creeps on
+  ever-thinner evidence, and at the extreme the probes lose the lever
+  entirely — accepts stall not because `F` is optimal but because the clamp
+  has flattened the perturbation. Add raw `|F(x)|` magnitude and the windowed
+  mean lever to the telemetry set (threshold and window — §8); a little
+  weight decay on `F` is the cheap counter, and the lever-compensating
+  adaptive ε is on §6.7's upgrade list.
 
 ### 6.12 Scope: streaming mode only
 
@@ -1041,7 +1052,7 @@ rejecting chance accepts (§6.6).
 | Two-readout checkpointing | `ESN` | pending | `GetFeedbackState`/`SetFeedbackState` mirroring the existing `GetReadoutState`/`SetReadoutState` pair (same weights-blob + `is_trained` shape). `F` is persist-worthy from construction (§6.15). Neither pair serializes Adam moments — already true of `P` today — so a resumed run restarts optimizer state: a stated, accepted v1 limitation, consistent with §6.10's noise-tolerance stance. |
 | Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). First consumer is closed-loop warmup in `ESN::InitOnline` (§6.15) — build this before any training orchestration. |
 | Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). Config surface and defaults — §6.14 (`ESNConfig::feedback`). Owns the §6.17 validation driver (snapshot-bracketed, zero-reset, closed-loop; cadence `N_val`). |
-| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). **Exposure:** a POD `FeedbackTelemetry` accumulated by the ESN — per-cycle ring buffer over the last 1000 cycles (`E0/E+/E−`, accept/sign, `Sf`, raw `\|F\|`, realization fraction) plus lifetime counters — read via a const accessor; no callbacks or stdout in v1 (a verbose printer is a caller-side wrapper, and the §6.9/§6.14 consumers need values, not log lines). **Windows:** §7.4 variance over committed-trajectory `F(x)` only (probe evaluations are off-trajectory), sliding window = 1000 cycles, aligned with `N_val` (§6.17) so each validation point carries one fresh variance reading; the same window sizes the ring buffer. **Saturation watch:** fraction of windowed cycles with raw `\|F(x)\| > 2.0` — the probe lever is `ε·(1 − tanh²(Sf))` and `1 − tanh²(2.0) ≈ 0.07`, i.e. probes retain <7% of nominal ε effect. §6.11's weight decay (~1e-4) recommended when that fraction exceeds ~0.5. **Drift watch (§7.8):** windowed mean of `F(x)` and accept-sign balance — both free derivatives of the ring buffer. Telemetry observes; the experimenter acts. |
+| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6), step-realization fraction `|F′(Sx) − Sf|/ε` (§6.14 lr tuning). **Exposure:** a POD `FeedbackTelemetry` accumulated by the ESN — per-cycle ring buffer over the last 1000 cycles (`E0/E+/E−`, accept/sign, `Sf`, raw `\|F\|`, realization fraction) plus lifetime counters — read via a const accessor; no callbacks or stdout in v1 (a verbose printer is a caller-side wrapper, and the §6.9/§6.14 consumers need values, not log lines). **Windows:** §7.4 variance over committed-trajectory `F(x)` only (probe evaluations are off-trajectory), sliding window = 1000 cycles, aligned with `N_val` (§6.17) so each validation point carries one fresh variance reading; the same window sizes the ring buffer. **Saturation watch:** fraction of windowed cycles with raw `\|F(x)\| > 2.0` — the probe lever is `ε·(1 − tanh²(Sf))` and `1 − tanh²(2.0) ≈ 0.07`, i.e. probes retain <7% of nominal ε effect. §6.11's weight decay (~1e-4) recommended when that fraction exceeds ~0.5; also report the windowed mean lever `1 − tanh²(F(x))` — the degradation is smooth (§6.11), so the gauge should be too. **Drift watch (§7.8):** windowed mean of `F(x)` and accept-sign balance — both free derivatives of the ring buffer. Telemetry observes; the experimenter acts. |
 
 ## 9. Verification plan (when implemented)
 
