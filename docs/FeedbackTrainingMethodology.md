@@ -153,9 +153,13 @@ One **cycle** = one Pass 1 + one Pass 2.
    always the **live output of the current `F`** — after an accepted Pass-2
    cycle that is the *post-update* readout, recomputed at commit time; it is
    never the probe winner `f*` and never the cached `Sf` (§6.2).
-2. Train `P` on the resulting (state, target) pair exactly as today
-   (`TrainLiveStepRegression` / `TrainLiveStep` per task, or mini-batch
-   accumulation across cycles).
+2. Train `P` on the resulting (state, target) pair exactly as today,
+   **per-step online** (`TrainLiveStepRegression` / `TrainLiveStep` per
+   task) — the natural pair to `F`'s per-accept updates (§6.10): accumulating
+   across cycles would have `P` training on states gathered under several
+   different `F`s, reintroducing for `P` exactly the staleness §6.10
+   eliminated for `F`, and per-step adds no accumulation-cadence
+   hyperparameter. Mini-batch accumulation is a recorded variant, not v1.
 3. `F` is not touched. The reservoir state advances for real (no restore).
 
 ### Pass 2 — feedback readout training (primary held fixed)

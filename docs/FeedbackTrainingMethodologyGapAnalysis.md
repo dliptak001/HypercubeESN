@@ -189,7 +189,10 @@ should also be said explicitly.
 - **B2. Pass-1 cadence left as an either/or:**
   "(`TrainLiveStepRegression`, or mini-batch accumulation across
   cycles)" — v1 should commit to one (per-step online is the natural
-  pair to §6.10).
+  pair to §6.10). *(Resolved June 2026: §4 Pass-1 step 2 commits v1 to
+  per-step online — symmetry with `F`'s zero-staleness stance, §7.3
+  freshness, no new hyperparameter; mini-batch accumulation recorded as
+  a non-v1 variant.)*
 - **B3. `P`'s lr schedule in streaming mode:** `CosineLR` needs a
   horizon; an open-ended stream has none. Both the pre-train phase and
   the alternation phase need a stated lr policy for `P`. *(The analogous
