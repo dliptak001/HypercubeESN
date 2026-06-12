@@ -73,14 +73,43 @@ state-dependent, low-rank recurrent augmentation** of the reservoir — a single
 trained nonlinear scalar pathway wrapped around 2^dim fixed ones. It is *not*
 Jaeger-style output feedback (`W_fb` feeds the task output back; here the fed-back
 signal is a free auxiliary control signal with no predefined semantics — its only
-job is to reduce primary task error). The nearest prior art is Ehlers, Nurdin &
-Soh (2025) — trained state feedback through the input pathway — which reported
-real performance gains; see `feedback_mechanisms.md` §Related-work. Their
-fed-back signal is likewise a scalar, but computed by a *linear* gain (`Vᵀx`,
-trained by gradient descent) and injected through the shared input weights;
-here the scalar comes from a *nonlinear* readout through a dedicated weight
-block, and the novelty is **how `F` is trained**: not by gradient optimization
-of a feedback gain, but by local perturbation search (§4).
+job is to reduce primary task error).
+
+### 2.3 Differentiation from the nearest prior art
+
+The nearest prior art is Ehlers, Nurdin & Soh (2025), "Improving the
+performance of echo state networks through state feedback," *Neural Networks*
+184:107101 (<https://arxiv.org/abs/2312.15141>) — trained state feedback
+through the input pathway, with reported performance gains on standard
+benchmarks; see also `feedback_mechanisms.md` §Related-work. Their mechanism:
+the input is augmented as `u_k → u_k + Vᵀx_k`, so the reservoir update becomes
+`x_{k+1} = g((A + BVᵀ)x_k + Bu_k)` — the feedback flows through the *shared*
+input weights `B`, and the closed loop is exactly a **rank-1 modification of
+the recurrent matrix**. `V` is trained by batch gradient descent (their
+Appendix A).
+
+The two designs agree on the headline mechanism — *a trained, state-dependent
+scalar fed back as an input-like drive* — and differ on every implementation
+axis:
+
+| | Ehlers, Nurdin & Soh (2025) | This design |
+|---|---|---|
+| Fed-back signal | scalar | scalar |
+| Function computing it | **linear** gain `Vᵀx` | **nonlinear** CNN readout `F(x)` (tanh-clamped, §6.11) |
+| Injection path | shared input weights `B` (`A → A + BVᵀ`) | dedicated feedback weight block, separate from the input path (§1) |
+| Training signal | gradient descent on `V` against an explicit cost | zeroth-order ±ε perturbation probes scored by the primary readout's error (§4) — no gradient through the reservoir |
+| Closed-loop form | `A + BVᵀ`: a rank-1 linear modification, directly analyzable | no closed form: nonlinear `F` through its own block |
+
+The trade is expressiveness vs. analyzability. This design is the more
+expressive on every differing axis — a nonlinear state-dependent drive, its own
+weight block, no need for any differentiable path — but it gives up the clean
+`A + BVᵀ` story: there is no linear-algebraic handle on the closed-loop
+dynamics, which is why stability is treated as an empirical question with
+telemetry guards rather than a property to be engineered in (§7.6). Their
+published gains are read here as evidence that the *mechanism* (state→input
+scalar feedback) has legs (§7.5); whether the extra expressiveness and the
+gradient-free training earn their cost is exactly what the §9 A/B benchmark
+exists to answer.
 
 ## 3. Definitions
 
@@ -575,9 +604,8 @@ falsification test of the whole idea and should be in the first experiment.
 ### 7.5 What it plausibly *can* do
 
 For balance: trained state feedback through the input pathway has published
-evidence of real gains (Ehlers et al. 2025 — though theirs is a scalar linear
-gain `Vᵀx` trained by batch gradient descent, not a nonlinear readout trained
-by perturbation search). Mechanistically, a
+evidence of real gains (Ehlers et al. 2025; the full differentiation from this
+design is in §2.3). Mechanistically, a
 state-dependent scalar drive can modulate the reservoir's effective operating
 point — pushing it toward/away from saturation depending on context, a knob the
 open-loop ESN simply does not have. Tasks where error correlates with the
