@@ -5,8 +5,9 @@
 > feedback path into the `ESN` class. All design decisions ([OPEN-1]–[OPEN-12],
 > §6) are **resolved**; each entry records the decision, rationale, and where
 > applicable the rejected alternative and the telemetry that would trigger a
-> rethink. Conceptual criticism of the scheme is in §7. Nothing is implemented
-> yet except the Reservoir-level mechanics (see §1).
+> rethink. Conceptual criticism of the scheme is in §7. Implementation is in
+> progress — see the §8 tracker (Reservoir-level mechanics §1 and
+> snapshot/restore are done; the ESN-side work is pending).
 
 ---
 
@@ -616,22 +617,25 @@ keep a kill-switch comparison (`f ≡ 0`) in every experiment.
 
 ---
 
-## 8. New capability required (preview — not to be built yet)
+## 8. New capability required (implementation tracker)
 
-| Capability | Where | Notes |
-|---|---|---|
-| State snapshot/restore | `Reservoir` | Capture/restore `vtx_state_` + all M history slices + ring rotation. Bit-exact. |
-| Second readout instance | `ESN` | `F` constructed from a `feedback ReadoutConfig` (Regression, 1 output) sharing the subsample geometry. |
-| Closed-loop stepping | `ESN` | A step driver that evaluates `F`, applies the [OPEN-11] clamp, calls `InjectFeedback`, then `Step`. |
-| Training orchestration | `ESN` | The Pass-1/Pass-2 cycle of §4 (streaming mode first — [OPEN-12]), with hyperparameters: `ε`, accept margin (default 0 — [OPEN-6]), `F` learning rate, schedule ([OPEN-9]). `H` is fixed at 1 ([OPEN-1]). |
-| Telemetry | `ESN` | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude ([OPEN-11] saturation watch), state-norm monitor (§7.6). |
+| Capability | Where | Status | Notes |
+|---|---|---|---|
+| State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
+| Second readout instance | `ESN` | pending | `F` constructed from a `feedback ReadoutConfig` (Regression, 1 output) sharing the subsample geometry. |
+| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the [OPEN-11] clamp, calls `InjectFeedback`, then `Step`. |
+| Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode first — [OPEN-12]), with hyperparameters: `ε`, accept margin (default 0 — [OPEN-6]), `F` learning rate, schedule ([OPEN-9]). `H` is fixed at 1 ([OPEN-1]). |
+| Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude ([OPEN-11] saturation watch), state-norm monitor (§7.6). |
 
 ## 9. Verification plan (when implemented)
 
 1. **No-op regression:** `num_feedback_channels = 0` paths byte-identical to
    `main`; with feedback configured but `f ≡ 0` forced, results match open-loop.
 2. **Snapshot fidelity:** snapshot → N steps → restore → N steps reproduces the
-   identical trajectory bit-for-bit.
+   identical trajectory bit-for-bit. *(Implemented and passing — `main.cpp`
+   diagnostics: restore+replay memcmp-identical, Take→Restore→Take identity,
+   staged-injection isolation, size-mismatch throw; three configs incl.
+   2-channel feedback, Release build.)*
 3. **Probe sanity:** with `ε = 0`, all three probes return the identical
    squared error (this also exercises snapshot fidelity through the full probe
    path).
