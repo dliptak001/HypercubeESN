@@ -231,7 +231,10 @@ should also be said explicitly.
   snapshot captures "the slice-ring rotation." The implemented capture
   is **canonical / rotation-free** — rotation is deliberately *not*
   captured; restore re-homes the ring — exactly as §8's tracker row and
-  `Reservoir.h` describe. §3 should match.
+  `Reservoir.h` describe. §3 should match. *(Resolved June 2026: §3 now
+  states the canonical capture, the re-homing restore, and that
+  bit-exactness is a property of the restored dynamics, not the buffer
+  layout.)*
 - **C2. §1's commit range is stale:** "(commits `a8a350a..cf33018`)" is
   cited for the complete mechanism list, but that list includes
   `TakeSnapshot`/`RestoreSnapshot`, which landed later in `696d762`.

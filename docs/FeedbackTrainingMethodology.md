@@ -116,8 +116,11 @@ exists to answer.
 - **Example** — one training example is a **single timestep**: one input sample
   `u(t)` with its target `y(t)` (`H = 1`; rationale in §6.1, which also records
   the `H`-step window generalization as the data-driven fallback).
-- **`Sx`** — a full reservoir state snapshot: `vtx_state_`, **all `M` history
-  slices**, and the slice-ring rotation — captured and restored bit-exactly via
+- **`Sx`** — a full reservoir state snapshot: `vtx_state_` and **all `M`
+  history slices in canonical (rotation-free) order**. The slice-ring rotation
+  is deliberately *not* captured — `RestoreSnapshot` re-homes the ring — so
+  bit-exactness holds for the restored *dynamics* (§9.2's replay test), not
+  the internal buffer layout. Captured and restored via
   `Reservoir::TakeSnapshot`/`RestoreSnapshot` (§8). The per-step `vtx_input_` /
   `vtx_feedback_` staging buffers are cleared by every `Step` and are not part
   of a snapshot; `RestoreSnapshot` additionally clears them.
