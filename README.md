@@ -153,6 +153,38 @@ streaming training.
 See [docs/Reservoir.md](docs/Reservoir.md) and
 [docs/Readout.md](docs/Readout.md) for full architectural detail.
 
+## Closed-Loop Feedback (experimental)
+
+An optional second readout closes the loop. Imagine your ESN is a school with
+two students who are both learning:
+
+- **P** — the big student who learned to do the actual job (predict the
+  signal).
+- **F** — the new little student who learns to whisper helpful hints back
+  into the reservoir.
+
+P reads the reservoir state and produces the output, exactly as in the
+pipeline above. F reads the *same* state and produces a single scalar,
+`f = tanh(F(x))`, injected back into the reservoir for the next step — so the
+reservoir's tomorrow depends on what F whispered today:
+
+```
+            ┌──────────────► P ──► prediction (the job)
+            │
+   u ──► [reservoir] ──► x
+            ▲            │
+            └─ f = tanh(F(x)) ◄─ F (the whisper)
+```
+
+Nobody tells F what a good whisper is — there are no labeled targets for it.
+It learns by perturbation probes: nudge the whisper up and down (±ε), replay
+the exact same step from a reservoir snapshot, and keep whichever direction
+made P's error smaller. P and F take turns training so neither chases a
+moving target.
+
+Full design, training procedure, and self-critique:
+[docs/FeedbackTrainingMethodology.md](docs/FeedbackTrainingMethodology.md).
+
 ## Related Work
 
 The hypercube has met reservoir computing before. Katori (2019),
@@ -247,6 +279,7 @@ HypercubeESN/
 |---|---|
 | [docs/Reservoir.md](docs/Reservoir.md) | Hypercube graph, connectivity, deep-vertex history depth, leaky integrator, spectral-radius tuning, DIM-invariant input drive |
 | [docs/Readout.md](docs/Readout.md) | HCNN readout architecture, training algorithm, streaming mode, ESN interface |
+| [docs/FeedbackTrainingMethodology.md](docs/FeedbackTrainingMethodology.md) | Closed-loop feedback training: the P/F two-readout design, Pass-1/Pass-2 perturbation-probe procedure, validation protocol, self-critique |
 | [docs/Python_SDK.md](docs/Python_SDK.md) | Python SDK: pip install, fit/predict API, streaming, persistence |
 | [docs/CPP_SDK.md](docs/CPP_SDK.md) | C++ static library: build, install, find_package usage, API reference |
 
