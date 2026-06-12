@@ -302,11 +302,16 @@ ESN::FeedbackCycleInfo ESN::TrainFeedbackCycleImpl(const float* input,
         info.e_plus = static_cast<float>(ep);
         info.e_minus = static_cast<float>(em);
 
-        // Accept iff a direction strictly beats baseline by the margin AND
-        // the directions are distinguishable — every exact equality rejects
-        // (§6.6; this strictness is what lets the §6.13 kill-switch arms
-        // freeze F with no extra machinery).
-        if (std::min(ep, em) < e0 - static_cast<double>(fb.margin) && ep != em)
+        // Accept iff a direction beats baseline by the RELATIVE margin
+        // (min < E0·(1−r), §6.6 as amended) AND the directions are
+        // distinguishable — every exact equality rejects (§6.6; this
+        // strictness is what lets the §6.13 kill-switch arms freeze F with
+        // no extra machinery). Relative, not absolute: probe losses span
+        // orders of magnitude across cycles, and the §6.11 saturation
+        // ratchet lives exactly in the deltas that are real but a microscopic
+        // fraction of E0 — an absolute threshold cannot sit between the two
+        // regimes (margin sweep, first §9.4 campaign).
+        if (std::min(ep, em) < e0 * (1.0 - static_cast<double>(fb.margin)) && ep != em)
         {
             info.accepted = true;
             info.sign = (ep < em) ? 1.0f : -1.0f;

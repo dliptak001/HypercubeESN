@@ -214,12 +214,15 @@ int main(int argc, char* argv[])
     // Run 2 found the zero-margin accept test is a saturation ratchet: the
     // deterministic probes resolve arbitrarily small differences, so accepts
     // keep firing at the ~2/3 chance floor even with the lever at 0, each one
-    // committing a full-eps creep further out. A positive margin makes those
-    // noise-level differences reject. Sweep on the two run-2 runaway seeds;
-    // success = saturation 0% at end with healthy accepts still firing.
+    // committing a full-eps creep further out. The absolute-margin sweep
+    // {1e-6, 1e-5, 1e-4} then showed no absolute value can work: the
+    // ratchet-killing threshold exceeded the mean probe loss itself (~5e-5).
+    // The margin is now RELATIVE (accept iff min < E0*(1-r), §6.6 as
+    // amended); sweep r on the two run-2 runaway seeds. Success = saturation
+    // 0% at end, |mean_f| small, with healthy accepts still firing.
     if (argc > 1 && std::strcmp(argv[1], "--margin-sweep") == 0)
     {
-        const float margins[] = {1e-6f, 1e-5f, 1e-4f};
+        const float margins[] = {0.005f, 0.02f, 0.05f};
         const uint64_t runaway_seeds[] = {73895, 73896};
         struct Cell { float margin; uint64_t seed; ArmResult r; };
         std::vector<Cell> cells;
@@ -232,8 +235,8 @@ int main(int argc, char* argv[])
                 cfg.feedback.readout.seed = 43 + static_cast<unsigned>(sd - 73895);
                 cfg.reservoir.feedback_scaling = 0.5f;
                 cfg.feedback.margin = m;
-                std::printf("\n=== margin %.0e, seed %llu ===\n",
-                            m, static_cast<unsigned long long>(sd));
+                std::printf("\n=== relative margin %.1f%%, seed %llu ===\n",
+                            100.0 * m, static_cast<unsigned long long>(sd));
                 cells.push_back({m, sd,
                                  RunArm(cfg, "LIVE", train_u, train_y, val_u, val_y, B)});
             }

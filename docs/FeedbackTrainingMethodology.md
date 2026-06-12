@@ -190,7 +190,7 @@ example.
 | c | `E0` = probe loss `L` (§3) of `P`'s prediction against `y'`. |
 | d | Restore `Sx`. **Positive probe:** same input `u'` with feedback `Sf + ε`; `E+`. |
 | e | Restore `Sx`. **Negative probe:** same input with `Sf − ε`; `E−`. Both directions are always probed (§6.6). |
-| f | **Accept/reject:** if `min(E+, E−) < E0 − margin` **and** `E+ ≠ E−`, the winning perturbation direction is a locally verified improvement. Set `f* = Sf ± ε` (winning sign). Every exact equality rejects — the strict `<` and the tie rule are both deliberate (§6.6). |
+| f | **Accept/reject:** if `min(E+, E−) < E0 · (1 − margin)` **and** `E+ ≠ E−`, the winning perturbation direction is a locally verified improvement (the margin is *relative* — §6.6 as amended). Set `f* = Sf ± ε` (winning sign). Every exact equality rejects — the strict `<` and the tie rule are both deliberate (§6.6). |
 | g | **Train `F` (one regression step):** input = subsampled features of **`Sx`** (the decision-time state, *not* any post-step probe state — §6.4), target = `f*`. |
 | h | If neither probe beats baseline by the margin, train nothing this cycle. |
 | i | Restore `Sx`. Return to Pass 1, which consumes `(u', y')` *for real* (§6.5 — the probe example is re-presented as the next Pass-1 example, preserving stream continuity). The feedback that commit injects is `F`'s live post-update output, not `f*` (§6.2). |
@@ -431,6 +431,22 @@ drift. A **margin** is therefore a purity/throughput knob, not a correctness
 requirement — it trades fewer chance-trained cycles against a lower accept rate
 on real effects. The margin is configurable with default 0, to be promoted to a
 small relative value only if telemetry shows `F` training dominated by jitter.
+
+*Amendment from the first §9.4 campaign: the margin is **relative***
+(`accept iff min(E+, E−) < E0 · (1 − margin)`), and the jitter scenario above
+turned out to be real with teeth. At zero margin the chance-floor accepts are
+not harmless averaging noise: each one commits a full-ε creep, and the
+resulting random walk in `F`'s output ratchets into §6.11 saturation
+(observed: seed-random drift to `mean_f` −6.0 / +5.0, lever → 0, accepts
+still ~99% on microscopic-but-deterministic loss differences). An *absolute*
+margin cannot fix this — probe losses span orders of magnitude across cycles,
+and a margin-sweep showed the threshold that stops the ratchet (1e-4) exceeds
+the mean probe loss itself (~5e-5), freezing healthy learning too. The two
+regimes separate only in relative terms: healthy-lever improvements are a
+material fraction of that cycle's `E0`; saturated-lever differences are a
+microscopic one. The strict-`<` and tie-reject rules survive unchanged (at
+`margin = 0` the comparison is bit-identical to the original), so every §6.13
+kill-switch argument is intact.
 
 **Exact equalities reject — all of them.** The accept comparison is strictly
 `<`, deliberately: equality with the baseline carries no evidence of
@@ -705,7 +721,7 @@ holding `F`'s `ReadoutConfig` plus the scheme's own knobs and the §6.13 flag:
 struct FeedbackConfig {
     ReadoutConfig readout;          // F (dim / num_outputs / task forced by ESN)
     float epsilon       = 0.05f;    // probe perturbation, pre-clamp space (§6.11)
-    float margin        = 0.0f;     // accept margin (§6.6)
+    float margin        = 0.0f;     // RELATIVE accept margin r: min < E0·(1−r) (§6.6 as amended)
     float lr            = 2e-4f;    // F's constant Adam learning rate
     size_t pretrain_steps = 10000;  // P pre-train budget = cosine horizon (§6.9)
     float p_lr          = 5e-4f;    // P's constant alternation lr (§6.9)
@@ -735,7 +751,7 @@ Defaults, with the reasoning on record:
 | `feedback.readout.weight_decay` | 0 | Telemetry-gated (§6.11, §7): promote to ~1e-4 only if the raw `\|F(x)\|` saturation watch fires. |
 | `feedback.epsilon` | 0.05 (sane range 0.01–0.2) | Rationale below. |
 | `feedback.lr` | 2e-4, constant | Rationale below. |
-| `feedback.margin` | 0 | Already specced (§6.6). |
+| `feedback.margin` | 0 | Relative (§6.6 as amended): accept iff `min(E+, E−) < E0 · (1 − margin)`. Default 0 retained for the no-op/kill-switch arguments; experiments should set a few percent — the §6.6 ratchet amendment documents why an absolute margin cannot work. |
 | `feedback.pretrain_steps` | 10 000 | `P`'s pre-train budget; doubles as the cosine horizon and the §6.9 phase backstop. |
 | `feedback.p_lr` | 5e-4, constant | `P`'s alternation lr; the pre-train cosine anneals into it. Full rationale in §6.9. |
 | `reservoir.feedback_scaling` | 0.5 (unchanged) | Matches `input_scaling`'s 0.5, so at `\|f\| ~ \|u\|` the feedback drive is commensurate with the input drive — a sane first operating point. Drop to 0.25 if the §7.6 state-norm monitor shows growth; do **not** pre-shrink it, or a null result is uninterpretable (signal too weak vs. idea wrong). |

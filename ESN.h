@@ -22,7 +22,7 @@ struct FeedbackConfig
     ReadoutConfig readout{.num_layers = 1, .conv_channels = 8, .seed = 43};
 
     float epsilon = 0.05f; ///< Probe perturbation, pre-clamp space (§6.11, §6.14).
-    float margin = 0.0f; ///< Accept margin; 0 = any strict improvement accepts (§6.6).
+    float margin = 0.0f; ///< RELATIVE accept margin r: accept iff min(E+,E−) < E0·(1−r). 0 = any strict improvement accepts (§6.6 as amended — absolute margins cannot separate healthy accepts from the §6.11 saturation ratchet, whose deltas are real but a microscopic fraction of E0).
     float lr = 2e-4f; ///< F's constant Adam learning rate (§6.14).
     size_t pretrain_steps = 10000; ///< P pre-train budget = its cosine horizon (§6.9).
     float p_lr = 5e-4f; ///< P's constant alternation lr; the pre-train cosine anneals into it (§6.9).
