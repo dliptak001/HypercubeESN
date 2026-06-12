@@ -142,6 +142,78 @@ public:
                                   size_t count, float lr, float weight_decay);
 
     // ---------------------------------------------------------------
+    //  Feedback training orchestration
+    //  (docs/FeedbackTrainingMethodology.md §4, §6.9, §6.16, §6.17)
+    // ---------------------------------------------------------------
+
+    /// Per-cycle report from @ref TrainFeedbackCycle. §6.9 wants the probe
+    /// acceptance rate logged from day one; this is the value stream the
+    /// caller accumulates it from (the full FeedbackTelemetry ring buffer is
+    /// a separate §8 row).
+    struct FeedbackCycleInfo
+    {
+        bool pretrain = false; ///< This example fell in the P pre-train phase (no probes).
+        float e0 = 0.0f; ///< Baseline probe loss (NaN during pretrain).
+        float e_plus = 0.0f; ///< +ε probe loss (NaN during pretrain).
+        float e_minus = 0.0f; ///< −ε probe loss (NaN during pretrain).
+        float sf = 0.0f; ///< F's raw (pre-clamp) operating point Sf (NaN during pretrain).
+        bool accepted = false; ///< A probe direction won and F took one training step.
+        float sign = 0.0f; ///< +1/−1 (winning direction) when accepted, else 0.
+        float p_lr = 0.0f; ///< P's lr this example (§6.9 cosine during pretrain, then constant).
+    };
+
+    /// @brief Consume one training example (u, y) of the stream — the §4
+    /// Pass-2-then-Pass-1 cycle (every example is probed, then committed,
+    /// §6.5). Regression-P overload; @p target is NumOutputs() floats.
+    ///
+    /// Phase is tracked internally (§6.9): the first
+    /// cfg.feedback.pretrain_steps examples train P alone (no probes, no F
+    /// updates, F frozen but its clamped output still drives the loop) with
+    /// P's lr cosine-annealed from cfg.readout.lr_max down to
+    /// cfg.feedback.p_lr. Thereafter each call runs the full cycle: snapshot,
+    /// three probes at Sf and Sf ± ε (§6.6), accept iff
+    /// min(E+, E−) < E0 − margin and E+ ≠ E− (every exact equality rejects),
+    /// on accept one F regression step toward f* = Sf ± ε on the
+    /// decision-time state (§6.4), then the real commit via @ref StepLive
+    /// (injecting F's live post-update output, never f* — §6.2) and one
+    /// per-step P training step at constant p_lr.
+    ///
+    /// Cost: 4 reservoir steps + 4 P-forwards per alternation cycle (~4×
+    /// plain streaming). Requires feedback configured and @ref InitOnline
+    /// already run (throws std::logic_error otherwise); throws
+    /// std::invalid_argument if P's task is not Regression.
+    FeedbackCycleInfo TrainFeedbackCycle(const float* input, const float* target);
+
+    /// Classification-P overload of @ref TrainFeedbackCycle. The probe loss
+    /// is the softmax cross-entropy of @p target_class from P's logits,
+    /// log-sum-exp stabilized (§6.16 — accuracy is a step function at ε
+    /// scale and would never fire an accept). F's own training step is
+    /// regression regardless of P's task (§6.16).
+    FeedbackCycleInfo TrainFeedbackCycle(const float* input, int target_class);
+
+    /// @brief Score a held-out validation stream under the §6.17 protocol:
+    /// TakeSnapshot → zero-reset → closed-loop washout (first W steps,
+    /// unscored; W = the warmup count passed to @ref InitOnline) →
+    /// closed-loop scoring with F and P frozen (no probes, no training,
+    /// force_zero respected) → RestoreSnapshot. Training resumes gapless;
+    /// consecutive scores differ only because F/P changed (zero-reset entry).
+    ///
+    /// Call only at a cycle boundary (between TrainFeedbackCycle calls).
+    /// @p inputs is count * NumInputs() floats; @p targets spans all count
+    /// steps (count * NumOutputs() floats for regression, count class labels
+    /// for classification) — rows before W are skipped. Returns NRMSE
+    /// (regression, averaged across outputs) or mean cross-entropy
+    /// (classification). Cadence is caller policy (§6.9 default: every 1000
+    /// cycles, watching for plateau).
+    /// @throws std::logic_error if feedback is not configured or InitOnline
+    ///         has not run; std::invalid_argument if count <= W.
+    double ValidateClosedLoop(const float* inputs, const float* targets, size_t count);
+
+    /// Examples consumed by @ref TrainFeedbackCycle (both phases); the phase
+    /// switch happens at cfg.feedback.pretrain_steps.
+    [[nodiscard]] size_t NumFeedbackExamples() const { return fb_examples_; }
+
+    // ---------------------------------------------------------------
     //  Prediction & evaluation
     // ---------------------------------------------------------------
 
@@ -250,6 +322,28 @@ private:
 
     std::vector<float> states_;
     size_t num_collected_ = 0;
+
+    /**** feedback training orchestration ****/
+    size_t fb_examples_ = 0; // examples consumed by TrainFeedbackCycle (phase counter, §6.9)
+    size_t warmup_count_ = 0; // W given to InitOnline — reused as the §6.17 validation washout
+    std::vector<float> fb_decision_state_; // subsample(Sx): F's training input (§6.4); survives probe clobbering of scratch_subsampled_
+    std::vector<float> fb_pred_; // P-forward output buffer for probes/validation
+
+    /// The §6.11 clamp seam: inject tanh(raw) on channel 0, or 0 under the
+    /// §6.13 force_zero lesion flag. Every feedback injection — StepLive
+    /// commits, probes, validation — goes through here.
+    void InjectFeedbackClamped(float raw);
+
+    /// One probe (§4 steps b–e): inject feedback @p raw_feedback (pre-clamp)
+    /// and @p input, Step, P-forward, return the §6.16 probe loss. The caller
+    /// owns snapshot/restore around this.
+    double ProbeLoss(const float* input, float raw_feedback,
+                     const float* target, int target_class);
+
+    FeedbackCycleInfo TrainFeedbackCycleImpl(const float* input,
+                                             const float* target, int target_class);
+
+    void RequireFeedbackTraining(const char* method) const;
 
     struct ReadoutGeometry
     {
