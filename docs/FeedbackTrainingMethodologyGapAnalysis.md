@@ -15,8 +15,8 @@
 >
 > **Update (June 2026): all six A-items are resolved** — each carries an
 > inline "Resolved" block recording the decision and where it was
-> codified (§6.2 commit-time corollary, §6.13–§6.17). All B items are
-> resolved inline below; C1–C4 and D1/D2 remain open.
+> codified (§6.2 commit-time corollary, §6.13–§6.17). All B and C items
+> and D1 are resolved inline below; D2 remains open.
 
 ---
 
@@ -274,6 +274,15 @@ saturation watch and an optional weight decay mentioned in passing. The
 dynamics of "a regressor chasing its own output plus noise" deserve a
 bullet in §7 — it is a different failure mode from the §7.4 variance
 collapse (drift vs. flatline).
+
+> **Resolved (June 2026): new §7.8.** Records the mechanism (sign
+> streaks × `F`'s generalization on autocorrelated streams = a
+> compounding walk; nothing intrinsic bounds raw `Sf` — the clamp caps
+> the effect, not the walk), the separation from §7.4 (drift vs.
+> flatline; mean-watch vs. variance-watch), and the responders — weight
+> decay ~1e-4 (§6.11's knob, second job) and a positive margin (§6.6's
+> knob). Windowed mean of `F(x)` and accept-sign balance added to the
+> §8 telemetry row, both free derivatives of the B5 ring buffer.
 
 ### D2. The effective perturbation shrinks before saturation is "deep"
 
