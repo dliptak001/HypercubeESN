@@ -564,6 +564,61 @@ evaluation needs either a streaming variant of those benchmarks (the readout
 already supports online regression) or its first evidence from the streaming
 examples instead.
 
+### 6.13 The `f ≡ 0` kill-switch: a config arm and a runtime lesion flag
+
+§7.6 mandates a kill-switch comparison in every experiment, and §9.1 requires
+"feedback configured but `f ≡ 0` forced." The Reservoir-level
+`enable_feedback_` toggle is deliberately gone (`cde5d2f`) and **stays gone**:
+at that layer `num_feedback_channels > 0` is the single source of truth for
+the path's existence, and a second boolean that silently deadens a configured
+path is exactly the split-brain the removal fixed. The force-zero semantics
+the verification plan needs — realization, weights, and loop machinery intact,
+only the *value* dead — belongs where the value is computed, and is provided
+by two complementary mechanisms at two layers:
+
+```
+              kill point 2 — runtime: force_zero_feedback (ESN seam)
+                        │
+  x ──F──► raw ──tanh──► f ──InjectFeedback──► f × W_fb ──► Σ (per vertex)
+                                                    │
+              kill point 1 — config: feedback_scaling = 0  ⇒  W_fb ≡ 0
+```
+
+**Config arm — `feedback_scaling = 0` (no new code; it already works).**
+Feedback weights are drawn from the RNG and *then* scaled (`Reservoir.cpp`,
+`Initialize`), so scaling zero with `num_feedback_channels > 0` consumes
+identical RNG draws and yields a **bit-identical realization** with the
+feedback block exactly zeroed — input and recurrent weights untouched, and the
+SR normalization unaffected (it excludes the feedback block). Every injected
+`f`, whatever its value, then contributes exactly 0.0 to every pre-activation:
+literally "configured but `f ≡ 0` forced." The entire training machinery still
+executes — snapshots, three probes, `F` forwards — but the post-step probe
+states are bit-identical, so `E+ = E− = E0` *exactly*, the strict-`<` accept
+of §4 step f never fires, and `F` never trains. The control arm therefore
+costs the same ~4× overhead as the live arm with the signal provably dead —
+the §9.4 A/B comparison gets a compute-matched control for free. Limitation:
+build-time only; it cannot be flipped on an already-trained system.
+
+**Runtime arm — ESN-level `force_zero_feedback` at the §6.11 clamp seam.**
+One line at the seam: inject `0` instead of `tanh(F(x))`. (Injecting 0 and
+skipping `InjectFeedback` are mathematically identical — the staging buffer is
+cleared by every `Step` — but injecting keeps the executed code path closest
+to the live arm.) This serves the ablation the config arm cannot: train
+normally with feedback live, then flip the flag at evaluation to measure how
+much of the trained system's performance the closed loop actually carries —
+§7.6's per-experiment lesion comparison in its most informative form. If the
+flag is on *during* training, every probe injects the same 0, the
+exact-equality argument above applies, and `F` freezes automatically — no
+separate "disable Pass 2" machinery is needed, only this documented
+consequence. The flag lives in the ESN-side feedback configuration block
+(alongside the `F`/probe hyperparameters), defaults off, and is settable
+between training and evaluation.
+
+This is not the removed toggle returning. That toggle duplicated the
+Reservoir's own existence-gating one layer down; this flag overrides a value
+at the single layer that computes it, and the Reservoir's
+`num_feedback_channels`-gates-everything invariant stays intact.
+
 ---
 
 ## 7. Critique of the concept itself
@@ -647,7 +702,9 @@ echo-state property is an open-loop guarantee, and the feedback weight block sit
 dependent* signal voids the configured SR semantics. The guards available:
 small `feedback_scaling`, bounded `f` (§6.11), and the per-neuron `tanh`.
 None of them is a proof; watch for state-norm growth during closed-loop runs and
-keep a kill-switch comparison (`f ≡ 0`) in every experiment.
+keep a kill-switch comparison (`f ≡ 0`) in every experiment — both mechanisms
+are specified in §6.13 (config arm: `feedback_scaling = 0`; runtime lesion
+flag: `force_zero_feedback`).
 
 ### 7.7 Smaller observations
 
@@ -670,14 +727,16 @@ keep a kill-switch comparison (`f ≡ 0`) in every experiment.
 |---|---|---|---|
 | State snapshot/restore | `Reservoir` | **DONE** (`696d762`) | `TakeSnapshot`/`RestoreSnapshot`: canonical (rotation-free) capture of `vtx_state_` + all M history slices; restore re-homes the ring and clears staged drives. Bit-exact — verified by the §9.2 diagnostics in `main.cpp`. |
 | Second readout instance | `ESN` | pending | `F` constructed from a `feedback ReadoutConfig` (Regression, 1 output) sharing the subsample geometry. |
-| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. |
+| Closed-loop stepping | `ESN` | pending | A step driver that evaluates `F`, applies the §6.11 clamp, calls `InjectFeedback`, then `Step`. Includes the `force_zero_feedback` runtime override at the clamp seam (§6.13). |
 | Training orchestration | `ESN` | pending | The Pass-1/Pass-2 cycle of §4 (streaming mode — §6.12), with hyperparameters: `ε`, accept margin (default 0 — §6.6), `F` learning rate, schedule (§6.9). `H` is fixed at 1 (§6.1). |
 | Telemetry | `ESN` | pending | Probe acceptance rate, `E0/E+/E−` traces, variance of `F(x)` (§7.4), raw `|F(x)|` magnitude (§6.11 saturation watch), state-norm monitor (§7.6). |
 
 ## 9. Verification plan (when implemented)
 
 1. **No-op regression:** `num_feedback_channels = 0` paths byte-identical to
-   `main`; with feedback configured but `f ≡ 0` forced, results match open-loop.
+   `main`; with feedback configured but `f ≡ 0` forced — each §6.13 mechanism
+   in turn: `feedback_scaling = 0`, and the `force_zero_feedback` flag —
+   results match open-loop.
 2. **Snapshot fidelity:** snapshot → N steps → restore → N steps reproduces the
    identical trajectory bit-for-bit. *(Implemented and passing — `main.cpp`
    diagnostics: restore+replay memcmp-identical, Take→Restore→Take identity,
@@ -689,7 +748,9 @@ keep a kill-switch comparison (`f ≡ 0`) in every experiment.
 4. **A/B benchmark:** NARMA-30 and sine prediction, feedback-trained vs.
    open-loop, multiple seeds — the same harness as the existing M-sweep. Report
    NRMSE deltas *with* the §7.4 variance telemetry, so a win can be attributed
-   (state-dependent signal vs. learned bias). These benchmarks run on the
+   (state-dependent signal vs. learned bias). The `feedback_scaling = 0` arm
+   of §6.13 doubles as the compute-matched control (same ~4× probe overhead,
+   signal provably dead). These benchmarks run on the
    batch harness today; with v1 streaming-only (§6.12), they need streaming
    variants — the readout already supports online regression.
 5. **Stability soak:** long closed-loop free runs; assert bounded state norms.

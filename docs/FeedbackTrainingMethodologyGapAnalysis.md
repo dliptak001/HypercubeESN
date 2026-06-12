@@ -57,6 +57,19 @@ nothing in the doc says where the force-zero now lives (an ESN-level
 flag? a debug hook at the §6.11 clamp seam?). The verification plan
 depends on a capability that no §8 tracker row builds.
 
+> **Resolved (June 2026): the Reservoir toggle stays gone; two
+> mechanisms at the right layers, codified in new §6.13** (cross-refs
+> added in §7.6, §8, §9.1, §9.4). The §9.1 "configured but `f ≡ 0`" arm
+> needs no new capability at all: `feedback_scaling = 0` yields a
+> bit-identical realization with the feedback block exactly zeroed
+> (weights are drawn then scaled — `Reservoir.cpp` `Initialize`), every
+> probe returns exactly equal errors, and the strict-`<` accept means
+> `F` never trains — a compute-matched control for free. The §7.6
+> per-experiment lesion is a new ESN-level `force_zero_feedback` runtime
+> flag at the §6.11 clamp seam (rides on A3's config surface; tracked in
+> the §8 closed-loop-stepping row), enabling post-hoc lesioning of a
+> trained system.
+
 ### A3. No config surface or defaults for `F` and the probe hyperparameters
 
 `ESNConfig` has exactly one `readout`. The doc never specifies:
