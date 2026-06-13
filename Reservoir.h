@@ -23,8 +23,8 @@ struct ReservoirConfig
     size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely (must divide N = 2^dim evenly when > 0)
     float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
 
-    size_t bias_seed = 84747367; // seed for the per-neuron bias stream (independent of seed/feedback streams)
-    float bias_scaling = 1.0f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; ON by default (0 disables)
+    size_t bias_seed = 341476367; // seed for the per-neuron bias stream (independent of seed/feedback streams)
+    float bias_scaling = 0.0f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; OFF by default (0 disables)
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -54,8 +54,8 @@ struct ReservoirConfig
 /// Every neuron also carries a fixed additive bias (@c ReservoirConfig::bias_scaling),
 /// drawn once at construction from its own seeded stream
 /// (@c ReservoirConfig::bias_seed) as @c U(-1,1) * bias_scaling and summed into the
-/// pre-activation just before the @c tanh. Unlike feedback, bias is ON by default
-/// (bias_scaling = 1.0); set bias_scaling to 0 to disable it. It is a fixed model
+/// pre-activation just before the @c tanh. Like feedback, bias is OFF by default
+/// (bias_scaling = 0.0); set bias_scaling > 0 to enable it. It is a fixed model
 /// parameter, not dynamical state — @ref Reset leaves it untouched and @ref TakeSnapshot
 /// does not capture it. Like the feedback block it sits OUTSIDE the spectral-radius
 /// estimate (it is an additive constant, not part of the linear recurrent operator)
