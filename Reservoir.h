@@ -22,6 +22,9 @@ struct ReservoirConfig
 
     size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely (must divide N = 2^dim evenly when > 0)
     float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
+
+    size_t bias_seed = 84747367; // seed for the per-neuron bias stream (independent of seed/feedback streams)
+    float bias_scaling = 1.0f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; ON by default (0 disables)
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -47,6 +50,16 @@ struct ReservoirConfig
 /// channels it is a no-op — no weights are allocated and the open-loop
 /// realization is unchanged. Note the feedback block sits OUTSIDE the
 /// spectral-radius estimate, so it does not bound closed-loop stability.
+///
+/// Every neuron also carries a fixed additive bias (@c ReservoirConfig::bias_scaling),
+/// drawn once at construction from its own seeded stream
+/// (@c ReservoirConfig::bias_seed) as @c U(-1,1) * bias_scaling and summed into the
+/// pre-activation just before the @c tanh. Unlike feedback, bias is ON by default
+/// (bias_scaling = 1.0); set bias_scaling to 0 to disable it. It is a fixed model
+/// parameter, not dynamical state — @ref Reset leaves it untouched and @ref TakeSnapshot
+/// does not capture it. Like the feedback block it sits OUTSIDE the spectral-radius
+/// estimate (it is an additive constant, not part of the linear recurrent operator)
+/// and carries no fan-in normalization (a single per-neuron term has no fan-in).
 ///
 /// Lifetime: non-copyable and non-movable; obtain instances via @ref Create.
 /// Per-step contract: @ref InjectInput and/or @ref InjectFeedback (both optional)
@@ -192,6 +205,7 @@ private:
     std::unique_ptr<float[], AlignedFree> vtx_output_history_;
     std::unique_ptr<float[], AlignedFree> vtx_weight_;
     std::unique_ptr<float*[]> slice_ptrs_;
+    std::unique_ptr<float[], AlignedFree> vtx_bias_;
 
     size_t num_inputs_ = 1;
     float spectral_radius_ = 0.99f;
@@ -208,6 +222,11 @@ private:
     float feedback_scaling_ = 1.0f;
     size_t num_feedback_weights_ = 0; // n_ * dim_ — size of the feedback-weight block
     std::unique_ptr<float[], AlignedFree> vtx_feedback_;
+
+
+    /**** per neuron bias ****/
+    size_t bias_seed_;
+    float bias_scaling_;
 
     void Initialize();
     void UpdateState(size_t v, float old_output_v);

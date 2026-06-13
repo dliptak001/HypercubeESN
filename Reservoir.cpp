@@ -21,7 +21,10 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       history_depth_(cfg.history_depth),
       history_floor_(cfg.history_floor),
       num_feedback_channels_(cfg.num_feedback_channels),
-      feedback_scaling_(cfg.feedback_scaling)
+      feedback_scaling_(cfg.feedback_scaling),
+      bias_seed_(cfg.bias_seed),
+      bias_scaling_(cfg.bias_scaling)
+
 {
     if (dim_ < 5 || dim_ > 16)
         throw std::invalid_argument("dim must be in 5 <= dim <= 16");
@@ -54,6 +57,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     vtx_weight_.reset(AllocAligned(num_weights_));
     slice_ptrs_.reset(new float*[history_depth_]);
 
+    vtx_bias_.reset(AllocAligned(n_));
+
     num_feedback_weights_ = num_feedback_channels_ > 0 ? n_ * dim_ : 0;
     if (num_feedback_channels_ > 0)
         vtx_feedback_.reset(AllocAligned(n_));
@@ -65,9 +70,13 @@ void Reservoir::Initialize()
 {
     std::mt19937_64 rng(rng_seed_);
     std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
+    std::mt19937_64 bias_rng(bias_seed_);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
     Reset();
+
+    for (size_t i = 0; i < n_; ++i)
+        vtx_bias_[i] = static_cast<float>(dist(bias_rng)) * bias_scaling_;
 
     float* pW = vtx_weight_.get();
 
@@ -227,6 +236,8 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
             s += pSlice[v ^ NearestMask(j)] * (*w++);
     }
 
+    s += vtx_bias_[v];
+
     const float activation = std::tanh(s);
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
@@ -302,6 +313,8 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.verbose = verbose_;
     cfg.num_feedback_channels = num_feedback_channels_;
     cfg.feedback_scaling = feedback_scaling_;
+    cfg.bias_seed = bias_seed_;
+    cfg.bias_scaling = bias_scaling_;
     return cfg;
 }
 
