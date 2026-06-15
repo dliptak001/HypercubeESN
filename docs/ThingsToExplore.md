@@ -31,13 +31,11 @@ member → _D_ feedback channels per member.
 **Why:** The deviation couples the reservoirs through their disagreement. The
 consensus mean ȳ is a lower-variance estimate of the underlying trajectory than any
 single member (its error variance is ~1/3 of a single member's when the three are
-independent), so routing
-each member its departure from ȳ is a self-correcting error signal with **no
-external teacher** — exactly what free-running lacks once the input is removed. The
-coupling is mean-field / all-to-all: every member sees the same ȳ, which is the
-complete-graph (K_3, a triangle) diffusive coupling of classical consensus
-dynamics. Its sign
-sets the regime (below).
+independent), so routing each member its departure from ȳ is a self-correcting
+error signal with **no external teacher** — exactly what free-running lacks once the
+input is removed. The coupling is mean-field / all-to-all: every member sees the
+same ȳ, which is the complete-graph (K_3, a triangle) diffusive coupling of
+classical consensus dynamics. Its sign sets the regime (below).
 
 **Mapping to the existing feedback path.** This needs no new reservoir mechanism —
 it reuses the closed-loop driver already in `Reservoir`:
@@ -47,7 +45,8 @@ it reuses the closed-loop driver already in `Reservoir`:
   owns the three members and drives them in lockstep — exactly as `ESN` already owns
   `InjectInput` / `InjectFeedback` around `Step`. The reservoir stays ignorant of
   the ensemble, preserving the existing decoupling.
-- `Δ_i` is staged via `InjectFeedback(c, κ·Δ_i,c)` before each member's `Step`. A
+- `Δ_i` is staged via `InjectFeedback(c, κ·Δ_i,c)` before each member's `Step`
+  (through a thin `ESN` step method — see the orchestrator sketch's seam note below). A
   `coupling_scaling` knob κ plays the role `feedback_scaling` plays for output
   feedback; the `tanh` clamp seam and the `state_rms` stability monitor already in
   the feedback path apply unchanged.
