@@ -495,6 +495,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 | Method | Description |
 |--------|-------------|
 | `reset_reservoir_only()` | Zero the reservoir state; collected states and trained readout are preserved. For episodic tasks. |
+| `set_reservoir_noise_active(active)` | Toggle training-only state noise (Jaeger). Gated by **both** `noise_scaling > 0` and this flag; enable while collecting training states, disable for evaluation / free-run. See [Training noise](#training-noise). |
 
 ---
 
