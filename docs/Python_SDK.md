@@ -286,9 +286,9 @@ Use this between independent sequences: clear the collected data, then `warmup()
 
 ---
 
-##### `set_reservoir_noise_active(active)`
+##### Training noise
 
-Toggle **training-only state noise** (Jaeger): a small per-neuron perturbation added to each neuron's pre-`tanh` drive while the reservoir is driven. It teaches the readout to recover from slightly-off states — a regularizer that pays off on noisy and closed-loop tasks. Injection is gated by **two** knobs so it can never leak into inference by accident:
+`set_reservoir_noise_active(active)` — toggle **training-only state noise** (Jaeger): a small per-neuron perturbation added to each neuron's pre-`tanh` drive while the reservoir is driven. It teaches the readout to recover from slightly-off states — a regularizer that pays off on noisy and closed-loop tasks. Injection is gated by **two** knobs so it can never leak into inference by accident:
 
 ```
 fires only if   noise_scaling > 0   AND   set_reservoir_noise_active(True)

@@ -11,7 +11,7 @@ order below.
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [Reservoir.md](Reservoir.md) | How the hypercube reservoir works — topology, connectivity, timestep mechanics, deep-vertex history depth, spectral-radius tuning, DIM-invariant input drive |
+| [Reservoir.md](Reservoir.md) | How the hypercube reservoir works — topology, connectivity, timestep mechanics, deep-vertex history depth, spectral-radius tuning, DIM-invariant input drive, training-noise regularizer |
 | [Readout.md](Readout.md) | HCNN readout architecture, training algorithm, and streaming mode |
 
 These documents cover the full pipeline:
