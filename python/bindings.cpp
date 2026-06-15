@@ -21,7 +21,8 @@ PYBIND11_MODULE(_core, m)
         // per-call config overrides.
         .def(py::init([](size_t dim, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
-                         float history_floor, bool verbose,
+                         float history_floor, float noise_scaling, uint64_t noise_seed,
+                         bool verbose,
                          float output_fraction,
                          int readout_num_outputs, const char* readout_task,
                          int readout_num_layers, int readout_conv_channels,
@@ -40,6 +41,8 @@ PYBIND11_MODULE(_core, m)
             cfg.reservoir.num_inputs       = num_inputs;
             cfg.reservoir.history_depth    = history_depth;
             cfg.reservoir.history_floor    = history_floor;
+            cfg.reservoir.noise_scaling    = noise_scaling;
+            cfg.reservoir.noise_seed       = noise_seed;
             cfg.reservoir.verbose          = verbose;
             cfg.output_fraction            = output_fraction;
             cfg.readout.num_outputs        = readout_num_outputs;
@@ -76,6 +79,8 @@ PYBIND11_MODULE(_core, m)
             py::arg("num_inputs")               = 1ULL,
             py::arg("history_depth")            = 16ULL,
             py::arg("history_floor")            = 1.0f,
+            py::arg("noise_scaling")            = 0.0f,
+            py::arg("noise_seed")               = 0x6F0994B61D8E2F3DULL,
             py::arg("verbose")                  = true,
             py::arg("output_fraction")          = 1.0f,
             py::arg("readout_num_outputs")      = 1,
@@ -120,6 +125,14 @@ PYBIND11_MODULE(_core, m)
 
         .def("reset_reservoir_only", &ESN::ResetReservoirOnly,
              "Zero only the reservoir state; collected states preserved.")
+
+        // ── Training noise (Jaeger state noise) ──
+        .def("set_reservoir_noise_active", [](ESN& self, bool active) {
+            self.SetReservoirNoiseActive(active);
+        }, py::arg("active"),
+           "Toggle training-noise injection. Gated by BOTH noise_scaling > 0 AND\n"
+           "this flag; enable while collecting training states, disable for\n"
+           "inference / closed-loop free-run. Inert unless noise_scaling > 0.")
 
         // ── Batch training ──
         .def("train", [](ESN& self,
@@ -368,6 +381,9 @@ PYBIND11_MODULE(_core, m)
         .def_property_readonly("num_inputs", &ESN::NumInputs)
         .def_property_readonly("history_depth", [](const ESN& self) { return self.GetConfig().reservoir.history_depth; })
         .def_property_readonly("history_floor", [](const ESN& self) { return self.GetConfig().reservoir.history_floor; })
+        .def_property_readonly("noise_scaling", [](const ESN& self) { return self.GetConfig().reservoir.noise_scaling; })
+        .def_property_readonly("noise_seed", [](const ESN& self) { return self.GetConfig().reservoir.noise_seed; })
+        .def_property_readonly("reservoir_noise_active", [](const ESN& self) { return self.ReservoirNoiseActive(); })
         .def_property_readonly("seed", [](const ESN& self) { return self.GetConfig().reservoir.seed; })
         .def_property_readonly("spectral_radius", [](const ESN& self) { return self.GetConfig().reservoir.spectral_radius; })
         .def_property_readonly("leak_rate", [](const ESN& self) { return self.GetConfig().reservoir.leak_rate; })

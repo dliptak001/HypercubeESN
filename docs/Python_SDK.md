@@ -153,6 +153,7 @@ esn.selected_states()               # stride-selected states as ndarray
 ```python
 ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
     leak_rate=1.0, num_inputs=1, history_depth=16, history_floor=1.0,
+    noise_scaling=0.0, noise_seed=0x6F0994B61D8E2F3D,
     output_fraction=1.0,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
@@ -171,6 +172,8 @@ Creates the reservoir and computes output selection parameters from `output_frac
 | `num_inputs` | `int` | `1` | Number of input channels. Channel k drives the contiguous vertex block `[k·N/num_inputs, (k+1)·N/num_inputs)`. |
 | `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |
 | `history_floor` | `float` | `1.0` | Depth taper K in [0.1, 1.0]. Recurrent weights are linearly scaled from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less; applied before the spectral-radius rescale. `1.0` = no taper; no effect when `history_depth == 1`. |
+| `noise_scaling` | `float` | `0.0` | Magnitude of **training-only state noise** (Jaeger): a per-neuron perturbation added to each neuron's pre-`tanh` drive. A regularizer that teaches the readout to recover from slightly-off states; helps on noisy/closed-loop tasks at a small cost on clean ones. `0.0` disables it. Gated by **both** `noise_scaling > 0` **and** `set_reservoir_noise_active(True)` — see [Training noise](#training-noise). |
+| `noise_seed` | `int` | `0x6F09…2F3D` | Seed for the independent per-step training-noise RNG stream (separate from `seed`). Only matters when `noise_scaling > 0` and noise is active; fixing it makes noisy training runs reproducible. |
 | `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. Set `False` to silence it. |
 | `output_fraction` | `float` | `1.0` | Fraction of N vertices used as readout features, in (0.0, 1.0]. |
 
@@ -280,6 +283,38 @@ Drive the reservoir and record the subsampled state vector at each step. States 
 Clear all collected states and cached features. The reservoir's live internal state is **not** reset — it retains its current activation. The trained readout is also preserved.
 
 Use this between independent sequences: clear the collected data, then `warmup()` + `run()` on a new input sequence without rebuilding the ESN.
+
+---
+
+##### `set_reservoir_noise_active(active)`
+
+Toggle **training-only state noise** (Jaeger): a small per-neuron perturbation added to each neuron's pre-`tanh` drive while the reservoir is driven. It teaches the readout to recover from slightly-off states — a regularizer that pays off on noisy and closed-loop tasks. Injection is gated by **two** knobs so it can never leak into inference by accident:
+
+```
+fires only if   noise_scaling > 0   AND   set_reservoir_noise_active(True)
+```
+
+Both default off (`noise_scaling=0.0`, flag `False`), so enabling noise is an explicit opt-in on both. Set the magnitude with the `noise_scaling` constructor argument; toggle the runtime flag here. Calling this is inert unless `noise_scaling > 0`.
+
+The canonical usage is the **train-on / measure-off** pattern — inject noise only while collecting the states the readout trains on, then turn it off so the held-out test states are scored on the clean dynamics:
+
+```python
+esn = he.ESN(dim=7, noise_scaling=0.01)
+
+esn.set_reservoir_noise_active(True)
+esn.warmup(signal[:warmup])
+esn.run(signal[warmup:warmup + train_size])   # noisy training states
+esn.set_reservoir_noise_active(False)
+esn.run(signal[warmup + train_size:])         # clean test states
+
+esn.train(targets[:train_size])
+print(esn.r2(targets, start=train_size))      # scored on clean dynamics
+```
+
+Two back-to-back `run()` calls over contiguous input produce the same reservoir trajectory as one `run()`, apart from the noise toggle — so the split keeps the dynamics continuous while scoring on the clean states. Read the current flag via the `reservoir_noise_active` property.
+
+**Parameters:**
+- `active` (`bool`) — `True` enables injection (if `noise_scaling > 0`); `False` silences it without disturbing `noise_scaling`.
 
 ---
 
@@ -427,6 +462,9 @@ Extract stride-selected vertices from all collected states.
 | `num_output_verts` | `int` | Number of selected output vertices M. |
 | `history_depth` | `int` | Delay-line depth M (past output slices the readout sees). |
 | `history_floor` | `float` | Depth taper K: deepest-history recurrent weight scale (1.0 = no taper). |
+| `noise_scaling` | `float` | Training-noise magnitude (Jaeger state noise); 0.0 = off. |
+| `noise_seed` | `int` | RNG seed for the per-step training-noise stream. |
+| `reservoir_noise_active` | `bool` | Whether the training-noise runtime flag is on (set by `set_reservoir_noise_active`). Injection fires only when this is True **and** `noise_scaling > 0`. |
 | `seed` | `int` | RNG seed used to initialize reservoir weights. |
 | `spectral_radius` | `float` | Target spectral radius. |
 | `leak_rate` | `float` | Leaky integrator coefficient. |
@@ -544,9 +582,10 @@ restored = pickle.loads(data)
 
 | Saved | Not saved |
 |-------|-----------|
-| All constructor parameters (dim, seed, spectral_radius, etc.) | Collected states (regenerate with `warmup()` + `run()`) |
+| All constructor parameters (dim, seed, spectral_radius, `noise_scaling`/`noise_seed`, etc.) | Collected states (regenerate with `warmup()` + `run()`) |
 | Trained readout weights | Cached features |
 | Readout config (task, architecture) | `fit()` targets and train/test split |
+| | `reservoir_noise_active` flag (restored off; re-enable per training run) |
 
 ---
 
