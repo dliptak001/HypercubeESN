@@ -71,6 +71,81 @@ _t+1_, mirroring the established `y(t-1)` output-feedback delay:
              ensemble output = ȳ(t)
 ```
 
+**Orchestrator sketch.** The orchestrator is the only new object; each member is an
+ordinary `ESN`. It holds the three members by `unique_ptr` (an `ESN` owns a
+non-copyable `Reservoir`), a per-member deviation buffer that carries the one-step
+delay, and the coupling κ. One `Step` injects the previous step's deviation, advances
+all three reservoirs, reads their outputs, and recomputes the mean and the next
+deviations:
+
+```cpp
+// One orchestrator owns the three members and the coupling. The reservoirs stay
+// ignorant of one another — exactly as ESN already owns InjectInput / InjectFeedback.
+class EnsembleConsensus {
+    static constexpr int M = 3;                  // members — fixed at three
+    int   D_;                                    // output dims == feedback channels / member
+    float kappa_;                                // coupling_scaling; its SIGN picks the regime
+    std::array<std::unique_ptr<ESN>, M> esn_;    // ESN owns a non-copyable Reservoir → hold by ptr
+    std::array<std::vector<float>, M>   dev_;    // Δ_i(t−1): the one-step-delay buffer (D floats)
+
+public:
+    EnsembleConsensus(const ESNConfig& base,
+                      const std::array<uint64_t, M>& seeds, float kappa)
+        : D_(base.readout.num_outputs), kappa_(kappa)
+    {
+        for (int i = 0; i < M; ++i) {
+            ESNConfig c = base;
+            c.reservoir.seed = seeds[i];             // members differ only by W seed →
+            c.reservoir.num_feedback_channels = D_;  //   diverse reservoirs, informative deviations
+            esn_[i] = std::make_unique<ESN>(c);      //   D feedback channels: one per output dim
+            dev_[i].assign(D_, 0.0f);                // start uncoupled (Δ = 0)
+        }
+    }
+
+    // One closed-loop step over the whole ensemble; writes the consensus mean ȳ(t).
+    void Step(const float* input, std::vector<float>& ybar /* out: D floats */)
+    {
+        std::array<std::vector<float>, M> y;         // y_i(t)
+        std::vector<float> fb(D_);                   // per-member feedback scratch
+
+        // (1) inject the PREVIOUS step's deviation as this step's feedback, then step + read.
+        for (int i = 0; i < M; ++i) {
+            for (int c = 0; c < D_; ++c)
+                fb[c] = kappa_ * dev_[i][c];         // −|κ| → consensus,  +|κ| → diversity (unstable)
+            esn_[i]->StepLiveExternalFeedback(input, fb.data());  // ← the one new seam (below)
+            y[i].resize(D_);
+            esn_[i]->PredictLiveRaw(y[i].data());    // y_i(t), D floats
+        }
+
+        // (2) per-channel consensus mean over the three members.
+        ybar.assign(D_, 0.0f);
+        for (int i = 0; i < M; ++i)
+            for (int c = 0; c < D_; ++c) ybar[c] += y[i][c] / M;
+
+        // (3) form each member's deviation and HOLD it for next step (the one-step delay).
+        for (int i = 0; i < M; ++i)
+            for (int c = 0; c < D_; ++c)
+                dev_[i][c] = y[i][c] - ybar[c];      // Σ_i dev_i = 0 by construction
+    }
+};
+```
+
+**The one new seam.** `StepLiveExternalFeedback` above does not exist yet — it is the
+single piece this needs. `ESN::StepLive` today evaluates the trained F-readout and
+injects `tanh(F(x))`; the orchestrator instead supplies its *own* `κ·Δ_i`, so it needs
+a sibling that injects a caller-provided _D_-vector on the feedback channels (reusing
+the existing `Reservoir::InjectFeedback(channel, value)` and the `tanh` clamp seam),
+then Steps — bypassing F. Members are built with `num_feedback_channels = D` for the
+weight block but do **not** use the F-training scheme (`TrainFeedbackCycle`): either add
+a `feedback.external` config that skips building F, or simply never drive the F path.
+The `state_rms` stability monitor already in the feedback path applies unchanged.
+
+**Training / warmup.** With `dev_` starting at zero, warmup and per-member readout
+training run effectively uncoupled — fit each `ESN` independently, teacher-forced (the
+conservative fork from the caveat), then engage coupling at free-run by constructing
+with κ ≠ 0. Training *with* the loop live instead means calling `Step` during training
+and fitting each member's readout on its own `(input, target)` pair.
+
 **Dynamical regimes (the sign of κ).** The two signs are **not** on equal footing.
 
 - **−κΔ_i (pull toward the mean) — established direction.** Negative / consensus
