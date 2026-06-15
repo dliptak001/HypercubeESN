@@ -8,116 +8,101 @@ worth investigating.
 _Closed-loop / autonomous generative operation — the readout drives the reservoir
 forward with no external input (e.g. Lorenz free-run)._
 
-### Cap output dv/dt
-
-**Maturity:** _Heuristic_ — an engineering stabilization trick, not part of the
-canonical ESN recipe.
-
-Clamp the step-over-step change of each generated output channel to the largest
-dv/dt that channel should physically experience, before feeding it back into the
-reservoir. The cap is **per output channel**, not a single global bound — each
-channel _c_ carries its own limit `Δmax_c`, since different signals (e.g. the
-x/y/z components of Lorenz) have different natural rates of change and a shared
-bound would either over-constrain the fast channels or under-constrain the slow
-ones.
-
-**Why:** In closed-loop free-running the readout feeds its own output back, so a
-single spurious spike can compound and blow up the trajectory. Bounding each
-channel's per-step rate of change keeps every generated signal on its own
-plausible manifold and buys stability without retraining.
-
-**How to apply:** For each output channel _c_, compute the largest |dv/dt| seen in
-that channel's training target → `Δmax_c`. Before feeding `y_c(t)` back, clamp
-`y_c(t) - y_c(t-1)` to ±`Δmax_c`. Maintain the per-channel `Δmax` as a small vector
-sized to the number of outputs, and apply it in the closed-loop step where the
-output is routed back as the next driver.
-
-**Timing — correct the current step, not the next.** We have full control over
-time here and can reference backward (the previous sample is retained), so the cap
-need not be framed as a feed-forward limiter on what gets injected at _t+1_.
-Instead, treat it as a correction of the **current** output: keep `y_c(t-1)`,
-compute the realized `dv/dt` at _t_, and if it is out of range massage `y_c(t)`
-itself back inside ±`Δmax_c`. The corrected value then becomes the authoritative
-`y_c(t)` — what we report, what we feed back, and what `y_c(t+1)` is measured
-against — so there is no divergence between "what we emitted" and "what we routed
-back."
-
-```
-  retain y(t-1) ──┐
-                  ▼
-  readout ─► y_raw(t) ─► Δ = y_raw(t) − y(t-1)
-                          │
-                  |Δ| > Δmax ?  ── no ──► y(t) = y_raw(t)
-                          │ yes
-                          ▼
-                  y(t) = y(t-1) ± Δmax   (massage current sample)
-                          │
-                          ▼
-              authoritative y(t): reported AND fed back
-```
-
-**Caveat — guardrail, not an accuracy mechanism.** This is a slew-rate limiter: it
-stops blow-up but does nothing for correctness. The cause of out-of-range `dv/dt`
-in free-run is almost always missing regularization (→ state noise), a too-hot
-spectral radius, or a readout overfit — fix those, not the symptom. For Lorenz
-(scored on λ / Lyapunov horizon) a slew-limited runaway is still off the
-attractor: bounding `dv/dt` does **not** keep the trajectory on the manifold, so
-do not expect this to move λ. There is also a decoupling risk — when `y(t)` is
-overwritten, the reservoir's internal state still evolved from the un-clamped
-dynamics, so the loop is fed a value its own state does not agree with, which can
-push things off-manifold in its own way. Keep it as a NaN/explosion safety clamp
-while the real dynamics are fixed elsewhere.
-
-Open questions:
-1. **Bound estimation** — per channel: largest training |dv/dt| vs a percentile
-   (robust to outliers) vs a hand-set physical limit.
-2. **Hard vs soft clamp** — hard clip introduces kinks; a soft (tanh/saturating)
-   limiter is smoother but adds a nonlinearity to tune.
-3. **Coupling across channels** — independent per-channel caps ignore cross-channel
-   structure; whether a joint constraint (e.g. on the output vector's velocity
-   norm) is ever needed is open.
-
 ## 2. General
 
 ### Ensemble consensus feedback
 
 **Maturity:** _Novel_ — ESN ensembles (averaging members) are established, but
-feeding each member its deviation from the ensemble mean as a coupling signal is
-not standard procedure.
+feeding each member its deviation from the ensemble mean back through the
+**feedback driver path** as a coupling signal is not standard procedure.
 
-Run an ensemble of ESNs (start with three) in parallel on the same task. At each
-step compute the ensemble mean of their outputs, then feed back to each member the
-deviation of its own output from that mean — i.e. ESN _i_ receives
-`y_i − ȳ`, where `ȳ = (1/N) Σ y_i`. A member running above consensus gets a
-positive deviation signal, one below gets a negative one; a member exactly at the
-mean gets zero.
+Run an ensemble of _N_ ESNs (start with three) in parallel on the same task, each
+with differently-seeded weights. At each step compute the ensemble mean of their
+outputs `ȳ = (1/N) Σ y_i`, then feed each member _i_ a scaled copy of its own
+deviation from that mean, `Δ_i = y_i − ȳ`. A member running above consensus gets a
+positive deviation, one below a negative one, one exactly at the mean gets zero.
+The deviations are conservative — `Σ_i Δ_i = 0` by construction — so the coupling
+only redistributes drive among members, never adds net drive to the ensemble.
 
-For multi-dimensional output, average each output channel across the ensemble
-independently and feed each member its per-channel deviation. So _D_ output
-signals produce a _D_-dimensional deviation vector per ESN, and each component
-becomes its own feedback channel — this is how multiple feedback channels are
-supported.
+For _D_-dimensional output, average each output channel independently and feed each
+member its per-channel deviation: _D_ output signals → a _D_-vector deviation per
+member → _D_ feedback channels per member.
 
 **Why:** The deviation couples the reservoirs through their disagreement. The
-consensus mean ȳ is a lower-variance estimate of the underlying trajectory than
-any single member, so routing each member its own departure from ȳ gives a
-self-correcting error signal with no external teacher — exactly what free-running
-lacks. Depending on the feedback sign this either drives **synchronization**
-(members converge, ensemble acts as a denoiser whose mean is the output) or
-**diversity** (members repel to cover more of the dynamics).
+consensus mean ȳ is a lower-variance estimate of the underlying trajectory than any
+single member (error variance falls ~1/N when members are independent), so routing
+each member its departure from ȳ is a self-correcting error signal with **no
+external teacher** — exactly what free-running lacks once the input is removed. The
+coupling is mean-field / all-to-all: every member sees the same ȳ, which is the
+complete-graph (K_N) diffusive coupling of classical consensus dynamics. Its sign
+sets the regime (below).
 
-**How to apply:** After all _N_ members Step at time _t_, compute the per-channel
-mean, form each member's deviation `Δ_i(t) = y_i(t) − ȳ(t)`, and inject it as that
-member's feedback at _t+1_ (one-step delay, same causality as output feedback). A
-`coupling_scaling` knob sets strength; its sign selects consensus vs diversity.
-The ensemble's final output is the mean ȳ.
+**Mapping to the existing feedback path.** This needs no new reservoir mechanism —
+it reuses the closed-loop driver already in `Reservoir`:
+- Each member is an `ESN` built with `num_feedback_channels = D` (one feedback
+  channel per output dimension; channels already map to contiguous vertex blocks).
+- The cross-member mean/deviation is computed by an **ensemble orchestrator** that
+  owns the _N_ members and drives them in lockstep — exactly as `ESN` already owns
+  `InjectInput` / `InjectFeedback` around `Step`. The reservoir stays ignorant of
+  the ensemble, preserving the existing decoupling.
+- `Δ_i` is staged via `InjectFeedback(c, κ·Δ_i,c)` before each member's `Step`. A
+  `coupling_scaling` knob κ plays the role `feedback_scaling` plays for output
+  feedback; the `tanh` clamp seam and the `state_rms` stability monitor already in
+  the feedback path apply unchanged.
+
+**Timing — one-step delay, same causality as output feedback.** `Δ_i(t)` is built
+from outputs that only exist *after* each member Steps at _t_, so it is injected at
+_t+1_, mirroring the established `y(t-1)` output-feedback delay:
+
+```
+   ┌── members step at t ──┐
+   │  ESN_1 ─► y_1(t)      │
+   │  ESN_2 ─► y_2(t)      │   ȳ(t)   = mean_i y_i(t)
+   │   ...                 │   Δ_i(t) = y_i(t) − ȳ(t)        (Σ_i Δ_i = 0)
+   │  ESN_N ─► y_N(t)      │
+   └──────────┬────────────┘
+              ▼
+   each member i:  InjectFeedback(c, κ·Δ_i,c(t))  ──►  Step at t+1
+              │
+              ▼
+   ensemble output = ȳ(t)
+```
+
+**Dynamical regimes (the sign of κ).** Injecting **−κΔ_i** (pull each member toward
+the mean) is negative / consensus coupling: the linear surrogate `ẋ_i = −κ(x_i − x̄)`
+drives every member to the common mean at rate κ, so the ensemble acts as a
+**denoiser** whose output is ȳ. Injecting **+κΔ_i** (push away from the mean) is
+**diversity** coupling: members repel to cover more of the dynamics, useful when a
+single attractor estimate is too narrow. κ = 0 is the plain uncoupled averaging
+ensemble — the baseline any coupling must beat.
+
+**Caveat — depends on the rest of the closed-loop stack, and over-coupling collapses
+the benefit.** The variance-reduction argument assumes the members' errors are at
+least partly *independent*; strong consensus coupling over-synchronizes them into a
+single effective reservoir, at which point ȳ averages nothing and the scheme
+degenerates to one member. Member diversity (distinct `seed` / `input_scaling`) must
+be preserved against the very coupling that erodes it. Like every output-feedback
+ESN this is trainable only with **state noise** during training (now implemented —
+see [`Reservoir.md`](Reservoir.md) training noise) and benefits from a per-channel
+dv/dt slew-rate cap as a runaway guardrail. There is also a train/run
+fork: training each member's readout independently (teacher-forced, coupling off)
+then enabling coupling only at free-run is the conservative path; training *with*
+the coupling live is more faithful but couples the members' learning too.
 
 Open questions:
-1. **Coupling sign & strength** — convergence (sync) vs divergence (diversity),
-   and the stability bound on `coupling_scaling`.
-2. **Member diversity** — identical reservoirs collapse to ȳ trivially;
-   differently-seeded `W` / input scaling makes the deviations informative.
-3. **Ensemble size _N_** — three is the minimum for a meaningful mean; diminishing
-   returns vs cost beyond that.
-4. **Readout topology** — shared single readout vs per-member readouts; final
-   output taken as the ensemble mean.
+1. **Coupling sign & strength** — consensus (sync) vs diversity (repulsion), and the
+   stability bound on κ before over-synchronization (sync) or blow-up (diversity).
+2. **κ = 0 baseline** — the coupled ensemble must beat plain output averaging; that
+   A/B (κ = 0 vs κ > 0, same members and seeds) is the load-bearing experiment.
+3. **Member diversity** — identical reservoirs collapse to ȳ trivially;
+   differently-seeded `W` / input scaling makes the deviations informative, and the
+   coupling must not erase that diversity.
+4. **Ensemble size _N_** — three is the minimum for a meaningful mean; diminishing
+   returns vs N× compute beyond that.
+5. **Training protocol** — independent teacher-forced readouts with coupling added
+   only at free-run, vs training with the coupling loop live.
+6. **Readout topology** — shared single readout vs per-member readouts; final output
+   taken as the ensemble mean either way.
+7. **Interaction with state noise** — both inject perturbations during the run;
+   whether consensus coupling can partly substitute for (or must be tuned against)
+   the Jaeger state-noise level is open.
