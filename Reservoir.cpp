@@ -23,7 +23,9 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       num_feedback_channels_(cfg.num_feedback_channels),
       feedback_scaling_(cfg.feedback_scaling),
       bias_seed_(cfg.bias_seed),
-      bias_scaling_(cfg.bias_scaling)
+      bias_scaling_(cfg.bias_scaling),
+      noise_seed_(cfg.noise_seed),
+      noise_scaling_(cfg.noise_scaling)
 
 {
     if (dim_ < 5 || dim_ > 16)
@@ -72,6 +74,7 @@ void Reservoir::Initialize()
     std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
     std::mt19937_64 bias_rng(bias_seed_);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    noise_rng_.seed(noise_seed_);   // <-- add; explicit seed = reproducible A/B sweeps
 
     Reset();
 
@@ -238,6 +241,9 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
 
     s += vtx_bias_[v];
 
+    if (noise_active_)
+        s += noise_scaling_ * static_cast<float>(noise_dist_(noise_rng_));
+
     const float activation = std::tanh(s);
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
@@ -315,6 +321,8 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.feedback_scaling = feedback_scaling_;
     cfg.bias_seed = bias_seed_;
     cfg.bias_scaling = bias_scaling_;
+    cfg.noise_seed = noise_seed_;
+    cfg.noise_scaling = noise_scaling_;
     return cfg;
 }
 

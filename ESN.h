@@ -365,6 +365,19 @@ public:
     void SetForceZeroFeedback(bool on) { esn_config_.feedback.force_zero = on; }
     [[nodiscard]] bool GetForceZeroFeedback() const { return esn_config_.feedback.force_zero; }
 
+    /// @brief Toggle the reservoir's training-noise injection (Jaeger state
+    /// noise; @ref Reservoir::SetNoiseActive). Enable while collecting training
+    /// states (off by default — opt in here); DISABLE for evaluation and closed-
+    /// loop free-run, where injected noise would perturb the generated or scored
+    /// trajectory.
+    /// Inert unless cfg.reservoir.noise_scaling > 0. @ref ValidateClosedLoop and
+    /// the feedback probe triplet manage this internally around their own
+    /// reservoir steps; this setter is for callers that drive @ref Warmup /
+    /// @ref Run / @ref StepLive directly (e.g. a separate clean eval pass, or a
+    /// Lorenz free-run harness that must silence noise during generation).
+    void SetReservoirNoiseActive(bool active) { reservoir_->SetNoiseActive(active); }
+    [[nodiscard]] bool ReservoirNoiseActive() const { return reservoir_->NoiseActive(); }
+
     // --- Config & persistence ---
 
     [[nodiscard]] ESNConfig GetConfig() const;

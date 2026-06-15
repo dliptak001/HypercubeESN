@@ -40,6 +40,7 @@ int main(int argc, char* argv[])
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
     cfg.reservoir.input_scaling = 0.09;
+    cfg.reservoir.noise_scaling = 0.0;   // per-neuron pre-tanh state noise; training-only (gated on below), try setting to 0.005
     cfg.readout.task          = ReadoutTask::Regression;
     cfg.readout.epochs        = 1500;
     cfg.readout.batch_size    = 64;
@@ -50,9 +51,20 @@ int main(int argc, char* argv[])
     std::cout << "  Training: " << cfg.readout.epochs << " epochs, batch=" << cfg.readout.batch_size
               << ", lr=" << cfg.readout.lr_max
               << " (cosine, floor=" << (cfg.readout.lr_max * cfg.readout.lr_min_frac) << ")\n";
+    std::cout << "  State noise: " << cfg.reservoir.noise_scaling
+              << " (training-only; off for the test states scored below)\n";
 
+    // State noise is a TRAINING regularizer (Jaeger), not part of the live model:
+    // inject it only while collecting the train_size states the readout learns
+    // from, then turn it OFF so the held-out test states are collected on the
+    // clean dynamics R2/NRMSE are scored against. Splitting the single collection
+    // Run keeps the reservoir trajectory continuous -- two back-to-back Runs over
+    // contiguous input are identical to one Run apart from the noise toggle.
+    esn.SetReservoirNoiseActive(true);
     esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, collect);
+    esn.Run(signal.data() + warmup, train_size);                 // noisy training states
+    esn.SetReservoirNoiseActive(false);
+    esn.Run(signal.data() + warmup + train_size, test_size);     // clean test states
 
     std::cout << "  Training..." << std::flush;
     auto t0 = std::chrono::steady_clock::now();
@@ -93,5 +105,13 @@ int main(int argc, char* argv[])
     std::cout << "\nThe HCNN readout learned sin(t+1) from the reservoir's dynamics,\n";
     std::cout << "discovering features via convolution on the hypercube state.\n";
 
+    std::cout << "\nAbout 'State noise' above: small random perturbations are added to\n";
+    std::cout << "each neuron during TRAINING only, so the readout learns to recover\n";
+    std::cout << "from slightly-off states -- a standard reservoir regularizer (Jaeger).\n";
+    std::cout << "It is switched off before the test states are collected, so the score\n";
+    std::cout << "reflects the clean dynamics.  On this noise-free sine it costs a little\n";
+    std::cout << "accuracy; its real payoff is stability on noisy or closed-loop tasks.\n";
+
     return 0;
 }
+

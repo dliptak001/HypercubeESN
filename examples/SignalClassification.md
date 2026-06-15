@@ -117,6 +117,42 @@ interesting tradeoff:
 - **More noise.** Raising `NOISE_LEVEL` toward 0.25+ blurs the shape
   cues the readout relies on.
 
+> Note: `NOISE_LEVEL` (input noise, 0.15) is added to the *signal* itself and
+> is part of the task. It is distinct from `noise_scaling` (state noise) below,
+> which perturbs the reservoir's internal state and is a training-only
+> regularizer, off by default.
+
+### State noise (training-only regularizer)
+
+Separate from the input `NOISE_LEVEL`, the reservoir can add a small
+per-neuron perturbation to each neuron's pre-activation drive `s` (before the
+`tanh`) — Jaeger's classic state-noise regularizer. It teaches the readout to
+classify from states that sit slightly off the clean trajectory, tightening
+the decision boundaries. It is gated by two knobs so it never leaks into
+inference by accident:
+
+```
+fires only if   noise_scaling > 0   AND   noise_active_ (runtime flag)
+```
+
+`cfg.reservoir.noise_scaling` defaults to `0.0` (off). The example ships with
+it at `0.0`, but the **train-on / measure-off** plumbing is already wired:
+
+```cpp
+esn.SetReservoirNoiseActive(true);
+esn.Warmup(signal.data(), warmup);
+esn.Run(signal.data() + warmup, train_size);              // noisy training states
+esn.SetReservoirNoiseActive(false);
+esn.Run(signal.data() + warmup + train_size, test_size);  // clean test states
+```
+
+Noise is injected only while collecting the train states the readout learns
+from, then switched off so the held-out test states — the ones the confusion
+matrix scores — are classified on the clean dynamics. On these well-separated
+shapes it makes little difference (the task is already 100%); its payoff shows
+on the harder, capacity-limited variants above where the boundaries are
+tighter. To enable it, set `cfg.reservoir.noise_scaling` above 0 (try `0.01`).
+
 ## Things to try
 
 - **Leak rate.** Set `cfg.reservoir.leak_rate` in the source. The
@@ -137,6 +173,12 @@ interesting tradeoff:
 
 - **HCNN epochs.** The example uses 50. Try 25 to see undertrained
   behavior; 200 or 1000 to push the loss further on harder variants.
+
+- **Turn on state noise.** Set `cfg.reservoir.noise_scaling = 0.01` to
+  regularize the readout during training. Little effect on the default
+  (already 100%); pair it with a harder variant (DIM=5, smaller blocks)
+  to see it tighten the decision boundaries. See
+  [State noise](#state-noise-training-only-regularizer) above.
 
 ## Build and run
 

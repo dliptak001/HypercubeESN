@@ -89,6 +89,7 @@ int main(int argc, char* argv[])
     ESNConfig cfg;
     cfg.reservoir.dim = DIM;
     cfg.reservoir.input_scaling = 1.9;
+    cfg.reservoir.noise_scaling = 0.0;  // training-only state noise (Jaeger); try 0.0 vs 0.02 to feel the effect
     cfg.readout.task = ReadoutTask::Regression;
     cfg.readout.epochs = 1000;
     cfg.readout.momentum = 0.9;
@@ -100,7 +101,9 @@ int main(int argc, char* argv[])
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth
         << "  Leak=" << cfg.reservoir.leak_rate
         << "  Input Scaling=" << cfg.reservoir.input_scaling
-        << "  Threshold=" << anomaly_threshold << "x baseline\n\n";
+        << "  Threshold=" << anomaly_threshold << "x baseline\n";
+    std::cout << "State noise: " << cfg.reservoir.noise_scaling
+        << " (training-only; on while learning normal, off for baseline + monitoring)\n\n";
 
     std::cout << "--- Phase 1: Learn what \"normal\" looks like ---\n\n";
 
@@ -109,16 +112,27 @@ int main(int argc, char* argv[])
     GenerateProcess(prime_signal.data(), prime_signal.size(), t_global,
                     normal_noise, 0.0f, 1.0f, signal_rng);
 
+    constexpr size_t train_n = static_cast<size_t>(prime_steps * 0.7);
+    constexpr size_t test_n = prime_steps - train_n;
+
+    // State noise is a TRAINING regularizer (Jaeger), not part of the live model:
+    // inject it only while collecting the states the readout learns from, then
+    // turn it OFF for every measured pass. So warmup + the first train_n steps
+    // are collected WITH noise, while the held-out baseline tail (and all of
+    // Phase-2 monitoring below) run clean. The split keeps the reservoir
+    // trajectory continuous — two back-to-back Runs over contiguous input are
+    // identical to one Run apart from the noise toggle — and ensures the baseline
+    // and the monitored windows are scored on the same noiseless dynamics.
+    esn.SetReservoirNoiseActive(true);
     esn.Warmup(prime_signal.data(), warmup);
-    esn.Run(prime_signal.data() + warmup, prime_steps);
+    esn.Run(prime_signal.data() + warmup, train_n);           // noisy training states
+    esn.SetReservoirNoiseActive(false);
+    esn.Run(prime_signal.data() + warmup + train_n, test_n);  // clean baseline states
     t_global += warmup + prime_steps;
 
     std::vector<float> prime_targets(prime_steps);
     for (size_t t = 0; t < prime_steps; ++t)
         prime_targets[t] = prime_signal[warmup + t + 1];
-
-    size_t train_n = static_cast<size_t>(prime_steps * 0.7);
-    size_t test_n = prime_steps - train_n;
 
     std::cout << "Training on " << train_n << " samples ("
         << cfg.readout.epochs << " epochs, batch=" << cfg.readout.batch_size
@@ -199,6 +213,14 @@ int main(int argc, char* argv[])
     std::cout << "  Freq shift:   RMSE spikes -- changed dynamics break the learned pattern.\n";
     std::cout << "                Slowest recovery: reservoir needs 1-2 extra windows to\n";
     std::cout << "                wash out the altered frequency from its internal state.\n";
+
+    std::cout << "\nAbout 'State noise' above: during Phase 1 the reservoir is driven with\n";
+    std::cout << "small per-neuron perturbations while the readout learns -- a standard\n";
+    std::cout << "regularizer (Jaeger) that teaches it to predict from slightly-off states.\n";
+    std::cout << "Crucially it is switched OFF before the baseline is measured and stays\n";
+    std::cout << "off through monitoring, so the baseline and the watched windows are\n";
+    std::cout << "scored on the same clean dynamics -- noise that leaked into inference\n";
+    std::cout << "would just inflate every RMSE and blur the anomaly signal.\n";
 
     return 0;
 }

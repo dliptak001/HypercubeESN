@@ -203,6 +203,7 @@ int main(int argc, char* argv[])
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
     cfg.reservoir.input_scaling = 1.5;
+    cfg.reservoir.noise_scaling = 0.0;   // training-only state noise (Jaeger); try 0.0 vs 0.02 to feel the effect
     cfg.readout.num_outputs   = NUM_CLASSES;
     cfg.readout.task          = ReadoutTask::Classification;
     cfg.readout.epochs        = 50;
@@ -211,9 +212,20 @@ int main(int argc, char* argv[])
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth << "  Input Scaling=" << cfg.reservoir.input_scaling
               << "  Task=Classification  Classes=" << NUM_CLASSES << "\n";
+    std::cout << "State noise: " << cfg.reservoir.noise_scaling
+              << " (training-only; on while collecting train states, off for the test states scored below)\n";
 
+    // State noise is a TRAINING regularizer (Jaeger), not part of the live model:
+    // inject it only while collecting the train_size states the readout learns
+    // from, then turn it OFF so the held-out test states are classified on the
+    // clean dynamics. Splitting the single collection Run keeps the reservoir
+    // trajectory continuous -- two back-to-back Runs over contiguous input are
+    // identical to one Run apart from the noise toggle.
+    esn.SetReservoirNoiseActive(true);
     esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, collect);
+    esn.Run(signal.data() + warmup, train_size);              // noisy training states
+    esn.SetReservoirNoiseActive(false);
+    esn.Run(signal.data() + warmup + train_size, test_size);  // clean test states
 
     std::vector<float> float_labels(collect);
     for (size_t t = 0; t < collect; ++t)
@@ -251,6 +263,15 @@ int main(int argc, char* argv[])
 
     std::cout << "The HCNN multi-class readout classifies waveforms from the same\n";
     std::cout << "reservoir dynamics, discovering features via convolution on raw state.\n";
+
+    std::cout << "\nAbout 'State noise' above: while the train states are collected the\n";
+    std::cout << "reservoir is driven with small per-neuron perturbations -- a standard\n";
+    std::cout << "regularizer (Jaeger) that teaches the readout to classify from states\n";
+    std::cout << "that sit slightly off the clean trajectory.  It is switched OFF before\n";
+    std::cout << "the held-out test states are collected, so the accuracy above scores\n";
+    std::cout << "the clean dynamics.  On these well-separated shapes it makes little\n";
+    std::cout << "difference; its payoff shows on harder, noisier classes where the\n";
+    std::cout << "decision boundaries are tighter.\n";
 
     std::cout << std::flush;
     return 0;

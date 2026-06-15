@@ -149,6 +149,38 @@ For anomaly detection, slower recovery is generally a feature, not a
 bug — you want the alarm to persist until the system fully stabilizes.
 Try `cfg.reservoir.leak_rate = 0.4` to see the contrast.
 
+### State noise (training-only regularizer)
+
+The reservoir can add a small per-neuron perturbation to each neuron's
+pre-activation drive `s` (before the `tanh`) — Jaeger's classic state-noise
+regularizer. It teaches the readout to predict from states that sit slightly
+off the clean trajectory. It is gated by two knobs so it can never leak into
+inference by accident:
+
+```
+fires only if   noise_scaling > 0   AND   noise_active_ (runtime flag)
+```
+
+`cfg.reservoir.noise_scaling` defaults to `0.0` (off). This example is
+especially sensitive to getting the gating right, because the anomaly signal
+*is* prediction error: any noise left on during inference would inflate the
+baseline RMSE and every monitored window's RMSE, blurring the anomaly signal.
+So Phase 1 uses a **train-on / measure-off** split —
+
+```cpp
+esn.SetReservoirNoiseActive(true);
+esn.Warmup(prime_signal.data(), warmup);
+esn.Run(prime_signal.data() + warmup, train_n);           // noisy training states
+esn.SetReservoirNoiseActive(false);
+esn.Run(prime_signal.data() + warmup + train_n, test_n);  // clean baseline states
+```
+
+— noise is on only while collecting the states the readout learns from, then
+off for the held-out baseline tail *and* all of Phase-2 monitoring, so the
+baseline and the watched windows are scored on the same clean dynamics. To
+enable it, set `cfg.reservoir.noise_scaling` above 0 (try `0.01`); keep it
+small here (`> ~0.05` starts to wash out the very anomalies you're hunting).
+
 ## Things to try
 
 - **Leak rate.** Set `cfg.reservoir.leak_rate` in the source. The
@@ -167,6 +199,12 @@ Try `cfg.reservoir.leak_rate = 0.4` to see the contrast.
 - **Window size.** Smaller windows (e.g., 50 steps) make detection faster
   but noisier. Larger windows (e.g., 500) smooth the RMSE estimate but
   delay detection.
+
+- **Turn on state noise.** Set `cfg.reservoir.noise_scaling = 0.01` to
+  regularize the readout during Phase 1. Keep it small — large values
+  (`> ~0.05`) wash out the anomalies. See
+  [State noise](#state-noise-training-only-regularizer) above for why the
+  train-on / measure-off split matters here.
 
 ## A note on online training
 
