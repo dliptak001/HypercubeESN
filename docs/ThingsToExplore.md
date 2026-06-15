@@ -79,54 +79,6 @@ Open questions:
 
 ## 2. General
 
-### Add noise
-
-**Maturity:** _Standard_ — canonical ESN practice (Jaeger); essentially mandatory
-for output-feedback / generative reservoirs. Adopt, don't just explore.
-
-Inject small random perturbations into the reservoir state each step during
-training (and optionally warmup) — a standard RC regularizer (Jaeger's state
-noise).
-
-**Why:** In closed-loop free-running the readout is trained on teacher-forced
-(clean) states but must run on its own slightly-wrong predictions, so tiny errors
-compound. Injecting state noise during training forces the readout to learn a
-contraction back toward the attractor from off-trajectory states — improving
-stability and generalization. It is the mechanism that makes output-feedback ESNs
-trainable, and directly addresses the feedback stability concern (feedback voids
-the echo-state property without it).
-
-**How to apply:** Per-neuron additive noise on the pre-activation accumulator `s`
-in `Reservoir::UpdateState`, immediately after `s += vtx_bias_[v];` and before
-`std::tanh(s)`. Sample ε ~ N(0, σ²) (or uniform), gated by a `noise_scaling` knob
-and a "training/warmup active" flag; off (or reduced) at inference.
-
-This is the canonical site, not `InjectInput`:
-- **It is Jaeger's state noise.** Adding ε to `s` gives `tanh(s + ε)`, so the
-  perturbation enters the nonlinearity and is then carried forward by the leak +
-  recurrent block every subsequent step — exactly what teaches the readout to
-  contract from off-trajectory states. Noise on `vtx_input_` never reaches the
-  state directly; it only arrives scaled through the input weight block.
-- **Per-neuron independence.** `UpdateState` runs per-vertex, so each neuron draws
-  its own ε — decorrelated perturbations, which is the point. `InjectInput`
-  broadcasts a single scalar across a whole channel block (correlated noise), and
-  `vtx_input_` is memset to 0 each `Step`, so anything written there is a
-  transient on the input buffer, not persistent state.
-- **Coverage.** `InjectInput` only touches the input-channel blocks; `UpdateState`
-  perturbs every neuron, every step.
-
-Implementation notes:
-- **RNG thread-safety** — `Step()` loops `v` over `UpdateState`; if that loop is
-  (or becomes) OpenMP-parallel, a shared RNG is a data race. Use a thread-local or
-  per-neuron-seeded generator.
-- **Reproducibility** — seed the RNG explicitly so runs are repeatable; matters
-  for the A/B sweeps.
-
-Open questions:
-1. **Schedule** — constant σ vs annealed; on during warmup or training-only.
-2. **Interaction with SR / leak rate** — too much noise washes out memory; needs
-   tuning against `EstimateSpectralRadius` and the leak knob.
-
 ### Ensemble consensus feedback
 
 **Maturity:** _Novel_ — ESN ensembles (averaging members) are established, but
