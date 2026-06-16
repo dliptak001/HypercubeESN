@@ -87,32 +87,55 @@ so isn't this equivalent to raising `sr`? **Empirically no** — raising `tanh`'
                              in extra saturation.
 ```
 
-With a small input scaling (e.g. `input_scaling=0.04`) almost every unit sits in
+With a small input scaling (e.g. `input_scaling≈0.02`) almost every unit sits in
 `|x| ≲ σ`, so `A` amplifies exactly the regime the reservoir actually occupies,
 while the rare large swings still saturate and self-limit. A scalar `sr` cannot
-express this decoupling: it moves both regimes together. The result is a richer
-set of distinguishable low-amplitude traces for the linear readout — which is
-what a long-memory task most needs.
+express this decoupling: it moves both regimes together. This is why `A` reaches
+the same dynamics as `tanh` at a much gentler external drive (documented per-task
+below) — it supplies the small-signal gain internally instead of buying it with
+input amplitude or `sr`. Note this is an operating-point claim, not a task-error
+claim: at matched (best) operating points `A` and `tanh` perform the same on every
+task tested (see NARMA-30 below); the decoupling buys a gentler drive, not lower
+error.
 
 ## Early experimental evidence
 
-### NARMA-30 (memory-bound task) — `A` wins on the long-memory end
+### NARMA-30 (memory-bound task) — parity, reached at a far gentler drive
 
-NARMA-30, `DIM=8 N=256`, `sr=0.92 leak=1 input_scaling=0.04`, seeds
-`{73896, 73897}`, history-depth sweep `M ∈ {16, 32, 48}`. NRMSE (lower is better):
+This is the hard, memory-binding task and the one that earns the most scrutiny.
+NARMA-30, `DIM=8 N=256 leak=1`, 3 seeds `{73896, 73897, 73898}`, 600 epochs
+(batch 128, cosine lr), history-depth sweep `M ∈ {28,…,36}` around the optimum.
+Each activation is tuned to its **own** best operating point: `A(γ=1.1, σ≈0.063)`
+at `sr=0.92, input_scaling=0.019`; `tanh` at `sr=0.95, input_scaling=0.1`. NRMSE
+(mean over seeds, lower is better):
 
 ```
-   M     tanh             A(γ=1.5, σ=0.1)    Δ
-  16   0.1601 ±0.016     0.2618 ±0.116      WORSE; variance blows up (one seed 0.344)
-  32   0.1098 ±0.003     0.1046 ±0.004      ~5% better
-  48   0.1538 ±0.001     0.1353 ±0.005      ~12% better
+   M     A mean    tanh mean    Δ=A−tanh        seed std (A / tanh)
+  28     0.1606    0.1594       +0.0012  ↑      0.0033 / 0.0015
+  30     0.1101    0.1118       −0.0017  ↓      0.0024 / 0.0032
+  32     0.1019    0.1022       −0.0003  ≈      0.0040 / 0.0036
+  34     0.1017    0.1044       −0.0027  ↓      0.0037 / 0.0034
+  36     0.1085    0.1080       +0.0005  ≈      0.0011 / 0.0026
+  ----   ------    ------
+  mean   0.1166    0.1172       −0.0006         (0.5%, well inside the seed std)
 ```
 
-Read: `A` wins at the long-memory operating points (M=32, 48) and the win grows
-with `M`, but it is worse and high-variance at the short delay line (M=16). That
-M=16 behavior is the expected cost of the mechanism, not noise — locally
-expansive dynamics with too short a history line flirt with the edge of chaos and
-become seed-dependent. The stable operating window now depends on `M`.
+**This is parity.** Every per-`M` gap is smaller than the seed-to-seed std; `A` is
+a hair ahead in the `M=30–34` band and a hair behind at the edges, netting to 0.5%
+overall — noise. Both bottom out at NRMSE ≈ 0.10 (R² ≈ 0.99) at the same optimal
+`M ≈ 32–34`; the best single run is `A`'s 0.0975 with `tanh`'s 0.0984 right beside
+it.
+
+> **Supersedes an earlier claim.** A first, coarser sweep (`M ∈ {16,32,48}`, 2
+> seeds, `tanh` at `input_scaling=0.04`) showed `A` ahead by ~5% at M=32 and ~12%
+> at M=48 and was written up here as "`A` wins when memory binds." That gap did
+> **not survive proper tuning of `tanh`**: `input_scaling=0.04` under-drove `tanh`
+> (it wants ~0.1), and at its real operating point `tanh` improves from ~0.110 to
+> ~0.102, erasing the margin. The honest result is parity, not a memory win.
+
+What *does* survive is the through-line of every other task: `A` reaches the
+identical floor at **~5× gentler input** (`0.019` vs `0.1`) and lower `sr` (`0.92`
+vs `0.95`). The differentiator is the operating point, not the task error.
 
 ### Sine-wave prediction (easy task) — parity, at a lower nominal `sr`
 
@@ -205,10 +228,14 @@ Read this through the **memory–nonlinearity tradeoff** (Dambre et al. 2012: to
 computational capacity is conserved; linear memory and nonlinear processing draw on
 one budget). MC scores *linear* reconstruction of past inputs. `A`'s central-slope
 boost makes the reservoir more expansively nonlinear, which spends budget on
-nonlinear computation and necessarily drains the linear-MC bucket. So **lower MC +
-the NARMA-30 win are the same fact**: NARMA is a *nonlinear* memory task, and `A`
-shifts the budget toward exactly what NARMA needs. A skeptic would raise the MC
-deficit; it is actually the signature of the claimed mechanism.
+nonlinear computation and drains the linear-MC bucket. So the MC deficit is not a
+defect — it is the direct, measurable signature that `A` *reallocates* capacity
+from linear memory toward nonlinear processing, exactly as the mechanism predicts.
+What it does **not** buy is a task-error win: on NARMA-30 (a nonlinear memory task,
+where the reallocation should help if anywhere) `A` and `tanh` land at parity once
+both are tuned. So the honest reading is that `A` shifts *where* the capacity sits
+without changing *how much* useful work the readout extracts on these tasks — a
+genuine change in the reservoir's character, not a free lunch.
 
 Two secondary trends both reinforce the picture:
 
@@ -237,29 +264,43 @@ Two secondary trends both reinforce the picture:
 
 | Task | Regime | Result | Notable |
 |------|--------|--------|---------|
-| NARMA-30 | memory-bound | **`A` wins** at M=32 (~5%), M=48 (~12%) | loses at M=16 (instability) |
+| NARMA-30 | memory-bound | parity (≈0.10 NRMSE, Δ 0.5% ⊂ noise) | `A` matches at `input_scaling` 0.019 vs 0.1 |
 | Sine prediction | easy | parity (both R²=1.0) | `A` matches at `sr` 0.90 vs 0.98 |
 | Streaming anomaly | easy | parity (same 10 flags) | `A` matches at `input_scaling` 0.1 vs 1.9 |
 | Signal classification | easy | parity (both 100%) | `A` matches at `input_scaling` 0.1 vs 1.5 |
-| Linear memory capacity | capacity probe | **`tanh` wins** (`A` ≈ 0.67–0.83×) | expected: `A` trades linear MC for nonlinear computation |
+| Linear memory capacity | capacity probe | **`tanh` wins** (`A` ≈ 0.67–0.83×) | `A` trades linear MC for nonlinear computation |
 
-`A` is a no-regression drop-in that reaches equivalent behavior at markedly lower
-nominal `sr` and input drive, pulls *ahead* only when memory binds, and pays for it
-in linear memory capacity — a deliberate, mechanism-consistent trade, not a defect.
+The honest bottom line: across every task tested — easy and memory-bound alike —
+`A` is a **no-regression drop-in that matches `tanh` on task error at a markedly
+gentler operating point** (lower `sr`, ~5–19× smaller input drive). It does not
+beat `tanh` on error anywhere once `tanh` is properly tuned. Its distinguishing,
+measurable property is the reallocation of capacity (lower linear MC, gentler drive
+to reach the same dynamics), not a performance win. Whether that gentler operating
+point is *useful* — e.g. for dynamic range, quantization, or hardware drive limits
+— is the open question that would justify `A` over plain `tanh`.
 
 ## Open questions / next steps
 
-1. **Tune `(γ, σ)`.** The tested pair is a first guess. A small 2D grid at the
-   M=32 sweet spot should map the optimum; the right `σ` is likely tied to the
-   operating amplitude (`input_scaling` and the recurrent fan-in), not a fixed
-   constant.
-2. **Transfer to Lorenz free-run** — the primary target (NARMA-30 is the proxy
+1. **Is the gentler operating point actually worth anything?** This is now the
+   central question. `A` matches `tanh` on error but reaches it at lower `sr` and
+   far smaller input drive. That only matters if some downstream constraint cares —
+   fixed-point/quantized state, analog or hardware drive limits, dynamic-range
+   headroom. Absent such a constraint, plain `tanh` is the simpler choice. Worth
+   identifying a task or deployment where the gentler drive pays off before
+   investing further.
+2. **Tune `(γ, σ)` jointly with the operating point.** Values tried so far
+   (`(1.5,σ=0.1)`, `(1.4,σ≈0.071)`, `(1.1,σ≈0.063)`) were hand-found per task. A
+   real 2D grid — co-swept with `input_scaling`/`sr`, since the right `σ` tracks
+   operating amplitude — would say whether any `(γ,σ)` breaks parity into an actual
+   error win, or confirm that none does.
+3. **Transfer to Lorenz free-run** — the primary target (NARMA-30 is the proxy
    here). A small-signal-gain boost could sharpen a chaotic attractor's fine
-   structure, or could perturb the free-run Lyapunov exponent; needs a direct test
-   once `(γ, σ)` is roughly tuned.
-3. **Interaction with `leak_rate`.** `leak < 1` is the other stability knob and
-   may tame the M=16 instability while widening the usable-`M` window.
-4. **Cost.** `A` adds a divide + a couple of FMAs per unit per step over `tanh`'s
+   structure, or could perturb the free-run Lyapunov exponent; needs a direct test.
+   This is the most likely place a *qualitative* difference (not just an
+   operating-point offset) could show up.
+4. **Interaction with `leak_rate`.** `leak < 1` is the other stability knob; worth
+   a sweep alongside `(γ, σ)` as it may shift `A`'s usable operating window.
+5. **Cost.** `A` adds a divide + a couple of FMAs per unit per step over `tanh`'s
    single call; the recurrent block (`dim × history_depth` FMAs) dominates, so the
    overhead is expected to be negligible — worth confirming on a timed run.
 
@@ -269,7 +310,7 @@ in linear memory capacity — a deliberate, mechanism-consistent trade, not a de
 
 ```cpp
 const float activation = std::tanh(s);
-//const float activation = A_lorentz(s, 1.5, 100);
+//const float activation = A_lorentz(s, 1.1, 250);   // (γ, 1/σ²); NARMA-tuned, task-dependent
 ```
 
 Switching the active line swaps the activation for every unit, every step. No

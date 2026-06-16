@@ -524,7 +524,7 @@ int main(int argc, char* argv[])
     base.num_inputs = 1;
     base.spectral_radius = 0.99f;
     base.leak_rate = 1.0f;
-    base.input_scaling = 0.06f;
+    base.input_scaling = 0.2f; // A(x): 0.2, tanh(x): 0.06f
     base.history_depth = 8;
 
     MemoryCapacityMeter meter(DIM, mccfg);
