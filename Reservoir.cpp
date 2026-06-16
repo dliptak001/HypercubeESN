@@ -201,6 +201,14 @@ void Reservoir::Step()
         std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
 }
 
+// Divide-free reformulation: A = sign(x) * (1 - 1/(1+t)).
+// Mathematically identical, sometimes lets the compiler/SIMD use rcp.
+inline float A_scalar_norecip(float x, float k) noexcept
+{
+    const float t = k * x * x;
+    return std::copysignf(1.0f - 1.0f / (1.0f + t), x);
+}
+
 void Reservoir::UpdateState(size_t v, float old_output_v)
 {
     float s = 0.0f;
@@ -244,7 +252,9 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     if (noise_active_)
         s += noise_scaling_ * static_cast<float>(noise_dist_(noise_rng_));
 
-    const float activation = std::tanh(s);
+    //const float activation = std::tanh(s);
+
+    const float activation = A_scalar_norecip(s, 4.0);
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
