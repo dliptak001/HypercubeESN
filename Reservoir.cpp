@@ -207,7 +207,7 @@ void Reservoir::Step()
 inline float A_lorentz(float x, float gamma, float inv_sigma2) noexcept
 {
     const float phi = 1.0f / (1.0f + x * x * inv_sigma2);
-    const float gain = 1.0f + gamma * phi;
+    const float gain = 1.0f + gamma * phi;  // TODO - experiment with "-gamma*phi...
     return std::tanh(x * gain);
 }
 
