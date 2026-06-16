@@ -132,3 +132,47 @@ Multi-seed (≥5 reservoir seeds) VPT confidence intervals on tanh@0.88 vs A@0.8
 parity-or-not. Given v1→v2 flipped the verdict, the multi-seed run should use the
 v2 harness. A different γ (steeper/narrower central boost) remains the lever by
 which A could in principle find a better return map.
+
+## How our absolute VPT compares to the literature
+
+Comparison is matched on the two axes that matter most: the **0.4 normalized-error
+threshold** (the field's convention, and ours) and **reservoir size** (literature
+baselines use N≈300; we use N=256). VPT in Lyapunov times.
+
+| Regime | VPT (λt) | Notes |
+|---|---|---|
+| Basic / untuned ESN | ~2–3 | e.g. NRMSE<0.2 until ~2.6 λt |
+| **Well-tuned standard RC** | **~10–15** | N≈300; the common literature baseline |
+| Heavily optimized RC | >30 | near-zero ridge (~1e−20), edge-of-chaos sr, high-precision solver (dt~1e−3) |
+| Special architectures | up to ~99 | autonomous ESN + sparse-obs data assimilation |
+| **This work (best)** | **~3.8** | N=256, v2 harness, median over 30 launches |
+
+**Honest placement:** our ~3.8 λt sits in the **basic/untuned-ESN range — roughly
+4× below well-tuned standard RC (~10–15 λt)** at matched threshold and comparable
+size. This is *absolute*-fidelity standing, and does **not** bear on the A-vs-tanh
+result (both arms share the identical harness/tuning, so parity stands).
+
+Why the gap, and why it is expected rather than alarming:
+1. **Readout recipe.** The ~15 λt results lean on a *linear* readout solved to
+   near-zero regularization (ridge ~1e−20). We use a *nonlinear CNN* readout with
+   default weight decay — a different machine, not the recipe RC-Lorenz work is
+   tuned around.
+2. **Minimal tuning.** Only sr/input_scaling were swept. Regularization, leak
+   (still 1.0), and solver/dt are untouched — yet regularization + edge-of-chaos sr
+   are exactly the levers the high-VPT work credits.
+3. **Coarser dt.** We integrate at dt=0.02; the >30 λt regime uses dt~1e−3 with a
+   high-precision solver. Reservoir size (256 vs ~300) is *not* the main gap.
+
+Identified headroom toward the ~15 λt class: regularization, leak, finer dt, and
+possibly the readout choice — none of which change the A-vs-tanh ordering.
+
+**Sources:**
+- Reservoir computing with large valid prediction time for the Lorenz system —
+  arXiv:2508.06730 — <https://arxiv.org/abs/2508.06730> (baseline ~15 λt at N≈300;
+  >30 λt with near-zero ridge + edge-of-chaos; 0.4 threshold).
+- Chaotic climate system forecasting using an improved ESN with sparse
+  observations — *Science China Earth Sciences* —
+  <https://link.springer.com/article/10.1007/s11430-024-1593-9> (AESN-SAO ~99 λt).
+- A systematic study of Echo State Network topologies for chaotic time series
+  prediction — *Neurocomputing* —
+  <https://www.sciencedirect.com/science/article/pii/S0925231224018034>.
