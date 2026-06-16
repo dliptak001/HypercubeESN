@@ -74,7 +74,7 @@ void Reservoir::Initialize()
     std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
     std::mt19937_64 bias_rng(bias_seed_);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
-    noise_rng_.seed(noise_seed_);   // <-- add; explicit seed = reproducible A/B sweeps
+    noise_rng_.seed(noise_seed_); // <-- add; explicit seed = reproducible A/B sweeps
 
     Reset();
 
@@ -206,7 +206,7 @@ void Reservoir::Step()
 // Pass inv_sigma2 = 1/sigma^2.  e.g. sigma=0.05 -> inv_sigma2 = 400.
 inline float A_lorentz(float x, float gamma, float inv_sigma2) noexcept
 {
-    const float phi  = 1.0f / (1.0f + x * x * inv_sigma2);
+    const float phi = 1.0f / (1.0f + x * x * inv_sigma2);
     const float gain = 1.0f + gamma * phi;
     return std::tanh(x * gain);
 }
@@ -254,8 +254,8 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     if (noise_active_)
         s += noise_scaling_ * static_cast<float>(noise_dist_(noise_rng_));
 
-    //const float activation = std::tanh(s);
-    const float activation = A_lorentz(s, 1.4, 200);
+    // const float activation = std::tanh(s);
+    const float activation = A_lorentz(s, 1.1, 250);
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
