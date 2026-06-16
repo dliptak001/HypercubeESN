@@ -39,7 +39,9 @@ int main(int argc, char* argv[])
 
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
-    cfg.reservoir.input_scaling = 0.09;
+    //cfg.reservoir.seed = 84745874578;
+    cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98
+    cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 0.1
     cfg.reservoir.noise_scaling = 0.0;   // per-neuron pre-tanh state noise; training-only (gated on below), try setting to 0.005
     cfg.readout.task          = ReadoutTask::Regression;
     cfg.readout.epochs        = 1500;
