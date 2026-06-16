@@ -131,13 +131,37 @@ int main(int argc, char* argv[])
         nz[t] = static_cast<float>((s[t].z - mz) / sz);
     }
 
-    // 4-channel input at a given index: [x, y, z, x*y*z] in normalized space.
+    // Standardize the nonlinear cross-feature channel (x*y*z in normalized
+    // space) to zero-mean / unit-std over the training window, so all four
+    // input channels share one meaningful input_scaling. The raw triple product
+    // is wider and heavier-tailed than the linear channels, so without this it
+    // carries a different effective input gain.
+    double mp = 0.0;
+    for (size_t t = collect_start; t < collect_end; ++t)
+        mp += double(nx[t]) * ny[t] * nz[t];
+    mp /= COLLECT;
+    double vp = 0.0;
+    for (size_t t = collect_start; t < collect_end; ++t)
+    {
+        const double p = double(nx[t]) * ny[t] * nz[t];
+        vp += (p - mp) * (p - mp);
+    }
+    const double sp = std::sqrt(vp / COLLECT);
+    const double inv_sp = (sp > 1e-12) ? 1.0 / sp : 1.0;
+
+    // 4-channel input from a (normalized) state: [x, y, z, standardized(x*y*z)].
+    // Shared by teacher forcing and free-run so the product channel is built
+    // identically in both regimes.
+    auto fill_input = [&](float xn, float yn, float zn, float* out)
+    {
+        out[0] = xn;
+        out[1] = yn;
+        out[2] = zn;
+        out[3] = static_cast<float>((double(xn) * yn * zn - mp) * inv_sp);
+    };
     auto make_input = [&](size_t idx, float* out)
     {
-        out[0] = nx[idx];
-        out[1] = ny[idx];
-        out[2] = nz[idx];
-        out[3] = nx[idx] * ny[idx] * nz[idx];
+        fill_input(nx[idx], ny[idx], nz[idx], out);
     };
 
     // ---- 3. configure the ESN ----
@@ -150,7 +174,7 @@ int main(int argc, char* argv[])
     if (cli_is > 0) cfg.reservoir.input_scaling   = static_cast<float>(cli_is);
     cfg.reservoir.leak_rate      = 1.0;   // continuous flow; <1.0 (leaky) is worth a sweep
     cfg.readout.task             = ReadoutTask::Regression;
-    cfg.readout.num_outputs      = 3;     // predict next (x, y, z)
+    cfg.readout.num_outputs      = 3;     // predict per-step increment (dx, dy, dz)
     cfg.readout.epochs           = 600;
     cfg.readout.batch_size       = 64;
     cfg.readout.activation       = ReadoutActivation::TANH;
@@ -170,13 +194,17 @@ int main(int argc, char* argv[])
     for (size_t i = 0; i < WARMUP + COLLECT; ++i)
         make_input(warm_start + i, &inputs_wc[i * 4]);
 
+    // Target is the per-step INCREMENT delta = s(t+1) - s(t), not the next state
+    // directly: for an ODE flow the readout learns the small change with less
+    // systematic bias, and free-run reconstructs s(t+1) = s(t) + delta.
     std::vector<float> targets(COLLECT * 3);
     for (size_t i = 0; i < COLLECT; ++i)
     {
-        const size_t t1 = collect_start + i + 1;  // next state
-        targets[i * 3 + 0] = nx[t1];
-        targets[i * 3 + 1] = ny[t1];
-        targets[i * 3 + 2] = nz[t1];
+        const size_t t0 = collect_start + i;      // just-input state
+        const size_t t1 = t0 + 1;                 // next state
+        targets[i * 3 + 0] = nx[t1] - nx[t0];
+        targets[i * 3 + 1] = ny[t1] - ny[t0];
+        targets[i * 3 + 2] = nz[t1] - nz[t0];
     }
 
     const size_t train_size = static_cast<size_t>(COLLECT * TRAIN_FRACTION);
@@ -195,10 +223,10 @@ int main(int argc, char* argv[])
     // ---- 5. one-step open-loop parity baseline ----
     const double r2    = esn.R2(targets.data(), train_size, test_size);
     const double nrmse = esn.NRMSE(targets.data(), train_size, test_size);
-    std::cout << "  -- One-step open-loop (teacher-forced, parity baseline) --\n";
+    std::cout << "  -- One-step open-loop increment (teacher-forced, parity baseline) --\n";
     std::cout << "     R2:    " << std::setprecision(6) << r2 << "\n";
     std::cout << "     NRMSE: " << std::setprecision(6) << nrmse
-              << "   (expected near-identical for A and tanh)\n\n";
+              << "   (increment-normalized; match A to tanh here before comparing VPT)\n\n";
 
     // ---- 6. free-run / VPT ----
     // Error denominator: RMS of the full 3-vector norm over the free-run region
@@ -223,21 +251,27 @@ int main(int argc, char* argv[])
         esn.ResetReservoirOnly();
         for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
 
-        // cut the cord: generate, feeding each prediction back as the next input
+        // cut the cord: predict the increment, reconstruct the next state by
+        // adding it to the current estimate, feed that back. Current estimate
+        // starts at the last true input fed during resync (s[L-1]).
+        double cx = nx[L - 1], cy = ny[L - 1], cz = nz[L - 1];
         size_t reached = HORIZON;
         for (size_t h = 0; h < HORIZON; ++h)
         {
-            esn.PredictLiveRaw(pred);             // prediction of normalized state s[L+h]
+            esn.PredictLiveRaw(pred);             // pred = predicted increment delta
+            const double px = cx + pred[0];       // reconstructed normalized s[L+h]
+            const double py = cy + pred[1];
+            const double pz = cz + pred[2];
             const size_t tt = L + h;
-            const double ex = pred[0] - nx[tt];
-            const double ey = pred[1] - ny[tt];
-            const double ez = pred[2] - nz[tt];
+            const double ex = px - nx[tt];
+            const double ey = py - ny[tt];
+            const double ez = pz - nz[tt];
             const double e  = std::sqrt(ex * ex + ey * ey + ez * ez) / err_denom;
             if (e > VPT_THRESH) { reached = h; break; }
 
-            in4[0] = pred[0]; in4[1] = pred[1]; in4[2] = pred[2];
-            in4[3] = pred[0] * pred[1] * pred[2];
+            fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
             esn.StepLive(in4);
+            cx = px; cy = py; cz = pz;
         }
         vpt_steps[k] = static_cast<double>(reached);
 
@@ -249,23 +283,25 @@ int main(int argc, char* argv[])
             std::cout << "    -----+---------------------+---------------------+----------\n";
             esn.ResetReservoirOnly();
             for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
+            double dx = nx[L - 1], dy = ny[L - 1], dz = nz[L - 1];
             for (size_t h = 0; h < 20; ++h)
             {
                 esn.PredictLiveRaw(pred);
+                const double px = dx + pred[0], py = dy + pred[1], pz = dz + pred[2];
                 const size_t tt = L + h;
-                const double ex = pred[0] - nx[tt], ey = pred[1] - ny[tt], ez = pred[2] - nz[tt];
+                const double ex = px - nx[tt], ey = py - ny[tt], ez = pz - nz[tt];
                 const double e  = std::sqrt(ex * ex + ey * ey + ez * ez) / err_denom;
-                const double xt = nx[tt] * sx + mx, xp = double(pred[0]) * sx + mx;
-                const double zt = nz[tt] * sz + mz, zp = double(pred[2]) * sz + mz;
+                const double xt = nx[tt] * sx + mx, xp = px * sx + mx;
+                const double zt = nz[tt] * sz + mz, zp = pz * sz + mz;
                 std::cout << "    " << std::setw(4) << h
                           << " | " << std::setw(8) << std::setprecision(3) << xt
                           << " " << std::setw(8) << xp
                           << "  | " << std::setw(8) << zt
                           << " " << std::setw(8) << zp
                           << "  | " << std::setw(8) << std::setprecision(4) << e << "\n";
-                in4[0] = pred[0]; in4[1] = pred[1]; in4[2] = pred[2];
-                in4[3] = pred[0] * pred[1] * pred[2];
+                fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
                 esn.StepLive(in4);
+                dx = px; dy = py; dz = pz;
             }
             std::cout << "\n";
         }

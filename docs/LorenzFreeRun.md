@@ -44,6 +44,18 @@ A VPT comparison only attributes to the activation's *shape* when the two arms
 are matched on one-step NRMSE; otherwise a longer VPT is just the better
 one-step map free-running. **Match one-step NRMSE, then compare VPT.**
 
+## Harness versions
+
+- **v1 (direct next-state):** readout predicts the next standardized state; the
+  x·y·z channel is the raw product. Runs #1–#7 below.
+- **v2 (increment + standardized product):** readout predicts the per-step
+  increment Δ = s(t+1) − s(t) and free-run reconstructs s(t+1) = s(t) + Δ; the
+  x·y·z channel is standardized to unit std so all four inputs share one
+  `input_scaling`. Both changes are *symmetric across arms* (they cannot bias the
+  A-vs-tanh ordering), but they lift absolute VPT and — as it turned out —
+  changed the verdict. Runs #8+ below. NRMSE is increment-normalized in v2, so
+  its scale is NOT comparable to v1.
+
 ## Results
 
 VPT over 30 launches; λt = Lyapunov times (1 λt = 55.2 steps). Config common
@@ -59,45 +71,64 @@ unless noted: DIM=8, N=256, leak=1.0, readout 600 epochs, batch 64, TANH readout
 | 6 | A_lorentz(1.1, 250) | 0.86 | 0.10 | 0.00106 | 2.32 λt (128) | 2.23 λt | — | one-step ≈ tanh's |
 | 7 | A_lorentz(1.1, 250) | 0.90 | 0.07 | 0.00140 | 1.99 λt (110) | 2.08 λt | — | input_scaling lever; no help |
 
-### Verdict — closed-loop does NOT favor A (provisional, 1 seed)
+**v2 — increment + standardized x·y·z (NRMSE increment-normalized, not v1-comparable):**
 
-The sweep matched A to tanh on the fairness precondition: runs #5/#6 hit one-step
-NRMSE 0.00113 / 0.00106, on top of tanh's 0.00099. **At matched one-step accuracy,
-tanh still free-runs meaningfully longer than A:**
+| # | activation | sr | is | one-step incr NRMSE | VPT median | VPT mean | note |
+|---|---|---|---|---|---|---|---|
+| 8  | std::tanh | 0.95 | 0.10 | 0.00274 | 3.24 λt (179) | 3.39 λt | tanh reference |
+| 9  | std::tanh | 0.90 | 0.10 | 0.00208 | 3.01 λt (166) | 2.96 λt | (non-monotonic → VPT noise) |
+| 10 | std::tanh | 0.88 | 0.10 | 0.00222 | 3.71 λt (205) | 3.59 λt | **tanh's best** |
+| 11 | A_lorentz(1.1, 250) | 0.90 | 0.10 | 0.00410 | 3.24 λt (179) | 3.39 λt | |
+| 12 | A_lorentz(1.1, 250) | 0.88 | 0.10 | 0.00391 | **3.79 λt** (209) | 3.36 λt | **A's best** |
+| 13 | A_lorentz(1.1, 250) | 0.86 | 0.10 | 0.00367 | 3.77 λt (208) | 3.67 λt | |
 
-- **tanh: 3.24 λt** median VPT.
-- **A's best (any matched point): 2.57 λt** (sr=0.88). Across A's entire matched
-  operating range (sr 0.86–0.90) VPT sits at **2.0–2.6 λt** — consistently
-  **~20–40% short of tanh**.
+### Verdict v2 — parity (and the v1 "tanh lead" was partly a harness artifact)
 
-The hypothesis the whole campaign was built to test — *A free-runs a learned
-attractor more stably / longer than tanh because its region-selective return map
-is a genuinely different (and supposedly better) map* — is **not supported**. As
-the comparison was made fair, the lead stayed with tanh; A never closed it. The
-linear→nonlinear capacity reallocation that A demonstrably does (Dambre tradeoff,
-MC sweep) does **not** cash out as a free-run advantage on Lorenz-63.
+Switching to increment prediction + a standardized product channel lifted **both**
+arms by ~1–1.5 λt and **erased the v1 gap**. Best-of-each: **A 3.79 λt (sr=0.88)
+vs tanh 3.71 λt (sr=0.88)** — a 0.08 λt difference, far inside the launch/seed
+scatter (within-arm VPT swings ~0.5–0.7 λt across sr; tanh is even non-monotonic,
+run #9). **On the better-practice harness, A and tanh are at parity on Lorenz
+free-run, ~3.0–3.8 λt, with no separation that survives noise.**
 
-This is consistent with the open-loop story, not a reversal of it: A's only
-established distinguishing property remains the **gentler operating point**
-(open-loop parity at lower sr / smaller drive). Closed-loop free-run, the most
-likely place a qualitative win could have appeared, instead shows tanh ahead.
+Two honest observations:
+
+1. **The v1 conclusion did not survive a better harness.** v1 (direct next-state)
+   showed tanh ~20–40% ahead; v2 (increment) shows parity. The earlier "tanh wins
+   free-run" was substantially an artifact of the suboptimal direct-state target,
+   not a property of the activation. A cautionary data point on harness design —
+   exactly what the deep review was for.
+2. **A reaches parity VPT *despite worse one-step accuracy*.** In v2 A's one-step
+   increment NRMSE is ~1.7× tanh's (0.0037–0.0041 vs 0.0021–0.0027), yet at matched
+   sr=0.88 A's VPT is marginally *higher* (3.79 vs 3.71). The fairness rule's
+   concern (better one-step → longer VPT) would predict tanh ahead — it isn't. So
+   the parity is **not** explained by one-step accuracy; if anything A compounds
+   error slightly more gracefully per unit one-step error. This is a faint,
+   noise-level signal *toward* A, the opposite of v1 — but it is within noise and
+   must not be overclaimed.
+
+Net: the closed-loop test now reads **parity**, consistent with the open-loop
+story (parity everywhere; A's distinguishing trait is the gentler operating point).
+The strong negative verdict from v1 is **retracted** — it was harness-dependent.
 
 ### Caveats (why "provisional")
 
-- **Single reservoir seed, single γ/σ.** VPT has real scatter (A's matched points
-  span 2.0–2.6 λt — internal noise ~0.5 λt on 30 launches). The tanh lead (~0.7 λt
-  over A's *best*) exceeds that scatter, so the direction is trusted, but tight
-  confidence intervals need multiple reservoir seeds.
-- **tanh not swept.** tanh's 3.24 λt is at its natural operating point (one-step
-  already 0.00099); a tanh sr-sweep would only raise its ceiling, not lower it —
-  it cannot overturn an A-loses result, only widen it.
+- **Single reservoir seed, single γ/σ.** This is now the binding limitation: the
+  v2 A-vs-tanh gap (0.08 λt best-of-each) is *well inside* the within-arm scatter
+  (~0.5–0.7 λt across sr; tanh non-monotonic). "Parity" is the honest call, but
+  only multi-seed confidence intervals can distinguish true parity from a small
+  real effect in either direction.
+- **One-step NRMSE not equalized in v2.** A is ~1.7× worse one-step than tanh and
+  cannot reach tanh's one-step floor at these operating points. The VPT parity
+  holds *despite* that A disadvantage (noted above), so it is not a one-step
+  confound — but a clean matched-NRMSE pair was not achievable here.
 - **leak=1, fixed.** Leaky integration matched to dt is an untried lever for *both*
-  arms; it could lift absolute VPT but is not expected to change the A-vs-tanh
-  ordering.
+  arms; it could lift absolute VPT but is not expected to change the ordering.
 
 ### If pursued further
 
-Multi-seed (≥5 reservoir seeds) VPT confidence intervals on tanh@0.95 vs A@0.88
-would convert "provisional" to "settled." A different γ (steeper/narrower central
-boost) is the only remaining way A could in principle find a better return map, but
-there is no evidence so far that it would.
+Multi-seed (≥5 reservoir seeds) VPT confidence intervals on tanh@0.88 vs A@0.88
+(v2's best-of-each points) would convert "parity, provisional" to a settled
+parity-or-not. Given v1→v2 flipped the verdict, the multi-seed run should use the
+v2 harness. A different γ (steeper/narrower central boost) remains the lever by
+which A could in principle find a better return map.
