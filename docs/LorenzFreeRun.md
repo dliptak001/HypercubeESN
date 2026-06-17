@@ -234,6 +234,45 @@ arm is sacrificed). Driver: `examples/Lorenz/sweep/run_sweep_canon.ps1`.
 Seed 11 (3.91 / 3.37) was rejected as too tanh-lopsided (sub-mean on A); 101 and
 202 are below average on both.
 
+### A(x) operating-point grid — SR × IS at M=16 (2026-06-16)
+
+A-only (γ=1.1, inv_σ²=250), `history_depth=16`, `leak_rate=1.0`, swept over
+SR ∈ {0.85, 0.875, 0.90} × IS ∈ {0.20, 0.10, 0.05} at all three locked seeds
+(23, 42, 73895) = 27 runs. Driver: `examples/Lorenz/sweep/run_sweep_A_srXis.ps1`;
+raw output in `examples/Lorenz/sweep/A_srXis_d16/`. Goal: find A's *free-run*
+operating point, since the SR≈0.88 sweet spot we'd been using came from open-loop /
+NARMA tuning and was never validated under closed-loop generation.
+
+**Seed-averaged median VPT (λt):**
+
+| SR \ IS | 0.20 | 0.10 | 0.05 |
+|---|---|---|---|
+| **0.85** | 3.43 | 3.46 | 3.45 |
+| **0.875** | 3.44 | 3.27 | 3.32 |
+| **0.90** | 3.36 | **3.73** ⭐ | 3.62 |
+
+Per-seed maxima all sit in the SR=0.90 row: seed 23 → 4.08 @ IS=0.10, seed 42 →
+3.89 @ IS=0.10, seed 73895 → 3.71 @ IS=0.05.
+
+**Findings:**
+- **Best cell: SR 0.90 / IS 0.10 = 3.73 λt** (seed-mean), the clear maximum — but the
+  *least robust* cell: seeds spread 3.21→4.08 (range 0.87 λt). Carried by 23 & 42;
+  73895 prefers IS=0.05 there.
+- **Robust runner-up: SR 0.90 / IS 0.05 = 3.62 λt**, tight spread (3.44–3.71, range
+  0.27). The stable choice if peak-vs-robustness matters.
+- **The ~0.88 sweet spot does NOT transfer to free-run for A.** The SR=0.875 row is
+  the *weakest* at mid/low IS (3.27–3.32). Free-run wants SR pushed **up to 0.90**.
+- **IS effect is non-monotone and seed-dependent.** IS=0.10 wins on average only via
+  the SR=0.90 row. Lower IS reliably gives better *one-step* NRMSE (IS=0.05 ≈
+  0.0029–0.0037 vs IS=0.20 ≈ 0.0040–0.0047) but that does not convert to VPT — the
+  usual one-step/free-run decoupling.
+- **⚠ SR=0.90 is the top edge of the grid and the surface is still climbing.** The
+  true A optimum may sit *above* 0.90 — **open follow-up: extend SR to 0.925 / 0.95**
+  (at IS 0.10 & 0.05, 3 seeds) to find where VPT rolls over.
+
+`leak_rate` is now a CLI arg (argv[6], positive-sentinel like sr/is; -1/absent keeps
+the source default 1.0) — added alongside this grid but left at 1.0 throughout it.
+
 ### Caveats (why "provisional")
 
 - **Single reservoir seed, single γ/σ.** This is now the binding limitation: the

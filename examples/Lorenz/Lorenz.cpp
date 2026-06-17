@@ -73,10 +73,11 @@ int main(int argc, char* argv[])
 {
     // Optional CLI overrides for sweeps: argv[1]=spectral_radius,
     // argv[2]=input_scaling, argv[3]=reservoir seed, argv[4]=lorentz_gamma,
-    // argv[5]=lorentz_inv_sigma2. The activation shape is now runtime too
-    // (gamma=0 => tanh, gamma=1.1 => current A, gamma<0 => fold), so a full
-    // activation/seed sweep needs no recompile. gamma can be 0 or negative,
-    // so it is gated on argc presence, not a positive sentinel.
+    // argv[5]=lorentz_inv_sigma2, argv[6]=leak_rate. The activation shape is now
+    // runtime too (gamma=0 => tanh, gamma=1.1 => current A, gamma<0 => fold), so
+    // a full activation/seed sweep needs no recompile. gamma can be 0 or
+    // negative, so it is gated on argc presence, not a positive sentinel.
+    // sr/is/leak use a positive sentinel (-1 => keep source default).
     const double cli_sr   = (argc > 1) ? std::atof(argv[1]) : -1.0;
     const double cli_is   = (argc > 2) ? std::atof(argv[2]) : -1.0;
     const long   cli_seed = (argc > 3) ? std::atol(argv[3]) : -1;
@@ -84,6 +85,7 @@ int main(int argc, char* argv[])
     const double cli_gamma = has_gamma ? std::atof(argv[4]) : 0.0;
     const bool   has_isig  = (argc > 5);
     const double cli_isig  = has_isig ? std::atof(argv[5]) : 0.0;
+    const double cli_leak = (argc > 6) ? std::atof(argv[6]) : -1.0;
 
     // ---- geometry / budgets ----
     constexpr size_t DIM     = 8;
@@ -192,6 +194,7 @@ int main(int argc, char* argv[])
     if (has_gamma)     cfg.reservoir.lorentz_gamma      = static_cast<float>(cli_gamma);
     if (has_isig)      cfg.reservoir.lorentz_inv_sigma2 = static_cast<float>(cli_isig);
     cfg.reservoir.leak_rate      = 1.0;   // continuous flow; <1.0 (leaky) is worth a sweep
+    if (cli_leak > 0) cfg.reservoir.leak_rate = static_cast<float>(cli_leak); // argv[6]
     cfg.readout.task             = ReadoutTask::Regression;
     cfg.readout.num_outputs      = 3;     // predict per-step increment (dx, dy, dz)
     cfg.readout.epochs           = 600;
