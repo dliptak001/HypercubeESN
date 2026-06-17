@@ -111,6 +111,112 @@ Net: the closed-loop test now reads **parity**, consistent with the open-loop
 story (parity everywhere; A's distinguishing trait is the gentler operating point).
 The strong negative verdict from v1 is **retracted** — it was harness-dependent.
 
+**v3 — multi-seed at sr=0.88, runtime activation (2026-06-16):**
+
+Harness change: activation shape is now a **runtime** config field
+(`ReservoirConfig::lorentz_gamma` / `lorentz_inv_sigma2`), consumed in
+`UpdateState` via `A_lorentz(s, γ, 1/σ²)`. γ=0 ⇒ algebraically `std::tanh`,
+γ=1.1 ⇒ the A arm, γ<0 ⇒ non-monotone "fold". CLI:
+`Lorenz.exe [sr] [is] [seed] [gamma] [inv_sigma2]`. Also: `noise_rng_` is now
+explicitly seeded in `Initialize()`. **Both changes shifted the absolute baseline
+— see the reproducibility flag below; do NOT cross-compare these absolutes to
+runs #1–#13.** All 14 runs share one build; arms differ only by γ.
+
+6 reservoir seeds, paired tanh (γ=0) vs A (γ=1.1), median VPT:
+
+| seed | tanh steps / λt | A steps / λt | Δ λt | tanh NRMSE | A NRMSE |
+|---|---|---|---|---|---|
+| 73895 | 167 / 3.02 | 166 / 3.01 | −0.02 | 0.006292 | 0.005220 |
+| 11 | 140 / 2.54 | 188 / 3.41 | +0.87 | 0.007558 | 0.005779 |
+| 23 | 148 / 2.68 | 181 / 3.28 | +0.60 | 0.006238 | 0.005597 |
+| 42 | 177 / 3.21 | 177 / 3.21 | 0.00 | 0.007049 | 0.005440 |
+| 101 | 159 / 2.88 | 180 / 3.26 | +0.38 | 0.005981 | 0.004794 |
+| 202 | 136 / 2.46 | 148 / 2.68 | +0.22 | 0.006137 | 0.005174 |
+| **mean ± sd** | **2.80 ± 0.29** | **3.14 ± 0.26** | **+0.34** | 0.00655 | 0.00534 |
+
+Paired diff +0.34 λt, SD(diff)=0.35, paired t≈2.40 (df=5, two-tailed p≈0.06);
+A ≥ tanh in 5/6 seeds (one exact tie, one −0.02 loss).
+
+**Fold (γ=−1.1):** seed 73895 → 41 steps / **0.74 λt**; seed 11 → 109 / 1.97 λt.
+Collapses far below both arms. Non-viable as-is.
+
+### Verdict v3 — A leads in direction, but the result is doubly confounded AND the baseline moved
+
+Two confounds keep this from being a clean return-map win:
+
+1. **One-step NRMSE is not matched** — A is *lower* (better) than tanh in all 6
+   seeds. The fairness rule requires matched NRMSE; here A's VPT lead rides on a
+   fit-quality lead, so shape is not isolated.
+2. **Effective loop gain not matched** — A's central-slope gain sits outside
+   nominal sr (the standing method control).
+
+> ⚠ **Reproducibility flag (must resolve before any strong claim).** Since γ=0 is
+> algebraically `std::tanh`, the v3 tanh arm should reproduce the v2 tanh arm.
+> It does **not**: v2 tanh@0.88 (#10) = 3.71 λt / NRMSE 0.00222; v3 tanh@0.88
+> seed 73895 = 3.02 λt / NRMSE 0.00629 — VPT down ~0.7 λt, NRMSE ~2.8× worse.
+> This is **far** larger than the ~1-step `-ffast-math` reassociation jitter, so
+> it is not sub-ULP noise. The NRMSE *ordering* also flipped vs v2 (there A was
+> 1.7× worse one-step; here A is better). Most likely cause: the new explicit
+> `noise_rng_` seeding changed the noise realization for both arms. Until the
+> tanh baseline is reconciled to v2, the v3 A-lead is recorded but **not** tied
+> to the campaign and **not** to be over-read. Diagnosis is the next action.
+>
+> **✅ RESOLVED (v4 below).** The noise guess was wrong — noise is off
+> (`noise_scaling=0`, double-gated, Lorenz never enables it). The real cause was
+> an **uncommitted `cfg.reservoir.history_depth = 32`** that drifted in during the
+> refactor; doc-era runs used the default **16**. Pinning depth back to 16
+> reproduces the v2 tanh anchor *exactly* (3.71 λt / 0.00222) — no bug — and the
+> A-vs-tanh ordering reverses (see v4).
+
+**v4 — multi-seed at history_depth=16 (the doc-era / better operating point, 2026-06-16):**
+
+`history_depth` was the v3 confound. At seed 73895, depth 16 beats 32 by ~0.7 λt
+for *both* arms and matches the doc default, so the comparison was re-run with
+depth pinned to 16 (`Lorenz.cpp`; one build, arms differ only by γ). Same 6 seeds,
+sr=0.88, is=0.10:
+
+| seed | tanh steps / λt | A steps / λt | Δ λt | tanh NRMSE | A NRMSE |
+|---|---|---|---|---|---|
+| 73895 | 205 / 3.71 | 196 / 3.55 | −0.16 | 0.002217 | 0.003895 |
+| 11 | 216 / 3.91 | 186 / 3.37 | −0.54 | 0.002315 | 0.003505 |
+| 23 | 232 / 4.20 | 218 / 3.95 | −0.25 | 0.002226 | 0.003431 |
+| 42 | 201 / 3.64 | 249 / 4.51 | +0.87 | 0.002379 | 0.003420 |
+| 101 | 196 / 3.55 | 179 / 3.24 | −0.31 | 0.002180 | 0.003510 |
+| 202 | 202 / 3.66 | 167 / 3.02 | −0.63 | 0.002478 | 0.003433 |
+| **mean ± sd** | **3.78 ± 0.24** | **3.61 ± 0.54** | **−0.17** | 0.00230 | 0.00353 |
+
+Paired diff −0.17 λt (tanh nominally ahead), SD(diff)=0.54, paired t=−0.78
+(df=5, p≈0.47 — **not significant**); tanh ≥ A in 5/6 seeds (only seed 42 favors A).
+
+**Reproducibility gate passed:** seed 73895 tanh = 3.71 λt / 0.002217 reproduces
+v2 #10 (3.71 / 0.00222) *exactly* → the v3 collapse was entirely the depth drift.
+A's NRMSE also reproduces (#12: 0.00391); A's VPT is −0.24 λt off #12, the known
+literal→runtime `-ffast-math` free-run jitter on the A path (γ=0 cancels it for tanh).
+
+### Verdict v4 — multi-seed PARITY; the v3 A-lead was a depth-32 (degraded-regime) artifact
+
+Side by side (cross-seed mean of medians):
+
+| depth | tanh | A | Δ (A−tanh) | paired p | one-step A vs tanh |
+|---|---|---|---|---|---|
+| 16 (good) | **3.78** | **3.61** | −0.17 | 0.47 (n.s.) | A ~1.5× **worse** |
+| 32 (degraded) | 2.80 | 3.14 | +0.34 | ~0.06 | A better |
+
+Depth 16 lifts both arms ~0.5–1.0 λt and **reverses** the ordering. The v3 "A
++0.34 λt" existed only in the worse depth-32 regime; at the better operating point
+it's **parity, tanh nominally ahead by 0.17 λt (not significant)**, and A again
+carries ~1.5× worse one-step NRMSE — matching every doc-era single-seed run. The
+v3 NRMSE "flip" was itself a depth-32 artifact. **This is the multi-seed
+confirmation of the campaign's standing conclusion: parity on Lorenz free-run; A's
+only distinguishing trait is a gentler operating point, not a better return map.**
+
+Sub-finding: **A is less seed-robust** (σ 0.54 vs tanh 0.24) — it owns the campaign
+max (seed 42, 4.51 λt) but also a lower floor (seed 202, 3.02). tanh is tighter.
+
+`history_depth` is now a known axis: 16 > 32 here, and it changes the A-vs-tanh
+one-step ordering. Whether 16 is the *peak* (vs 8/24) is untested — out of scope
+for the A-vs-tanh question, which v4 settles as parity.
+
 ### Caveats (why "provisional")
 
 - **Single reservoir seed, single γ/σ.** This is now the binding limitation: the

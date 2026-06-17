@@ -72,10 +72,18 @@ namespace
 int main(int argc, char* argv[])
 {
     // Optional CLI overrides for sweeps: argv[1]=spectral_radius,
-    // argv[2]=input_scaling. Activation stays the compile-time toggle in
-    // Reservoir.cpp; sr/is are runtime, so a sweep needs no recompile.
-    const double cli_sr = (argc > 1) ? std::atof(argv[1]) : -1.0;
-    const double cli_is = (argc > 2) ? std::atof(argv[2]) : -1.0;
+    // argv[2]=input_scaling, argv[3]=reservoir seed, argv[4]=lorentz_gamma,
+    // argv[5]=lorentz_inv_sigma2. The activation shape is now runtime too
+    // (gamma=0 => tanh, gamma=1.1 => current A, gamma<0 => fold), so a full
+    // activation/seed sweep needs no recompile. gamma can be 0 or negative,
+    // so it is gated on argc presence, not a positive sentinel.
+    const double cli_sr   = (argc > 1) ? std::atof(argv[1]) : -1.0;
+    const double cli_is   = (argc > 2) ? std::atof(argv[2]) : -1.0;
+    const long   cli_seed = (argc > 3) ? std::atol(argv[3]) : -1;
+    const bool   has_gamma = (argc > 4);
+    const double cli_gamma = has_gamma ? std::atof(argv[4]) : 0.0;
+    const bool   has_isig  = (argc > 5);
+    const double cli_isig  = has_isig ? std::atof(argv[5]) : 0.0;
 
     // ---- geometry / budgets ----
     constexpr size_t DIM     = 8;
@@ -167,11 +175,17 @@ int main(int argc, char* argv[])
     // ---- 3. configure the ESN ----
     ESNConfig cfg;
     cfg.reservoir.dim            = DIM;
+    // depth 16 beats 32: ~0.7 lt more VPT for both arms at seed 73895, and it
+    // matches the doc-era default (#8-13). 32 was an unintended drift.
+    cfg.reservoir.history_depth = 16;
     cfg.reservoir.num_inputs     = 4;     // x, y, z, x*y*z  (4 | N; 3 does not divide 256)
     cfg.reservoir.spectral_radius = 0.90; // A(x): 0.90,  tanh(x): 0.95   (tune per activation)
     cfg.reservoir.input_scaling  = 0.1;   // A(x): 0.1,   tanh(x): 0.1    (tune per activation)
-    if (cli_sr > 0) cfg.reservoir.spectral_radius = static_cast<float>(cli_sr);
-    if (cli_is > 0) cfg.reservoir.input_scaling   = static_cast<float>(cli_is);
+    if (cli_sr > 0)    cfg.reservoir.spectral_radius = static_cast<float>(cli_sr);
+    if (cli_is > 0)    cfg.reservoir.input_scaling   = static_cast<float>(cli_is);
+    if (cli_seed >= 0) cfg.reservoir.seed            = static_cast<uint64_t>(cli_seed);
+    if (has_gamma)     cfg.reservoir.lorentz_gamma      = static_cast<float>(cli_gamma);
+    if (has_isig)      cfg.reservoir.lorentz_inv_sigma2 = static_cast<float>(cli_isig);
     cfg.reservoir.leak_rate      = 1.0;   // continuous flow; <1.0 (leaky) is worth a sweep
     cfg.readout.task             = ReadoutTask::Regression;
     cfg.readout.num_outputs      = 3;     // predict per-step increment (dx, dy, dz)
@@ -187,7 +201,12 @@ int main(int argc, char* argv[])
               << "  input_scaling=" << cfg.reservoir.input_scaling
               << "  leak=" << cfg.reservoir.leak_rate << "\n";
     std::cout << "  dt=" << kDt << "  Lyapunov time ~ "
-              << (1.0 / (kLambdaMax * kDt)) << " steps\n\n";
+              << (1.0 / (kLambdaMax * kDt)) << " steps"
+              << "  seed=" << cfg.reservoir.seed << "\n";
+    std::cout << "  activation: A_lorentz  gamma=" << cfg.reservoir.lorentz_gamma
+              << "  inv_sigma2=" << cfg.reservoir.lorentz_inv_sigma2
+              << (cfg.reservoir.lorentz_gamma == 0.0f ? "  (== tanh)" : "")
+              << "\n\n";
 
     // ---- 4. teacher-forced training (open loop) ----
     std::vector<float> inputs_wc((WARMUP + COLLECT) * 4);

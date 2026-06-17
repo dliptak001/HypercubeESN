@@ -25,7 +25,9 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       bias_seed_(cfg.bias_seed),
       bias_scaling_(cfg.bias_scaling),
       noise_seed_(cfg.noise_seed),
-      noise_scaling_(cfg.noise_scaling)
+      noise_scaling_(cfg.noise_scaling),
+      lorentz_gamma_(cfg.lorentz_gamma),
+      lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
 
 {
     if (dim_ < 5 || dim_ > 16)
@@ -202,12 +204,15 @@ void Reservoir::Step()
 }
 
 // --- Lorentzian envelope (no exp; heavier tails) ---------------------------
-// gamma = 1 matches tanh
+// gamma = 0 reduces to plain tanh(x).
+// gamma > 0 sharpens the central slope;
+// gamma < 0 is the "-gamma*phi" branch and, for |gamma| > 1, drives the central
+// gain negative for a non-monotone fold. The sign is just the sign of gamma.
 // Pass inv_sigma2 = 1/sigma^2.  e.g. sigma=0.05 -> inv_sigma2 = 400.
 inline float A_lorentz(float x, float gamma, float inv_sigma2) noexcept
 {
     const float phi = 1.0f / (1.0f + x * x * inv_sigma2);
-    const float gain = 1.0f + gamma * phi;  // TODO - experiment with "-gamma*phi...
+    const float gain = 1.0f + gamma * phi;
     return std::tanh(x * gain);
 }
 
@@ -254,8 +259,8 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     if (noise_active_)
         s += noise_scaling_ * static_cast<float>(noise_dist_(noise_rng_));
 
-    // const float activation = std::tanh(s);
-    const float activation = A_lorentz(s, 1.1, 250);
+    // gamma=0 makes A_lorentz exactly std::tanh(s); shape is now runtime (cfg).
+    const float activation = A_lorentz(s, lorentz_gamma_, lorentz_inv_sigma2_);
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
@@ -334,6 +339,8 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.bias_scaling = bias_scaling_;
     cfg.noise_seed = noise_seed_;
     cfg.noise_scaling = noise_scaling_;
+    cfg.lorentz_gamma = lorentz_gamma_;
+    cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
     return cfg;
 }
 

@@ -29,6 +29,16 @@ struct ReservoirConfig
 
     uint64_t noise_seed = 0x6F09'94B6'1D8E'2F3DULL; // independent per-step training-noise stream
     float    noise_scaling = 0.0f;                  // pre-tanh state-noise σ; OFF by default
+
+    // --- Lorentzian activation envelope ---
+    // A_lorentz(x) = tanh(x * gain),  gain = 1 + lorentz_gamma * phi,
+    // phi = 1/(1 + x^2 * lorentz_inv_sigma2) ∈ (0,1].
+    //   gamma = 0           => gain ≡ 1 => plain tanh(x)
+    //   gamma > 0           => steeper central slope, tanh tails (sharpening)
+    //   gamma < 0, |g| > 1  => central gain crosses 0 => non-monotone "fold"
+    // Runtime so the activation shape is a sweep axis (no recompile).
+    float lorentz_gamma      = 1.1f;   // 0 reduces A_lorentz to tanh
+    float lorentz_inv_sigma2 = 250.0f; // 1/sigma^2
 };
 
 /// @brief Reservoir-computing reservoir whose recurrent topology is a Boolean
@@ -252,6 +262,10 @@ private:
     bool     noise_active_ = false;   // gates injection; off at inference (free-run)
     std::mt19937_64 noise_rng_;                              // seeded in Initialize()
     std::uniform_real_distribution<double> noise_dist_{-1.0, 1.0};  // braces, not parens
+
+    /**** Lorentzian activation envelope (see ReservoirConfig) ****/
+    float lorentz_gamma_      = 1.1f;
+    float lorentz_inv_sigma2_ = 250.0f;
 
     void Initialize();
     void UpdateState(size_t v, float old_output_v);

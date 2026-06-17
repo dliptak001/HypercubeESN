@@ -1,0 +1,54 @@
+﻿=== HypercubeESN: Lorenz-63 Free-Run (closed-loop) ===
+
+Task: teacher-force the readout to one-step-predict the Lorenz
+state, then cut the input and let the network generate its own
+trajectory by feeding predictions back. Closed-loop free-run is
+the test that separates the activation's return map from tanh's.
+
+[Reservoir DIM=8 M=16 seed=202 leak=1 in_scale=0.1 hist_floor=1 SR target=0.8800 post=0.8797 (secant iters=7)]
+  Config: DIM=8  N=256  inputs=4 [x,y,z,xyz]  outputs=3
+  spectral_radius=0.88 (realized ~ measured at build)  input_scaling=0.1  leak=1
+  dt=0.02  Lyapunov time ~ 55.212 steps  seed=202
+  activation: A_lorentz  gamma=0  inv_sigma2=250  (== tanh)
+
+  Training readout (600 epochs)... done (174.0s)
+
+  -- One-step open-loop increment (teacher-forced, parity baseline) --
+     R2:    0.999993
+     NRMSE: 0.002478   (increment-normalized; match A to tanh here before comparing VPT)
+
+  -- Free-run sample (launch 0), denormalized Lorenz units --
+    step |    x_true   x_pred  |    z_true   z_pred  |  norm.err
+    -----+---------------------+---------------------+----------
+       0 |    1.555    1.553  |   19.404   19.404  |   0.0006
+       1 |    1.527    1.523  |   18.438   18.439  |   0.0007
+       2 |    1.552    1.547  |   17.530   17.528  |   0.0011
+       3 |    1.624    1.619  |   16.680   16.678  |   0.0013
+       4 |    1.743    1.736  |   15.888   15.888  |   0.0017
+       5 |    1.909    1.898  |   15.157   15.155  |   0.0020
+       6 |    2.123    2.109  |   14.491   14.490  |   0.0026
+       7 |    2.391    2.373  |   13.897   13.894  |   0.0032
+       8 |    2.719    2.696  |   13.384   13.380  |   0.0039
+       9 |    3.116    3.086  |   12.967   12.961  |   0.0047
+      10 |    3.593    3.554  |   12.668   12.652  |   0.0054
+      11 |    4.161    4.115  |   12.518   12.493  |   0.0065
+      12 |    4.834    4.782  |   12.556   12.517  |   0.0077
+      13 |    5.625    5.564  |   12.840   12.785  |   0.0092
+      14 |    6.547    6.476  |   13.441   13.360  |   0.0107
+      15 |    7.605    7.523  |   14.448   14.349  |   0.0123
+      16 |    8.796    8.704  |   15.960   15.827  |   0.0141
+      17 |   10.098   10.000  |   18.070   17.893  |   0.0159
+      18 |   11.461   11.361  |   20.832   20.606  |   0.0179
+      19 |   12.803   12.708  |   24.210   23.948  |   0.0192
+
+  -- Valid Prediction Time over 30 launches (threshold 0.4000) --
+     mean   :  187.80 steps  =  3.40 Lyapunov times
+     median :  202.00 steps  =  3.66 Lyapunov times
+     min    :   51.00 steps  =  0.92 Lyapunov times
+     max    :  285.00 steps  =  5.16 Lyapunov times
+
+Median VPT in Lyapunov times is the headline closed-loop number.
+Compare A(x) vs std::tanh by rebuilding with the other activation
+(Reservoir.cpp::UpdateState) at MATCHED one-step NRMSE.
+
+RESULT sr=0.8800 is=0.1000 one_step_nrmse=0.002478 vpt_med_steps=202.0000 vpt_med_lt=3.6586 vpt_mean_lt=3.4014
