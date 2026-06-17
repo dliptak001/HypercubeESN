@@ -181,6 +181,11 @@ int main(int argc, char* argv[])
     cfg.reservoir.num_inputs     = 4;     // x, y, z, x*y*z  (4 | N; 3 does not divide 256)
     cfg.reservoir.spectral_radius = 0.90; // A(x): 0.90,  tanh(x): 0.95   (tune per activation)
     cfg.reservoir.input_scaling  = 0.1;   // A(x): 0.1,   tanh(x): 0.1    (tune per activation)
+    // LOCKED general-purpose seeds (M=16, serve both tanh and A; ranked by
+    // worst-of-two-arm VPT): 23, 42, 73895. Use these for A-vs-tanh comparisons.
+    //   seed 23    : tanh 4.20 / A 3.95 lt  (strong on both)
+    //   seed 42    : tanh 3.64 / A 4.51 lt  (A champion, tanh solid)
+    //   seed 73895 : tanh 3.71 / A 3.55 lt  (balanced; reproducibility anchor / default)
     if (cli_sr > 0)    cfg.reservoir.spectral_radius = static_cast<float>(cli_sr);
     if (cli_is > 0)    cfg.reservoir.input_scaling   = static_cast<float>(cli_is);
     if (cli_seed >= 0) cfg.reservoir.seed            = static_cast<uint64_t>(cli_seed);

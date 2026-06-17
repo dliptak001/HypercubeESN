@@ -213,9 +213,26 @@ only distinguishing trait is a gentler operating point, not a better return map.
 Sub-finding: **A is less seed-robust** (σ 0.54 vs tanh 0.24) — it owns the campaign
 max (seed 42, 4.51 λt) but also a lower floor (seed 202, 3.02). tanh is tighter.
 
-`history_depth` is now a known axis: 16 > 32 here, and it changes the A-vs-tanh
-one-step ordering. Whether 16 is the *peak* (vs 8/24) is untested — out of scope
-for the A-vs-tanh question, which v4 settles as parity.
+`history_depth` is now a known axis and **degrades monotonically above 16**:
+cross-seed mean of medians is tanh 3.78 / A 3.61 at M=16, 3.53 / 3.37 at M=20,
+2.80 / 3.14 at M=32. M=16 is the best of the three for both arms; depth also
+changes the A-vs-tanh one-step ordering. Below 16 (M=8/12) is untested — out of
+scope for the A-vs-tanh question, which v4 settles as parity.
+
+### Locked general-purpose seeds (M=16)
+
+For consistent future A-vs-tanh work, three seeds are locked as the canonical set —
+chosen to serve **both** activations, ranked by worst-of-two-arm VPT (so neither
+arm is sacrificed). Driver: `examples/Lorenz/sweep/run_sweep_canon.ps1`.
+
+| seed | tanh λt | A λt | why |
+|---|---|---|---|
+| **23** | 4.20 | 3.95 | strong on both — the clear #1 |
+| **42** | 3.64 | 4.51 | A champion; tanh still solid (floor 3.64) |
+| **73895** | 3.71 | 3.55 | balanced; reproducibility anchor / default seed |
+
+Seed 11 (3.91 / 3.37) was rejected as too tanh-lopsided (sub-mean on A); 101 and
+202 are below average on both.
 
 ### Caveats (why "provisional")
 
