@@ -119,13 +119,30 @@ seeds in comments would need re-finding.)
 **Recommendation:** DONE.
 
 ### G6. Diagnostic accessors
-**Status:** open
+**Status:** RESOLVED (§7.4) — preceded by a §8 sufficiency audit that reshaped the list.
 
-The §8 sweeps need to read individual member outputs, current κ, gate state, and
-per-member error — none are in the §7.2 surface (only `c_out`). The experiments can't
-run without them.
+Auditing §8 first (per the resolution order) showed the experiment set was
+under-specified, so two experiments were **added** and the accessor list re-derived from
+the expanded set:
+- **Decorrelation axis** — `ρ̄` (mean pairwise correlation of member errors) reported
+  alongside every κ-curve; the thesis's "decorrelating regime" qualifier is now *measured*,
+  not an escape hatch. Promotes per-member outputs from "nice for the baseline" to
+  **load-bearing**.
+- **Replication + decisiveness protocol** — K ≥ 5 independent ensemble seeds, mean ± spread,
+  "beats" = margin beyond seed noise (form committed; concrete margin task-specific).
 
-**Recommendation:** list the read-only accessors the design commits to.
+Three further controls I proposed (κ sign-symmetry, gate-threshold tuning, common-mode
+bias) were **rejected as out of scope** by the user — explicitly not worth the effort.
+Dropping the gate-tuning sweep is what keeps the surface lean (no `consensus_err_` getter).
+
+Committed §7.4 surface (each traced to a kept experiment): `MemberOutput(i, out)` +
+`AllMemberOutputs(MxD)` (decorrelation, single-member baseline), `Kappa()` (intensity
+sweep + ramp trace), `GateOpen()` + `CurrentStep()` (annotate the ramp ablation). **Not**
+exposed: per-member error (G3 — gate reads consensus error only; outputs suffice) and the
+raw `consensus_err_` signal (only the dropped gate-tuning sweep wanted it). All `const`,
+no mechanism change.
+
+**Recommendation:** DONE.
 
 ---
 

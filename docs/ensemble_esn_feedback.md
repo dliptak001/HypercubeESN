@@ -453,6 +453,33 @@ class EnsembleESN {
 };
 ```
 
+### 7.4 Diagnostic surface (read-only)
+
+The §8 experiments read more than the consensus `c_out` that `Step` hands back. The design
+commits to this **minimal** read-only surface — each accessor traced to the experiment that
+needs it. All are `const` getters over existing private state; none change the mechanism.
+
+```cpp
+// Member outputs — the decorrelation axis (§8) and the single-member baseline.
+// AllMemberOutputs fills an M×D row-major buffer in one call: the decorrelation
+// measurement forms an M×M correlation every step, so M separate calls would waste it.
+void   MemberOutput(size_t i, float* out) const;   // member i: D floats (y_i)
+void   AllMemberOutputs(float* out_MxD)  const;     // all members: M×D, row-major
+
+float  Kappa()       const;   // current intensity — intensity-sweep x-axis + ramp-ablation trace
+bool   GateOpen()    const;   // has the competence ramp triggered? — annotates the ramp ablation
+size_t CurrentStep() const;   // t_ — aligns traces to the §7.1 schedule (e.g. the ramp's trigger step)
+```
+
+Deliberately **not** exposed:
+- **Per-member training error.** G3 made the competence gate read the *consensus* error
+  only, and the (scoped) §8 experiments need per-member *outputs*, not per-member error —
+  any per-member error a study wants is computable externally from `MemberOutput` + the
+  target. Keeping it off the surface avoids implying the gate consumes it.
+- **The raw gate signal (`consensus_err_`).** Its only consumer would have been a
+  gate-threshold/smoothing tuning sweep, which is **out of scope** (§8). `GateOpen()` — the
+  boolean outcome — is all the kept experiments need.
+
 ---
 
 ## 8. Falsifiable thesis and experiments
@@ -468,17 +495,49 @@ class EnsembleESN {
 **Thesis.** In a regime where members decorrelate, there exists a feedback intensity
 κ at which the coupled ensemble beats both the single member **and** the κ = 0 point.
 If accuracy is monotone in `|κ|` with the optimum at an endpoint (κ = 0 wins, or full
-sync wins), coupling buys nothing and the mechanism is falsified.
+sync wins), coupling buys nothing and the mechanism is falsified. The "decorrelating
+regime" qualifier is **not an escape hatch**: decorrelation is itself measured (below),
+so a null result is attributed to a quantified `ρ̄`, not asserted away.
+
+**Decorrelation — the precondition, measured not assumed.** The benefit is conditional
+on members decorrelating, so decorrelation is a first-class reported axis, not invoked
+post hoc:
+- Quantify inter-member agreement as the **mean pairwise correlation of member errors**
+  (equivalently of the output deviations `Δ_i`) over the evaluation window, `ρ̄`. High
+  `ρ̄` ⇒ redundant members; low/negative `ρ̄` ⇒ the regime the coupling targets.
+- Report `ρ̄` **alongside every κ-curve**. Decisive reading: the gain over κ = 0 should
+  appear where `ρ̄` is low and shrink toward zero as `ρ̄ → 1`. A benefit that is *flat*
+  in `ρ̄` contradicts the stated mechanism (the consensus would have nothing to average
+  out); a benefit that *grows* with `ρ̄` falsifies it outright.
+- `ρ̄` is also the natural knob for the M / seed-diversity studies — varying member count
+  or seed spread moves `ρ̄`, mapping benefit-vs-decorrelation directly.
 
 **Sweeps:**
 - **Intensity:** κ across a range at fixed M and members; locate the accuracy-vs-`|κ|`
   curve and any interior optimum.
 - **Ramp ablation:** the competence-gated ramp (§4.2) vs a fixed-intensity online run —
   does ramping reach a higher usable κ* by avoiding early destabilization?
-- Then vary M and the consensus statistic.
+- Then vary M and the consensus statistic (and read off `ρ̄` for each, per above).
+
+**Replication and decisiveness — every number is a distribution.** The thesis is
+statistical (variance reduction), so a single random ensemble proves nothing — a κ-curve
+wiggle is meaningless without a spread:
+- Each operating point is run over **K independent ensemble seeds** (K ≥ 5; the seed
+  feeds the §5 derivation, so the K ensembles are fully reproducible and independent).
+  Report **mean ± spread** (std or IQR), never a lone value.
+- **"Beats" is decided beyond that spread:** the coupled mean must exceed the baseline
+  mean by a stated **margin that clears the seed-to-seed noise** — not merely rank above
+  it on one draw. The concrete margin is task-specific and set by the examples (e.g. the
+  NARMA campaign's fixed absolute margin); the *form* — multi-seed, mean ± spread, margin
+  beyond noise — is committed here.
+- The κ-sweep curve is read at this resolution: an interior optimum counts only if its
+  gain over κ = 0 clears the margin at the curve's own seed spread.
 
 **Metrics** are task-appropriate and deferred to the (future) examples; the design
-commits only to these baselines and the κ sweep being decisive.
+commits to these baselines, the **decorrelation axis**, the **multi-seed decisiveness
+protocol**, and the κ sweep being decisive under it. The quantities these experiments
+read off a live ensemble (per-member outputs, current κ, gate state) are the
+**§7.4 diagnostic surface**.
 
 ---
 
