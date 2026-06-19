@@ -347,3 +347,7 @@ commits only to these baselines and the κ sweep being decisive.
    adaptation.
 4. **Intensity magnitude** — the useful range of κ and where over-driving begins to
    degrade members (the sign is fixed by convention, §4.1).
+5. **Common-mode bias** — out of scope here (the consensus is blind to it, §9), but if
+   ever pursued, **member heterogeneity** (mixed activations first — tanh vs `A` are
+   known to decorrelate — then operating points / bagged data) is the lever that shrinks
+   the shared-error floor; only an external reference can remove it.
