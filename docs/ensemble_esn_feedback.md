@@ -93,7 +93,7 @@ budget. Members are built with `num_feedback_channels = D`.
        (training only) online-update readout_i toward target(t)   (TrainLive*)
        inject task input u(t)            on the input    channels
        inject φ_i = κ(t)·Δ_i(t)          on the feedback channels
-       Step  ->  x_i(t+1)                                          (the one new seam, §7)
+       Step  ->  x_i(t+1)                                          (the seam, §7.2)
                                │
                                ▼
                  ensemble output = c(t)
@@ -242,12 +242,90 @@ Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns 
 `num_feedback_channels = D`. The members are trained online (`InitOnline` +
 `TrainLive*`) and read via `PredictLiveRaw`.
 
-### 7.1 The one required core change
+### 7.1 Online lifecycle — one loop, two scheduled knobs
 
-The online step must inject the orchestrator's own D-vector `φ_i` on the feedback
-channels and step. `ESN::StepLive` instead evaluates the learned feedback policy F and
-injects `tanh(F(x))` on channel 0 only; `Reservoir::InjectFeedback(channel, value)` is
-public but reached through the private `reservoir_`. So the seam is one `ESN` method:
+`EnsembleESN` runs in a **single execution mode** from the first step to the last. There
+is no separate warm-up mode, no reservoir-only path, and no `if (warming_up)` branch in
+the member loop. Every step — warm-up, training, inference — goes through the **same**
+`StepLiveExternalFeedback` seam (§7.2). What changes over the run is not the code path
+but the value of **two scheduled knobs**.
+
+**Why warm-up is not a separate mode.** A reservoir warm-up exists only to wash the
+arbitrary initial state `x(0) = 0` out of the dynamics before the readout's outputs are
+used. In the single-`ESN` online API this is bundled into `InitOnline`, which steps the
+reservoir `warmup_count` times and *then* builds the readout. Crucially, the readout
+build (`readout_.InitOnline()`) **takes no arguments and consumes no warm-up state** — it
+is pure network construction (allocate weights, init Adam moments). So the ordering "warm
+up, then build readout" is **incidental, not a data dependency**: nothing about the
+readout needs the warm-up to have happened first. Running the readout during warm-up
+would merely produce an output we ignore — one cheap HCNN forward per member per step —
+which is not worth a dedicated execution mode. (Verified: `ESN::InitOnline` at
+`ESN.cpp:162` calls `Warmup(...)` then the argument-free `readout_.InitOnline()`.)
+
+`EnsembleESN` therefore **builds every member's readout up front** and folds warm-up into
+the normal loop:
+
+- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2) and
+  initialized with `InitOnline(input, /*warmup_count =*/ 0)` — this builds the readout and
+  runs **zero** internal warm-up steps (the `Warmup` loop body never executes). The
+  ensemble owns the washout itself, through its own loop, on the external-feedback seam —
+  so warm-up is a clean, **input-only** reservoir washout with no internal-F dribble on
+  channel 0 (contrast `StepLive`, whose internal-F path we never touch).
+
+- **The two scheduled knobs.** From step 0 the loop runs `Step()` (§7.3) unchanged. Two
+  scalars move on a schedule the class owns (§4.2):
+
+  ```
+    ONE loop, same seam throughout. Two scheduled flips, nothing else:
+
+    step:   0 ............. W ..................... competence ............→
+    κ:      0 ───────────────────────────────────┐ ramp ┌──── κ*
+    train:  off ──────────┐ on ───────────────────────────────────────────
+                          ▲                        ▲
+                    enable training          open the κ ramp once the
+                    after the W-step         competence gate fires
+                    reservoir washout        (§4.2 / G3)
+
+    "warm-up" = steps [0, W): a normal Step() with κ = 0 and training not yet enabled.
+  ```
+
+  1. **`train` enable** flips on at step `W` (the washout length). During `[0, W)` the
+     reservoir is driven by the task input and the zero-deviation feedback only (κ = 0, so
+     `φ_i = 0`), and **no readout update is taken** — we do not fit the readout on
+     transient states that still remember `x(0) = 0`. `W` plays exactly the
+     transient-killing role of the single-`ESN` `warmup_count`.
+  2. **κ ramp** holds at `κ₀ ≈ 0` until the competence gate fires, then ramps to `κ*`
+     (§4.2). Because κ = 0 across `[0, W)` anyway, the consensus is computed and read out
+     but injected as ~nothing — warm-up is the natural **left edge of the κ schedule**,
+     not a thing bolted on beside it.
+
+- **Inference.** Same loop, same seam. The readout update is simply not taken
+  (equivalently `target == nullptr`); κ holds at `κ*`. There is no mode switch between
+  training and inference — only whether the readout update runs this step.
+
+- **Sequence boundaries / reset.** When a fresh, independent sequence begins, every member
+  resets together via `ResetReservoirOnly()` (clears reservoir state only; trained readout
+  weights are preserved). The κ schedule and the `train`-enable knob are **not** rewound
+  on such a reset — competence already achieved is not un-learned. Whether to re-impose a
+  short washout (hold κ, suppress the readout update for a few steps while the dynamics
+  re-settle) at each sequence boundary is a config choice; **default: yes, a short one.**
+
+This collapses the lifecycle to **one run mode plus a two-knob schedule** — that is the
+entire state machine. (This supersedes the earlier framing of warm-up as a distinct
+"uncoupled phase that predates the readouts": with readouts built up front, warm-up is
+just the schedule's left edge.)
+
+### 7.2 Required core changes (two; no Reservoir or Readout change)
+
+The ensemble rides almost entirely on **existing** machinery. Verified against the
+sources, the required footprint is **two small, additive `ESN` changes** — and **zero**
+changes to `Reservoir` or the HCNN `Readout`.
+
+**(1) The external-feedback step seam.** The online step must inject the orchestrator's
+own D-vector `φ_i` on the feedback channels and step. `ESN::StepLive` instead evaluates
+the learned feedback policy F and injects `tanh(F(x))` on channel 0 only;
+`Reservoir::InjectFeedback(channel, value)` is public but reached through the private
+`reservoir_`. So we add one `ESN` method:
 
 ```
 // proposed — additive, behavior-preserving (existing StepLive untouched)
@@ -258,21 +336,46 @@ void ESN::StepLiveExternalFeedback(const float* inputs,    // NumInputs() floats
 //   reservoir_->Step()      // F is never evaluated
 ```
 
-~10 lines, purely additive. **Unused-F wrinkle:** members built with
-`num_feedback_channels = D` make the `ESN` ctor eagerly build the unused F readout —
-acceptable for a first cut (one wasted CNN per member); a clean follow-up is a small
-`FeedbackConfig::external_drive` flag that allocates the feedback weight block but skips
-building F. Required footprint is the one seam.
+~10 lines, purely additive.
 
-### 7.2 Orchestrator sketch (design pseudocode — not for implementation yet)
+**(2) An `external_drive` feedback mode — required, not optional.** This was previously
+mislabeled a cleanup; the sources show it is load-bearing:
+
+- `ESN.cpp:82` **throws unless `num_feedback_channels == 1`** — the guard exists only
+  because the internal learned-F readout emits a single scalar onto channel 0. With
+  `num_feedback_channels = D > 1` the current ctor cannot construct the member at all.
+- Even at D = 1 the ctor eagerly builds the scalar `feedback_readout_` (`ESN.cpp:87`),
+  which the ensemble never uses (it drives the channels externally).
+
+So we add a small `FeedbackConfig::external_drive` flag that, when set, **(a)** relaxes
+the `!= 1` guard to allow `num_feedback_channels = D`, and **(b)** allocates the feedback
+weight block but **skips building the scalar F readout**. This is an `ESN`/config change,
+not an HCNN change.
+
+**Why no Reservoir change.** The `Reservoir` is already D-channel-native: it sizes the
+feedback weight block at `n_*dim_` independent of channel count (`Reservoir.cpp:64`), and
+`InjectFeedback(channel, value)` partitions the N vertices into `num_feedback_channels`
+equal blocks and broadcasts each value to its block (`Reservoir.cpp:269-277`). Our D
+deviation components map one-to-one onto D vertex blocks with no new code.
+
+**D is unconstrained.** `Reservoir.cpp:50` *throws* unless `num_feedback_channels`
+divides N evenly, but that guard is conservative: when D does not divide N,
+`InjectFeedback` simply leaves the `≤ D−1` remainder tail vertices unfed
+(`block = N / D` truncates) — a bounded, benign gap in coverage, not a correctness
+problem. Relaxing/removing the check makes **any D ≤ N** usable, with at most `D−1` tail
+vertices receiving no coupling drive. No power-of-two restriction on D.
+
+### 7.3 Orchestrator sketch (design pseudocode — not for implementation yet)
 
 ```cpp
 class EnsembleESN {
     size_t M_, D_;
+    size_t t_ = 0, W_;                               // step counter; W_ = washout length (§7.1)
     Combine   combine_;                              // Mean (default) | Median (§6)
     RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
     float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
     std::vector<std::unique_ptr<ESN>> esn_;          // each built with num_feedback_channels = D
+                                                     // and external_drive (§7.2), via InitOnline(.,0)
 
     void AdvanceKappa(const float* target);          // class-owned competence-gated ramp (§4.2)
 
@@ -281,13 +384,15 @@ class EnsembleESN {
         std::vector<std::vector<float>> y(M_, std::vector<float>(D_));
         for (size_t i = 0; i < M_; ++i) esn_[i]->PredictLiveRaw(y[i].data());
         combine(y, c_out, combine_);                 // consensus (= ensemble output)
+        const bool train = target && (t_ >= W_);     // suppress fitting during the [0,W) washout (§7.1)
         std::vector<float> phi(D_);
         for (size_t i = 0; i < M_; ++i) {
-            if (target) esn_[i]->TrainLiveStepRegression(target, /*lr,wd*/…);   // online update
+            if (train) esn_[i]->TrainLiveStepRegression(target, /*lr,wd*/…);    // online update
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
-            esn_[i]->StepLiveExternalFeedback(input, phi.data());               // the §7.1 seam
+            esn_[i]->StepLiveExternalFeedback(input, phi.data());               // the §7.2 seam
         }
         AdvanceKappa(target);    // class drives κ via the competence-gated ramp (§4.2) — not the caller
+        ++t_;
     }
 };
 ```

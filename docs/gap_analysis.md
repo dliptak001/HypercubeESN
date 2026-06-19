@@ -29,7 +29,12 @@ which lives inside the ensemble anyway (see G3). `kappa_target`, gate signal/thr
 and ramp shape become constructor config. Resolve G1/G2/G3 as one coherent edit.
 
 ### G2. Online lifecycle / state machine is missing — only the steady-state step is specified
-**Status:** open
+**Status:** RESOLVED (§7.1). Reshaped during the work: with readouts built up front
+(`InitOnline(input, 0)`), warm-up is *not* a separate mode — the lifecycle collapses to
+**one run loop + a two-knob schedule** (train-enable at step W, κ-ramp at competence).
+Documented in §7.1 with the unified-seam rationale, the `ESN.cpp:162` finding (readout
+build is warm-up-independent), reset/sequence-boundary semantics, and the timeline
+diagram. Surfaced G11 + G12 (below).
 
 `ESN.h` confirms the online path is `InitOnline(warmup_inputs, warmup_count)` → builds
 the readout CNN → *then* `TrainLive*`. The doc's `Step()` assumes readouts already
@@ -126,3 +131,28 @@ The design ties all three together implicitly. Stating the identity once removes
 footgun.
 
 **Recommendation:** state the identity explicitly where D is introduced.
+
+---
+
+## Found during the work (lifecycle / integration audit)
+
+### G11. `num_feedback_channels = D` divisibility — NON-ISSUE
+**Status:** RESOLVED (non-issue). The `Reservoir.cpp:50` divisibility check is
+conservative: when D does not divide N, `InjectFeedback` just leaves the `≤ D−1`
+remainder tail vertices unfed (`block = N/D` truncates) — a bounded, benign coverage gap,
+not a correctness problem. The check can be relaxed/removed, so **D is unconstrained**
+(any D ≤ N). No power-of-two restriction. §7.2 updated accordingly.
+
+### G12. `external_drive` feedback mode is a *required* core change, not optional
+**Status:** RESOLVED in the doc (§7.2 rewritten); implementation still pending
+
+The original §7.1 called `external_drive` an optional cleanup and claimed "required
+footprint is the one seam." The sources contradict this: `ESN.cpp:82` **throws unless
+`num_feedback_channels == 1`** (the internal scalar-F path), and `ESN.cpp:87` eagerly
+builds a scalar `feedback_readout_` that cannot drive D channels. So D-channel external
+feedback is impossible without an `external_drive` mode that relaxes the guard and skips
+building F. §7.2 now lists **two** required `ESN` changes (seam + `external_drive`) and
+**zero** Reservoir/Readout changes. Confirmed: no HypercubeCNN rewrite is warranted.
+
+**Recommendation:** carry both changes into the implementation task list; HCNN and
+Reservoir stay untouched.
