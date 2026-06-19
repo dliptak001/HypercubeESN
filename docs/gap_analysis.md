@@ -137,22 +137,36 @@ footgun.
 ## Found during the work (lifecycle / integration audit)
 
 ### G11. `num_feedback_channels = D` divisibility — NON-ISSUE
-**Status:** RESOLVED (non-issue). The `Reservoir.cpp:50` divisibility check is
-conservative: when D does not divide N, `InjectFeedback` just leaves the `≤ D−1`
-remainder tail vertices unfed (`block = N/D` truncates) — a bounded, benign coverage gap,
-not a correctness problem. The check can be relaxed/removed, so **D is unconstrained**
-(any D ≤ N). No power-of-two restriction. §7.2 updated accordingly.
+**Status:** RESOLVED (non-issue, verified against the sources). The `Reservoir.cpp:50`
+divisibility check is conservative, not load-bearing. `InjectFeedback` (`:269-277`) writes
+channel c to `[c·block, (c+1)·block)`, `block = floor(N/D)`; non-dividing D leaves the
+`N mod D` (`≤ D−1`) tail vertices at reset-zero. Those act only as zero feedback
+**sources** — they still *receive* drive via the neighbor gather at `:244` (no cut-off),
+and no index goes out of range (`block ≥ 1` for D ≤ N). Removing the check is safe for any
+**D ≤ N**; dropped fraction `(N mod D)/N` is negligible for the realistic small-D /
+large-N regime and only material as D → N. No power-of-two restriction. §7.2 updated.
 
-### G12. `external_drive` feedback mode is a *required* core change, not optional
-**Status:** RESOLVED in the doc (§7.2 rewritten); implementation still pending
+### G12. A feedback mode that drops the internal-F policy — required for D > 1
+**Status:** RESOLVED in the doc (§7.2 rewritten, re-verified); implementation pending
 
-The original §7.1 called `external_drive` an optional cleanup and claimed "required
-footprint is the one seam." The sources contradict this: `ESN.cpp:82` **throws unless
-`num_feedback_channels == 1`** (the internal scalar-F path), and `ESN.cpp:87` eagerly
-builds a scalar `feedback_readout_` that cannot drive D channels. So D-channel external
-feedback is impossible without an `external_drive` mode that relaxes the guard and skips
-building F. §7.2 now lists **two** required `ESN` changes (seam + `external_drive`) and
-**zero** Reservoir/Readout changes. Confirmed: no HypercubeCNN rewrite is warranted.
+The current ESN couples two independent things under `num_feedback_channels > 0`:
+(i) the reservoir feedback **substrate** (`vtx_feedback_` + `n_·dim_` weight block), built
+automatically by `Reservoir::Create` at `ESN.cpp:66`, already D-channel-ready; and
+(ii) the ESN internal **learned-F apparatus** (`if` block at `ESN.cpp:80-97`: F readout +
+telemetry buffers) gated by a `num_feedback_channels == 1` throw (message: *"feedback
+training (v1) supports exactly 1 feedback channel"*). The ensemble wants (i) at D channels
+and **none** of (ii).
 
-**Recommendation:** carry both changes into the implementation task list; HCNN and
-Reservoir stay untouched.
+A `FeedbackConfig::external_drive` flag makes the ctor **skip the entire internal-F `if`
+block** (no F, no telemetry, no guard). It **allocates nothing** — the reservoir already
+built the substrate; it only *decouples* "has feedback channels" from "has an internal F
+policy." **Required for D > 1** (ctor throws today); a **cleanup for D = 1** (ctor succeeds
+but builds unused F). Since the capability targets general D ≤ N, treat as required.
+
+Correction log: an earlier draft said the flag "allocates the feedback weight block" —
+wrong; that is the reservoir's job and already done. The flag only skips internal-F.
+
+§7.2 lists **two** required `ESN` changes (seam + `external_drive`), **zero**
+Reservoir/Readout changes. No HypercubeCNN rewrite warranted.
+
+**Recommendation:** carry both into the implementation phase; HCNN and Reservoir untouched.

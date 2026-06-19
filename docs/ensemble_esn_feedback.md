@@ -338,19 +338,33 @@ void ESN::StepLiveExternalFeedback(const float* inputs,    // NumInputs() floats
 
 ~10 lines, purely additive.
 
-**(2) An `external_drive` feedback mode — required, not optional.** This was previously
-mislabeled a cleanup; the sources show it is load-bearing:
+**(2) A feedback mode that uses the reservoir's feedback channels *without* the internal
+learned-F policy.** The current ESN couples **two independent things** under one knob,
+`cfg.reservoir.num_feedback_channels > 0`:
 
-- `ESN.cpp:82` **throws unless `num_feedback_channels == 1`** — the guard exists only
-  because the internal learned-F readout emits a single scalar onto channel 0. With
-  `num_feedback_channels = D > 1` the current ctor cannot construct the member at all.
-- Even at D = 1 the ctor eagerly builds the scalar `feedback_readout_` (`ESN.cpp:87`),
-  which the ensemble never uses (it drives the channels externally).
+- *(Reservoir — automatic.)* The feedback **substrate** — the `vtx_feedback_` buffer and
+  the `n_·dim_` feedback weight block — is built inside `Reservoir::Create(cfg.reservoir)`
+  (`ESN.cpp:66`), sized and block-partitioned by `num_feedback_channels`, **independent of
+  anything the ESN does**. This is exactly what the ensemble needs, at D channels, and it
+  already works (§7.2 verification above). Nothing to add here.
+- *(ESN — the `if` block at `ESN.cpp:80-97`.)* The internal **learned-F apparatus** — the
+  scalar `feedback_readout_`, its eager `InitOnline`, and the decision/prediction/telemetry
+  buffers (`:94-96`) — gated by a guard that **throws unless `num_feedback_channels == 1`**
+  (the message reads verbatim *"feedback training (v1) supports exactly 1 feedback
+  channel"*). This is single-channel by construction, and the ensemble wants **none** of it
+  — it drives the channels externally through the seam (1).
 
-So we add a small `FeedbackConfig::external_drive` flag that, when set, **(a)** relaxes
-the `!= 1` guard to allow `num_feedback_channels = D`, and **(b)** allocates the feedback
-weight block but **skips building the scalar F readout**. This is an `ESN`/config change,
-not an HCNN change.
+So the change is a small `FeedbackConfig::external_drive` flag that, when set, makes the
+ESN ctor **skip the entire internal-F `if` block**: no F readout, no telemetry, and no
+`!= 1` guard. It **allocates nothing** — the reservoir already built the D-channel
+substrate. The mode simply **decouples** "having feedback channels" from "having an
+internal F policy." `ESN`/config change only — no Reservoir change, no HCNN change.
+
+**Required for D > 1; a cleanup for D = 1.** With `num_feedback_channels = D > 1` the
+current ctor *throws*, so the flag is **mandatory** for any multi-output task. At D = 1
+the ctor *succeeds* but builds the full internal-F apparatus the ensemble never touches
+(harmless but wasteful), so there the flag is an **optimization**. Because the capability
+targets general D ≤ N, treat it as required.
 
 **Why no Reservoir change.** The `Reservoir` is already D-channel-native: it sizes the
 feedback weight block at `n_*dim_` independent of channel count (`Reservoir.cpp:64`), and
@@ -358,12 +372,19 @@ feedback weight block at `n_*dim_` independent of channel count (`Reservoir.cpp:
 equal blocks and broadcasts each value to its block (`Reservoir.cpp:269-277`). Our D
 deviation components map one-to-one onto D vertex blocks with no new code.
 
-**D is unconstrained.** `Reservoir.cpp:50` *throws* unless `num_feedback_channels`
-divides N evenly, but that guard is conservative: when D does not divide N,
-`InjectFeedback` simply leaves the `≤ D−1` remainder tail vertices unfed
-(`block = N / D` truncates) — a bounded, benign gap in coverage, not a correctness
-problem. Relaxing/removing the check makes **any D ≤ N** usable, with at most `D−1` tail
-vertices receiving no coupling drive. No power-of-two restriction on D.
+**D is unconstrained (verified against the sources).** `Reservoir.cpp:50` *throws*
+unless `num_feedback_channels` divides N evenly, but the guard is conservative, not
+load-bearing. `InjectFeedback` (`Reservoir.cpp:269-277`) writes channel c to vertices
+`[c·block, (c+1)·block)` with `block = floor(N / D)`; when D does not divide N, the
+`N mod D` (`≤ D−1`) tail vertices are never written and hold their reset value of 0
+(full-N zeroing at `Reservoir.cpp:199/311/341`). Those vertices then act only as **zero
+feedback *sources*** — they still *receive* coupling, since state update gathers each
+vertex's neighbors' feedback (`Reservoir.cpp:244`), so nothing is cut off and no index
+runs out of range (`v ^ NearestMask(i)` is always in `[0, N)`, and `block ≥ 1` for any
+`D ≤ N`). Removing the check is therefore safe for **any D ≤ N**. The only effect is a
+dropped feedback-source fraction of `(N mod D) / N`: negligible in the ensemble's regime
+of small D vs large N = 2^dim (e.g. D = 3, N = 64 → 1 vertex), and material only if D
+approaches N (outside the use case). No power-of-two restriction on D.
 
 ### 7.3 Orchestrator sketch (design pseudocode — not for implementation yet)
 
