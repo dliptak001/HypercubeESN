@@ -265,12 +265,15 @@ which is not worth a dedicated execution mode. (Verified: `ESN::InitOnline` at
 `EnsembleESN` therefore **builds every member's readout up front** and folds warm-up into
 the normal loop:
 
-- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2) and
-  initialized with `InitOnline(input, /*warmup_count =*/ 0)` — this builds the readout and
-  runs **zero** internal warm-up steps (the `Warmup` loop body never executes). The
-  ensemble owns the washout itself, through its own loop, on the external-feedback seam —
-  so warm-up is a clean, **input-only** reservoir washout with no internal-F dribble on
-  channel 0 (contrast `StepLive`, whose internal-F path we never touch).
+- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2). Its
+  online readout is prepared by the no-arg **`InitOnline()`** — readout construction only
+  (allocate weights + Adam moments), no warm-up. (The warm-up that `InitOnline`
+  historically bundled is incidental — see "Why warm-up is not a separate mode" below — so
+  the ensemble uses the form that omits it, rather than a dummy `InitOnline(input, 0)`.)
+  The ensemble owns the washout itself, through its own loop, on the external-feedback seam,
+  with the coupling drive held at `φ = 0` (κ = 0). So warm-up is a clean, **input-only**
+  reservoir washout — there is no internal feedback path to interfere (the ESN has none,
+  §7.2).
 
 - **The two scheduled knobs.** From step 0 the loop runs `Step()` (§7.3) unchanged. Two
   scalars move on a schedule the class owns (§4.2):
@@ -315,76 +318,80 @@ entire state machine. (This supersedes the earlier framing of warm-up as a disti
 "uncoupled phase that predates the readouts": with readouts built up front, warm-up is
 just the schedule's left edge.)
 
-### 7.2 Required core changes (two; no Reservoir or Readout change)
+### 7.2 Core changes — external-only feedback
 
-The ensemble rides almost entirely on **existing** machinery. Verified against the
-sources, the required footprint is **two small, additive `ESN` changes** — and **zero**
-changes to `Reservoir` or the HCNN `Readout`.
+> **Decision (2026-06-19).** The existing feedback machinery was never exercised and is
+> not treated as a fixed constraint. **All feedback is external; the ESN has no internal
+> feedback policy.** Reuse the reservoir's sound feedback *substrate* as the external-drive
+> port, and **delete** the unfinished internal-F *policy* from the ESN. Footprint:
+> a focused `ESN` refactor + small `Reservoir` touch-ups + a verification pass. The HCNN
+> `Readout` is **untouched**.
 
-**(1) The external-feedback step seam.** The online step must inject the orchestrator's
-own D-vector `φ_i` on the feedback channels and step. `ESN::StepLive` instead evaluates
-the learned feedback policy F and injects `tanh(F(x))` on channel 0 only;
-`Reservoir::InjectFeedback(channel, value)` is public but reached through the private
-`reservoir_`. So we add one `ESN` method:
+**The substrate is sound and is reused (Reservoir).** Per-vertex state update already adds
+a feedback term identical in form to the input term —
+`Σ_i vtx_feedback_[v ^ NearestMask(i)] · fw[i]` (`Reservoir.cpp:241-245`) — fed by an
+independent `n_·dim_` weight block (`:64`), scaled by `feedback_scaling` (`:93`), and
+**excluded from the spectral-radius rescale** (`:139`, exactly as input is).
+`InjectFeedback(channel, value)` (`:269-277`) block-partitions the N vertices into
+`num_feedback_channels` regions and broadcasts each value to its block. This is precisely
+the D-channel external drive the ensemble needs. Reservoir touch-ups:
+
+- **Verify it first.** This path was never exercised end-to-end. Before building on it, a
+  standalone test injects a known `φ` and confirms the state responds as predicted —
+  retiring the "never tested" risk. (Substrate is a *twin of the input port*, so this is a
+  small, well-scoped test.)
+- *Ergonomics (optional):* a vector-form `InjectFeedback(const float* φ, size_t count)`
+  that loops the per-channel call.
+- *Relax the divisibility throw* (`:50`) to permit any **D ≤ N**. The guard is
+  conservative, not load-bearing (verified): when D ∤ N only the `N mod D` (`≤ D−1`) tail
+  vertices go unwritten — they hold reset-zero and act as zero feedback *sources* while
+  still *receiving* coupling via the neighbor gather (`:244`); no index leaves `[0, N)`
+  and `block ≥ 1` for any `D ≤ N`. Dropped fraction `(N mod D)/N` is negligible for the
+  ensemble's small-D / large-N = 2^dim regime. No power-of-two restriction on D.
+
+**The ESN change — remove internal feedback entirely.** Binding decision: **all feedback
+is external; the ESN has no internal feedback policy.** Today the ESN builds an internal
+learned-F apparatus whenever `num_feedback_channels > 0` (the `if` block at `ESN.cpp:80-97`
+plus the `StepLive` F-injection branch at `:108-121`): `feedback_readout_`, its eager
+`InitOnline`, `InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery,
+the decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by
+a guard that throws unless `num_feedback_channels == 1`. **All of it is deleted.** There is
+no mode enum and no quarantined path, because there is no second kind of feedback to
+distinguish. After removal:
+
+- `num_feedback_channels` means exactly one thing: **how many external-drive feedback
+  channels the reservoir carries.** `0` = no feedback; `D > 0` = D externally-supplied
+  channels. No learned policy, no F readout, no telemetry — ever.
+- The `== 1` guard is gone; any **D ≤ N** is allowed (the substrate handles it, §above).
+- `ESN::StepLive(inputs)` becomes **input-only** — the `tanh(F(x))`-on-channel-0 branch
+  (`:108-121`) is removed with F. It serves the no-feedback case.
+- `ESN::StepLiveExternalFeedback(inputs, φ)` (below) is the **only** way feedback enters.
+- `ESN::InitOnline()` gains a **no-arg form** that builds the online readout *only* — no
+  warm-up. The current `InitOnline(inputs, count)` welds two separable operations,
+  `Warmup(inputs, count)` + the argument-free `readout_.InitOnline()` (`ESN.cpp:162-169`);
+  the readout build is pure construction with no warm-up dependency, so the ensemble takes
+  the build alone and owns warm-up in its loop (§7.1). The bundled form stays as sugar for
+  single-ESN online users.
+
+This makes the ESN *simpler* — one fewer feature — not more complex.
+
+**The step seam (ESN).**
 
 ```
-// proposed — additive, behavior-preserving (existing StepLive untouched)
+// the only feedback entry point; StepLive(inputs) is the input-only (no-feedback) path
 void ESN::StepLiveExternalFeedback(const float* inputs,    // NumInputs() floats (task input)
-                                   const float* feedback);  // num_feedback_channels (= D) floats
-//   for c in [0, D):  reservoir_->InjectFeedback(c, feedback[c])   // injected raw, no clamp
+                                   const float* feedback);  // D floats (the coupling drive φ_i)
+//   for c in [0, D):  reservoir_->InjectFeedback(c, feedback[c])   // raw, no clamp (§4.3)
 //   for ch in inputs: reservoir_->InjectInput(ch, inputs[ch])
-//   reservoir_->Step()      // F is never evaluated
+//   reservoir_->Step()
 ```
 
-~10 lines, purely additive.
-
-**(2) A feedback mode that uses the reservoir's feedback channels *without* the internal
-learned-F policy.** The current ESN couples **two independent things** under one knob,
-`cfg.reservoir.num_feedback_channels > 0`:
-
-- *(Reservoir — automatic.)* The feedback **substrate** — the `vtx_feedback_` buffer and
-  the `n_·dim_` feedback weight block — is built inside `Reservoir::Create(cfg.reservoir)`
-  (`ESN.cpp:66`), sized and block-partitioned by `num_feedback_channels`, **independent of
-  anything the ESN does**. This is exactly what the ensemble needs, at D channels, and it
-  already works (§7.2 verification above). Nothing to add here.
-- *(ESN — the `if` block at `ESN.cpp:80-97`.)* The internal **learned-F apparatus** — the
-  scalar `feedback_readout_`, its eager `InitOnline`, and the decision/prediction/telemetry
-  buffers (`:94-96`) — gated by a guard that **throws unless `num_feedback_channels == 1`**
-  (the message reads verbatim *"feedback training (v1) supports exactly 1 feedback
-  channel"*). This is single-channel by construction, and the ensemble wants **none** of it
-  — it drives the channels externally through the seam (1).
-
-So the change is a small `FeedbackConfig::external_drive` flag that, when set, makes the
-ESN ctor **skip the entire internal-F `if` block**: no F readout, no telemetry, and no
-`!= 1` guard. It **allocates nothing** — the reservoir already built the D-channel
-substrate. The mode simply **decouples** "having feedback channels" from "having an
-internal F policy." `ESN`/config change only — no Reservoir change, no HCNN change.
-
-**Required for D > 1; a cleanup for D = 1.** With `num_feedback_channels = D > 1` the
-current ctor *throws*, so the flag is **mandatory** for any multi-output task. At D = 1
-the ctor *succeeds* but builds the full internal-F apparatus the ensemble never touches
-(harmless but wasteful), so there the flag is an **optimization**. Because the capability
-targets general D ≤ N, treat it as required.
-
-**Why no Reservoir change.** The `Reservoir` is already D-channel-native: it sizes the
-feedback weight block at `n_*dim_` independent of channel count (`Reservoir.cpp:64`), and
-`InjectFeedback(channel, value)` partitions the N vertices into `num_feedback_channels`
-equal blocks and broadcasts each value to its block (`Reservoir.cpp:269-277`). Our D
-deviation components map one-to-one onto D vertex blocks with no new code.
-
-**D is unconstrained (verified against the sources).** `Reservoir.cpp:50` *throws*
-unless `num_feedback_channels` divides N evenly, but the guard is conservative, not
-load-bearing. `InjectFeedback` (`Reservoir.cpp:269-277`) writes channel c to vertices
-`[c·block, (c+1)·block)` with `block = floor(N / D)`; when D does not divide N, the
-`N mod D` (`≤ D−1`) tail vertices are never written and hold their reset value of 0
-(full-N zeroing at `Reservoir.cpp:199/311/341`). Those vertices then act only as **zero
-feedback *sources*** — they still *receive* coupling, since state update gathers each
-vertex's neighbors' feedback (`Reservoir.cpp:244`), so nothing is cut off and no index
-runs out of range (`v ^ NearestMask(i)` is always in `[0, N)`, and `block ≥ 1` for any
-`D ≤ N`). Removing the check is therefore safe for **any D ≤ N**. The only effect is a
-dropped feedback-source fraction of `(N mod D) / N`: negligible in the ensemble's regime
-of small D vs large N = 2^dim (e.g. D = 3, N = 64 → 1 vertex), and material only if D
-approaches N (outside the use case). No power-of-two restriction on D.
+**Net footprint:** **delete** the ESN internal-F apparatus; redefine `num_feedback_channels`
+as the external-channel count and drop the `== 1` guard; trim `StepLive` to input-only and
+add the `StepLiveExternalFeedback` seam. `Reservoir` touch-ups: verify the substrate,
+optional vector inject, relax the divisibility throw. **Zero** `Readout` / HypercubeCNN
+changes. Net effect: the ESN loses a half-baked feature and gains one clean, external,
+well-defined feedback path.
 
 ### 7.3 Orchestrator sketch (design pseudocode — not for implementation yet)
 
@@ -395,8 +402,8 @@ class EnsembleESN {
     Combine   combine_;                              // Mean (default) | Median (§6)
     RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
     float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
-    std::vector<std::unique_ptr<ESN>> esn_;          // each built with num_feedback_channels = D
-                                                     // and external_drive (§7.2), via InitOnline(.,0)
+    std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback,
+                                                     // §7.2), readout built via no-arg InitOnline()
 
     void AdvanceKappa(const float* target);          // class-owned competence-gated ramp (§4.2)
 

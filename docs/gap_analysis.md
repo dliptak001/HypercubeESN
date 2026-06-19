@@ -146,27 +146,36 @@ and no index goes out of range (`block ≥ 1` for D ≤ N). Removing the check i
 **D ≤ N**; dropped fraction `(N mod D)/N` is negligible for the realistic small-D /
 large-N regime and only material as D → N. No power-of-two restriction. §7.2 updated.
 
-### G12. A feedback mode that drops the internal-F policy — required for D > 1
-**Status:** RESOLVED in the doc (§7.2 rewritten, re-verified); implementation pending
+### G12. Proper external-drive feedback mode (dedicated port) — design decided
+**Status:** RESOLVED in the doc (§7.2 rewritten to the chosen architecture); impl pending
 
-The current ESN couples two independent things under `num_feedback_channels > 0`:
-(i) the reservoir feedback **substrate** (`vtx_feedback_` + `n_·dim_` weight block), built
-automatically by `Reservoir::Create` at `ESN.cpp:66`, already D-channel-ready; and
-(ii) the ESN internal **learned-F apparatus** (`if` block at `ESN.cpp:80-97`: F readout +
-telemetry buffers) gated by a `num_feedback_channels == 1` throw (message: *"feedback
-training (v1) supports exactly 1 feedback channel"*). The ensemble wants (i) at D channels
-and **none** of (ii).
+**Reframed (2026-06-19).** The user flagged that the existing feedback machinery was never
+exercised and may be wrong, and chose to reshape Reservoir/ESN properly rather than patch
+around them ([[feedback-machinery-untested]]). Architecture selected: a **dedicated
+feedback port** (not "feedback = input channels", not a new dense projection).
 
-A `FeedbackConfig::external_drive` flag makes the ctor **skip the entire internal-F `if`
-block** (no F, no telemetry, no guard). It **allocates nothing** — the reservoir already
-built the substrate; it only *decouples* "has feedback channels" from "has an internal F
-policy." **Required for D > 1** (ctor throws today); a **cleanup for D = 1** (ctor succeeds
-but builds unused F). Since the capability targets general D ≤ N, treat as required.
+**All feedback is external — no ESN internal feedback policy** (user, 2026-06-19). The
+earlier 3-mode enum is dropped: there is no `InternalPolicy`, no quarantine. The internal-F
+apparatus is **deleted outright**.
 
-Correction log: an earlier draft said the flag "allocates the feedback weight block" —
-wrong; that is the reservoir's job and already done. The flag only skips internal-F.
+Target design (§7.2):
+- **Reservoir** — reuse the sound substrate (block-partition `InjectFeedback`, own weight
+  block, `feedback_scaling`, SR-exclusion at `:139`). Touch-ups: optional vector-form
+  inject; relax the `D|N` throw (`:50`) to any `D ≤ N`; **verify the path end-to-end**
+  (it was never exercised).
+- **ESN** — **delete** the internal learned-F apparatus (the `if` block at `ESN.cpp:80-97`,
+  the `StepLive` F branch at `:108-121`, `InjectFeedbackClamped`, `ProbeLoss` /
+  `TrainFeedbackCycle`, telemetry buffers, `Get/SetFeedback*`). Redefine
+  `num_feedback_channels` as the external-channel count (`0` = none, `D > 0` = D external
+  channels); drop the `== 1` guard (allow any `D ≤ N`). Trim `StepLive` to input-only; add
+  `StepLiveExternalFeedback(inputs, φ)` as the only feedback entry point. Add a no-arg
+  `InitOnline()` that builds the online readout only (no warm-up) — splits the welded
+  `Warmup` + `readout_.InitOnline()` of `ESN.cpp:162-169`; ensemble owns warm-up in its
+  loop. Bundled `InitOnline(inputs,count)` stays as sugar.
+- **Readout / HypercubeCNN** — untouched.
 
-§7.2 lists **two** required `ESN` changes (seam + `external_drive`), **zero**
-Reservoir/Readout changes. No HypercubeCNN rewrite warranted.
+The ESN gets *simpler* (one fewer feature). Supersedes the earlier boolean `external_drive`
+flag and the 3-mode enum alike.
 
-**Recommendation:** carry both into the implementation phase; HCNN and Reservoir untouched.
+**Recommendation:** carry into the implementation phase; sequence the substrate
+verification first.
