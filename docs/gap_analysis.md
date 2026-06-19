@@ -207,8 +207,14 @@ apparatus is **deleted outright**.
 Target design (§7.2):
 - **Reservoir** — reuse the sound substrate (block-partition `InjectFeedback`, own weight
   block, `feedback_scaling`, SR-exclusion at `:139`). Touch-ups: optional vector-form
-  inject; relax the `D|N` throw (`:50`) to any `D ≤ N`; **verify the path end-to-end**
-  (it was never exercised).
+  inject; relax the `D|N` throw (`:50`) to any `D ≤ N`.
+  - *Substrate verification (was G13) — folded in, no standalone harness.* The gather
+    (`:259-266`) is a line-for-line **twin of the input port**, which is exercised on every
+    prediction; only the feedback weight-block offset + `fb_rng` init are feedback-specific.
+    A standalone exact-math probe would need new weight-accessor API for a weak assertion —
+    poor value. Decision (2026-06-19, user): **skip the harness; the first ensemble feedback
+    run (Lorenz) is the end-to-end verification** — any gather bug shows up immediately as
+    garbage dynamics. G13 closed as won't-do.
 - **ESN** — **delete** the internal learned-F apparatus (the `if` block at `ESN.cpp:80-97`,
   the `StepLive` F branch at `:108-121`, `InjectFeedbackClamped`, `ProbeLoss` /
   `TrainFeedbackCycle`, telemetry buffers, `Get/SetFeedback*`). Redefine
