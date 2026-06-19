@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstdio>
 #include <numeric>
 
 
@@ -22,7 +21,6 @@ Readout::Readout(const ReadoutConfig& cfg)
     build_architecture();
     net_->SetOptimizer(hcnn::OptimizerType::ADAM);
     net_->PrepareBuffers();
-    trained_ = true;
 }
 
 Readout::~Readout() = default;
@@ -103,15 +101,6 @@ void Readout::Train(const float* states, const float* targets,
             int_targets[s] = static_cast<int>(targets[s]);
     }
 
-    std::vector<float> verbose_logits;
-    std::vector<float> verbose_preds;
-    if (config_.verbose && config_.verbose_train_acc) {
-        if (is_classification)
-            verbose_logits.resize(num_samples * num_outputs_);
-        else
-            verbose_preds.resize(num_samples * num_outputs_);
-    }
-
     for (int e = 0; e < config_.epochs; ++e) {
         float lr = CosineLR(static_cast<float>(e) / static_cast<float>(horizon),
                             config_.lr_max, lr_min);
@@ -132,44 +121,6 @@ void Readout::Train(const float* states, const float* targets,
                 lr, config_.momentum, config_.weight_decay,
                 /*shuffle_seed=*/static_cast<unsigned>(e + 1));
         }
-
-        if (config_.verbose) {
-            if (config_.verbose_train_acc) {
-                if (is_classification) {
-                    net_->ForwardBatch(states, static_cast<int>(n),
-                                       static_cast<int>(num_samples),
-                                       verbose_logits.data());
-                    size_t correct = 0;
-                    for (size_t s = 0; s < num_samples; ++s) {
-                        const float* row = verbose_logits.data() + s * num_outputs_;
-                        size_t pred = 0;
-                        float best = row[0];
-                        for (size_t k = 1; k < num_outputs_; ++k)
-                            if (row[k] > best) { best = row[k]; pred = k; }
-                        if (static_cast<int>(pred) == int_targets[s]) ++correct;
-                    }
-                    double acc = 100.0 * correct / num_samples;
-                    std::printf("  epoch %3d/%d  lr=%.5f  train_acc=%.2f%%\n",
-                                e + 1, config_.epochs, lr, acc);
-                } else {
-                    net_->ForwardBatch(states, static_cast<int>(n),
-                                       static_cast<int>(num_samples),
-                                       verbose_preds.data());
-                    double mse = 0.0;
-                    for (size_t i = 0; i < num_samples * num_outputs_; ++i) {
-                        double d = verbose_preds[i] - targets[i];
-                        mse += d * d;
-                    }
-                    mse /= static_cast<double>(num_samples * num_outputs_);
-                    std::printf("  epoch %3d/%d  lr=%.5f  train_mse=%.6f\n",
-                                e + 1, config_.epochs, lr, mse);
-                }
-            } else {
-                std::printf("  epoch %3d/%d  lr=%.5f\n",
-                            e + 1, config_.epochs, lr);
-            }
-            std::fflush(stdout);
-        }
     }
 
     flatten_weights();
@@ -182,7 +133,7 @@ void Readout::Train(const float* states, const float* targets,
 void Readout::TrainOnlineStep(const float* state, int target_class,
                                  float lr, float weight_decay)
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->TrainStep(state, static_cast<int>(n), target_class,
@@ -192,7 +143,7 @@ void Readout::TrainOnlineStep(const float* state, int target_class,
 void Readout::TrainOnlineBatch(const float* states, const int* targets,
                                   size_t count, float lr, float weight_decay)
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->TrainBatch(states, static_cast<int>(n),
@@ -203,7 +154,7 @@ void Readout::TrainOnlineBatch(const float* states, const int* targets,
 void Readout::TrainOnlineStepRegression(const float* state, const float* target,
                                            float lr, float weight_decay)
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->TrainStepRegression(state, static_cast<int>(n), target,
@@ -213,7 +164,7 @@ void Readout::TrainOnlineStepRegression(const float* state, const float* target,
 void Readout::TrainOnlineBatchRegression(const float* states, const float* targets,
                                             size_t count, float lr, float weight_decay)
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->TrainBatchRegression(states, static_cast<int>(n),
@@ -227,7 +178,7 @@ void Readout::TrainOnlineBatchRegression(const float* states, const float* targe
 
 void Readout::PredictRaw(const float* state, float* output) const
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->Embed(state, static_cast<int>(n), scratch_embedded_.data());
@@ -251,7 +202,7 @@ float Readout::PredictRaw(const float* state) const
 
 int Readout::PredictClass(const float* state) const
 {
-    assert(trained_ && net_);
+    assert(net_);
     const size_t n = num_features_;
 
     net_->Embed(state, static_cast<int>(n), scratch_embedded_.data());
@@ -359,8 +310,6 @@ void Readout::SetState(std::vector<double> weights)
 {
     // num_features_ and net_ are already established by the ctor.
     weights_blob_ = std::move(weights);
-    if (!weights_blob_.empty()) {
+    if (!weights_blob_.empty())
         rebuild_from_blob();
-        trained_ = true;
-    }
 }

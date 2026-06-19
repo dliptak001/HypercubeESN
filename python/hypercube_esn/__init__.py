@@ -106,10 +106,6 @@ class ESN:
         or "none".
     readout_seed : int
         CNN weight initialization seed. Default: 42.
-    readout_verbose : bool
-        Print per-epoch LR / loss to stdout. Default: False.
-    readout_verbose_train_acc : bool
-        Also print training accuracy/MSE each epoch. Default: False.
 
     Examples
     --------
@@ -160,8 +156,6 @@ class ESN:
         readout_momentum: float = 0.0,
         readout_activation: str = "tanh",
         readout_seed: int = 42,
-        readout_verbose: bool = False,
-        readout_verbose_train_acc: bool = False,
     ):
         if not (_DIM_MIN <= dim <= _DIM_MAX):
             raise ValueError(f"dim must be {_DIM_MIN}-{_DIM_MAX}, got {dim}")
@@ -180,8 +174,6 @@ class ESN:
             "readout_momentum": readout_momentum,
             "readout_activation": readout_activation,
             "readout_seed": readout_seed,
-            "readout_verbose": readout_verbose,
-            "readout_verbose_train_acc": readout_verbose_train_acc,
         }
         self._impl = _ESN(
             dim=dim,
@@ -853,7 +845,10 @@ class ESN:
     # Bumped to 5: the training-noise feature was removed; `noise_scaling` /
     # `noise_seed` are no longer written. Any keys present in an older (v4)
     # pickle are ignored on load.
-    _PERSISTENCE_VERSION = 5
+    # Bumped to 6: the readout verbose feature was removed; `readout_verbose` /
+    # `readout_verbose_train_acc` are no longer written, and any present in an
+    # older (v5) pickle's readout_kwargs are stripped on load.
+    _PERSISTENCE_VERSION = 6
 
     def __getstate__(self) -> dict:
         """Serialize ESN state for pickling.
@@ -887,7 +882,11 @@ class ESN:
                 f"but this version only supports up to "
                 f"{self._PERSISTENCE_VERSION}. Upgrade hypercube-esn."
             )
-        readout_kwargs = state.get("readout_kwargs", {})
+        readout_kwargs = dict(state.get("readout_kwargs", {}))
+        # v6 removed the readout verbose feature; drop the keys if an older
+        # (v5) pickle still carries them so __init__ doesn't reject them.
+        readout_kwargs.pop("readout_verbose", None)
+        readout_kwargs.pop("readout_verbose_train_acc", None)
         self.__init__(
             dim=state["dim"],
             seed=state["seed"],

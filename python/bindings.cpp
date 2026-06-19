@@ -30,8 +30,7 @@ PYBIND11_MODULE(_core, m)
                          float readout_lr_max, float readout_lr_min_frac,
                          int readout_lr_decay_epochs, float readout_weight_decay,
                          float readout_momentum, const char* readout_activation,
-                         unsigned readout_seed, bool readout_verbose,
-                         bool readout_verbose_train_acc) {
+                         unsigned readout_seed) {
             ESNConfig cfg;
             cfg.reservoir.dim              = dim;
             cfg.reservoir.seed             = seed;
@@ -65,8 +64,6 @@ PYBIND11_MODULE(_core, m)
                 std::string("readout_activation must be one of "
                             "'tanh', 'relu', 'leaky_relu', 'none' (got '") + readout_activation + "')");
             cfg.readout.seed               = readout_seed;
-            cfg.readout.verbose            = readout_verbose;
-            cfg.readout.verbose_train_acc  = readout_verbose_train_acc;
             return std::make_unique<ESN>(cfg);
         }),
             py::arg("dim"),
@@ -91,9 +88,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_weight_decay")     = 0.0f,
             py::arg("readout_momentum")         = 0.0f,
             py::arg("readout_activation")       = "tanh",
-            py::arg("readout_seed")             = 42u,
-            py::arg("readout_verbose")          = false,
-            py::arg("readout_verbose_train_acc") = false)
+            py::arg("readout_seed")             = 42u)
 
         // ── Reservoir driving ──
         .def("warmup", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {

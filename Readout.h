@@ -45,8 +45,6 @@ struct ReadoutConfig
     float weight_decay = 0.0f;
     float momentum = 0.0f; ///< SGD momentum (heavy-ball). 0 = plain SGD. 0.9 typical for CNN.
     unsigned seed = 42; ///< CNN weight initialization seed.
-    bool verbose = false; ///< Print per-epoch lr to stdout.
-    bool verbose_train_acc = false; ///< Also print train accuracy/MSE each epoch.
     ReadoutActivation activation = ReadoutActivation::TANH; ///< Per-Conv-layer activation.
 };
 
@@ -125,7 +123,9 @@ public:
 
     [[nodiscard]] size_t NumOutputs() const { return num_outputs_; }
     [[nodiscard]] size_t NumFeatures() const { return num_features_; }
-    [[nodiscard]] bool IsTrained() const { return trained_; }
+    /// The CNN is built in the ctor, so a Readout is always ready to predict and
+    /// has weights worth persisting — net_ is the invariant this reports.
+    [[nodiscard]] bool IsTrained() const { return net_ != nullptr; }
     [[nodiscard]] const ReadoutConfig& GetConfig() const { return config_; }
 
     // ----- Serialization -----
@@ -139,7 +139,6 @@ public:
 private:
     std::unique_ptr<hcnn::HCNN> net_;
     ReadoutConfig config_;
-    bool trained_ = false;
     size_t num_features_ = 0;
     size_t num_outputs_ = 1;
 

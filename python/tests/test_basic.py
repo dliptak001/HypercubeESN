@@ -172,7 +172,7 @@ class TestConfigParity:
 
     def test_new_readout_config_kwargs(self):
         esn = ESN(dim=5, verbose=False, readout_activation="relu",
-                  readout_momentum=0.9, readout_verbose_train_acc=False)
+                  readout_momentum=0.9)
         assert esn.verbose is False
 
     @pytest.mark.parametrize("act", ["tanh", "relu", "leaky_relu", "none"])
