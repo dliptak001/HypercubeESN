@@ -75,7 +75,16 @@ training-error estimate that the gate reads, even if the exact statistic stays o
 ## Should resolve — underspecified, would cause guesswork
 
 ### G4. Online learning-rate / weight-decay ownership
-**Status:** open
+**Status:** RESOLVED (§4.2 / §7.3). Shared `lr` / `weight_decay`, owned by `EnsembleESN`
+ctor config, passed verbatim into every member's `TrainLiveStepRegression` (members share
+the base config, so no per-member differ). Binding constraint: **held constant (or floored)
+through the κ ramp** — the ramp must stay slow *relative to* readout adaptation, which fails
+if lr decays to zero mid-ramp. Annealing is optional and only after κ holds (§11.3). This
+is the ESN online lr (per-step), not `ReadoutConfig`'s batch cosine fields.
+
+  Correction note: an earlier framing ("train indefinitely → fixed lr is natural") was
+  backwards — the ensemble trains finite-then-freezes, which would argue for annealing; the
+  *real* constraint is the ramp interaction, not the horizon.
 
 `TrainLiveStepRegression(target, lr, weight_decay)` needs `lr`/`wd` every step; §7.2
 elides them as `/*lr,wd*/…`. Fixed, scheduled, shared across members? Untouched.

@@ -186,6 +186,18 @@ owns the single consensus-error signal the gate reads, and the consumer never co
 *policy* object, not a bare lockstep stepper.) The schedule moves κ over [0, κ*]; the
 sign is fixed by convention (κ > 0, §4.1).
 
+**Readout learning rate (the members' online `lr` / `wd`) — held constant through the
+ramp.** This is separate from κ: it governs how fast each member's *readout* adapts via
+`TrainLiveStepRegression`, not how hard the members couple. One **shared** `lr` /
+`weight_decay` is constructor config (§7) and is passed verbatim to every member's online
+step — members share the base config (§5), so there is no reason to differ them. The
+binding rule is the ramp interaction above: the κ ramp must stay slow *relative to* readout
+adaptation, which fails if the readouts stop adapting — so **`lr` is held effectively
+constant (or floored) through the ramp**, never annealed toward zero while κ is still
+moving. Annealing `lr` is optional and only *after* κ reaches κ* and holds (a convergence
+refinement); that schedule is tunable (§11.3). Note this is the ESN *online* `lr` passed
+per step, not `ReadoutConfig`'s batch cosine fields, which the online path ignores.
+
 ### 4.3 No clamp on the coupling drive
 
 The coupling drive `φ_i = κ·Δ_i` is injected **raw** — no bounding nonlinearity, for
@@ -402,6 +414,8 @@ class EnsembleESN {
     Combine   combine_;                              // Mean (default) | Median (§6)
     RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
     float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
+    float     lr_, wd_;                              // shared readout online lr / weight-decay — ctor config;
+                                                     // held constant through the ramp (§4.2 / G4)
     float     consensus_err_;                        // running estimate (EMA/window) of the consensus-vs-
                                                      // target error — the competence signal (§4.2 / G3)
     std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback,
@@ -419,7 +433,7 @@ class EnsembleESN {
         const bool train = target && (t_ >= W_);     // suppress fitting during the [0,W) washout (§7.1)
         std::vector<float> phi(D_);
         for (size_t i = 0; i < M_; ++i) {
-            if (train) esn_[i]->TrainLiveStepRegression(target, /*lr,wd*/…);    // online update
+            if (train) esn_[i]->TrainLiveStepRegression(target, lr_, wd_);      // shared online lr/wd (§4.2/G4)
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
             esn_[i]->StepLiveExternalFeedback(input, phi.data());               // the §7.2 seam
         }
@@ -489,8 +503,9 @@ commits only to these baselines and the κ sweep being decisive.
 2. **Competence gate** — the signal is fixed: the running error of the **ensemble
    (consensus) output** vs target (§4.2). Still open: the smoothing (EMA factor vs
    window length) and the threshold value that opens the ramp.
-3. **Ramp shape/rate** — gradual vs stepwise, and how slow relative to online readout
-   adaptation.
+3. **Ramp shape/rate** — gradual vs stepwise, how slow relative to online readout
+   adaptation, and whether/how to anneal the readout `lr` *after* κ holds (it is held
+   constant through the ramp, §4.2/G4).
 4. **Intensity magnitude** — the useful range of κ and where over-driving begins to
    degrade members (the sign is fixed by convention, §4.1).
 5. **Common-mode bias** — out of scope here (the consensus is blind to it, §9), but if
