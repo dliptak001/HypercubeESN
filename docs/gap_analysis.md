@@ -211,8 +211,10 @@ the external-feedback port landed. Code changes:
   D=3). ZERO Readout/HCNN changes; Python bindings untouched (feedback was never exposed).
 - **Verified:** 20 C++ targets compile; `main.cpp` fidelity suite passes incl. the +feedback
   (fb=3, non-dividing) config; BasicPrediction batch R2=1.0; Python pytest 57/57.
-- **Orphaned docs (pending user call):** `FeedbackTrainingMethodology.md`,
-  `NARMAFeedbackCampaign.md` now document deleted code.
+- **Orphaned docs purged:** deleted `FeedbackTrainingMethodology.md` and
+  `NARMAFeedbackCampaign.md` (documented removed code); scrubbed their references from
+  `README.md` (the "Closed-Loop Feedback" section + Documentation-table row) and the
+  `Reservoir.h` RestoreSnapshot doc comment.
 
 Prior design state (kept for context):
 

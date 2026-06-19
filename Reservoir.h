@@ -182,8 +182,8 @@ public:
     /// canonical rotation, and clears any staged input/feedback — so the
     /// post-restore trajectory depends only on the snapshot and subsequent
     /// injections: restoring and replaying the same inputs reproduces the
-    /// identical trajectory bit-for-bit. This is the branch-point primitive
-    /// for feedback-training probes (docs/FeedbackTrainingMethodology.md).
+    /// identical trajectory bit-for-bit — a branch-point primitive for any
+    /// snapshot-and-replay use.
     /// @throws std::invalid_argument if the snapshot's buffer sizes do not
     ///         match this reservoir's N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
