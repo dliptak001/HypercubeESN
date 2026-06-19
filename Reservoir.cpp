@@ -47,9 +47,13 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
         throw std::invalid_argument("history_depth must be in [1, 64]");
     if (history_floor_ < 0.1f || history_floor_ > 1.0f)
         throw std::invalid_argument("history_floor must be in [0.1, 1.0]");
-    if (num_feedback_channels_ > 0 && n_ % num_feedback_channels_ != 0)
-        throw std::invalid_argument("num_feedback_channels must divide N = 2^dim evenly "
-            "(otherwise InjectFeedback drops the remainder vertices)");
+    if (num_feedback_channels_ > n_)
+        throw std::invalid_argument("num_feedback_channels must not exceed N = 2^dim "
+            "(each channel drives a block of floor(N/D) >= 1 vertices)");
+    // D need NOT divide N: with block = floor(N/D), a non-dividing D leaves the
+    // N mod D (<= D-1) tail vertices at reset-zero — benign zero feedback sources
+    // that still RECEIVE drive via the neighbor gather (verified, gap G11). So any
+    // D in [1, N] is admissible, not only divisors of N.
 
     num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/ + (num_feedback_channels_ > 0) /*feedback*/);
 
@@ -296,6 +300,15 @@ void Reservoir::InjectFeedback(const size_t channel, const float feedback)
     const size_t v_end = (channel + 1) * block;
     for (size_t v = channel * block; v < v_end; ++v)
         vtx_feedback_[v] = feedback;
+}
+
+void Reservoir::InjectFeedback(const float* feedback, const size_t count)
+{
+    if (count != num_feedback_channels_)
+        throw std::invalid_argument(
+            "InjectFeedback(vector): count must equal num_feedback_channels");
+    for (size_t c = 0; c < count; ++c)
+        InjectFeedback(c, feedback[c]);
 }
 
 Reservoir::Snapshot Reservoir::TakeSnapshot() const

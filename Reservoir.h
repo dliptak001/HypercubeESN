@@ -151,6 +151,12 @@ public:
     ///         (num_feedback_channels == 0) or @p channel >= num_feedback_channels.
     void InjectFeedback(size_t channel, float feedback);
 
+    /// @brief Vector form: stage all @p count feedback channels at once ahead of
+    /// the next @ref Step. Convenience wrapper over the per-channel overload — the
+    /// external-drive entry point for a D-channel feedback port.
+    /// @throws std::invalid_argument if @p count != num_feedback_channels.
+    void InjectFeedback(const float* feedback, size_t count);
+
     /// @brief Copyable capture of the reservoir's persistent dynamical state:
     /// the live vertex state plus every history slice in logical age order
     /// (slice 0 = most recent). The per-step staged drives (input/feedback)

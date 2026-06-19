@@ -193,7 +193,28 @@ and no index goes out of range (`block ≥ 1` for D ≤ N). Removing the check i
 large-N regime and only material as D → N. No power-of-two restriction. §7.2 updated.
 
 ### G12. Proper external-drive feedback mode (dedicated port) — design decided
-**Status:** RESOLVED in the doc (§7.2 rewritten to the chosen architecture); impl pending
+**Status:** RESOLVED + IMPLEMENTED (2026-06-19). The ESN internal-F apparatus is deleted and
+the external-feedback port landed. Code changes:
+- **ESN** — deleted `FeedbackConfig`, the `ESNConfig::feedback` field, the entire feedback-
+  training orchestration (`TrainFeedbackCycle`×2, `ValidateClosedLoop`, `ProbeLoss`,
+  `TrainFeedbackCycleImpl`, `RequireFeedbackTraining`, the MSE/CE loss helpers), the whole
+  telemetry layer (`FeedbackCycleInfo/Record`, `FeedbackTelemetry`, the ring + counters,
+  `GetFeedbackTelemetry/History`), `feedback_readout_` (F), `InjectFeedbackClamped`,
+  `MakeFeedbackReadoutConfig`, `HasFeedback`, `LastFeedbackRaw`, `Get/SetForceZeroFeedback`,
+  `Get/SetFeedbackState`. `StepLive` trimmed to input-only; added
+  `StepLiveExternalFeedback(inputs, φ)` (raw inject, no clamp). Added `NumFeedbackChannels()`.
+- **Reservoir** — relaxed the `D|N` divisibility throw to any `D ≤ N`; added vector-form
+  `InjectFeedback(const float* φ, count)`. (`feedback_scaling` etc. untouched — the substrate
+  was already sound.)
+- **Upstream** — deleted the dead `NARMAFeedback` example (+ CMake target); rewrote `main.cpp`
+  to the reservoir snapshot/restore fidelity driver (now exercises the D≤N feedback path with
+  D=3). ZERO Readout/HCNN changes; Python bindings untouched (feedback was never exposed).
+- **Verified:** 20 C++ targets compile; `main.cpp` fidelity suite passes incl. the +feedback
+  (fb=3, non-dividing) config; BasicPrediction batch R2=1.0; Python pytest 57/57.
+- **Orphaned docs (pending user call):** `FeedbackTrainingMethodology.md`,
+  `NARMAFeedbackCampaign.md` now document deleted code.
+
+Prior design state (kept for context):
 
 **Reframed (2026-06-19).** The user flagged that the existing feedback machinery was never
 exercised and may be wrong, and chose to reshape Reservoir/ESN properly rather than patch
