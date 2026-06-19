@@ -130,10 +130,11 @@ public:
 
     // ----- Serialization -----
 
-    /// Flattened CNN weights (opaque blob). Lazily synced from live network.
-    [[nodiscard]] const std::vector<double>& Weights() const;
+    /// Snapshot the live CNN weights as an opaque blob. Returned by value so the
+    /// copy can't go stale behind a later TrainOnline* call.
+    [[nodiscard]] std::vector<double> Weights() const;
 
-    /// Restore a previously trained state. Rebuilds the CNN from config + weights.
+    /// Load a previously saved weight blob into the (ctor-built) CNN.
     void SetState(std::vector<double> weights);
 
 private:
@@ -142,12 +143,8 @@ private:
     size_t num_features_ = 0;
     size_t num_outputs_ = 1;
 
-    mutable std::vector<double> weights_blob_;
-
     mutable std::vector<float> scratch_embedded_;
     mutable std::vector<float> scratch_pred_;
 
     void build_architecture();
-    void flatten_weights();
-    void rebuild_from_blob();
 };

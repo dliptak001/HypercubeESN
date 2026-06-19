@@ -122,8 +122,6 @@ void Readout::Train(const float* states, const float* targets,
                 /*shuffle_seed=*/static_cast<unsigned>(e + 1));
         }
     }
-
-    flatten_weights();
 }
 
 // ---------------------------------------------------------------------------
@@ -278,38 +276,20 @@ double Readout::Accuracy(const float* states, const float* labels,
 //  Serialization
 // ---------------------------------------------------------------------------
 
-const std::vector<double>& Readout::Weights() const
+std::vector<double> Readout::Weights() const
 {
-    // Always re-sync from the live network: online training mutates the net
-    // without touching the blob, so a lazily cached blob goes stale between
-    // checkpoints taken around TrainOnline* calls.
-    if (net_) {
-        auto fw = net_->GetWeights();
-        weights_blob_.assign(fw.begin(), fw.end());
-    }
-    return weights_blob_;
-}
-
-void Readout::flatten_weights()
-{
-    if (!net_) { weights_blob_.clear(); return; }
-    auto fw = net_->GetWeights();
-    weights_blob_.assign(fw.begin(), fw.end());
-}
-
-void Readout::rebuild_from_blob()
-{
-    if (weights_blob_.empty()) return;
-    // net_ is built (and optimizer/buffers prepared) in the ctor — just load
-    // the saved weights into the existing, ready-to-train network.
-    std::vector<float> fw(weights_blob_.begin(), weights_blob_.end());
-    net_->SetWeights(fw);
+    // Snapshot the live network's weights on demand, by value — a returned copy
+    // can't go stale behind a later TrainOnline* call (online training mutates
+    // net_ in place).
+    const std::vector<float> fw = net_->GetWeights();
+    return std::vector<double>(fw.begin(), fw.end());
 }
 
 void Readout::SetState(std::vector<double> weights)
 {
-    // num_features_ and net_ are already established by the ctor.
-    weights_blob_ = std::move(weights);
-    if (!weights_blob_.empty())
-        rebuild_from_blob();
+    // net_ is built (optimizer + buffers prepared) in the ctor — load the saved
+    // weights straight into the existing, ready-to-train network.
+    if (weights.empty()) return;
+    const std::vector<float> fw(weights.begin(), weights.end());
+    net_->SetWeights(fw);
 }

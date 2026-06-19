@@ -113,9 +113,11 @@ public:
     /// Requires train_size <= NumCollected(). @p targets layout matches @ref R2.
     void Train(const float* targets, size_t train_size);
 
-    /// @brief Prepare for online (streaming) training: warm up the reservoir on
-    /// @p warmup_inputs (same layout as @ref Warmup), then build the readout's
-    /// CNN. Call before any TrainLive* method.
+    /// @brief Prepare for online (streaming) training by warming up the
+    /// reservoir on @p warmup_inputs (same layout as @ref Warmup) to wash out
+    /// the initial transient. The readout's CNN is built eagerly at ESN
+    /// construction, so no readout init happens here; @p warmup_count is also
+    /// retained as the §6.17 validation washout W.
     void InitOnline(const float* warmup_inputs, size_t warmup_count);
 
     /// @brief Single-step online classification training on the live reservoir
