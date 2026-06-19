@@ -6,31 +6,6 @@
 #include <stdexcept>
 #include <string>
 
-namespace
-{
-    /// RAII: force the reservoir's training-noise injection to a given state for
-    /// a scope, restoring the prior setting on exit. Composes with a caller-set
-    /// state (it captures and restores whatever was there, not a hardcoded
-    /// default) and is exception-safe across the reservoir Steps within.
-    class ScopedReservoirNoise
-    {
-    public:
-        ScopedReservoirNoise(Reservoir& reservoir, bool active)
-            : reservoir_(reservoir), prev_(reservoir.NoiseActive())
-        {
-            reservoir_.SetNoiseActive(active);
-        }
-        ~ScopedReservoirNoise() { reservoir_.SetNoiseActive(prev_); }
-
-        ScopedReservoirNoise(const ScopedReservoirNoise&) = delete;
-        ScopedReservoirNoise& operator=(const ScopedReservoirNoise&) = delete;
-
-    private:
-        Reservoir& reservoir_;
-        bool prev_;
-    };
-}
-
 ESN::ReadoutGeometry
 ESN::ComputeReadoutGeometry(size_t dim, float of)
 {
@@ -316,23 +291,16 @@ ESN::FeedbackCycleInfo ESN::TrainFeedbackCycleImpl(const float* input,
         const float sf = feedback_readout_->PredictRaw(fb_decision_state_.data());
         info.sf = sf;
 
-        // Probes are evaluations, not the training trajectory: gate training-
-        // noise OFF so the triplet shares one noiseless realization. Otherwise
-        // E0/E+/E− pick up independent noise draws at the ε scale the accept
-        // test runs on (corrupting the decision), and the noise RNG — which
-        // RestoreSnapshot does NOT rewind — would advance per probe and desync
-        // the commit. Restored on scope exit; the commit StepLive below sees
-        // the ambient (caller-set) setting — noise is off until opted in.
+        // Probes are evaluations, not the training trajectory: each restores the
+        // same snapshot so E0/E+/E− differ only by the ε perturbation, sharing
+        // one realization. The commit StepLive below resumes from the snapshot.
         double e0, ep, em;
-        {
-            ScopedReservoirNoise quiet(*reservoir_, false);
-            e0 = ProbeLoss(input, sf, target, target_class);
-            reservoir_->RestoreSnapshot(snap);
-            ep = ProbeLoss(input, sf + fb.epsilon, target, target_class);
-            reservoir_->RestoreSnapshot(snap);
-            em = ProbeLoss(input, sf - fb.epsilon, target, target_class);
-            reservoir_->RestoreSnapshot(snap);
-        }
+        e0 = ProbeLoss(input, sf, target, target_class);
+        reservoir_->RestoreSnapshot(snap);
+        ep = ProbeLoss(input, sf + fb.epsilon, target, target_class);
+        reservoir_->RestoreSnapshot(snap);
+        em = ProbeLoss(input, sf - fb.epsilon, target, target_class);
+        reservoir_->RestoreSnapshot(snap);
 
         info.e0 = static_cast<float>(e0);
         info.e_plus = static_cast<float>(ep);
@@ -529,11 +497,6 @@ double ESN::ValidateClosedLoop(const float* inputs, const float* targets, size_t
             "ESN::ValidateClosedLoop: count (" + std::to_string(count) +
             ") must exceed the washout W (" + std::to_string(W) +
             ", the warmup count passed to InitOnline)");
-
-    // Closed-loop scoring is inference, not training: gate training-noise OFF
-    // for the whole washout + scoring run so the scored free-run trajectory is
-    // deterministic and unperturbed. Restored on return (covers every exit).
-    ScopedReservoirNoise quiet(*reservoir_, false);
 
     // §6.17 bracket: only the reservoir needs protecting — validation is
     // forward-only, so P's and F's weights and Adam moments are untouched by

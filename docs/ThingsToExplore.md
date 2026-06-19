@@ -174,9 +174,8 @@ least partly *independent*; strong consensus coupling over-synchronizes them int
 single effective reservoir, at which point ȳ averages nothing and the scheme
 degenerates to one member. Member diversity (distinct `seed` / `input_scaling`) must
 be preserved against the very coupling that erodes it. Like every output-feedback
-ESN this is trainable only with **state noise** during training (now implemented —
-see [`Reservoir.md`](Reservoir.md) training noise) and benefits from a per-channel
-dv/dt slew-rate cap as a runaway guardrail. There is also a train/run
+ESN this is trainable only with **state noise** during training and benefits from a
+per-channel dv/dt slew-rate cap as a runaway guardrail. There is also a train/run
 fork: training each member's readout independently (teacher-forced, coupling off)
 then enabling coupling only at free-run is the conservative path; training *with*
 the coupling live is more faithful but couples the members' learning too.
@@ -220,6 +219,3 @@ Open questions:
    only at free-run, vs training with the coupling loop live.
 5. **Readout topology** — shared single readout vs per-member readouts; final output
    taken as the ensemble mean either way.
-6. **Interaction with state noise** — both inject perturbations during the run;
-   whether consensus coupling can partly substitute for (or must be tuned against)
-   the Jaeger state-noise level is open.

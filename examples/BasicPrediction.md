@@ -61,38 +61,6 @@ The value of this example is in demonstrating the pipeline, not
 stressing the readout. Harder tasks (StreamingAnomaly,
 SignalClassification) are where the architecture shows its capacity.
 
-## State noise (training-only regularizer)
-
-The reservoir can add a small per-neuron perturbation to each neuron's
-pre-activation drive `s` (before the `tanh`) — Jaeger's classic state-noise
-regularizer. It teaches the readout to recover from states that sit slightly
-off the clean trajectory, which improves stability on noisy or closed-loop
-tasks at a small cost in accuracy on clean ones.
-
-It is gated by two knobs, so it never leaks into inference by accident:
-
-```
-fires only if   noise_scaling > 0   AND   noise_active_ (runtime flag)
-```
-
-`cfg.reservoir.noise_scaling` defaults to `0.0` (off). The example ships with
-it at `0.0`, but the **train-on / measure-off** plumbing is already wired:
-
-```cpp
-esn.SetReservoirNoiseActive(true);
-esn.Warmup(signal.data(), warmup);
-esn.Run(signal.data() + warmup, train_size);                 // noisy training states
-esn.SetReservoirNoiseActive(false);
-esn.Run(signal.data() + warmup + train_size, test_size);     // clean test states
-```
-
-Noise is injected only while collecting the states the readout *trains* on,
-then switched off so the held-out test states — the ones R²/NRMSE score — are
-collected on the clean dynamics. Splitting the single collection `Run` keeps
-the reservoir trajectory continuous: two back-to-back `Run`s over contiguous
-input are identical to one `Run` apart from the noise toggle. To enable it,
-just set `cfg.reservoir.noise_scaling` above 0.
-
 ## Things to try
 
 - **Leak rate.** The example uses the struct default (`leak_rate = 1.0`,
@@ -124,12 +92,6 @@ just set `cfg.reservoir.noise_scaling` above 0.
 
 - **Increase the horizon.** Change `horizon = 1` to 5 or 10. Multi-step
   prediction is harder because the reservoir must encode more history.
-
-- **Turn on state noise.** Set `cfg.reservoir.noise_scaling = 0.005` (or
-  try `0.0` vs `0.02`). On this noise-free sine it costs a little accuracy;
-  the payoff shows on noisy or closed-loop tasks. See
-  [State noise](#state-noise-training-only-regularizer) above for how the
-  train-on / measure-off split keeps it out of the scored test states.
 
 ## Build and run
 

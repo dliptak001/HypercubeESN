@@ -6,7 +6,6 @@
 #include <new>
 #include <span>
 #include <vector>
-#include <random>
 
 struct ReservoirConfig
 {
@@ -25,10 +24,7 @@ struct ReservoirConfig
     float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
 
     size_t bias_seed = 341476367; // seed for the per-neuron bias stream (independent of seed/feedback streams)
-    float bias_scaling = 0.0f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; OFF by default (0 disables)
-
-    uint64_t noise_seed = 0x6F09'94B6'1D8E'2F3DULL; // independent per-step training-noise stream
-    float    noise_scaling = 0.0f;                  // pre-tanh state-noise σ; OFF by default
+    float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; OFF by default (0 disables)
 
     // --- Lorentzian activation envelope ---
     // A_lorentz(x) = tanh(x * gain),  gain = 1 + lorentz_gamma * phi,
@@ -156,20 +152,6 @@ public:
     ///         (num_feedback_channels == 0) or @p channel >= num_feedback_channels.
     void InjectFeedback(size_t channel, float feedback);
 
-    /// @brief Toggle training-noise injection (Jaeger state noise on the pre-tanh
-    /// accumulator). Noise is gated by BOTH @c noise_scaling > 0 AND this flag, so
-    /// turning it off here silences injection without disturbing @c noise_scaling
-    /// or the RNG stream. Enable during teacher-forced training/warmup; DISABLE for
-    /// inference and closed-loop free-run, where injected noise would perturb the
-    /// generated trajectory. Defaults to FALSE (inactive): a freshly-built
-    /// reservoir injects nothing until this is set true AND noise_scaling > 0, so
-    /// enabling noise for training is an explicit opt-in on both knobs.
-    void SetNoiseActive(bool active) { noise_active_ = active; }
-
-    /// @brief Whether training-noise injection is currently enabled (see
-    /// @ref SetNoiseActive). Reflects only the flag, not @c noise_scaling.
-    [[nodiscard]] bool NoiseActive() const { return noise_active_; }
-
     /// @brief Copyable capture of the reservoir's persistent dynamical state:
     /// the live vertex state plus every history slice in logical age order
     /// (slice 0 = most recent). The per-step staged drives (input/feedback)
@@ -251,17 +233,9 @@ private:
     size_t num_feedback_weights_ = 0; // n_ * dim_ — size of the feedback-weight block
     std::unique_ptr<float[], AlignedFree> vtx_feedback_;
 
-
     /**** per neuron bias ****/
     size_t bias_seed_;
     float bias_scaling_;
-
-    /**** training noise ****/
-    uint64_t noise_seed_ = 0;
-    float    noise_scaling_ = 0.0f;
-    bool     noise_active_ = false;   // gates injection; off at inference (free-run)
-    std::mt19937_64 noise_rng_;                              // seeded in Initialize()
-    std::uniform_real_distribution<double> noise_dist_{-1.0, 1.0};  // braces, not parens
 
     /**** Lorentzian activation envelope (see ReservoirConfig) ****/
     float lorentz_gamma_      = 1.1f;

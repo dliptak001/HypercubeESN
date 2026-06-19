@@ -273,41 +273,6 @@ only last step's published slices (never another vertex's just-computed
 `vtx_state_`), the loop is embarrassingly parallel; the shipped `Step()` runs it
 serially.
 
-### Training noise (optional, training-only)
-
-One optional term sits between the drive sum and the `tanh` in Phase 1. When
-enabled, each vertex adds a small independent perturbation to its drive `s`
-*before* the activation:
-
-```
-s += noise_scaling * ξ          # ξ ~ U(-1, 1), fresh per vertex per step
-activation = tanh(s)
-```
-
-This is **Jaeger state noise** — a training regularizer that teaches the readout
-to recover from states that sit slightly off the clean trajectory, which buys
-stability on noisy and closed-loop (free-run) tasks at a small cost on clean
-ones. The perturbation is drawn from an independent per-step RNG stream
-(`noise_seed`, separate from the weight seed), so noisy training runs stay
-reproducible.
-
-Because injected noise during inference would just blur predictions, it is gated
-by **two** knobs and fires only when both are set:
-
-```
-inject only if   noise_scaling > 0   AND   the runtime noise flag is on
-```
-
-Both default off (`noise_scaling = 0.0`, flag `false`), so noise is a deliberate
-opt-in on both. The runtime flag is toggled through the ESN
-(`SetReservoirNoiseActive`); the reservoir also silences it automatically wherever
-clean dynamics are required (the feedback-probe gradient triplet and closed-loop
-validation). The canonical usage is the **train-on / measure-off** pattern — noise
-on while collecting the states the readout trains on, off for the held-out states
-scored by metrics. See the SDK references ([CPP_SDK](CPP_SDK.md#training-noise),
-[Python_SDK](Python_SDK.md#training-noise)) and the worked examples for the full
-pattern.
-
 ## Input injection
 
 Input enters through `InjectInput(channel, value)`, called **before** each

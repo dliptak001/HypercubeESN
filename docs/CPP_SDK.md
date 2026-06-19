@@ -226,8 +226,6 @@ struct ReservoirConfig
     size_t   history_depth   = 16;
     float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
     bool     verbose         = true;
-    uint64_t noise_seed      = 0x6F09'94B6'1D8E'2F3DULL;  // training-noise RNG stream
-    float    noise_scaling   = 0.0f;   // pre-tanh state-noise σ; OFF by default
 };
 
 // Typical:
@@ -249,8 +247,6 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
 | `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
 | `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
-| `noise_seed` | `uint64_t` | `0x6F09…2F3D` | Seed for the independent per-step training-noise RNG stream (separate from `seed`). Only matters when `noise_scaling > 0` and noise is active; fixing it makes noisy training runs reproducible. |
-| `noise_scaling` | `float` | `0.0` | Magnitude σ of **training-only state noise** (Jaeger): a per-neuron perturbation added to each neuron's pre-`tanh` drive `s`. A regularizer that teaches the readout to recover from slightly-off states; helps on noisy and closed-loop tasks at a small cost on clean ones. `0.0` disables it. Injection is gated by **both** `noise_scaling > 0` **and** the runtime flag `ESN::SetReservoirNoiseActive(true)` — see [Training noise](#training-noise). |
 
 > **Note:** `output_fraction` (reservoir->readout subsampling) lives on `ESNConfig`, not `ReservoirConfig` — the reservoir does not consume it. See [ESN](#esn). `float output_fraction = 1.0` — fraction of N vertices used as readout features, in range (0.0, 1.0]; must yield a power-of-2 stride. At 0.5, a stride-selected sub-hypercube of N/2 vertices is passed to the readout. The mapping is lossy: intermediate values round down to the nearest power-of-2 stride (e.g. `0.4` → effectively `0.5`), and values that would yield a non-power-of-2 stride (e.g. `0.3`) throw. Exactly-honored values: `{1.0, 0.5, 0.25, 0.125, 0.0625, ...}`.
 
@@ -323,8 +319,6 @@ esn.Warmup(inputs, num_steps);
 esn.Run(inputs, num_steps);
 esn.ClearStates();
 esn.ResetReservoirOnly();
-esn.SetReservoirNoiseActive(active);   // training-noise gate (pairs with noise_scaling > 0)
-esn.ReservoirNoiseActive();
 
 // Batch training (readout hyperparameters come from cfg.readout)
 esn.Train(targets, train_size);
@@ -441,48 +435,6 @@ void ResetReservoirOnly();
 Zeros the reservoir's internal state — `vtx_state_` plus every output-history slice. Recurrent weights, input weights, and all hyperparameters are untouched. Collected states are **not** cleared. The trained readout is preserved.
 
 Use for episodic tasks where each episode starts from a clean slate (e.g., per-sequence reset).
-
----
-
-#### Training Noise
-
-Jaeger-style state noise: a small per-neuron perturbation added to each neuron's pre-`tanh` drive during training. It teaches the readout to recover from states that sit slightly off the clean trajectory — a regularizer that pays off on noisy and closed-loop tasks. Injection is gated by **two** knobs so it can never leak into inference by accident:
-
-```
-fires only if   reservoir.noise_scaling > 0   AND   ReservoirNoiseActive() == true
-```
-
-Both default off (`noise_scaling = 0.0`, flag `false`), so enabling noise is an explicit opt-in on both. Set the magnitude via `cfg.reservoir.noise_scaling` at construction; toggle the runtime flag with the methods below.
-
-> The ESN forces the flag off internally where clean dynamics are required (the feedback-probe gradient triplet and `ValidateClosedLoop`), via a scoped guard that restores the prior value — so callers never have to manage it around those paths.
-
-##### `SetReservoirNoiseActive`
-
-```cpp
-void SetReservoirNoiseActive(bool active);
-```
-
-Enables (`true`) or disables (`false`) training-noise injection. Inert unless `cfg.reservoir.noise_scaling > 0`. Disabling does not disturb `noise_scaling`.
-
-The canonical usage is the **train-on / measure-off** pattern — split the collection so noise is injected only while gathering the states the readout trains on, then turned off for the held-out/test/monitoring states scored by metrics:
-
-```cpp
-esn.SetReservoirNoiseActive(true);
-esn.Warmup(signal, warmup);
-esn.Run(signal + warmup, train_size);                 // noisy training states
-esn.SetReservoirNoiseActive(false);
-esn.Run(signal + warmup + train_size, test_size);     // clean test states
-```
-
-Two back-to-back `Run` calls over contiguous input produce the same reservoir trajectory as one `Run`, apart from the noise toggle — so the split keeps the dynamics continuous while scoring on the clean states.
-
-##### `ReservoirNoiseActive`
-
-```cpp
-[[nodiscard]] bool ReservoirNoiseActive() const;
-```
-
-Returns the current state of the runtime flag (not `noise_scaling`). Injection is active only when this is `true` **and** `noise_scaling > 0`.
 
 ---
 

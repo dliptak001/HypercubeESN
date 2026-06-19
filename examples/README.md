@@ -12,8 +12,6 @@ This is the place to start if you want to understand how the pieces fit together
 - Warmup (wash out initial transients) and Run (collect states)
 - HCNN readout training with cosine LR schedule
 - R² and NRMSE evaluation on held-out test set
-- Training-only state noise (Jaeger), wired with the **train-on / measure-off**
-  pattern — off by default (`noise_scaling = 0`), opt-in on both knobs
 
 **Expected output (abbreviated):**
 ```
@@ -42,9 +40,6 @@ reservoir locks on after a waveform switch.
 - HCNN native multi-class classification
 - Confusion matrix and per-class accuracy breakdown
 - Transition dynamics: accuracy vs steps after waveform switch
-- Optional training-only state noise, injected only while collecting the train
-  states and off for the scored test states (off by default; distinct from the
-  input `NOISE_LEVEL`, which is part of the task)
 
 **Expected output (abbreviated):**
 ```
@@ -73,8 +68,6 @@ separated by normal operation to show both detection and recovery.
 - Three distinct anomaly signatures with different RMSE ratios
 - Automatic recovery without retraining as anomalies end
 - Effect of leak rate on detection sensitivity vs recovery speed
-- Optional training-only state noise, gated off before the baseline and all
-  monitoring are measured (off by default) — so the anomaly signal stays clean
 
 **Expected output (abbreviated):**
 ```

@@ -72,16 +72,6 @@ class ESN:
         so older states influence the next state less. Applied before the
         spectral-radius rescale (which normalizes overall magnitude). 1.0 = no
         taper (default); has no effect when history_depth == 1.
-    noise_scaling : float
-        Training-noise magnitude (Jaeger state noise): a per-neuron perturbation
-        added to each neuron's pre-tanh drive. A training regularizer that
-        teaches the readout to recover from slightly-off states. Gated by BOTH
-        this value > 0 AND ``set_reservoir_noise_active(True)``, so it stays off
-        unless explicitly enabled on both knobs. Default: 0.0 (off).
-    noise_seed : int
-        RNG seed for the independent per-step training-noise stream. Only
-        matters when ``noise_scaling > 0`` and noise is active. Default: a fixed
-        constant, so noisy training runs are reproducible.
     verbose : bool
         Print the one-line reservoir construction banner. Default: True.
     output_fraction : float
@@ -155,8 +145,6 @@ class ESN:
         num_inputs: int = 1,
         history_depth: int = 16,
         history_floor: float = 1.0,
-        noise_scaling: float = 0.0,
-        noise_seed: int = 0x6F0994B61D8E2F3D,
         verbose: bool = True,
         output_fraction: float = 1.0,
         readout_num_outputs: int = 1,
@@ -204,8 +192,6 @@ class ESN:
             num_inputs=num_inputs,
             history_depth=history_depth,
             history_floor=history_floor,
-            noise_scaling=noise_scaling,
-            noise_seed=noise_seed,
             verbose=verbose,
             output_fraction=output_fraction,
             **self._readout_kwargs,
@@ -257,31 +243,6 @@ class ESN:
         without discarding previously collected training data.
         """
         self._impl.reset_reservoir_only()
-
-    def set_reservoir_noise_active(self, active: bool) -> None:
-        """Toggle training-noise injection (Jaeger state noise).
-
-        Noise is gated by BOTH ``noise_scaling > 0`` (set at construction) AND
-        this runtime flag. Enable it while collecting the states the readout
-        trains on, then disable it for held-out test states and any
-        closed-loop / free-run inference, so metrics score the clean dynamics.
-        Inert unless ``noise_scaling > 0``.
-
-        The recommended train-on / measure-off pattern::
-
-            esn.set_reservoir_noise_active(True)
-            esn.warmup(signal[:warmup])
-            esn.run(signal[warmup:warmup + train_size])   # noisy training states
-            esn.set_reservoir_noise_active(False)
-            esn.run(signal[warmup + train_size:])         # clean test states
-
-        Parameters
-        ----------
-        active : bool
-            True enables injection (if ``noise_scaling > 0``); False silences it
-            without disturbing ``noise_scaling``.
-        """
-        self._impl.set_reservoir_noise_active(active)
 
     def fit(
         self,
@@ -833,26 +794,6 @@ class ESN:
         return self._impl.history_floor
 
     @property
-    def noise_scaling(self) -> float:
-        """Training-noise magnitude (Jaeger state noise); 0.0 = off."""
-        return self._impl.noise_scaling
-
-    @property
-    def noise_seed(self) -> int:
-        """RNG seed for the per-step training-noise stream."""
-        return self._impl.noise_seed
-
-    @property
-    def reservoir_noise_active(self) -> bool:
-        """Whether training-noise injection is currently enabled (the runtime flag).
-
-        Reflects only the flag set by :meth:`set_reservoir_noise_active`, not
-        ``noise_scaling``. Injection fires only when this is True AND
-        ``noise_scaling > 0``.
-        """
-        return self._impl.reservoir_noise_active
-
-    @property
     def seed(self) -> int:
         """RNG seed used to initialize reservoir weights."""
         return self._impl.seed
@@ -908,9 +849,11 @@ class ESN:
     # Bumped to 3: the serialized config gained the `history_floor` depth-taper
     # field.
     # Bumped to 4: the serialized config gained the `noise_scaling` /
-    # `noise_seed` training-noise fields. (The noise_active runtime flag is NOT
-    # persisted — it is always reconstructed off; re-enable it per training run.)
-    _PERSISTENCE_VERSION = 4
+    # `noise_seed` training-noise fields.
+    # Bumped to 5: the training-noise feature was removed; `noise_scaling` /
+    # `noise_seed` are no longer written. Any keys present in an older (v4)
+    # pickle are ignored on load.
+    _PERSISTENCE_VERSION = 5
 
     def __getstate__(self) -> dict:
         """Serialize ESN state for pickling.
@@ -929,8 +872,6 @@ class ESN:
             "num_inputs": self.num_inputs,
             "history_depth": self.history_depth,
             "history_floor": self.history_floor,
-            "noise_scaling": self.noise_scaling,
-            "noise_seed": self.noise_seed,
             "verbose": self._verbose,
             "output_fraction": self.output_fraction,
             "readout_kwargs": dict(self._readout_kwargs),
@@ -956,8 +897,6 @@ class ESN:
             num_inputs=state["num_inputs"],
             history_depth=state["history_depth"],
             history_floor=state.get("history_floor", 1.0),
-            noise_scaling=state.get("noise_scaling", 0.0),
-            noise_seed=state.get("noise_seed", 0x6F0994B61D8E2F3D),
             verbose=state.get("verbose", True),
             output_fraction=state["output_fraction"],
             **readout_kwargs,

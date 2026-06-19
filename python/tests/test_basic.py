@@ -81,9 +81,6 @@ class TestConstruction:
         assert esn.output_fraction == pytest.approx(1.0)
         assert esn.history_depth == 16
         assert esn.seed == 73895
-        # Training noise is off on both knobs by default.
-        assert esn.noise_scaling == pytest.approx(0.0)
-        assert esn.reservoir_noise_active is False
 
 
 # ── Core regression pipeline (shared trained ESN) ──
@@ -233,7 +230,7 @@ class TestSurfaceParity:
         "copy_live_state", "predict_raw", "predict_raw_multi",
         "predict_live_raw", "predict_live_raw_multi", "predict_from_state",
         "predictions", "predictions_multi", "r2", "nrmse", "accuracy",
-        "selected_states", "set_reservoir_noise_active", "save", "load",
+        "selected_states", "save", "load",
     ]
 
     @pytest.mark.parametrize("name", EXPECTED)
@@ -249,48 +246,6 @@ class TestClassification:
         esn, _, labels = classifier
         acc = esn.accuracy(labels[100:], 500, 200)
         assert acc > 0.7, f"Accuracy too low: {acc}"
-
-
-# ── Training noise (Jaeger state noise): config, two-knob gate ──
-
-def _noise_states(esn, signal, warmup=100):
-    """Drive an ESN over `signal` (no readout training) and return the
-    collected reservoir states — the cheap observable for gating tests."""
-    esn.warmup(signal[:warmup])
-    esn.run(signal[warmup:])
-    return esn.selected_states()
-
-
-class TestTrainingNoise:
-
-    def test_config_reflected(self):
-        esn = ESN(dim=5, verbose=False, noise_scaling=0.05, noise_seed=12345)
-        assert esn.noise_scaling == pytest.approx(0.05)
-        assert esn.noise_seed == 12345
-        assert esn.reservoir_noise_active is False  # flag still defaults off
-
-    def test_active_flag_toggles(self):
-        esn = ESN(dim=5, verbose=False, noise_scaling=0.05)
-        esn.set_reservoir_noise_active(True)
-        assert esn.reservoir_noise_active is True
-        esn.set_reservoir_noise_active(False)
-        assert esn.reservoir_noise_active is False
-
-    def test_scaling_zero_closes_gate(self, sine):
-        # noise_scaling == 0 makes the runtime flag inert: an "active" run
-        # reproduces the clean run bit-for-bit. Both knobs are required.
-        clean = _noise_states(ESN(dim=5, verbose=False, noise_scaling=0.0, seed=999), sine)
-        gated_esn = ESN(dim=5, verbose=False, noise_scaling=0.0, seed=999)
-        gated_esn.set_reservoir_noise_active(True)
-        np.testing.assert_array_equal(clean, _noise_states(gated_esn, sine))
-
-    def test_both_knobs_inject(self, sine):
-        # noise_scaling > 0 but flag OFF still injects nothing (the clean run
-        # below); only with the flag ON do states leave the clean trajectory.
-        clean = _noise_states(ESN(dim=5, verbose=False, noise_scaling=0.05, seed=999), sine)
-        noisy_esn = ESN(dim=5, verbose=False, noise_scaling=0.05, seed=999)
-        noisy_esn.set_reservoir_noise_active(True)
-        assert not np.allclose(clean, _noise_states(noisy_esn, sine))
 
 
 # ── Persistence (reuses shared trained models) ──
@@ -320,7 +275,7 @@ class TestPersistence:
     def test_preserves_config(self):
         esn = ESN(dim=8, seed=123, spectral_radius=0.85, input_scaling=0.05,
                   leak_rate=0.7, history_depth=8, num_inputs=2, output_fraction=0.5,
-                  history_floor=0.4, noise_scaling=0.05, noise_seed=4242)
+                  history_floor=0.4)
         loaded = pickle.loads(pickle.dumps(esn))
         assert loaded.dim == 8
         assert loaded.seed == 123
@@ -328,9 +283,6 @@ class TestPersistence:
         assert loaded.num_inputs == 2
         assert loaded.output_fraction == pytest.approx(0.5)
         assert loaded.history_floor == pytest.approx(0.4)
-        # Training-noise config survives the v4 persistence schema.
-        assert loaded.noise_scaling == pytest.approx(0.05)
-        assert loaded.noise_seed == 4242
 
     def test_classification_roundtrip(self, classifier):
         esn, sine, labels = classifier

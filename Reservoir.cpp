@@ -24,8 +24,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       feedback_scaling_(cfg.feedback_scaling),
       bias_seed_(cfg.bias_seed),
       bias_scaling_(cfg.bias_scaling),
-      noise_seed_(cfg.noise_seed),
-      noise_scaling_(cfg.noise_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
       lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
 
@@ -76,7 +74,6 @@ void Reservoir::Initialize()
     std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
     std::mt19937_64 bias_rng(bias_seed_);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
-    noise_rng_.seed(noise_seed_); // <-- add; explicit seed = reproducible A/B sweeps
 
     Reset();
 
@@ -209,14 +206,14 @@ void Reservoir::Step()
 // gamma < 0 is the "-gamma*phi" branch and, for |gamma| > 1, drives the central
 // gain negative for a non-monotone fold. The sign is just the sign of gamma.
 // Pass inv_sigma2 = 1/sigma^2.  e.g. sigma=0.05 -> inv_sigma2 = 400.
-inline float A_lorentz(float x, float gamma, float inv_sigma2) noexcept
+inline float A_lorentz(const float x, const float gamma, const float inv_sigma2) noexcept
 {
     const float phi = 1.0f / (1.0f + x * x * inv_sigma2);
     const float gain = 1.0f + gamma * phi;
     return std::tanh(x * gain);
 }
 
-void Reservoir::UpdateState(size_t v, float old_output_v)
+void Reservoir::UpdateState(const size_t v, const float old_output_v)
 {
     float s = 0.0f;
     const float* iw = vtx_weight_.get() + v * dim_; // input block
@@ -227,17 +224,17 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
     if (num_feedback_channels_ > 0)
         fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
 
-    // Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
-    // For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
-    // every vertex, so all dim gathered values are identical and this collapses to
-    // input * (sum of iw[0..dim)) — a single multiply against a per-vertex
-    // precomputed weight-row-sum would suffice, making the dim-way gather here
-    // wasted work. We keep the general form on purpose: with num_inputs_ > 1 the
-    // neighbors of a vertex near a channel-block boundary straddle different
-    // channels and carry DIFFERENT injected values, so the per-neighbor gather is
-    // load-bearing and cannot be collapsed. The single-input waste is dim-1 extra
-    // FMAs per vertex per step — negligible against the recurrent block below
-    // (dim * history_depth) — so it isn't worth a second specialized code path.
+    /*Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
+    For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
+    every vertex, so all dim gathered values are identical and this collapses to
+    input * (sum of iw[0..dim)) — a single multiply against a per-vertex
+    precomputed weight-row-sum would suffice, making the dim-way gather here
+    wasted work. We keep the general form on purpose: with num_inputs_ > 1 the
+    neighbors of a vertex near a channel-block boundary straddle different
+    channels and carry DIFFERENT injected values, so the per-neighbor gather is
+    load-bearing and cannot be collapsed. The single-input waste is dim-1 extra
+    FMAs per vertex per step — negligible against the recurrent block below
+    (dim * history_depth) — so it isn't worth a second specialized code path.*/
     for (size_t i = 0; i < dim_; i++)
         s += vtx_input_[v ^ NearestMask(i)] * iw[i];
 
@@ -254,13 +251,7 @@ void Reservoir::UpdateState(size_t v, float old_output_v)
             s += pSlice[v ^ NearestMask(j)] * (*w++);
     }
 
-    s += vtx_bias_[v];
-
-    if (noise_active_)
-        s += noise_scaling_ * static_cast<float>(noise_dist_(noise_rng_));
-
-    // gamma=0 makes A_lorentz exactly std::tanh(s); shape is now runtime (cfg).
-    const float activation = A_lorentz(s, lorentz_gamma_, lorentz_inv_sigma2_);
+    const float activation = A_lorentz(s, lorentz_gamma_, lorentz_inv_sigma2_) + vtx_bias_[v];
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
@@ -337,8 +328,6 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.feedback_scaling = feedback_scaling_;
     cfg.bias_seed = bias_seed_;
     cfg.bias_scaling = bias_scaling_;
-    cfg.noise_seed = noise_seed_;
-    cfg.noise_scaling = noise_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
     return cfg;
