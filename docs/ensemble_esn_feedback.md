@@ -173,8 +173,13 @@ are good enough that their deviation signal is meaningful rather than noise:
 Because feedback is never off, the readouts learn under the rising coupling and reach
 inference already adapted to `κ*` — there is no train/inference mismatch.
 
-**Parameters:** `kappa_start` (≈ 0), `kappa_target` (κ*), the competence gate
-(signal + threshold), and the ramp shape/rate. The schedule moves κ over [0, κ*]; the
+**Ownership — the class drives κ, not the consumer.** The ramp is **owned by
+`EnsembleESN`**. Its schedule parameters — `kappa_start` (≈ 0), `kappa_target` (κ*), the
+competence gate (signal + threshold), and the ramp shape/rate — are **constructor
+config**. The class advances κ internally on each `Step`: it holds the members, so it
+owns the per-member competence signal the gate reads, and the consumer never computes
+κ — it just feeds data and reads the ensemble output. (`EnsembleESN` is therefore a
+*policy* object, not a bare lockstep stepper.) The schedule moves κ over [0, κ*]; the
 sign is fixed by convention (κ > 0, §4.1).
 
 ### 4.3 No clamp on the coupling drive
@@ -264,9 +269,12 @@ building F. Required footprint is the one seam.
 ```cpp
 class EnsembleESN {
     size_t M_, D_;
-    Combine combine_;                                // Mean (default) | Median (§6)
-    float  kappa_;                                   // current feedback intensity (ramped, §4.2)
+    Combine   combine_;                              // Mean (default) | Median (§6)
+    RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
+    float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
     std::vector<std::unique_ptr<ESN>> esn_;          // each built with num_feedback_channels = D
+
+    void AdvanceKappa(const float* target);          // class-owned competence-gated ramp (§4.2)
 
     // one lockstep online step; writes consensus c(t). target == nullptr at inference.
     void Step(const float* input, const float* target, float* c_out) {
@@ -279,7 +287,7 @@ class EnsembleESN {
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
             esn_[i]->StepLiveExternalFeedback(input, phi.data());               // the §7.1 seam
         }
-        // caller advances kappa_ per the competence-gated ramp (§4.2)
+        AdvanceKappa(target);    // class drives κ via the competence-gated ramp (§4.2) — not the caller
     }
 };
 ```
