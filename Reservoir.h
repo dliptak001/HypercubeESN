@@ -23,7 +23,6 @@ struct ReservoirConfig
     size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely (must divide N = 2^dim evenly when > 0)
     float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
 
-    size_t bias_seed = 341476367; // seed for the per-neuron bias stream (independent of seed/feedback streams)
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; OFF by default (0 disables)
 
     // --- Lorentzian activation envelope ---
@@ -62,8 +61,8 @@ struct ReservoirConfig
 /// spectral-radius estimate, so it does not bound closed-loop stability.
 ///
 /// Every neuron also carries a fixed additive bias (@c ReservoirConfig::bias_scaling),
-/// drawn once at construction from its own seeded stream
-/// (@c ReservoirConfig::bias_seed) as @c U(-1,1) * bias_scaling and summed into the
+/// drawn once at construction from a @c Bias-labelled substream of the single
+/// @c ReservoirConfig::seed as @c U(-1,1) * bias_scaling and summed into the
 /// pre-activation just before the @c tanh. Like feedback, bias is OFF by default
 /// (bias_scaling = 0.0); set bias_scaling > 0 to enable it. It is a fixed model
 /// parameter, not dynamical state — @ref Reset leaves it untouched and @ref TakeSnapshot
@@ -234,7 +233,6 @@ private:
     std::unique_ptr<float[], AlignedFree> vtx_feedback_;
 
     /**** per neuron bias ****/
-    size_t bias_seed_;
     float bias_scaling_;
 
     /**** Lorentzian activation envelope (see ReservoirConfig) ****/

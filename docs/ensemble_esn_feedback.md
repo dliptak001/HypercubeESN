@@ -217,19 +217,29 @@ ESNs in every structural respect — same `dim`, `spectral_radius`, `leak_rate`,
 `num_feedback_channels = D`, and the same readout architecture. Members are **not**
 tuned to different operating points.
 
-They differ in exactly two fields, both random seeds:
-
-- **`seed`** — the reservoir weight seed: a different random realization of the
-  recurrent / input / feedback weight blocks per member.
-- **`bias_seed`** — the per-neuron bias seed: a different random bias vector per member
-  (`bias_scaling` is shared, so the bias *magnitude* matches; only its realization
-  differs).
+They differ in exactly **one** field — the reservoir `seed`. A `Reservoir` fans its
+single `seed` internally, via a SplitMix64 mix, into independent labelled substreams
+(recurrent, input, feedback, **bias**, SR-probe), so one integer fully determines a
+member's entire random realization — recurrent/input/feedback weights *and* the
+per-neuron bias vector alike. (`bias_scaling` is shared, so the bias *magnitude*
+matches across members; only its realization differs.) There is no separate `bias_seed`.
 
 That is the **entire** source of member diversity. Identical dynamics under different
 random realizations decorrelate the members' errors — which is what makes the
 deviations `Δ_i` informative — while the shared base config keeps the members on the
-same operating point and directly comparable in output space (§2). The orchestrator
-assigns the M distinct seed pairs (e.g. derived from one ensemble seed).
+same operating point and directly comparable in output space (§2).
+
+The orchestrator derives the M member seeds from one **ensemble seed** by the same
+mixer the reservoir uses internally:
+
+```
+seed_i = mix64(ensemble_seed ^ (GOLDEN * (i + 1)))      // 0 <= i < M
+```
+
+Equal ensemble seeds reproduce the ensemble exactly; distinct `i` yield independent
+reservoir realizations. Because the reservoir self-fans one seed into all of its
+streams, the ensemble needs to derive only **one** seed per member, not a role-tagged
+pair — the seed-derivation problem reduces to a single deterministic line.
 
 **M (member count).** Parameter, default 3. Variance reduction ~1/M for independent
 errors; returns diminish while cost grows linearly (M reservoirs stepped per online

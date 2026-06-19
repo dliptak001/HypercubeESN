@@ -92,13 +92,31 @@ elides them as `/*lr,wd*/…`. Fixed, scheduled, shared across members? Untouche
 **Recommendation:** fixed `lr`/`wd` from config, shared across members; note as such.
 
 ### G5. Seed-derivation scheme
-**Status:** open
+**Status:** RESOLVED (§5) — and the resolution simplified the *Reservoir* itself.
 
-§5 says "M distinct seed pairs (e.g. derived from one ensemble seed)" with no concrete
-rule. Reproducibility needs a deterministic mapping
-(e.g. `seed_i = hash(ensemble_seed, i)`, `bias_seed_i = hash(ensemble_seed, i, BIAS)`).
+The fix went deeper than a doc sentence. `Reservoir` previously spun up four RNG streams
+two different ways: three forked off `seed` by ad-hoc additive offsets
+(`seed + 0x9E3779B9` for input+feedback, `seed + 12345` for the SR probe) plus a wholly
+separate `bias_seed` config field. The offsets are folklore (mt19937 from nearby integers
+is not guaranteed independent) and `bias_seed` existed only because there was no clean
+primitive for forking a stream.
 
-**Recommendation:** one sentence fixing the derivation rule.
+Replaced (committed) with a single **SplitMix64 mix** inside `Reservoir::Initialize`: one
+master `seed` fans into labelled, statistically-independent substreams
+(`Recurrent`/`Input`/`Feedback`/`Bias`/`SrProbe`) via `seed_for(role) =
+mix64(seed ^ GOLDEN*role)`. Labels (not a sequential SplitMix stream) so adding a role
+later doesn't perturb existing ones. `bias_seed` **deleted** from `ReservoirConfig`, the
+ctor init, the member, and `GetConfig`; input and feedback no longer share a stream.
+
+Consequence for the ensemble: a member is now fully determined by **one** seed, so G5's
+"derive 2M role-tagged seeds" collapses to one deterministic line —
+`seed_i = mix64(ensemble_seed ^ GOLDEN*(i+1))` — with the role-tagging pushed down into
+the reservoir where it's reused by everyone. Verified: 23 C++ targets, pytest 57/57,
+batch + smoke R2=1.0. (One-time cost: a given `seed` now realizes a *different* reservoir
+than before; saved checkpoints are unaffected since weights are serialized, but tuned
+seeds in comments would need re-finding.)
+
+**Recommendation:** DONE.
 
 ### G6. Diagnostic accessors
 **Status:** open

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -22,7 +23,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       history_floor_(cfg.history_floor),
       num_feedback_channels_(cfg.num_feedback_channels),
       feedback_scaling_(cfg.feedback_scaling),
-      bias_seed_(cfg.bias_seed),
       bias_scaling_(cfg.bias_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
       lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
@@ -68,11 +68,32 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     Initialize();
 }
 
+// SplitMix64 finalizer. Avalanches a 64-bit value so that substreams labelled
+// off one master seed are statistically independent (one input bit flips ~half
+// the output bits). Replaces the old folklore of forking mt19937 by small
+// additive offsets (seed + 0x9E3779B9, seed + 12345), which gave no such
+// guarantee, and the separate bias_seed config field it papered over.
+static inline uint64_t mix64(uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+// Named substreams of the reservoir's single master seed. Labelled (not
+// sequential) so adding a role later does not perturb the existing ones.
+enum class SeedRole : uint64_t { Recurrent = 1, Input = 2, Feedback = 3, Bias = 4, SrProbe = 5 };
+
 void Reservoir::Initialize()
 {
-    std::mt19937_64 rng(rng_seed_);
-    std::mt19937_64 fb_rng(rng_seed_ + 0x9E3779B9);
-    std::mt19937_64 bias_rng(bias_seed_);
+    auto seed_for = [this](SeedRole r) {
+        return mix64(rng_seed_ ^ (0x100000001B3ULL * static_cast<uint64_t>(r)));
+    };
+    std::mt19937_64 rng(seed_for(SeedRole::Recurrent));
+    std::mt19937_64 in_rng(seed_for(SeedRole::Input));
+    std::mt19937_64 fb_rng(seed_for(SeedRole::Feedback));
+    std::mt19937_64 bias_rng(seed_for(SeedRole::Bias));
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
     Reset();
@@ -88,7 +109,7 @@ void Reservoir::Initialize()
     // line — it sums dim neighbor inputs per vertex (UpdateState), independent of M.
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
-        (*pW++) = static_cast<float>(dist(fb_rng)) * in_scaling;
+        (*pW++) = static_cast<float>(dist(in_rng)) * in_scaling;
 
     const float feedback_scaling = feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_feedback_weights_; ++i)
@@ -120,7 +141,7 @@ void Reservoir::Initialize()
     const size_t MN = history_depth_ * n_;
     std::vector<float> sr_x(MN, 0.0f), sr_y(MN, 0.0f);
     {
-        std::mt19937_64 sr_rng(rng_seed_ + 12345);
+        std::mt19937_64 sr_rng(seed_for(SeedRole::SrProbe));
         std::uniform_real_distribution<double> sr_dist(-1.0, 1.0);
         float norm = 0.0f;
         for (size_t v = 0; v < n_; ++v)
@@ -326,7 +347,6 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.verbose = verbose_;
     cfg.num_feedback_channels = num_feedback_channels_;
     cfg.feedback_scaling = feedback_scaling_;
-    cfg.bias_seed = bias_seed_;
     cfg.bias_scaling = bias_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
