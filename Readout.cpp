@@ -11,7 +11,19 @@
 Readout::Readout(const ReadoutConfig& cfg)
     : config_(cfg)
     , num_outputs_(static_cast<size_t>(cfg.num_outputs))
-{}
+{
+    // Build the network eagerly. build_architecture() needs only the config
+    // (no data, no warm-up), so there is nothing to defer: net_ is a non-null
+    // invariant from construction on. This removes the lazy-init dance (the
+    // old InitOnline ceremony, the trained_-as-"is-built" flag, the triplicated
+    // build+optimizer+buffers sequence) that existed only because warm-up was
+    // historically treated as a readout-disengaged phase.
+    num_features_ = 1ULL << config_.dim;
+    build_architecture();
+    net_->SetOptimizer(hcnn::OptimizerType::ADAM);
+    net_->PrepareBuffers();
+    trained_ = true;
+}
 
 Readout::~Readout() = default;
 Readout::Readout(Readout&&) noexcept = default;
@@ -73,15 +85,11 @@ void Readout::build_architecture()
 void Readout::Train(const float* states, const float* targets,
                        size_t num_samples)
 {
-    assert(config_.dim >= 5);
-    const size_t n = 1ULL << config_.dim;
-    num_features_ = n;
-    num_outputs_ = static_cast<size_t>(config_.num_outputs);
+    // net_ is already built (ctor). Train fits the existing network in place;
+    // a second Train() continues from the current weights rather than
+    // re-randomizing — reconstruct the Readout for a fresh fit.
+    const size_t n = num_features_;
     const bool is_classification = (config_.task == ReadoutTask::Classification);
-
-    build_architecture();
-    net_->SetOptimizer(hcnn::OptimizerType::ADAM);
-    trained_ = true;
 
     const float lr_min = config_.lr_max * config_.lr_min_frac;
     const int horizon = (config_.lr_decay_epochs > 0)
@@ -170,19 +178,6 @@ void Readout::Train(const float* states, const float* targets,
 // ---------------------------------------------------------------------------
 //  Online (streaming) training
 // ---------------------------------------------------------------------------
-
-void Readout::InitOnline()
-{
-    assert(config_.dim >= 5);
-    const size_t n = 1ULL << config_.dim;
-    num_features_ = n;
-    num_outputs_ = static_cast<size_t>(config_.num_outputs);
-
-    build_architecture();
-    net_->SetOptimizer(hcnn::OptimizerType::ADAM);
-    net_->PrepareBuffers();
-    trained_ = true;
-}
 
 void Readout::TrainOnlineStep(const float* state, int target_class,
                                  float lr, float weight_decay)
@@ -353,27 +348,17 @@ void Readout::flatten_weights()
 
 void Readout::rebuild_from_blob()
 {
-    if (weights_blob_.empty() || config_.dim == 0) return;
-
-    // Reconstruct the network from stored config if needed. Mirror
-    // InitOnline's optimizer setup: HCNN layers default to SGD with no
-    // prepared buffers, and a readout restored from a blob must be able to
-    // resume online training, not just predict.
-    if (!net_) {
-        build_architecture();
-        net_->SetOptimizer(hcnn::OptimizerType::ADAM);
-        net_->PrepareBuffers();
-    }
-
+    if (weights_blob_.empty()) return;
+    // net_ is built (and optimizer/buffers prepared) in the ctor — just load
+    // the saved weights into the existing, ready-to-train network.
     std::vector<float> fw(weights_blob_.begin(), weights_blob_.end());
     net_->SetWeights(fw);
 }
 
 void Readout::SetState(std::vector<double> weights)
 {
+    // num_features_ and net_ are already established by the ctor.
     weights_blob_ = std::move(weights);
-    num_features_ = (config_.dim >= 5) ? (1ULL << config_.dim) : 0;
-
     if (!weights_blob_.empty()) {
         rebuild_from_blob();
         trained_ = true;

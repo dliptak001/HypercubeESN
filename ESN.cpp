@@ -85,11 +85,10 @@ ESN::ESN(const ESNConfig& cfg, const ReadoutGeometry& geo)
                 "(num_feedback_channels=" +
                 std::to_string(cfg.reservoir.num_feedback_channels) + ")");
         feedback_readout_ = std::make_unique<Readout>(MakeFeedbackReadoutConfig(cfg, geo));
-        // Eager CNN build (§6.15): F must exist before the first closed-loop
-        // Step it feeds — warmup is already a consumer. The resulting random
-        // F is the live policy from cycle 0 (§6.8) and is persist-worthy
-        // immediately (IsTrained() is set here, by design).
-        feedback_readout_->InitOnline();
+        // F's CNN is built eagerly by the Readout ctor — it must exist before
+        // the first closed-loop Step it feeds (warmup is already a consumer),
+        // and that random F is the live policy from cycle 0 (§6.8), persist-worthy
+        // immediately.
 
         fb_decision_state_.resize(num_output_verts_);
         fb_pred_.resize(readout_.NumOutputs());
@@ -161,11 +160,11 @@ void ESN::Train(const float* targets, size_t train_size)
 
 void ESN::InitOnline(const float* warmup_inputs, size_t warmup_count)
 {
-    // Stored as the §6.17 validation washout W — same transient-killing job,
-    // same magnitude, no new hyperparameter.
+    // The readout CNN is built eagerly in the ctor, so InitOnline now only runs
+    // the reservoir warm-up. warmup_count_ is stored as the §6.17 validation
+    // washout W — same transient-killing job, same magnitude, no new hyperparameter.
     warmup_count_ = warmup_count;
     Warmup(warmup_inputs, warmup_count);
-    readout_.InitOnline();
 }
 
 void ESN::TrainLiveStep(float target_class, float lr, float weight_decay)
@@ -671,7 +670,7 @@ ESNConfig ESN::GetConfig() const
 ESN::ReadoutState ESN::GetReadoutState() const
 {
     ReadoutState s;
-    // IsTrained() is set by both batch Train() and InitOnline() (online),
+    // IsTrained() is set when the readout CNN is built (in the Readout ctor),
     // so it captures any readout that has weights worth persisting.
     s.is_trained = readout_.IsTrained();
     const auto& w = readout_.Weights();

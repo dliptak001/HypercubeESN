@@ -32,7 +32,7 @@ inline float CosineLR(float progress, float lr_max, float lr_min)
 /// Optimal seed for DIM >= 10, NARMA_20 -> best= 0.194107 (seed 66), best= 0.197295 (seed 119)
 struct ReadoutConfig
 {
-    size_t dim = 0; ///< Input feature dim: features per sample = 2^dim. Must be set (>= 5) before Train/InitOnline.
+    size_t dim = 0; ///< Input feature dim: features per sample = 2^dim. Must be set (>= 5) at construction (the CNN is built in the ctor).
     int num_outputs = 1; ///< Classes (classification) or targets (regression).
     ReadoutTask task = ReadoutTask::Regression;
     int num_layers = 1; ///< Conv+Pool pairs. 0 = auto: min(DIM-2, 2).
@@ -78,11 +78,10 @@ public:
                size_t num_samples);
 
     // ----- Online (streaming) training -----
-
-    /// Initialize for online training. Builds the CNN architecture and
-    /// sets the Adam optimizer. Architecture and seed come from the
-    /// ReadoutConfig passed at construction.
-    void InitOnline();
+    //
+    // The CNN is built eagerly in the constructor (no separate init step):
+    // net_ is ready to predict and to train (Adam + prepared buffers) from
+    // construction. Stream straight into the TrainOnline* methods.
 
     /// Single-sample online step (classification).
     void TrainOnlineStep(const float* state, int target_class,
