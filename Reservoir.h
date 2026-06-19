@@ -33,7 +33,7 @@ struct ReservoirConfig
     //   gamma > 0           => steeper central slope, tanh tails (sharpening)
     //   gamma < 0, |g| > 1  => central gain crosses 0 => non-monotone "fold"
     // Runtime so the activation shape is a sweep axis (no recompile).
-    float lorentz_gamma      = 1.1f;   // 0 reduces A_lorentz to tanh
+    float lorentz_gamma      = 1.1;   // 0 reduces A_lorentz to tanh
     float lorentz_inv_sigma2 = 250.0f; // 1/sigma^2
 };
 
