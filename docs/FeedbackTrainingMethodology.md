@@ -75,7 +75,7 @@ Jaeger-style output feedback (`W_fb` feeds the task output back; here the fed-ba
 signal is a free auxiliary control signal with no predefined semantics — its only
 job is to reduce primary task error).
 
-One structural property carried over from `feedback_mechanisms.md`: with a
+One structural property carried over from `reservoir_feedback_mechanism.md`: with a
 single broadcast channel (v1 — one scalar driving all N vertices), every
 vertex's dim-neighbor feedback gather collapses — all neighbors stage the same
 scalar, so the effective injection at vertex `v` is `f × (Σᵢ w_{v,i})`, a
@@ -93,7 +93,7 @@ The nearest prior art is Ehlers, Nurdin & Soh (2025), "Improving the
 performance of echo state networks through state feedback," *Neural Networks*
 184:107101 (<https://arxiv.org/abs/2312.15141>) — trained state feedback
 through the input pathway, with reported performance gains on standard
-benchmarks; see also `feedback_mechanisms.md` §Related-work. Their mechanism:
+benchmarks; see also `reservoir_feedback_mechanism.md` §Related-work. Their mechanism:
 the input is augmented as `u_k → u_k + Vᵀx_k`, so the reservoir update becomes
 `x_{k+1} = g((A + BVᵀ)x_k + Bu_k)` — the feedback flows through the *shared*
 input weights `B`, and the closed loop is exactly a **rank-1 modification of
@@ -1035,7 +1035,7 @@ nothing — choose benchmarks accordingly.
 
 ### 7.6 Stability is unguarded
 
-Restating from `feedback_mechanisms.md` with the training scheme in view: the
+Restating from `reservoir_feedback_mechanism.md` with the training scheme in view: the
 echo-state property is an open-loop guarantee, and the feedback weight block sits
 **outside** `EstimateSpectralRadius`. Closing the loop with a *trained, state-
 dependent* signal voids the configured SR semantics. The guards available:
