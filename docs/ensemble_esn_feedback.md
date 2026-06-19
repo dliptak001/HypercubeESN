@@ -67,6 +67,12 @@ the coupling reference is formed — not a separate averaging feature.)
 Let M = member count, D = output dimension, member i output `y_i ∈ R^D`. The coupling
 is live for the entire online run — training and inference alike.
 
+**One D, three roles.** A member's output dimension, its readout output count, and its
+feedback-channel count are the **same number**: `D = NumOutputs() = num_feedback_channels`.
+The readout emits D values, the consensus/deviation live in `R^D`, and the coupling drive
+`φ_i` is injected on exactly D feedback channels — there is no separate sizing knob. Members
+are built with `num_feedback_channels = D` (§7.2).
+
 ```
 consensus      c   = mean_i  y_i           (per channel; or median, §6)
 deviation      Δ_i = y_i − c               (Σ_i Δ_i = 0 for the mean)
@@ -244,7 +250,11 @@ pair — the seed-derivation problem reduces to a single deterministic line.
 **M (member count).** Parameter, default 3. Variance reduction ~1/M for independent
 errors; returns diminish while cost grows linearly (M reservoirs stepped per online
 step). 3 is the smallest M for which a median is meaningful. No hard upper bound; small
-M is the demonstration target.
+M is the demonstration target. The per-step cost also **parallelizes** cleanly: members
+interact only through the shared consensus, a single reduction per tick. That splits each
+tick into two member-parallel regions — read all `y_i`, then (after the consensus reduce)
+train/inject/step each member — with no member-to-member dependence inside either. The
+project already links OpenMP.
 
 ---
 
@@ -494,7 +504,7 @@ Deliberately **not** exposed:
 
 **Thesis.** In a regime where members decorrelate, there exists a feedback intensity
 κ at which the coupled ensemble beats both the single member **and** the κ = 0 point.
-If accuracy is monotone in `|κ|` with the optimum at an endpoint (κ = 0 wins, or full
+If accuracy is monotone in `κ` with the optimum at an endpoint (κ = 0 wins, or full
 sync wins), coupling buys nothing and the mechanism is falsified. The "decorrelating
 regime" qualifier is **not an escape hatch**: decorrelation is itself measured (below),
 so a null result is attributed to a quantified `ρ̄`, not asserted away.
@@ -513,7 +523,7 @@ post hoc:
   or seed spread moves `ρ̄`, mapping benefit-vs-decorrelation directly.
 
 **Sweeps:**
-- **Intensity:** κ across a range at fixed M and members; locate the accuracy-vs-`|κ|`
+- **Intensity:** κ across a range at fixed M and members; locate the accuracy-vs-`κ`
   curve and any interior optimum.
 - **Ramp ablation:** the competence-gated ramp (§4.2) vs a fixed-intensity online run —
   does ramping reach a higher usable κ* by avoiding early destabilization?

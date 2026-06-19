@@ -157,28 +157,26 @@ reference remains in the doc.
 **Recommendation:** DONE.
 
 ### G8. `|κ|` notation inconsistent with the κ > 0 convention
-**Status:** open
+**Status:** RESOLVED. Dropped the bars in both §8 occurrences (thesis "monotone in `κ`",
+intensity sweep "accuracy-vs-`κ`"); the §10.4 open question already wrote plain κ. Since
+§4.1 fixes κ > 0, `|κ| = κ`.
 
-§8 and §11.4 say "monotone in `|κ|`" / "useful range of κ", but §4.1 fixes κ > 0 by
-convention — so `|κ| = κ`.
-
-**Recommendation:** drop the absolute-value bars.
+**Recommendation:** DONE.
 
 ### G9. Parallelism note (optional)
-**Status:** open
+**Status:** RESOLVED (§5, M paragraph). Noted that members interact only through the
+shared consensus (one reduction per tick), splitting each tick into two member-parallel
+regions (read all `y_i`; then train/inject/step), with OpenMP already linked. Not a design
+driver — one note, placed beside the per-step cost discussion.
 
-M independent `Step`s per tick is embarrassingly parallel and the project already links
-OpenMP. Not a design driver.
-
-**Recommendation:** one line ("members step independently; parallelizable").
+**Recommendation:** DONE.
 
 ### G10. Confirm D = `NumOutputs()` = `num_feedback_channels`
-**Status:** open
+**Status:** RESOLVED (§3). Added a "One D, three roles" note where D is first introduced,
+stating `D = NumOutputs() = num_feedback_channels` explicitly (readout output count =
+consensus/deviation dimension = feedback-channel count; no separate sizing knob).
 
-The design ties all three together implicitly. Stating the identity once removes a
-footgun.
-
-**Recommendation:** state the identity explicitly where D is introduced.
+**Recommendation:** DONE.
 
 ---
 
