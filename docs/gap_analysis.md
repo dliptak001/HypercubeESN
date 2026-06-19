@@ -168,14 +168,31 @@ Target design (§7.2):
   `TrainFeedbackCycle`, telemetry buffers, `Get/SetFeedback*`). Redefine
   `num_feedback_channels` as the external-channel count (`0` = none, `D > 0` = D external
   channels); drop the `== 1` guard (allow any `D ≤ N`). Trim `StepLive` to input-only; add
-  `StepLiveExternalFeedback(inputs, φ)` as the only feedback entry point. Add a no-arg
-  `InitOnline()` that builds the online readout only (no warm-up) — splits the welded
-  `Warmup` + `readout_.InitOnline()` of `ESN.cpp:162-169`; ensemble owns warm-up in its
-  loop. Bundled `InitOnline(inputs,count)` stays as sugar.
-- **Readout / HypercubeCNN** — untouched.
+  `StepLiveExternalFeedback(inputs, φ)` as the only feedback entry point. (Readout init is
+  no longer a concern — see G14: readouts are born ready, so `ESN::InitOnline` is warm-up
+  only and the ensemble doesn't call it.)
+- **Readout / HypercubeCNN** — untouched by the *feedback* redesign (the G14 eager-build is
+  a separate cleanup).
 
 The ESN gets *simpler* (one fewer feature). Supersedes the earlier boolean `external_drive`
 flag and the 3-mode enum alike.
 
 **Recommendation:** carry into the implementation phase; sequence the substrate
 verification first.
+
+### G14. Readout eager-build — kill the lazy-init dance — DONE
+**Status:** IMPLEMENTED + verified (commit `2e8c26a`).
+
+Root cause: the readout CNN was built lazily (deferred to `Train`/`InitOnline`) only
+because warm-up was historically treated as a readout-disengaged phase. But
+`build_architecture()` needs only config — no data, no warm-up. Fix: build eagerly in the
+`Readout` ctor (`build_architecture` + ADAM + `PrepareBuffers` + sizes); `net_` is now a
+non-null invariant. **Deleted** `Readout::InitOnline()`; the triplicated
+build+optimizer+buffers sequence collapses to one; `rebuild_from_blob` just `SetWeights`;
+`Train()` trains in place (no re-randomize — build-once-train-once identical). ESN: dropped
+the dead `readout_.InitOnline()` (`:168`) and `feedback_readout_->InitOnline()` (`:92`);
+`ESN::InitOnline` is warm-up only.
+
+Verified: all 23 targets compile; BasicPrediction batch R2=1.0; Python smoke R2=1.0 with
+eager ctor build across DIM 5-12. Superseded the no-arg `ESN::InitOnline()` plan
+(unnecessary — members are born ready).

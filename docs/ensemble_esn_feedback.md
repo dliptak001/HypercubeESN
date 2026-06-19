@@ -252,24 +252,22 @@ but the value of **two scheduled knobs**.
 
 **Why warm-up is not a separate mode.** A reservoir warm-up exists only to wash the
 arbitrary initial state `x(0) = 0` out of the dynamics before the readout's outputs are
-used. In the single-`ESN` online API this is bundled into `InitOnline`, which steps the
-reservoir `warmup_count` times and *then* builds the readout. Crucially, the readout
-build (`readout_.InitOnline()`) **takes no arguments and consumes no warm-up state** — it
-is pure network construction (allocate weights, init Adam moments). So the ordering "warm
-up, then build readout" is **incidental, not a data dependency**: nothing about the
-readout needs the warm-up to have happened first. Running the readout during warm-up
-would merely produce an output we ignore — one cheap HCNN forward per member per step —
-which is not worth a dedicated execution mode. (Verified: `ESN::InitOnline` at
-`ESN.cpp:162` calls `Warmup(...)` then the argument-free `readout_.InitOnline()`.)
+used. Historically the readout build was *deferred* until after warm-up — but that build
+takes no arguments and consumes no warm-up state; it is pure network construction
+(allocate weights, init Adam moments). So the ordering "warm up, then build readout" was
+**incidental, not a data dependency**: nothing about the readout needs the warm-up to have
+happened first. That observation is now **realized in code (G14)**: the readout CNN is
+built eagerly in the `Readout` ctor, the lazy-init dance (`Readout::InitOnline`) is gone,
+and members are born ready. Warm-up is therefore just normal stepping with the early
+outputs ignored — no dedicated execution mode.
 
 `EnsembleESN` therefore **builds every member's readout up front** and folds warm-up into
 the normal loop:
 
-- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2). Its
-  online readout is prepared by the no-arg **`InitOnline()`** — readout construction only
-  (allocate weights + Adam moments), no warm-up. (The warm-up that `InitOnline`
-  historically bundled is incidental — see "Why warm-up is not a separate mode" below — so
-  the ensemble uses the form that omits it, rather than a dummy `InitOnline(input, 0)`.)
+- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2). The
+  readout CNN is built **eagerly in the `Readout` ctor** (landed — G14), so members are
+  **born ready**: there is no readout-init step of any kind, and the ensemble simply runs
+  its unified loop from step 0.
   The ensemble owns the washout itself, through its own loop, on the external-feedback seam,
   with the coupling drive held at `φ = 0` (κ = 0). So warm-up is a clean, **input-only**
   reservoir washout — there is no internal feedback path to interfere (the ESN has none,
@@ -366,12 +364,10 @@ distinguish. After removal:
 - `ESN::StepLive(inputs)` becomes **input-only** — the `tanh(F(x))`-on-channel-0 branch
   (`:108-121`) is removed with F. It serves the no-feedback case.
 - `ESN::StepLiveExternalFeedback(inputs, φ)` (below) is the **only** way feedback enters.
-- `ESN::InitOnline()` gains a **no-arg form** that builds the online readout *only* — no
-  warm-up. The current `InitOnline(inputs, count)` welds two separable operations,
-  `Warmup(inputs, count)` + the argument-free `readout_.InitOnline()` (`ESN.cpp:162-169`);
-  the readout build is pure construction with no warm-up dependency, so the ensemble takes
-  the build alone and owns warm-up in its loop (§7.1). The bundled form stays as sugar for
-  single-ESN online users.
+- **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
+  `Readout` ctor**, so there is no readout-init step at all: members are born ready and the
+  no-arg `InitOnline()` once planned here is unnecessary. `ESN::InitOnline(inputs, count)`
+  survives as warm-up-only sugar for single-ESN users; the ensemble does not call it.
 
 This makes the ESN *simpler* — one fewer feature — not more complex.
 
