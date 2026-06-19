@@ -32,7 +32,8 @@ inline float CosineLR(float progress, float lr_max, float lr_min)
 /// Optimal seed for DIM >= 10, NARMA_20 -> best= 0.194107 (seed 66), best= 0.197295 (seed 119)
 struct ReadoutConfig
 {
-    size_t dim = 0; ///< Input feature dim: features per sample = 2^dim. Must be set (>= 5) at construction (the CNN is built in the ctor).
+    size_t dim = 0;
+    ///< Input feature dim: features per sample = 2^dim. Must be set (>= 5) at construction (the CNN is built in the ctor).
     int num_outputs = 1; ///< Classes (classification) or targets (regression).
     ReadoutTask task = ReadoutTask::Regression;
     int num_layers = 1; ///< Conv+Pool pairs. 0 = auto: min(DIM-2, 2).
@@ -72,8 +73,7 @@ public:
 
     /// Train on collected reservoir states (row-major, 2^config.dim floats
     /// per sample). Uses the ReadoutConfig supplied at construction.
-    void Train(const float* states, const float* targets,
-               size_t num_samples);
+    void Train(const float* states, const float* targets, size_t num_samples);
 
     // ----- Online (streaming) training -----
     //
