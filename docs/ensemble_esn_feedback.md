@@ -46,18 +46,19 @@ Everything below describes that single, feedback-centric, online machine.
 
 ## 2. The consensus frame — output space
 
-The consensus is formed in **output space**, the only frame the members share. Members
-differ by reservoir weight seed (and optionally more, §5); two members' N-vertex state
-vectors live in incomparable coordinate systems (vertex v of member 1 has no
-correspondence to vertex v of member 2). The only shared coordinates are the
-D-dimensional outputs — every member's readout is trained to produce the same target
-quantity. The consensus, the deviations, and the coupling drive are therefore all
-defined per output channel.
+The consensus is formed in **output space**, the only frame the members share. All
+members run the **same base configuration** and differ only by their reservoir and bias
+seeds (§5) — so they share the hypercube topology but carry **different random weight
+realizations**. Vertex v of member 1 therefore has no correspondence to vertex v of
+member 2, and their N-vertex state vectors are not comparable across members. The only
+shared coordinates are the D-dimensional outputs — every member's readout is trained to
+produce the same target quantity. The consensus, the deviations, and the coupling drive
+are therefore all defined per output channel.
 
 The consensus statistic is **mean** (default) or **median** (§6). The consensus serves
-double duty: it is both the ensemble's output and the reference each member is coupled
-toward. (Combining member outputs is intrinsic to the mechanism — it is how the
-coupling reference is formed — not a separate averaging feature.)
+double duty: it is both the ensemble's output and the reference each member's deviation
+is measured against. (Combining member outputs is intrinsic to the mechanism — it is how
+the coupling reference is formed — not a separate averaging feature.)
 
 ---
 
@@ -69,7 +70,7 @@ is live for the entire online run — training and inference alike.
 ```
 consensus      c   = mean_i  y_i           (per channel; or median, §6)
 deviation      Δ_i = y_i − c               (Σ_i Δ_i = 0 for the mean)
-coupling drive φ_i = clamp( κ · Δ_i )       (κ pulls toward consensus; clamp = guard)
+coupling drive φ_i = κ · Δ_i                (scaled deviation; injected raw, §4.1)
 ```
 
 `φ_i` (D values) is injected on member i's D feedback channels and consumed by its next
@@ -91,7 +92,7 @@ budget. Members are built with `num_feedback_channels = D`.
    for each member i:
        (training only) online-update readout_i toward target(t)   (TrainLive*)
        inject task input u(t)            on the input    channels
-       inject φ_i = clamp(κ(t)·Δ_i(t))   on the feedback channels
+       inject φ_i = κ(t)·Δ_i(t)          on the feedback channels
        Step  ->  x_i(t+1)                                          (the one new seam, §7)
                                │
                                ▼
@@ -103,6 +104,16 @@ is built from outputs read at state x(t), which already exist. No delay line. Th
 difference between training and inference is whether each member's readout takes an
 online update this step.
 
+**What is fed back is the deviation, not the average.** Member i never receives the
+consensus `c` itself — it receives its own departure from it, `Δ_i = y_i − c`. That
+deviation **continually changes sign** over a run: a member is above the consensus on
+some steps (Δ_i > 0) and below it on others (Δ_i < 0), so the injected signal
+`φ_i = κ·Δ_i` already swings both ways regardless of κ's fixed sign. (This is the
+concrete reason the sign of κ is only a scaling convention, §4.1 — there is no static
+"direction" to the drive.) A member sitting exactly at the consensus receives nothing,
+and `Σ_i Δ_i = 0`, so the coupling only redistributes drive among members — it never
+injects the average as a net bias.
+
 ---
 
 ## 4. Feedback intensity
@@ -113,26 +124,34 @@ There is no "engage feedback" switch (§1). From the first online step the conse
 computed, the deviations are formed, and `φ_i` is injected. What moves is the scalar
 **feedback intensity** κ:
 
-- **Direction (sign).** κ pulls each member *toward* the consensus — the supported
-  consensus/denoise regime. Pushing members apart (repulsion) is unstable as a runtime
-  signal and is out of scope (§9).
-- **Magnitude `|κ|`.** The "intensity" the schedule (§4.2) ramps. At `|κ| = 0` the
-  mechanism is engaged but injects nothing; as `|κ|` rises members are pulled harder
-  toward the consensus.
-- **Over-coupling.** Too large `|κ|` over-synchronizes members — their *outputs*
-  collapse toward equality (the reservoirs stay distinct; they do not become one
-  reservoir), destroying the error independence the consensus depends on. So `|κ|` has
-  a useful upper bound, found by sweep (§8).
+- **Sign is a convention, not a regime.** Two reasons. First, the fed-back quantity is
+  each member's deviation `Δ_i`, which already changes sign continually (§3), so the
+  injected signal swings both ways no matter how κ's sign is fixed. Second, the drive is
+  injected through each member's *fixed random* feedback weight block and a nonlinear
+  reservoir, and the readouts are *trained* in its presence — so the sign carries no
+  intrinsic stabilizing/destabilizing meaning (flipping κ's sign is equivalent to
+  flipping the random feedback weights, a statistically identical realization; the
+  readouts adapt either way). We fix **κ > 0** for consistency; a negative convention
+  would work as well. Training sorts out how each member uses the signal.
+- **Magnitude — the intensity.** This is what the schedule (§4.2) ramps. At `κ = 0` the
+  mechanism is engaged but injects nothing; as κ rises, the deviation signal drives the
+  members more strongly.
+- **Over-driving.** The coupling cannot blow up (Δ_i is bounded by the members' bounded
+  outputs and the reservoir's `tanh` bounds the state, §4.3), but too large a κ lets the
+  injected drive dominate the dynamics — saturating neurons and swamping the task input —
+  which degrades the members. So κ has a useful upper bound, found by sweep (§8). What
+  the useful coupling buys, and how it degrades past the optimum, is empirical — not
+  assumed from a consensus-dynamics analogy.
 
 ### 4.2 Intensity ramp — start low, ramp on competence
 
 Early in online training the members are still poor, so the consensus is poor, so
-coupling hard to a bad consensus would **destabilize the ensemble** — every member
-chasing a meaningless average. The schedule keeps the intensity low until the members
-are good enough to trust the consensus:
+coupling hard would **destabilize training** — every member driven by a meaningless,
+noise-level deviation signal. The schedule keeps the intensity low until the members
+are good enough that their deviation signal is meaningful rather than noise:
 
 ```
-|κ|
+κ
 κ*                          ┌───────────────  hold at target κ*
                             ╱
                           ╱    ramp (gradual or small steps)
@@ -155,37 +174,46 @@ Because feedback is never off, the readouts learn under the rising coupling and 
 inference already adapted to `κ*` — there is no train/inference mismatch.
 
 **Parameters:** `kappa_start` (≈ 0), `kappa_target` (κ*), the competence gate
-(signal + threshold), and the ramp shape/rate. The schedule acts on the **magnitude**;
-the direction (toward consensus) is fixed.
+(signal + threshold), and the ramp shape/rate. The schedule moves κ over [0, κ*]; the
+sign is fixed by convention (κ > 0, §4.1).
 
-### 4.3 Clamp
+### 4.3 No clamp on the coupling drive
 
-`φ_i` passes through a bounding nonlinearity (the existing `tanh` seam on the feedback
-path) as a runaway guard. Near-linear for well-behaved (small) deviations; load-bearing
-only when the intensity is pushed hard. Whether it is applied is a config choice.
+The coupling drive `φ_i = κ·Δ_i` is injected **raw** — no bounding nonlinearity, for
+either sign of κ. The drive cannot run away: the deviation `Δ_i` is bounded by the
+members' bounded outputs, and the reservoir's own `tanh` already bounds the resulting
+state. Over-large κ degrades by saturation (§4.1), not by blow-up — so there is nothing
+for a clamp to guard.
 
 ---
 
-## 5. Members and diversity
+## 5. Members — one shared config, different seeds
 
-The coupling exploits error **independence** between members; identical members have
-zero deviation and contribute nothing to average out. Diversity sources, by cost:
+All M members are built from a **single shared base configuration**. They are identical
+ESNs in every structural respect — same `dim`, `spectral_radius`, `leak_rate`,
+`input_scaling`, `num_inputs`, `history_depth`, `history_floor`, activation
+(`lorentz_gamma` / `lorentz_inv_sigma2`), `bias_scaling`, `feedback_scaling`,
+`num_feedback_channels = D`, and the same readout architecture. Members are **not**
+tuned to different operating points.
 
-1. **Reservoir weight seed** (always) — distinct `reservoir.seed` per member. Primary,
-   cheapest axis.
-2. **Input scaling / spectral radius** per member — spreads operating points.
-3. **Activation shape** per member (e.g. plain `tanh` vs the Lorentzian `A`) —
-   different return maps and empirically decorrelated errors. Opt-in beyond the
-   seed-only default; widens the member-config surface.
+They differ in exactly two fields, both random seeds:
+
+- **`seed`** — the reservoir weight seed: a different random realization of the
+  recurrent / input / feedback weight blocks per member.
+- **`bias_seed`** — the per-neuron bias seed: a different random bias vector per member
+  (`bias_scaling` is shared, so the bias *magnitude* matches; only its realization
+  differs).
+
+That is the **entire** source of member diversity. Identical dynamics under different
+random realizations decorrelate the members' errors — which is what makes the
+deviations `Δ_i` informative — while the shared base config keeps the members on the
+same operating point and directly comparable in output space (§2). The orchestrator
+assigns the M distinct seed pairs (e.g. derived from one ensemble seed).
 
 **M (member count).** Parameter, default 3. Variance reduction ~1/M for independent
 errors; returns diminish while cost grows linearly (M reservoirs stepped per online
 step). 3 is the smallest M for which a median is meaningful. No hard upper bound; small
 M is the demonstration target.
-
-**Over-coupling vs diversity.** The same coupling that aligns members erodes the
-diversity it needs; member diversity must be chosen and preserved against `|κ|` — the
-central trade-off, made concrete by the κ sweep (§8).
 
 ---
 
@@ -198,7 +226,7 @@ central trade-off, made concrete by the κ sweep (§8).
   the decorrelating regimes the coupling targets. Loses exact conservation and
   smoothness; for M = 3 it is the middle value per channel.
 
-Config choice; default mean, median for robustness studies.
+Config choice; default mean, median for robustness studies.  We will want to explore the effects of both.
 
 ---
 
@@ -220,7 +248,7 @@ public but reached through the private `reservoir_`. So the seam is one `ESN` me
 // proposed — additive, behavior-preserving (existing StepLive untouched)
 void ESN::StepLiveExternalFeedback(const float* inputs,    // NumInputs() floats (task input)
                                    const float* feedback);  // num_feedback_channels (= D) floats
-//   for c in [0, D):  reservoir_->InjectFeedback(c, clamp ? tanh(feedback[c]) : feedback[c])
+//   for c in [0, D):  reservoir_->InjectFeedback(c, feedback[c])   // injected raw, no clamp
 //   for ch in inputs: reservoir_->InjectInput(ch, inputs[ch])
 //   reservoir_->Step()      // F is never evaluated
 ```
@@ -290,8 +318,9 @@ commits only to these baselines and the κ sweep being decisive.
 **Risks / caveats:**
 - **Correlated errors from shared training data** cap what the consensus can average
   out; diversity (§5) is the mitigation.
-- **Over-coupling collapses the benefit** (§4.1): strong `|κ|` synchronizes outputs and
-  destroys the independence the consensus depends on.
+- **Over-driving collapses the benefit** (§4.1): too large a κ lets the injected drive
+  dominate the dynamics (saturation, swamped input), degrading members and the
+  independence the consensus depends on.
 - **Common-mode bias is invisible to coupling.** If all members drift the same way the
   consensus drifts with them and every Δ_i → 0; coupling controls disagreement, not
   shared bias.
@@ -303,28 +332,9 @@ commits only to these baselines and the κ sweep being decisive.
 - **Feedback-less / averaging-only ensembles** — trivial for a consumer to build from
   independent `ESN`s; no footprint here (§1).
 - **Batch mode** — feedback cannot exist there (§1).
-- **Repulsive coupling (push members apart)** — unstable runtime signal, no known-good
-  setting.
 - **Weighted / learned combiners (stacking)** — consensus is mean/median only in v1.
 - **Large M / topologies beyond mean-field** — v1 is small-M, all-to-all.
 - **Demonstration examples** — built after the capability lands.
-
----
-
-## 10. Related work (UNVERIFIED — carried from concept notes; needs a lit pass)
-
-Not re-verified; do not rest a claim on these without checking.
-- *Consensus / synchronization coupling* is the grounded side: linearly coupled
-  reservoir computers are reported to synchronize; reservoir ensembles combined through
-  their feedback lines are reported to beat a single reservoir — both couple to
-  combine/synchronize.
-- *Diversity-by-repulsion* is classically a **training-time** idea
-  (negative-correlation learning, the ambiguity decomposition), not a runtime feedback
-  signal.
-
-**Action:** a moderate literature pass to confirm/retire each pointer and check whether
-runtime consensus coupling of an ESN ensemble through the feedback weights, with a
-competence-gated intensity ramp, has a named precedent.
 
 ---
 
@@ -335,8 +345,5 @@ competence-gated intensity ramp, has a named precedent.
    inter-member agreement) and what threshold opens the ramp.
 3. **Ramp shape/rate** — gradual vs stepwise, and how slow relative to online readout
    adaptation.
-4. **Intensity magnitude** — the upper bound on `|κ|` before over-synchronization.
-5. **Member diversity** — how much seed (and optional activation/scaling) diversity is
-   needed for informative deviations, and how coupling erodes it.
-6. **Consensus statistic** — mean (conservative) vs median (robust) under divergence.
-7. **Clamp form** — `tanh` on `φ_i` vs a per-channel slew/magnitude cap.
+4. **Intensity magnitude** — the useful range of κ and where over-driving begins to
+   degrade members (the sign is fixed by convention, §4.1).
