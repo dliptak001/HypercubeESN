@@ -156,14 +156,18 @@ are good enough that their deviation signal is meaningful rather than noise:
                             ╱
                           ╱    ramp (gradual or small steps)
  κ₀ (≈0) ─────────────────
-          └─── low while training error > threshold ───┘└ ramp once it crosses ┘
+          └─── low while consensus error > threshold ──┘└ ramp once it crosses ┘
 ```
 
 - **Start** at `κ₀` (zero or low): the mechanism is live but barely biting.
-- **Gate on competence.** Hold `κ₀` until the **training error crosses a low
-  threshold** — the members have learned the task well enough that their consensus is
-  meaningful. (Competence-signal options: per-member training error, ensemble/consensus
-  error, or inter-member agreement; default per-member training error — open, §11.)
+- **Gate on competence — measured on the ensemble output.** Hold `κ₀` until the
+  **ensemble's training error crosses a low threshold**. The competence signal is the
+  error of the **consensus output** `c` against the target — **not** per-member errors:
+  `c` is the quantity the ensemble actually delivers, and (being an average) it reaches
+  competence at least as cleanly as any single member. This keeps the gate to **one
+  scalar error stream** instead of M. The class maintains **one running estimate** of
+  this error (e.g. an EMA or windowed mean of the per-step consensus error); the gate
+  reads it. The exact smoothing and threshold are tunable (§11.2).
 - **Ramp** the intensity up to target `κ*` once the gate opens — gradually
   (linear/smooth) or in small steps with dwell. The ramp should be slow relative to the
   readout's online adaptation, so the readouts track the rising coupling rather than
@@ -175,9 +179,9 @@ inference already adapted to `κ*` — there is no train/inference mismatch.
 
 **Ownership — the class drives κ, not the consumer.** The ramp is **owned by
 `EnsembleESN`**. Its schedule parameters — `kappa_start` (≈ 0), `kappa_target` (κ*), the
-competence gate (signal + threshold), and the ramp shape/rate — are **constructor
-config**. The class advances κ internally on each `Step`: it holds the members, so it
-owns the per-member competence signal the gate reads, and the consumer never computes
+competence gate (threshold), and the ramp shape/rate — are **constructor
+config**. The class advances κ internally on each `Step`: it forms the consensus, so it
+owns the single consensus-error signal the gate reads, and the consumer never computes
 κ — it just feeds data and reads the ensemble output. (`EnsembleESN` is therefore a
 *policy* object, not a bare lockstep stepper.) The schedule moves κ over [0, κ*]; the
 sign is fixed by convention (κ > 0, §4.1).
@@ -398,10 +402,14 @@ class EnsembleESN {
     Combine   combine_;                              // Mean (default) | Median (§6)
     RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
     float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
+    float     consensus_err_;                        // running estimate (EMA/window) of the consensus-vs-
+                                                     // target error — the competence signal (§4.2 / G3)
     std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback,
-                                                     // §7.2), readout built via no-arg InitOnline()
+                                                     // §7.2), readout born ready (built in ctor, §7.1)
 
-    void AdvanceKappa(const float* target);          // class-owned competence-gated ramp (§4.2)
+    // class-owned competence-gated ramp (§4.2): fold this step's consensus error
+    // into consensus_err_, and once it crosses the gate threshold, step kappa_ → κ*.
+    void AdvanceKappa(const float* c_out, const float* target);
 
     // one lockstep online step; writes consensus c(t). target == nullptr at inference.
     void Step(const float* input, const float* target, float* c_out) {
@@ -415,7 +423,7 @@ class EnsembleESN {
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
             esn_[i]->StepLiveExternalFeedback(input, phi.data());               // the §7.2 seam
         }
-        AdvanceKappa(target);    // class drives κ via the competence-gated ramp (§4.2) — not the caller
+        AdvanceKappa(c_out, target);  // class drives κ from the consensus error (§4.2/G3) — not the caller
         ++t_;
     }
 };
@@ -478,8 +486,9 @@ commits only to these baselines and the κ sweep being decisive.
 ## 11. Open questions
 
 1. **Does the coupling beat the κ = 0 point?** The decisive A/B (§8).
-2. **Competence gate** — which signal (per-member error / consensus error /
-   inter-member agreement) and what threshold opens the ramp.
+2. **Competence gate** — the signal is fixed: the running error of the **ensemble
+   (consensus) output** vs target (§4.2). Still open: the smoothing (EMA factor vs
+   window length) and the threshold value that opens the ramp.
 3. **Ramp shape/rate** — gradual vs stepwise, and how slow relative to online readout
    adaptation.
 4. **Intensity magnitude** — the useful range of κ and where over-driving begins to

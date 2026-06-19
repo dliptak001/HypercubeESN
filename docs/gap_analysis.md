@@ -56,7 +56,11 @@ members `ResetReservoirOnly()` together?
 warmup-is-uncoupled note, and reset semantics.
 
 ### G3. Competence-signal plumbing is unspecified (beyond the open *choice*)
-**Status:** open
+**Status:** RESOLVED (§4.2 / §7.3). Simplified per user: gate on the **ensemble
+(consensus) output** error, not per-member errors — one scalar stream, not M. The class
+keeps one running estimate `consensus_err_` (EMA/window of per-step consensus-vs-target
+error); `AdvanceKappa(c_out, target)` folds each step's error in and opens the ramp when
+it crosses the threshold. Signal fixed; smoothing + threshold stay open (§11.2).
 
 §4.2/§11.2 correctly mark *which* signal and *what* threshold as open. But the
 **measurement** is unspecified: online training error must be accumulated somewhere
