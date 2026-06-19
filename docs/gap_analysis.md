@@ -149,12 +149,12 @@ no mechanism change.
 ## Polish — structural / minor
 
 ### G7. Section §10 is missing entirely
-**Status:** open
+**Status:** RESOLVED. Renumbered "Open questions" §11 → §10 (no empty "Related work"
+placeholder restored — there's no drafted content for it, so renumbering is the honest
+fix). Updated the two in-text cross-refs §11.2 → §10.2 and §11.3 → §10.3; verified no §11
+reference remains in the doc.
 
-Headers run …§9, then §11. A §10 "Related work" existed in earlier notes; it's gone and
-§11 wasn't renumbered.
-
-**Recommendation:** restore §10 or renumber Open Questions to §10.
+**Recommendation:** DONE.
 
 ### G8. `|κ|` notation inconsistent with the κ > 0 convention
 **Status:** open

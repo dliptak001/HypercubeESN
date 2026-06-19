@@ -167,7 +167,7 @@ are good enough that their deviation signal is meaningful rather than noise:
   competence at least as cleanly as any single member. This keeps the gate to **one
   scalar error stream** instead of M. The class maintains **one running estimate** of
   this error (e.g. an EMA or windowed mean of the per-step consensus error); the gate
-  reads it. The exact smoothing and threshold are tunable (§11.2).
+  reads it. The exact smoothing and threshold are tunable (§10.2).
 - **Ramp** the intensity up to target `κ*` once the gate opens — gradually
   (linear/smooth) or in small steps with dwell. The ramp should be slow relative to the
   readout's online adaptation, so the readouts track the rising coupling rather than
@@ -195,7 +195,7 @@ binding rule is the ramp interaction above: the κ ramp must stay slow *relative
 adaptation, which fails if the readouts stop adapting — so **`lr` is held effectively
 constant (or floored) through the ramp**, never annealed toward zero while κ is still
 moving. Annealing `lr` is optional and only *after* κ reaches κ* and holds (a convergence
-refinement); that schedule is tunable (§11.3). Note this is the ESN *online* `lr` passed
+refinement); that schedule is tunable (§10.3). Note this is the ESN *online* `lr` passed
 per step, not `ReadoutConfig`'s batch cosine fields, which the online path ignores.
 
 ### 4.3 No clamp on the coupling drive
@@ -566,7 +566,7 @@ read off a live ensemble (per-member outputs, current κ, gate state) are the
 
 ---
 
-## 11. Open questions
+## 10. Open questions
 
 1. **Does the coupling beat the κ = 0 point?** The decisive A/B (§8).
 2. **Competence gate** — the signal is fixed: the running error of the **ensemble
