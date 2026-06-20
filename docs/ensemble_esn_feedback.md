@@ -363,30 +363,26 @@ just the schedule's left edge.)
 
 **The substrate is sound and is reused (Reservoir).** Per-vertex state update already adds
 a feedback term identical in form to the input term —
-`Σ_i vtx_feedback_[v ^ NearestMask(i)] · fw[i]` (`Reservoir.cpp:241-245`) — fed by an
-independent `n_·dim_` weight block (`:64`), scaled by `feedback_scaling` (`:93`), and
-**excluded from the spectral-radius rescale** (`:139`, exactly as input is).
-`InjectFeedback(channel, value)` (`:269-277`) block-partitions the N vertices into
+`Σ_i vtx_feedback_[v ^ NearestMask(i)] · fw[i]` (`Reservoir.cpp:266-270`) — fed by an
+independent `n_·dim_` weight block (`:68`), scaled by `feedback_scaling` (`:118`), and
+**excluded from the spectral-radius rescale** (`:164`, exactly as input is).
+`InjectFeedback(channel, value)` (`:294-303`) block-partitions the N vertices into
 `num_feedback_channels` regions and broadcasts each value to its block. This is precisely
 the D-channel external drive the ensemble needs. Reservoir touch-ups:
 
-- **Verify it first.** This path was never exercised end-to-end. Before building on it, a
-  standalone test injects a known `φ` and confirms the state responds as predicted —
-  retiring the "never tested" risk. (Substrate is a *twin of the input port*, so this is a
-  small, well-scoped test.)
 - *Ergonomics (optional):* a vector-form `InjectFeedback(const float* φ, size_t count)`
   that loops the per-channel call.
 - *Relax the divisibility throw* (`:50`) to permit any **D ≤ N**. The guard is
   conservative, not load-bearing (verified): when D ∤ N only the `N mod D` (`≤ D−1`) tail
   vertices go unwritten — they hold reset-zero and act as zero feedback *sources* while
-  still *receiving* coupling via the neighbor gather (`:244`); no index leaves `[0, N)`
+  still *receiving* coupling via the neighbor gather (`:269`); no index leaves `[0, N)`
   and `block ≥ 1` for any `D ≤ N`. Dropped fraction `(N mod D)/N` is negligible for the
   ensemble's small-D / large-N = 2^dim regime. No power-of-two restriction on D.
 
 **The ESN change — remove internal feedback entirely.** Binding decision: **all feedback
 is external; the ESN has no internal feedback policy.** Today the ESN builds an internal
-learned-F apparatus whenever `num_feedback_channels > 0` (the `if` block at `ESN.cpp:80-97`
-plus the `StepLive` F-injection branch at `:108-121`): `feedback_readout_`, its eager
+learned-F apparatus whenever `num_feedback_channels > 0` (the internal-F `if` block
+plus the `StepLive` F-injection branch): `feedback_readout_`, its eager
 `InitOnline`, `InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery,
 the decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by
 a guard that throws unless `num_feedback_channels == 1`. **All of it is deleted.** There is
@@ -398,7 +394,7 @@ distinguish. After removal:
   channels. No learned policy, no F readout, no telemetry — ever.
 - The `== 1` guard is gone; any **D ≤ N** is allowed (the substrate handles it, §above).
 - `ESN::StepLive(inputs)` becomes **input-only** — the `tanh(F(x))`-on-channel-0 branch
-  (`:108-121`) is removed with F. It serves the no-feedback case.
+  is removed with F. It serves the no-feedback case.
 - `ESN::StepLiveExternalFeedback(inputs, φ)` (below) is the **only** way feedback enters.
 - **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
   `Readout` ctor**, so there is no readout-init step at all: members are born ready and the
