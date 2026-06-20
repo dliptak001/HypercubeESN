@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include "../ESN.h"
+#include "../EnsembleESN.h"
 
 namespace py = pybind11;
 
@@ -385,5 +386,163 @@ PYBIND11_MODULE(_core, m)
             s.weights.assign(w.data(), w.data() + w.size());
             self.SetReadoutState(s);
         })
+        ;
+
+    // ── EnsembleESN: consensus feedback coupling of M ESN members ──
+    // Online-only, feedback-only (design docs/ensemble_esn_feedback.md). Members
+    // share one base config and differ only by a derived reservoir seed. The
+    // "One D, three roles" identity is enforced here: num_feedback_channels is
+    // set from num_outputs, so the Python caller passes a single D.
+    py::class_<EnsembleESN>(m, "_EnsembleESN")
+        .def(py::init([](size_t dim, uint64_t ensemble_seed, size_t num_members,
+                         const char* combine,
+                         float spectral_radius, float input_scaling, float leak_rate,
+                         size_t num_inputs, size_t history_depth, float history_floor,
+                         size_t num_outputs, float feedback_scaling, float bias_scaling,
+                         float lorentz_gamma, float lorentz_inv_sigma2,
+                         float output_fraction,
+                         int readout_num_layers, int readout_conv_channels,
+                         const char* readout_activation, unsigned readout_seed,
+                         float lr, float weight_decay,
+                         size_t washout, size_t resequence_washout,
+                         float kappa_start, float kappa_target, float kappa_ramp_rate,
+                         float gate_threshold, float gate_err_ema_alpha) {
+            EnsembleConfig cfg;
+            ReservoirConfig& r = cfg.base.reservoir;
+            r.dim                    = dim;
+            r.spectral_radius        = spectral_radius;
+            r.input_scaling          = input_scaling;
+            r.leak_rate              = leak_rate;
+            r.num_inputs             = num_inputs;
+            r.history_depth          = history_depth;
+            r.history_floor          = history_floor;
+            r.num_feedback_channels  = num_outputs;   // One D, three roles
+            r.feedback_scaling       = feedback_scaling;
+            r.bias_scaling           = bias_scaling;
+            r.lorentz_gamma          = lorentz_gamma;
+            r.lorentz_inv_sigma2     = lorentz_inv_sigma2;
+            // r.seed is derived per member by the EnsembleESN ctor; r.verbose is
+            // forced false per member there (no per-member banners).
+            cfg.base.output_fraction = output_fraction;
+
+            ReadoutConfig& ro = cfg.base.readout;
+            ro.num_outputs   = static_cast<int>(num_outputs);
+            ro.task          = ReadoutTask::Regression;   // ensemble couples in output space
+            ro.num_layers    = readout_num_layers;
+            ro.conv_channels = readout_conv_channels;
+            ro.seed          = readout_seed;
+            if      (std::strcmp(readout_activation, "relu")       == 0) ro.activation = ReadoutActivation::RELU;
+            else if (std::strcmp(readout_activation, "leaky_relu") == 0) ro.activation = ReadoutActivation::LEAKY_RELU;
+            else if (std::strcmp(readout_activation, "none")       == 0) ro.activation = ReadoutActivation::NONE;
+            else if (std::strcmp(readout_activation, "tanh")       == 0) ro.activation = ReadoutActivation::TANH;
+            else throw std::invalid_argument(
+                std::string("readout_activation must be one of "
+                            "'tanh', 'relu', 'leaky_relu', 'none' (got '") + readout_activation + "')");
+
+            cfg.ensemble_seed = ensemble_seed;
+            cfg.num_members   = num_members;
+            if      (std::strcmp(combine, "median") == 0) cfg.combine = Combine::Median;
+            else if (std::strcmp(combine, "mean")   == 0) cfg.combine = Combine::Mean;
+            else throw std::invalid_argument(
+                std::string("combine must be 'mean' or 'median' (got '") + combine + "')");
+            cfg.lr                 = lr;
+            cfg.weight_decay       = weight_decay;
+            cfg.washout            = washout;
+            cfg.resequence_washout = resequence_washout;
+            cfg.kappa_start        = kappa_start;
+            cfg.kappa_target       = kappa_target;
+            cfg.kappa_ramp_rate    = kappa_ramp_rate;
+            cfg.gate_threshold     = gate_threshold;
+            cfg.gate_err_ema_alpha = gate_err_ema_alpha;
+            return std::make_unique<EnsembleESN>(cfg);
+        }),
+            py::arg("dim"),
+            py::arg("ensemble_seed")        = 73895ULL,
+            py::arg("num_members")          = 3ULL,
+            py::arg("combine")              = "mean",
+            py::arg("spectral_radius")      = 0.99f,
+            py::arg("input_scaling")        = 0.5f,
+            py::arg("leak_rate")            = 1.0f,
+            py::arg("num_inputs")           = 1ULL,
+            py::arg("history_depth")        = 16ULL,
+            py::arg("history_floor")        = 1.0f,
+            py::arg("num_outputs")          = 1ULL,
+            py::arg("feedback_scaling")     = 0.5f,
+            py::arg("bias_scaling")         = 0.02f,
+            py::arg("lorentz_gamma")        = 1.1f,
+            py::arg("lorentz_inv_sigma2")   = 250.0f,
+            py::arg("output_fraction")      = 1.0f,
+            py::arg("readout_num_layers")   = 0,
+            py::arg("readout_conv_channels")= 16,
+            py::arg("readout_activation")   = "tanh",
+            py::arg("readout_seed")         = 42u,
+            py::arg("lr")                   = 0.01f,
+            py::arg("weight_decay")         = 0.0f,
+            py::arg("washout")              = 100ULL,
+            py::arg("resequence_washout")   = 16ULL,
+            py::arg("kappa_start")          = 0.0f,
+            py::arg("kappa_target")         = 0.5f,
+            py::arg("kappa_ramp_rate")      = 0.0f,
+            py::arg("gate_threshold")       = 0.0f,
+            py::arg("gate_err_ema_alpha")   = 0.05f)
+
+        // ── Lockstep online step ──
+        .def("step", [](EnsembleESN& self,
+                        py::array_t<float, py::array::c_style | py::array::forcecast> input,
+                        py::object target) {
+            auto ibuf = input.request();
+            if (static_cast<size_t>(ibuf.size) != self.NumInputs())
+                throw std::invalid_argument(
+                    "input size (" + std::to_string(ibuf.size) +
+                    ") must equal num_inputs (" + std::to_string(self.NumInputs()) + ")");
+
+            const float* tptr = nullptr;
+            py::array_t<float, py::array::c_style | py::array::forcecast> tarr;
+            if (!target.is_none()) {
+                tarr = target.cast<py::array_t<float, py::array::c_style | py::array::forcecast>>();
+                if (static_cast<size_t>(tarr.request().size) != self.NumOutputs())
+                    throw std::invalid_argument(
+                        "target size (" + std::to_string(tarr.request().size) +
+                        ") must equal num_outputs (" + std::to_string(self.NumOutputs()) + ")");
+                tptr = static_cast<const float*>(tarr.request().ptr);
+            }
+
+            py::array_t<float> c_out(self.NumOutputs());
+            self.Step(static_cast<const float*>(ibuf.ptr), tptr, c_out.mutable_data());
+            return c_out;
+        },
+            py::arg("input"), py::arg("target") = py::none(),
+            "One lockstep online step across all members. Injects task `input`,\n"
+            "(when `target` is given) trains each readout, couples members via the\n"
+            "consensus deviation, and steps. Returns the consensus (num_outputs,).\n"
+            "Pass target=None for inference (no readout update; kappa holds).")
+
+        .def("begin_sequence", &EnsembleESN::BeginSequence,
+             "Start a fresh sequence: reset every member's reservoir state and\n"
+             "re-impose the short washout. The kappa schedule and competence\n"
+             "already achieved are preserved.")
+
+        // ── Diagnostic surface (read-only) ──
+        .def("member_output", [](const EnsembleESN& self, size_t i) {
+            py::array_t<float> arr(self.NumOutputs());
+            self.MemberOutput(i, arr.mutable_data());
+            return arr;
+        }, py::arg("i"),
+           "Member i's last output (num_outputs,) — the value behind the consensus.")
+
+        .def("all_member_outputs", [](const EnsembleESN& self) {
+            size_t M = self.NumMembers(), D = self.NumOutputs();
+            py::array_t<float> arr({M, D});
+            self.AllMemberOutputs(arr.mutable_data());
+            return arr;
+        }, "All members' last outputs as an (num_members, num_outputs) array.")
+
+        // ── Properties ──
+        .def_property_readonly("kappa", &EnsembleESN::Kappa)
+        .def_property_readonly("gate_open", &EnsembleESN::GateOpen)
+        .def_property_readonly("current_step", &EnsembleESN::CurrentStep)
+        .def_property_readonly("num_members", &EnsembleESN::NumMembers)
+        .def_property_readonly("num_outputs", &EnsembleESN::NumOutputs)
+        .def_property_readonly("num_inputs", &EnsembleESN::NumInputs)
         ;
 }

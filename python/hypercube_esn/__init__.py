@@ -20,10 +20,10 @@ import pathlib
 import pickle
 import numpy as np
 
-from ._core import _ESN
+from ._core import _ESN, _EnsembleESN
 
-__version__ = "1.2.0"
-__all__ = ["ESN"]
+__version__ = "1.3.0"
+__all__ = ["ESN", "EnsembleESN"]
 
 # Valid hypercube dimensions (matches the C++ Reservoir::Create [5, 16] check).
 _DIM_MIN = 5
@@ -956,3 +956,232 @@ class ESN:
         if not isinstance(obj, cls):
             raise TypeError(f"Expected ESN, got {type(obj).__name__}")
         return obj
+
+
+class EnsembleESN:
+    """Consensus feedback coupling of M ESN members.
+
+    M members share one base configuration and differ only by a derived
+    reservoir seed, so they share the hypercube topology but carry different
+    random weight realizations (decorrelating their errors). Every online step,
+    the ensemble reads each member's output, forms the consensus ``c`` (mean or
+    median), and injects each member's scaled deviation ``phi_i = kappa*(y_i-c)``
+    on its feedback channels before stepping — a single-step closed loop.
+
+    The class is **online-only and feedback-only**: there is no batch path and no
+    feedback-less mode. The coupling intensity ``kappa`` rises on a
+    competence-gated ramp the class owns — held at ``kappa_start`` until the
+    smoothed consensus error crosses ``gate_threshold``, then ramped to
+    ``kappa_target``.
+
+    "One D, three roles": the output dimension, the readout output count, and the
+    per-member feedback-channel count are the same number — you pass it once as
+    ``num_outputs``.
+
+    Parameters
+    ----------
+    dim : int
+        Hypercube dimension (5-16); each member has N = 2^dim neurons.
+    num_members : int
+        M, the member count. Default 3 (the smallest M for which a median is
+        meaningful). M >= 1; ``combine="median"`` requires M >= 3.
+    combine : str
+        Consensus statistic: ``"mean"`` (default) or ``"median"`` (per channel).
+    ensemble_seed : int
+        Master seed; per-member seeds are derived from it. Equal ensemble seeds
+        reproduce the whole ensemble exactly. Default: 73895.
+    num_outputs : int
+        Output dimension D = readout outputs = feedback channels. Default: 1.
+    spectral_radius, input_scaling, leak_rate, num_inputs, history_depth, \
+    history_floor, feedback_scaling, bias_scaling, lorentz_gamma, \
+    lorentz_inv_sigma2, output_fraction :
+        Shared reservoir parameters (see :class:`ESN`). Identical across members.
+    readout_num_layers, readout_conv_channels, readout_activation, readout_seed :
+        Shared readout (HCNN) architecture. The readout trains online via
+        regression; the batch cosine-schedule fields do not apply.
+    lr, weight_decay : float
+        Shared online learning rate / L2, passed to every member's readout each
+        training step. Held constant through the kappa ramp. Defaults: 0.01, 0.0.
+    washout : int
+        W — initial steps with the readout update suppressed (transient washout).
+        Default: 100.
+    resequence_washout : int
+        Short washout re-imposed at each :meth:`begin_sequence`. Default: 16.
+    kappa_start, kappa_target : float
+        Start and target coupling intensity. Defaults: 0.0, 0.5.
+    kappa_ramp_rate : float
+        Per-step linear increment of kappa once the gate opens. <= 0 snaps to
+        ``kappa_target`` immediately. Default: 0.0 (snap).
+    gate_threshold : float
+        The ramp opens once the smoothed consensus |error| falls below this.
+        **Default 0.0 means the gate never fires** (kappa stays at
+        ``kappa_start`` — the kappa=0 baseline); set a positive value for a
+        coupled run.
+    gate_err_ema_alpha : float
+        EMA factor for the running consensus-error estimate, in (0, 1].
+        Default: 0.05.
+
+    Examples
+    --------
+    >>> import numpy as np, hypercube_esn as he
+    >>> ens = he.EnsembleESN(dim=6, num_members=3, num_outputs=1,
+    ...                      gate_threshold=0.2, kappa_target=0.2)
+    >>> sig = np.sin(0.1 * np.arange(4000)).astype(np.float32)
+    >>> c = np.zeros(1, np.float32)
+    >>> for t in range(len(sig) - 1):
+    ...     c = ens.step(sig[t], sig[t + 1])     # input, next-step target
+    >>> ens.kappa, ens.gate_open
+    """
+
+    _DIM_MIN = 5
+    _DIM_MAX = 16
+
+    def __init__(
+        self,
+        dim: int,
+        *,
+        num_members: int = 3,
+        combine: str = "mean",
+        ensemble_seed: int = 73895,
+        num_outputs: int = 1,
+        spectral_radius: float = 0.99,
+        input_scaling: float = 0.5,
+        leak_rate: float = 1.0,
+        num_inputs: int = 1,
+        history_depth: int = 16,
+        history_floor: float = 1.0,
+        feedback_scaling: float = 0.5,
+        bias_scaling: float = 0.02,
+        lorentz_gamma: float = 1.1,
+        lorentz_inv_sigma2: float = 250.0,
+        output_fraction: float = 1.0,
+        readout_num_layers: int = 0,
+        readout_conv_channels: int = 16,
+        readout_activation: str = "tanh",
+        readout_seed: int = 42,
+        lr: float = 0.01,
+        weight_decay: float = 0.0,
+        washout: int = 100,
+        resequence_washout: int = 16,
+        kappa_start: float = 0.0,
+        kappa_target: float = 0.5,
+        kappa_ramp_rate: float = 0.0,
+        gate_threshold: float = 0.0,
+        gate_err_ema_alpha: float = 0.05,
+    ):
+        if not (self._DIM_MIN <= dim <= self._DIM_MAX):
+            raise ValueError(f"dim must be {self._DIM_MIN}-{self._DIM_MAX}, got {dim}")
+        self._impl = _EnsembleESN(
+            dim=dim,
+            ensemble_seed=ensemble_seed,
+            num_members=num_members,
+            combine=combine,
+            spectral_radius=spectral_radius,
+            input_scaling=input_scaling,
+            leak_rate=leak_rate,
+            num_inputs=num_inputs,
+            history_depth=history_depth,
+            history_floor=history_floor,
+            num_outputs=num_outputs,
+            feedback_scaling=feedback_scaling,
+            bias_scaling=bias_scaling,
+            lorentz_gamma=lorentz_gamma,
+            lorentz_inv_sigma2=lorentz_inv_sigma2,
+            output_fraction=output_fraction,
+            readout_num_layers=readout_num_layers,
+            readout_conv_channels=readout_conv_channels,
+            readout_activation=readout_activation,
+            readout_seed=readout_seed,
+            lr=lr,
+            weight_decay=weight_decay,
+            washout=washout,
+            resequence_washout=resequence_washout,
+            kappa_start=kappa_start,
+            kappa_target=kappa_target,
+            kappa_ramp_rate=kappa_ramp_rate,
+            gate_threshold=gate_threshold,
+            gate_err_ema_alpha=gate_err_ema_alpha,
+        )
+
+    def step(
+        self, input: np.ndarray, target: np.ndarray | None = None
+    ) -> np.ndarray:
+        """One lockstep online step; returns the consensus output.
+
+        Parameters
+        ----------
+        input : ndarray or float
+            Task input for this step, shape ``(num_inputs,)`` (a scalar is
+            accepted when ``num_inputs == 1``). Converted to float32.
+        target : ndarray or float, optional
+            Regression target, shape ``(num_outputs,)``. When given (and past the
+            washout), each member's readout takes an online update toward it.
+            Pass ``None`` for inference: no update is taken and kappa holds.
+
+        Returns
+        -------
+        ndarray
+            The consensus ``c`` for this step, shape ``(num_outputs,)`` float32 —
+            the ensemble's output.
+        """
+        t = None if target is None else _to_float32(target)
+        return self._impl.step(_to_float32(input), t)
+
+    def begin_sequence(self) -> None:
+        """Start a fresh, independent sequence.
+
+        Resets every member's reservoir state together (trained readouts
+        preserved) and re-imposes the short ``resequence_washout``. The kappa
+        schedule, the competence already achieved, and the step counter are not
+        rewound.
+        """
+        self._impl.begin_sequence()
+
+    def member_output(self, i: int) -> np.ndarray:
+        """Member ``i``'s last output (shape ``(num_outputs,)``).
+
+        The value used to form the most recent consensus, not a fresh
+        re-evaluation.
+        """
+        return self._impl.member_output(i)
+
+    def all_member_outputs(self) -> np.ndarray:
+        """All members' last outputs, shape ``(num_members, num_outputs)``."""
+        return self._impl.all_member_outputs()
+
+    @property
+    def kappa(self) -> float:
+        """Current coupling intensity (the operating point of the ramp)."""
+        return self._impl.kappa
+
+    @property
+    def gate_open(self) -> bool:
+        """Whether the competence-gated kappa ramp has triggered."""
+        return self._impl.gate_open
+
+    @property
+    def current_step(self) -> int:
+        """Monotone step counter t."""
+        return self._impl.current_step
+
+    @property
+    def num_members(self) -> int:
+        """Member count M."""
+        return self._impl.num_members
+
+    @property
+    def num_outputs(self) -> int:
+        """Output dimension D (= feedback channels)."""
+        return self._impl.num_outputs
+
+    @property
+    def num_inputs(self) -> int:
+        """Task input width."""
+        return self._impl.num_inputs
+
+    def __repr__(self) -> str:
+        return (
+            f"EnsembleESN(M={self.num_members}, D={self.num_outputs}, "
+            f"step={self.current_step}, kappa={self.kappa:.4g}, "
+            f"gate_open={self.gate_open})"
+        )

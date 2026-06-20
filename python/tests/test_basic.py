@@ -13,7 +13,7 @@ import pickle
 import numpy as np
 import pytest
 
-from hypercube_esn import ESN
+from hypercube_esn import ESN, EnsembleESN
 
 
 # ── Shared fixtures (each trained once per module, cheaply) ──
@@ -300,3 +300,132 @@ class TestPersistence:
             pickle.dump({"not": "an ESN"}, f)
         with pytest.raises(TypeError, match="Expected ESN"):
             ESN.load(path)
+
+
+# ── EnsembleESN: consensus feedback coupling (online-only) ──
+#
+# Kept lean (small dim, short runs). The assertions cover API correctness and
+# the *mechanical* schedule (washout -> gate -> ramp, inference holds, reset),
+# not learning quality — the latter is verified in the C++ smoke harness.
+
+class TestEnsembleConstruction:
+
+    def test_construct_defaults(self):
+        ens = EnsembleESN(dim=5)
+        assert ens.num_members == 3
+        assert ens.num_outputs == 1
+        assert ens.num_inputs == 1
+        assert ens.current_step == 0
+        assert ens.kappa == pytest.approx(0.0)
+        assert ens.gate_open is False
+
+    def test_invalid_dim(self):
+        with pytest.raises(ValueError, match="dim must be 5-16"):
+            EnsembleESN(dim=4)
+
+    def test_median_needs_three_members(self):
+        with pytest.raises(Exception, match="[Mm]edian"):
+            EnsembleESN(dim=5, num_members=2, combine="median")
+
+    def test_bad_combine_raises(self):
+        with pytest.raises(Exception, match="combine"):
+            EnsembleESN(dim=5, combine="mode")
+
+    def test_bad_activation_raises(self):
+        with pytest.raises(Exception, match="readout_activation"):
+            EnsembleESN(dim=5, readout_activation="sigmoid")
+
+    def test_multi_output_construct(self):
+        ens = EnsembleESN(dim=5, num_outputs=3)
+        assert ens.num_outputs == 3
+
+
+class TestEnsembleStep:
+
+    def _run(self, ens, steps, *, target=True):
+        sig = np.sin(0.1 * np.arange(steps + 1)).astype(np.float32)
+        out = None
+        for k in range(steps):
+            tgt = sig[k + 1:k + 2] if target else None
+            out = ens.step(sig[k:k + 1], tgt)
+        return out, sig
+
+    def test_step_shape_and_advances(self):
+        ens = EnsembleESN(dim=5, washout=20)
+        c, _ = self._run(ens, 50)
+        assert c.shape == (1,)
+        assert c.dtype == np.float32
+        assert np.all(np.isfinite(c))
+        assert ens.current_step == 50
+
+    def test_gate_fires_and_kappa_snaps(self):
+        # threshold huge => competent immediately after washout; ramp_rate 0 => snap.
+        ens = EnsembleESN(dim=5, washout=20, gate_threshold=10.0,
+                          kappa_target=0.3, kappa_ramp_rate=0.0)
+        self._run(ens, 60)
+        assert ens.gate_open is True
+        assert ens.kappa == pytest.approx(0.3)
+
+    def test_gate_held_closed_by_default_threshold(self):
+        # default gate_threshold=0.0 => never fires => kappa stays at start.
+        ens = EnsembleESN(dim=5, washout=20, kappa_target=0.5)
+        self._run(ens, 60)
+        assert ens.gate_open is False
+        assert ens.kappa == pytest.approx(0.0)
+
+    def test_inference_holds_kappa(self):
+        ens = EnsembleESN(dim=5, washout=20, gate_threshold=10.0, kappa_target=0.3)
+        self._run(ens, 40)
+        k = ens.kappa
+        ens.step(np.zeros(1, np.float32), None)  # inference
+        assert ens.kappa == pytest.approx(k)
+
+    def test_begin_sequence(self):
+        ens = EnsembleESN(dim=5, washout=20)
+        self._run(ens, 40)
+        before = ens.current_step
+        ens.begin_sequence()
+        ens.step(np.zeros(1, np.float32), np.zeros(1, np.float32))
+        assert ens.current_step == before + 1  # counter not rewound
+
+    def test_scalar_input_accepted(self):
+        ens = EnsembleESN(dim=5, washout=5)
+        c = ens.step(0.5, 0.6)  # plain floats
+        assert c.shape == (1,)
+
+    def test_wrong_input_size_raises(self):
+        ens = EnsembleESN(dim=5, num_inputs=1)
+        with pytest.raises(Exception, match="num_inputs"):
+            ens.step(np.zeros(2, np.float32), np.zeros(1, np.float32))
+
+    def test_wrong_target_size_raises(self):
+        ens = EnsembleESN(dim=5, num_outputs=2)
+        with pytest.raises(Exception, match="num_outputs"):
+            ens.step(np.zeros(1, np.float32), np.zeros(1, np.float32))
+
+
+class TestEnsembleDiagnostics:
+
+    def test_all_member_outputs_shape(self):
+        ens = EnsembleESN(dim=5, num_members=4, num_outputs=2, washout=5)
+        ens.step(np.zeros(1, np.float32), np.zeros(2, np.float32))
+        allm = ens.all_member_outputs()
+        assert allm.shape == (4, 2)
+        assert allm.dtype == np.float32
+
+    def test_member_output_matches_row(self):
+        ens = EnsembleESN(dim=5, num_members=3, washout=5)
+        ens.step(0.1, 0.2)
+        allm = ens.all_member_outputs()
+        np.testing.assert_allclose(ens.member_output(1), allm[1], atol=1e-6)
+
+    def test_member_index_out_of_range(self):
+        ens = EnsembleESN(dim=5, num_members=3, washout=5)
+        ens.step(0.1, 0.2)
+        with pytest.raises(Exception):
+            ens.member_output(3)
+
+    def test_median_runs(self):
+        ens = EnsembleESN(dim=5, num_members=3, combine="median", washout=5)
+        c, _ = TestEnsembleStep()._run(ens, 30)
+        assert np.all(np.isfinite(c))

@@ -33,6 +33,7 @@ set(CORE_SOURCES
     ${CORE_DIR}/Reservoir.cpp
     ${CORE_DIR}/ESN.cpp
     ${CORE_DIR}/Readout.cpp
+    ${CORE_DIR}/EnsembleESN.cpp
 )
 
 # ── HypercubeCNN dependency ──
