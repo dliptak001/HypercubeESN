@@ -14,29 +14,79 @@
 ///   1. Integrate Lorenz-63 (RK4), discard transient, standardize each coord.
 ///   2. TEACHER-FORCED training (open loop): drive the reservoir with the true
 ///      state on 4 input channels [x, y, z, x*y*z], train the readout to
-///      predict the next state (3 outputs). The 4th channel is a nonlinear
-///      cross-feature; 4 divides N = 2^DIM cleanly (3 does not).
+///      predict the next-step increment (3 outputs). The 4th channel is a
+///      nonlinear cross-feature; 4 divides N = 2^DIM cleanly (3 does not).
 ///   3. One-step open-loop R2/NRMSE on a held-out tail — the PARITY baseline.
 ///   4. FREE-RUN (closed loop): resync on true data, then feed each predicted
 ///      state back as the next input (rebuilding the x*y*z channel from the
 ///      prediction). Measure Valid Prediction Time (VPT): steps until the
-///      normalized error exceeds 0.4, reported in Lyapunov times.
+///      normalized error exceeds VPT_THRESH, reported in Lyapunov times.
 ///
-/// The activation (A_lorentz vs std::tanh) is the compile-time toggle in
-/// Reservoir.cpp::UpdateState. Run this once per build and compare VPT.
+/// The activation (A_lorentz vs tanh) is the LORENTZ_GAMMA knob in the config
+/// block below (0 => tanh, 1.1 => A) — runtime, no recompile of Reservoir.cpp.
+/// Switch the arm there and compare the headline median VPT.
+///
+/// This example takes NO command-line arguments. To change the run, edit the
+/// CONFIGURATION block below and rebuild.
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
+#include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <vector>
 #include "ESN.h"
 
+// ============================================================================
+//  CONFIGURATION  —  edit these, then rebuild. Everything else is mechanism.
+// ============================================================================
+namespace config
+{
+    // ---- (A) Reservoir / model ----
+    constexpr size_t   DIM             = 8;            // hypercube dimension
+    constexpr size_t   N               = 1ULL << DIM;  // neuron count = 2^DIM = 256
+    constexpr uint64_t SEED            = 73895;        // reservoir realization.
+                                                       // Locked A-vs-tanh seeds: 23, 42, 73895.
+    constexpr float    SPECTRAL_RADIUS = 0.90f;        // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float    INPUT_SCALING   = 0.10f;        // shared across all input channels
+    constexpr float    LEAK_RATE       = 1.0f;         // 1.0 = continuous flow; <1.0 (leaky) worth a sweep
+    constexpr size_t   HISTORY_DEPTH   = 16;           // delay-line depth (16 beats 32 here: ~0.7 LT more VPT)
+
+    // Activation shape — THE discriminating knob (Lorentzian envelope A(x)):
+    //   LORENTZ_GAMMA = 0     => plain tanh (the baseline arm)
+    //   LORENTZ_GAMMA = 1.1   => the "A" region-selective central-gain map
+    //   LORENTZ_GAMMA < 0     => non-monotone "fold"
+    constexpr float    LORENTZ_GAMMA      = 1.1f;      // set 0.0f for the tanh baseline arm
+    constexpr float    LORENTZ_INV_SIGMA2 = 250.0f;    // 1/sigma^2 of the envelope
+
+    // ---- (B) Readout (HCNN) ----
+    constexpr int      READOUT_EPOCHS     = 600;
+    constexpr int      READOUT_BATCH_SIZE = 64;
+
+    // ---- (C) Free-run experiment (all in integration steps; dt is fixed below) ----
+    constexpr size_t   DISCARD        = 5000;   // Lorenz transient onto the attractor
+    constexpr size_t   WARMUP         = 1000;   // reservoir washout (teacher-forced)
+    constexpr size_t   COLLECT        = 40000;  // teacher-forced training states
+    constexpr size_t   GAP            = 2000;   // separation before the free-run region
+    constexpr size_t   RESYNC         = 500;    // teacher-forced re-sync before each launch
+    constexpr size_t   HORIZON        = 2000;   // max free-run length scored per launch
+    constexpr size_t   NUM_LAUNCH     = 30;     // independent free-run launches
+    constexpr size_t   LAUNCH_STRIDE  = 800;    // spacing between launch points
+    constexpr double   TRAIN_FRACTION = 0.8;    // of COLLECT (the rest is the one-step test)
+    constexpr double   VPT_THRESH     = 0.4;    // Pathak et al. normalized-error threshold
+
+    // ---- structural (tied to the task's input/target encoding; changing one of
+    //      these means editing the channel construction in main, not just the
+    //      number) ----
+    constexpr size_t   NUM_INPUTS  = 4;   // [x, y, z, x*y*z]  (4 | N; 3 does not divide 256)
+    constexpr int      NUM_OUTPUTS = 3;   // per-step increment (dx, dy, dz)
+}
+
 namespace
 {
-    // --- Lorenz-63 canonical parameters ---
+    // --- Lorenz-63 canonical parameters (the dynamical system; not tuning) ---
     constexpr double kSigma = 10.0;
     constexpr double kRho   = 28.0;
     constexpr double kBeta  = 8.0 / 3.0;
@@ -69,38 +119,11 @@ namespace
     }
 }
 
-int main(int argc, char* argv[])
+int main()
 {
-    // Optional CLI overrides for sweeps: argv[1]=spectral_radius,
-    // argv[2]=input_scaling, argv[3]=reservoir seed, argv[4]=lorentz_gamma,
-    // argv[5]=lorentz_inv_sigma2, argv[6]=leak_rate. The activation shape is now
-    // runtime too (gamma=0 => tanh, gamma=1.1 => current A, gamma<0 => fold), so
-    // a full activation/seed sweep needs no recompile. gamma can be 0 or
-    // negative, so it is gated on argc presence, not a positive sentinel.
-    // sr/is/leak use a positive sentinel (-1 => keep source default).
-    const double cli_sr   = (argc > 1) ? std::atof(argv[1]) : -1.0;
-    const double cli_is   = (argc > 2) ? std::atof(argv[2]) : -1.0;
-    const long   cli_seed = (argc > 3) ? std::atol(argv[3]) : -1;
-    const bool   has_gamma = (argc > 4);
-    const double cli_gamma = has_gamma ? std::atof(argv[4]) : 0.0;
-    const bool   has_isig  = (argc > 5);
-    const double cli_isig  = has_isig ? std::atof(argv[5]) : 0.0;
-    const double cli_leak = (argc > 6) ? std::atof(argv[6]) : -1.0;
+    using namespace config;
 
-    // ---- geometry / budgets ----
-    constexpr size_t DIM     = 8;
-    constexpr size_t N       = 1ULL << DIM;   // 256
-    constexpr size_t DISCARD = 5000;          // Lorenz transient onto the attractor
-    constexpr size_t WARMUP  = 1000;          // reservoir washout (teacher-forced)
-    constexpr size_t COLLECT = 40000;         // teacher-forced training states
-    constexpr size_t GAP     = 2000;          // separation before the free-run region
-    constexpr size_t RESYNC  = 500;           // teacher-forced re-sync before each launch
-    constexpr size_t HORIZON = 2000;          // max free-run length scored per launch
-    constexpr size_t NUM_LAUNCH   = 30;       // independent free-run launches
-    constexpr size_t LAUNCH_STRIDE = 800;     // spacing between launch points
-    constexpr double TRAIN_FRACTION = 0.8;    // of COLLECT (rest = one-step test)
-    constexpr double VPT_THRESH = 0.4;        // Pathak et al. normalized-error threshold
-
+    // ---- derived budgets (windows into the integrated trajectory) ----
     const size_t warm_start    = DISCARD;
     const size_t collect_start = warm_start + WARMUP;
     const size_t collect_end   = collect_start + COLLECT;       // target needs s up to here
@@ -161,7 +184,7 @@ int main(int argc, char* argv[])
 
     // 4-channel input from a (normalized) state: [x, y, z, standardized(x*y*z)].
     // Shared by teacher forcing and free-run so the product channel is built
-    // identically in both regimes.
+    // identically in both regimes. (This is where NUM_INPUTS = 4 is realized.)
     auto fill_input = [&](float xn, float yn, float zn, float* out)
     {
         out[0] = xn;
@@ -174,36 +197,26 @@ int main(int argc, char* argv[])
         fill_input(nx[idx], ny[idx], nz[idx], out);
     };
 
-    // ---- 3. configure the ESN ----
+    // ---- 3. configure the ESN (all knobs from the config block above) ----
     ESNConfig cfg;
-    cfg.reservoir.dim            = DIM;
-    // depth 16 beats 32: ~0.7 lt more VPT for both arms at seed 73895, and it
-    // matches the doc-era default (#8-13). 32 was an unintended drift.
-    cfg.reservoir.history_depth = 16;
-    cfg.reservoir.num_inputs     = 4;     // x, y, z, x*y*z  (4 | N; 3 does not divide 256)
-    cfg.reservoir.spectral_radius = 0.90; // A(x): 0.90,  tanh(x): 0.95   (tune per activation)
-    cfg.reservoir.input_scaling  = 0.1;   // A(x): 0.1,   tanh(x): 0.1    (tune per activation)
-    // LOCKED general-purpose seeds (M=16, serve both tanh and A; ranked by
-    // worst-of-two-arm VPT): 23, 42, 73895. Use these for A-vs-tanh comparisons.
-    //   seed 23    : tanh 4.20 / A 3.95 lt  (strong on both)
-    //   seed 42    : tanh 3.64 / A 4.51 lt  (A champion, tanh solid)
-    //   seed 73895 : tanh 3.71 / A 3.55 lt  (balanced; reproducibility anchor / default)
-    if (cli_sr > 0)    cfg.reservoir.spectral_radius = static_cast<float>(cli_sr);
-    if (cli_is > 0)    cfg.reservoir.input_scaling   = static_cast<float>(cli_is);
-    if (cli_seed >= 0) cfg.reservoir.seed            = static_cast<uint64_t>(cli_seed);
-    if (has_gamma)     cfg.reservoir.lorentz_gamma      = static_cast<float>(cli_gamma);
-    if (has_isig)      cfg.reservoir.lorentz_inv_sigma2 = static_cast<float>(cli_isig);
-    cfg.reservoir.leak_rate      = 1.0;   // continuous flow; <1.0 (leaky) is worth a sweep
-    if (cli_leak > 0) cfg.reservoir.leak_rate = static_cast<float>(cli_leak); // argv[6]
-    cfg.readout.task             = ReadoutTask::Regression;
-    cfg.readout.num_outputs      = 3;     // predict per-step increment (dx, dy, dz)
-    cfg.readout.epochs           = 600;
-    cfg.readout.batch_size       = 64;
-    cfg.readout.activation       = ReadoutActivation::TANH;
+    cfg.reservoir.dim                = DIM;
+    cfg.reservoir.history_depth      = HISTORY_DEPTH;
+    cfg.reservoir.num_inputs         = NUM_INPUTS;
+    cfg.reservoir.spectral_radius    = SPECTRAL_RADIUS;
+    cfg.reservoir.input_scaling      = INPUT_SCALING;
+    cfg.reservoir.leak_rate          = LEAK_RATE;
+    cfg.reservoir.seed               = SEED;
+    cfg.reservoir.lorentz_gamma      = LORENTZ_GAMMA;
+    cfg.reservoir.lorentz_inv_sigma2 = LORENTZ_INV_SIGMA2;
+    cfg.readout.task                 = ReadoutTask::Regression;
+    cfg.readout.num_outputs          = NUM_OUTPUTS;   // predict per-step increment (dx, dy, dz)
+    cfg.readout.epochs               = READOUT_EPOCHS;
+    cfg.readout.batch_size           = READOUT_BATCH_SIZE;
+    cfg.readout.activation           = ReadoutActivation::TANH;  // CNN readout activation (distinct from the reservoir A/tanh arm)
     ESN esn(cfg);
 
     std::cout << "  Config: DIM=" << DIM << "  N=" << N
-              << "  inputs=4 [x,y,z,xyz]  outputs=3\n";
+              << "  inputs=" << NUM_INPUTS << " [x,y,z,xyz]  outputs=" << NUM_OUTPUTS << "\n";
     std::cout << "  spectral_radius=" << cfg.reservoir.spectral_radius
               << " (realized ~ measured at build)"
               << "  input_scaling=" << cfg.reservoir.input_scaling
@@ -217,28 +230,28 @@ int main(int argc, char* argv[])
               << "\n\n";
 
     // ---- 4. teacher-forced training (open loop) ----
-    std::vector<float> inputs_wc((WARMUP + COLLECT) * 4);
+    std::vector<float> inputs_wc((WARMUP + COLLECT) * NUM_INPUTS);
     for (size_t i = 0; i < WARMUP + COLLECT; ++i)
-        make_input(warm_start + i, &inputs_wc[i * 4]);
+        make_input(warm_start + i, &inputs_wc[i * NUM_INPUTS]);
 
     // Target is the per-step INCREMENT delta = s(t+1) - s(t), not the next state
     // directly: for an ODE flow the readout learns the small change with less
     // systematic bias, and free-run reconstructs s(t+1) = s(t) + delta.
-    std::vector<float> targets(COLLECT * 3);
+    std::vector<float> targets(COLLECT * NUM_OUTPUTS);
     for (size_t i = 0; i < COLLECT; ++i)
     {
         const size_t t0 = collect_start + i;      // just-input state
         const size_t t1 = t0 + 1;                 // next state
-        targets[i * 3 + 0] = nx[t1] - nx[t0];
-        targets[i * 3 + 1] = ny[t1] - ny[t0];
-        targets[i * 3 + 2] = nz[t1] - nz[t0];
+        targets[i * NUM_OUTPUTS + 0] = nx[t1] - nx[t0];
+        targets[i * NUM_OUTPUTS + 1] = ny[t1] - ny[t0];
+        targets[i * NUM_OUTPUTS + 2] = nz[t1] - nz[t0];
     }
 
     const size_t train_size = static_cast<size_t>(COLLECT * TRAIN_FRACTION);
     const size_t test_size  = COLLECT - train_size;
 
     esn.Warmup(inputs_wc.data(), WARMUP);
-    esn.Run(inputs_wc.data() + WARMUP * 4, COLLECT);
+    esn.Run(inputs_wc.data() + WARMUP * NUM_INPUTS, COLLECT);
 
     std::cout << "  Training readout (" << cfg.readout.epochs << " epochs)..." << std::flush;
     auto t0 = std::chrono::steady_clock::now();
@@ -267,8 +280,8 @@ int main(int argc, char* argv[])
     const double err_denom = std::sqrt(denom_acc / denom_n);
 
     std::vector<double> vpt_steps(NUM_LAUNCH, 0);
-    float pred[3];
-    float in4[4];
+    float pred[NUM_OUTPUTS];
+    float in4[NUM_INPUTS];
 
     for (size_t k = 0; k < NUM_LAUNCH; ++k)
     {
@@ -357,10 +370,10 @@ int main(int argc, char* argv[])
     std::cout << "\n\n";
 
     std::cout << "Median VPT in Lyapunov times is the headline closed-loop number.\n";
-    std::cout << "Compare A(x) vs std::tanh by rebuilding with the other activation\n";
-    std::cout << "(Reservoir.cpp::UpdateState) at MATCHED one-step NRMSE.\n\n";
+    std::cout << "Compare A(x) vs tanh by flipping LORENTZ_GAMMA in the config block\n";
+    std::cout << "(0 = tanh, 1.1 = A) at MATCHED one-step NRMSE, then rebuild.\n\n";
 
-    // Machine-readable one-liner for sweeps.
+    // Compact one-line summary (one-step NRMSE + the headline VPT numbers).
     std::cout << "RESULT sr=" << std::setprecision(4) << cfg.reservoir.spectral_radius
               << " is=" << cfg.reservoir.input_scaling
               << " one_step_nrmse=" << std::setprecision(6) << nrmse
