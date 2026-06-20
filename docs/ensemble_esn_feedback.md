@@ -47,8 +47,8 @@ Everything below describes that single, feedback-centric, online machine.
 ## 2. The consensus frame — output space
 
 The consensus is formed in **output space**, the only frame the members share. All
-members run the **same base configuration** and differ only by their reservoir and bias
-seeds (§5) — so they share the hypercube topology but carry **different random weight
+members run the **same base configuration** and differ only by their reservoir `seed`
+(§5) — so they share the hypercube topology but carry **different random weight
 realizations**. Vertex v of member 1 therefore has no correspondence to vertex v of
 member 2, and their N-vertex state vectors are not comparable across members. The only
 shared coordinates are the D-dimensional outputs — every member's readout is trained to
@@ -83,7 +83,7 @@ coupling drive φ_i = κ · Δ_i                (scaled deviation; injected raw,
 `Step`. The coupling rides the existing feedback weight block — its own weights, its own
 `feedback_scaling` fan-in, and (per the reservoir contract) it sits **outside** the
 spectral-radius estimate, so it does not silently inflate the open-loop stability
-budget. Members are built with `num_feedback_channels = D`.
+budget.
 
 **Lockstep online step (training and inference alike):**
 
@@ -173,7 +173,7 @@ are good enough that their deviation signal is meaningful rather than noise:
   competence at least as cleanly as any single member. This keeps the gate to **one
   scalar error stream** instead of M. The class maintains **one running estimate** of
   this error (e.g. an EMA or windowed mean of the per-step consensus error); the gate
-  reads it. The exact smoothing and threshold are tunable (§10.2).
+  reads it. The exact smoothing and threshold are tunable (§10 Q2).
 - **Ramp** the intensity up to target `κ*` once the gate opens — gradually
   (linear/smooth) or in small steps with dwell. The ramp should be slow relative to the
   readout's online adaptation, so the readouts track the rising coupling rather than
@@ -201,7 +201,7 @@ binding rule is the ramp interaction above: the κ ramp must stay slow *relative
 adaptation, which fails if the readouts stop adapting — so **`lr` is held effectively
 constant (or floored) through the ramp**, never annealed toward zero while κ is still
 moving. Annealing `lr` is optional and only *after* κ reaches κ* and holds (a convergence
-refinement); that schedule is tunable (§10.3). Note this is the ESN *online* `lr` passed
+refinement); that schedule is tunable (§10 Q3). Note this is the ESN *online* `lr` passed
 per step, not `ReadoutConfig`'s batch cosine fields, which the online path ignores.
 
 ### 4.3 No clamp on the coupling drive
@@ -267,7 +267,7 @@ project already links OpenMP.
   the decorrelating regimes the coupling targets. Loses exact conservation and
   smoothness; for M = 3 it is the middle value per channel.
 
-Config choice; default mean, median for robustness studies.  We will want to explore the effects of both.
+Config choice; default mean, median for robustness studies. Both are worth exploring.
 
 ---
 
@@ -275,8 +275,10 @@ Config choice; default mean, median for robustness studies.  We will want to exp
 
 Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns M
 `ESN` members (each owns a non-copyable `Reservoir`, held by `unique_ptr`), built with
-`num_feedback_channels = D`. The members are trained online (`InitOnline` +
-`TrainLive*`) and read via `PredictLiveRaw`.
+`num_feedback_channels = D`. The ensemble drives every member through its own loop on the
+`StepLiveExternalFeedback` seam (it does **not** call `ESN::InitOnline` — it owns the
+washout itself, §7.1), trains them online via `TrainLiveStepRegression`, and reads them
+via `PredictLiveRaw`.
 
 ### 7.1 Online lifecycle — one loop, two scheduled knobs
 
@@ -533,9 +535,8 @@ wiggle is meaningless without a spread:
   Report **mean ± spread** (std or IQR), never a lone value.
 - **"Beats" is decided beyond that spread:** the coupled mean must exceed the baseline
   mean by a stated **margin that clears the seed-to-seed noise** — not merely rank above
-  it on one draw. The concrete margin is task-specific and set by the examples (e.g. the
-  NARMA campaign's fixed absolute margin); the *form* — multi-seed, mean ± spread, margin
-  beyond noise — is committed here.
+  it on one draw. The concrete margin is task-specific and set per task (a fixed absolute
+  margin); the *form* — multi-seed, mean ± spread, margin beyond noise — is committed here.
 - The κ-sweep curve is read at this resolution: an interior optimum counts only if its
   gain over κ = 0 clears the margin at the curve's own seed spread.
 
