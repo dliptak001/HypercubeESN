@@ -6,6 +6,14 @@
 > steady-state `Step()`**, not about the coupling mechanism.
 >
 > Worked one at a time. Each entry: what's missing → recommendation → status.
+>
+> **NOTE (2026-06-19, post-resolution):** the design doc was later revised — the
+> "Falsifiable thesis and experiments" section (then §8) was **removed**, and the
+> following sections renumbered (Risks §9 → §8, Open questions §10 → §9). Closed
+> entries below are kept verbatim as the historical record, so their section
+> references (e.g. the §8 experiments that shaped the G6 accessor list, the §10.x
+> open-question cross-refs) reflect the doc **at resolution time**, not its current
+> numbering. The resolved outcomes still hold — the §7.4 diagnostic surface remains.
 
 ---
 

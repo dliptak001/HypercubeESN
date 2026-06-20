@@ -38,8 +38,8 @@ boundaries are binding:
 - **The mechanism is always engaged.** There is no "feedback on/off" switch. From the
   first online step the consensus is computed and injected; only its **intensity**
   varies over time (§4). A zero-intensity operating point exists (it falls out of the
-  ramp's low-intensity start) and is used as a measurement baseline (§8), but it is a
-  degenerate setting of the one mechanism, **not** a supported feedback-less
+  ramp's low-intensity start), but it is a degenerate setting of the one mechanism,
+  **not** a supported feedback-less
   configuration.
 
 Everything below describes that single, feedback-centric, online machine.
@@ -147,7 +147,7 @@ computed, the deviations are formed, and `φ_i` is injected. What moves is the s
 - **Over-driving.** The coupling cannot blow up (Δ_i is bounded by the members' bounded
   outputs and the reservoir's `tanh` bounds the state, §4.3), but too large a κ lets the
   injected drive dominate the dynamics — saturating neurons and swamping the task input —
-  which degrades the members. So κ has a useful upper bound, found by sweep (§8). What
+  which degrades the members. So κ has a useful upper bound, found empirically. What
   the useful coupling buys, and how it degrades past the optimum, is empirical — not
   assumed from a consensus-dynamics analogy.
 
@@ -175,7 +175,7 @@ are good enough that their deviation signal is meaningful rather than noise:
   competence at least as cleanly as any single member. This keeps the gate to **one
   scalar error stream** instead of M. The class maintains **one running estimate** of
   this error (e.g. an EMA or windowed mean of the per-step consensus error); the gate
-  reads it. The exact smoothing and threshold are tunable (§10 Q2).
+  reads it. The exact smoothing and threshold are tunable (§9 Q2).
 - **Ramp** the intensity up to target `κ*` once the gate opens — gradually
   (linear/smooth) or in small steps with dwell. The ramp should be slow relative to the
   readout's online adaptation, so the readouts track the rising coupling rather than
@@ -203,7 +203,7 @@ binding rule is the ramp interaction above: the κ ramp must stay slow *relative
 adaptation, which fails if the readouts stop adapting — so **`lr` is held effectively
 constant (or floored) through the ramp**, never annealed toward zero while κ is still
 moving. Annealing `lr` is optional and only *after* κ reaches κ* and holds (a convergence
-refinement); that schedule is tunable (§10 Q3). Note this is the ESN *online* `lr` passed
+refinement); that schedule is tunable (§9 Q3). Note this is the ESN *online* `lr` passed
 per step, not `ReadoutConfig`'s batch cosine fields, which the online path ignores.
 
 ### 4.3 No clamp on the coupling drive
@@ -465,92 +465,34 @@ class EnsembleESN {
 
 ### 7.4 Diagnostic surface (read-only)
 
-The §8 experiments read more than the consensus `c_out` that `Step` hands back. The design
-commits to this **minimal** read-only surface — each accessor traced to the experiment that
-needs it. All are `const` getters over existing private state; none change the mechanism.
+A consumer often needs more than the consensus `c_out` that `Step` hands back — the
+per-member outputs behind it, the current coupling intensity, and where the schedule
+stands. The design commits to this **minimal** read-only surface; all are `const` getters
+over existing private state and none change the mechanism.
 
 ```cpp
-// Member outputs — the decorrelation axis (§8) and the single-member baseline.
-// AllMemberOutputs fills an M×D row-major buffer in one call: the decorrelation
-// measurement forms an M×M correlation every step, so M separate calls would waste it.
+// Member outputs behind the consensus — e.g. to gauge inter-member agreement or read
+// a single member in isolation. AllMemberOutputs fills an M×D row-major buffer in one
+// call (a pairwise comparison forms an M×M table every step, so M calls would waste it).
 void   MemberOutput(size_t i, float* out) const;   // member i: D floats (y_i)
 void   AllMemberOutputs(float* out_MxD)  const;     // all members: M×D, row-major
 
-float  Kappa()       const;   // current intensity — intensity-sweep x-axis + ramp-ablation trace
-bool   GateOpen()    const;   // has the competence ramp triggered? — annotates the ramp ablation
+float  Kappa()       const;   // current intensity — the operating point of the κ schedule (§4.2)
+bool   GateOpen()    const;   // has the competence ramp triggered? — marks where coupling began
 size_t CurrentStep() const;   // t_ — aligns traces to the §7.1 schedule (e.g. the ramp's trigger step)
 ```
 
 Deliberately **not** exposed:
 - **Per-member training error.** G3 made the competence gate read the *consensus* error
-  only, and the (scoped) §8 experiments need per-member *outputs*, not per-member error —
-  any per-member error a study wants is computable externally from `MemberOutput` + the
-  target. Keeping it off the surface avoids implying the gate consumes it.
-- **The raw gate signal (`consensus_err_`).** Its only consumer would have been a
-  gate-threshold/smoothing tuning sweep, which is **out of scope** (§8). `GateOpen()` — the
-  boolean outcome — is all the kept experiments need.
+  only; any per-member error a consumer wants is computable externally from `MemberOutput`
+  + the target. Keeping it off the surface avoids implying the gate consumes it.
+- **The raw gate signal (`consensus_err_`).** `GateOpen()` — the boolean outcome — is the
+  observable that matters; exposing the smoothed scalar would only invite coupling to a
+  knob whose smoothing and threshold are still open (§9 Q2).
 
 ---
 
-## 8. Falsifiable thesis and experiments
-
-**Baselines:**
-1. **Single member** — the floor.
-2. **Zero-intensity (κ = 0)** — the same `EnsembleESN` machinery held at `κ₀ = 0` (no
-   coupling; the consensus is read out but never injected). This coincides with a plain
-   output-averaging ensemble but requires **no separate configuration** — it is just
-   the degenerate operating point of the one mechanism, used purely as a measurement
-   baseline.
-
-**Thesis.** In a regime where members decorrelate, there exists a feedback intensity
-κ at which the coupled ensemble beats both the single member **and** the κ = 0 point.
-If accuracy is monotone in `κ` with the optimum at an endpoint (κ = 0 wins, or full
-sync wins), coupling buys nothing and the mechanism is falsified. The "decorrelating
-regime" qualifier is **not an escape hatch**: decorrelation is itself measured (below),
-so a null result is attributed to a quantified `ρ̄`, not asserted away.
-
-**Decorrelation — the precondition, measured not assumed.** The benefit is conditional
-on members decorrelating, so decorrelation is a first-class reported axis, not invoked
-post hoc:
-- Quantify inter-member agreement as the **mean pairwise correlation of member errors**
-  (equivalently of the output deviations `Δ_i`) over the evaluation window, `ρ̄`. High
-  `ρ̄` ⇒ redundant members; low/negative `ρ̄` ⇒ the regime the coupling targets.
-- Report `ρ̄` **alongside every κ-curve**. Decisive reading: the gain over κ = 0 should
-  appear where `ρ̄` is low and shrink toward zero as `ρ̄ → 1`. A benefit that is *flat*
-  in `ρ̄` contradicts the stated mechanism (the consensus would have nothing to average
-  out); a benefit that *grows* with `ρ̄` falsifies it outright.
-- `ρ̄` is also the natural knob for the M / seed-diversity studies — varying member count
-  or seed spread moves `ρ̄`, mapping benefit-vs-decorrelation directly.
-
-**Sweeps:**
-- **Intensity:** κ across a range at fixed M and members; locate the accuracy-vs-`κ`
-  curve and any interior optimum.
-- **Ramp ablation:** the competence-gated ramp (§4.2) vs a fixed-intensity online run —
-  does ramping reach a higher usable κ* by avoiding early destabilization?
-- Then vary M and the consensus statistic (and read off `ρ̄` for each, per above).
-
-**Replication and decisiveness — every number is a distribution.** The thesis is
-statistical (variance reduction), so a single random ensemble proves nothing — a κ-curve
-wiggle is meaningless without a spread:
-- Each operating point is run over **K independent ensemble seeds** (K ≥ 5; the seed
-  feeds the §5 derivation, so the K ensembles are fully reproducible and independent).
-  Report **mean ± spread** (std or IQR), never a lone value.
-- **"Beats" is decided beyond that spread:** the coupled mean must exceed the baseline
-  mean by a stated **margin that clears the seed-to-seed noise** — not merely rank above
-  it on one draw. The concrete margin is task-specific and set per task (a fixed absolute
-  margin); the *form* — multi-seed, mean ± spread, margin beyond noise — is committed here.
-- The κ-sweep curve is read at this resolution: an interior optimum counts only if its
-  gain over κ = 0 clears the margin at the curve's own seed spread.
-
-**Metrics** are task-appropriate and deferred to the (future) examples; the design
-commits to these baselines, the **decorrelation axis**, the **multi-seed decisiveness
-protocol**, and the κ sweep being decisive under it. The quantities these experiments
-read off a live ensemble (per-member outputs, current κ, gate state) are the
-**§7.4 diagnostic surface**.
-
----
-
-## 9. Risks, caveats, and out-of-scope
+## 8. Risks, caveats, and out-of-scope
 
 **Risks / caveats:**
 - **Correlated errors from shared training data** cap what the consensus can average
@@ -575,9 +517,9 @@ read off a live ensemble (per-member outputs, current κ, gate state) are the
 
 ---
 
-## 10. Open questions
+## 9. Open questions
 
-1. **Does the coupling beat the κ = 0 point?** The decisive A/B (§8).
+1. **Does the coupling beat the κ = 0 point?** The decisive A/B the whole mechanism rests on.
 2. **Competence gate** — the signal is fixed: the running error of the **ensemble
    (consensus) output** vs target (§4.2). Still open: the smoothing (EMA factor vs
    window length) and the threshold value that opens the ramp.
@@ -586,7 +528,7 @@ read off a live ensemble (per-member outputs, current κ, gate state) are the
    constant through the ramp, §4.2/G4).
 4. **Intensity magnitude** — the useful range of κ and where over-driving begins to
    degrade members (the sign is fixed by convention, §4.1).
-5. **Common-mode bias** — out of scope here (the consensus is blind to it, §9), but if
+5. **Common-mode bias** — out of scope here (the consensus is blind to it, §8), but if
    ever pursued, **member heterogeneity** (mixed activations first — tanh vs `A` are
    known to decorrelate — then operating points / bagged data) is the lever that shrinks
    the shared-error floor; only an external reference can remove it.

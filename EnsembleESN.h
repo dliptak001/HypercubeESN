@@ -77,7 +77,7 @@ struct EnsembleConfig
     /// below this threshold (§4.2/G3). NOTE: with the default 0.0 the gate
     /// never fires (a smoothed |error| is never < 0), so kappa is held at
     /// `kappa_start` for the whole run — that is exactly the kappa=0 / fixed-low
-    /// measurement baseline (§8). A coupled run must set a positive threshold.
+    /// measurement baseline. A coupled run must set a positive threshold.
     float gate_threshold = 0.0f;
     /// EMA factor for the running consensus-error estimate the gate reads
     /// (consensus_err_ <- (1-a)*consensus_err_ + a*step_error). In (0, 1].
@@ -144,7 +144,7 @@ public:
     /// (NumMembers()*NumOutputs() floats), filled in one call.
     void AllMemberOutputs(float* out_MxD) const;
 
-    /// Current feedback intensity kappa (intensity-sweep x-axis, §8).
+    /// Current feedback intensity kappa — the operating point of the ramp schedule.
     [[nodiscard]] float Kappa() const { return kappa_; }
 
     /// Has the competence-gated ramp triggered yet? (§4.2)
