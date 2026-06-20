@@ -10,6 +10,7 @@ add_library(HypercubeESNCore STATIC
         ${PROJECT_SOURCE_DIR}/Reservoir.cpp
     ${PROJECT_SOURCE_DIR}/ESN.cpp
     ${PROJECT_SOURCE_DIR}/Readout.cpp
+    ${PROJECT_SOURCE_DIR}/EnsembleESN.cpp
 )
 
 # Public headers — consumers need these via target_link_libraries
@@ -17,6 +18,7 @@ set(PUBLIC_HEADERS
     ${PROJECT_SOURCE_DIR}/ESN.h
         ${PROJECT_SOURCE_DIR}/Reservoir.h
     ${PROJECT_SOURCE_DIR}/Readout.h
+    ${PROJECT_SOURCE_DIR}/EnsembleESN.h
 )
 
 # ——— HypercubeCNN dependency (CNN readout) ———

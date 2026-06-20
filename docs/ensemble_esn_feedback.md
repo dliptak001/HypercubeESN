@@ -1,6 +1,8 @@
 # Ensemble ESN — Design
 
-> Status: **design (finalizing)**. Task-agnostic by intent: this specifies the
+> Status: **implementing**. Design finalized; the `EnsembleESN` orchestrator
+> (§7.3) is now being built in code (`EnsembleESN.{h,cpp}`). Task-agnostic by
+> intent: this specifies the
 > general `EnsembleESN` capability. Demonstration examples are deliberately **out of
 > scope** and will be built *after* the capability lands. No example drives this
 > design.
@@ -423,7 +425,7 @@ touch-ups: the vector inject and the relaxed divisibility throw. **Zero** `Reado
 HypercubeCNN changes. Net effect: the ESN shed a half-baked feature and gained one clean,
 external, well-defined feedback path.
 
-### 7.3 Orchestrator sketch (design pseudocode — not for implementation yet)
+### 7.3 Orchestrator sketch (the implementation blueprint — landed in `EnsembleESN.{h,cpp}`)
 
 ```cpp
 class EnsembleESN {
