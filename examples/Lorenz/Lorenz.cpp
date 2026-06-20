@@ -47,7 +47,7 @@ namespace config
     // ---- (A) Reservoir / model ----
     constexpr size_t   DIM             = 8;            // hypercube dimension
     constexpr size_t   N               = 1ULL << DIM;  // neuron count = 2^DIM = 256
-    constexpr uint64_t SEED            = 73895;        // reservoir realization.
+    constexpr uint64_t SEED            = 673895;        // reservoir realization.
                                                        // Locked A-vs-tanh seeds: 23, 42, 73895.
     constexpr float    SPECTRAL_RADIUS = 0.90f;        // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float    INPUT_SCALING   = 0.10f;        // shared across all input channels
