@@ -29,7 +29,6 @@ inline float CosineLR(float progress, float lr_max, float lr_min)
 
 /// HCNN readout architecture and training parameters.
 /// Must stay trivially copyable (POD) for checkpoint serialization.
-/// Optimal seed for DIM >= 10, NARMA_20 -> best= 0.194107 (seed 66), best= 0.197295 (seed 119)
 struct ReadoutConfig
 {
     size_t dim = 0;

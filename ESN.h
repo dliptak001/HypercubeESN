@@ -61,17 +61,17 @@ public:
 
     /// @brief Drive the reservoir for @p num_steps without recording states
     /// (washes out the initial transient). @p inputs is row-major,
-    /// num_steps * NumInputs() floats, row-major (NumInputs() values per
-    /// timestep, one per channel). Steps via @ref StepLive, so a
-    /// feedback-configured ESN warms up closed-loop onto the joint
-    /// (reservoir, F) attractor (§6.15).
+    /// num_steps * NumInputs() floats (NumInputs() values per timestep, one per
+    /// channel). Steps via @ref StepLive, so this is strictly open-loop: no
+    /// feedback is injected even on a feedback-configured ESN. Closed-loop drive
+    /// is the caller's responsibility via @ref StepLiveExternalFeedback.
     void Warmup(const float* inputs, size_t num_steps);
 
     /// @brief Drive the reservoir for @p num_steps and append the subsampled
     /// state at each step to the collected-states buffer (for batch Train /
     /// R2 / NRMSE / Accuracy). @p inputs has the same layout as @ref Warmup.
-    /// Steps via @ref StepLive — with feedback configured the collected
-    /// states are closed-loop states under the current (frozen) F.
+    /// Steps via @ref StepLive — strictly open-loop, so the collected states
+    /// carry no feedback drive regardless of num_feedback_channels.
     void Run(const float* inputs, size_t num_steps);
 
     /// @brief Discard the collected-states buffer and free its memory. The

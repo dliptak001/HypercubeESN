@@ -77,6 +77,16 @@ void ESN::StepLive(const float* inputs)
 
 void ESN::StepLiveExternalFeedback(const float* inputs, const float* feedback)
 {
+    // Guard the documented contract explicitly: with D == 0 the reservoir has no
+    // feedback port, and InjectFeedback(ptr, 0) would no-op (0 == 0 passes its
+    // count check) — silently degrading this to an open-loop Step. Throw instead,
+    // so a feedback caller on a non-feedback ESN fails loud rather than running
+    // input-only without notice.
+    if (esn_config_.reservoir.num_feedback_channels == 0)
+        throw std::invalid_argument(
+            "ESN::StepLiveExternalFeedback: feedback is not configured "
+            "(num_feedback_channels == 0); use StepLive for open-loop drive");
+
     // Stage the caller-supplied feedback on the D feedback channels (raw, no
     // clamp), then the task inputs, then Step. The reservoir routes feedback
     // through its dedicated port (own weights + feedback_scaling, outside the SR
@@ -203,7 +213,7 @@ float ESN::PredictLiveRaw() const
         throw std::invalid_argument(
             "ESN::PredictLiveRaw(): scalar prediction requires num_outputs == 1 "
             "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
-            "). Use PredictLiveRaw(float*) / predict_live_raw_multi instead.");
+            "). Use the PredictLiveRaw(float*) overload for multi-output readouts.");
     CopyLiveState(scratch_subsampled_.data());
     return readout_.PredictRaw(scratch_subsampled_.data());
 }

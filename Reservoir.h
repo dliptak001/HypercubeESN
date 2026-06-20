@@ -20,7 +20,7 @@ struct ReservoirConfig
     // deepest-history recurrent weight scale K in [0.1, 1.0]; linearly tapers older history slices (1.0 = no taper)
     bool verbose = true;
 
-    size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely (must divide N = 2^dim evenly when > 0)
+    size_t num_feedback_channels = 0; // number of feedback driver channels; 0 disables the feedback path entirely. Any D in [1, N] is admissible — D need NOT divide N (a non-dividing D leaves the N mod D tail vertices at reset-zero, benign zero sources that still receive drive via the neighbor gather)
     float feedback_scaling = 0.5f; // DIM-invariant feedback drive: feedback weights carry a 1/sqrt(DIM) fan-in normalization, mirroring input_scaling (only allocated/used when num_feedback_channels > 0)
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, summed pre-tanh; OFF by default (0 disables)
@@ -32,7 +32,7 @@ struct ReservoirConfig
     //   gamma > 0           => steeper central slope, tanh tails (sharpening)
     //   gamma < 0, |g| > 1  => central gain crosses 0 => non-monotone "fold"
     // Runtime so the activation shape is a sweep axis (no recompile).
-    float lorentz_gamma      = 1.1;   // 0 reduces A_lorentz to tanh
+    float lorentz_gamma      = 1.1f;  // 0 reduces A_lorentz to tanh
     float lorentz_inv_sigma2 = 250.0f; // 1/sigma^2
 };
 
