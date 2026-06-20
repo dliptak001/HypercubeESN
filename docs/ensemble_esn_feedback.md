@@ -354,12 +354,12 @@ just the schedule's left edge.)
 
 ### 7.2 Core changes — external-only feedback
 
-> **Decision (2026-06-19).** The existing feedback machinery was never exercised and is
-> not treated as a fixed constraint. **All feedback is external; the ESN has no internal
-> feedback policy.** Reuse the reservoir's sound feedback *substrate* as the external-drive
-> port, and **delete** the unfinished internal-F *policy* from the ESN. Footprint:
-> a focused `ESN` refactor + small `Reservoir` touch-ups + a verification pass. The HCNN
-> `Readout` is **untouched**.
+> **Decision (2026-06-19), landed (G12, c355c8e).** The existing feedback machinery had
+> never been exercised and was not treated as a fixed constraint. **All feedback is
+> external; the ESN has no internal feedback policy.** The reservoir's sound feedback
+> *substrate* was reused as the external-drive port, and the unfinished internal-F *policy*
+> was **deleted** from the ESN. Footprint: a focused `ESN` refactor + small `Reservoir`
+> touch-ups. The HCNN `Readout` was **untouched**.
 
 **The substrate is sound and is reused (Reservoir).** Per-vertex state update already adds
 a feedback term identical in form to the input term —
@@ -368,24 +368,24 @@ independent `n_·dim_` weight block (`:68`), scaled by `feedback_scaling` (`:118
 **excluded from the spectral-radius rescale** (`:164`, exactly as input is).
 `InjectFeedback(channel, value)` (`:294-303`) block-partitions the N vertices into
 `num_feedback_channels` regions and broadcasts each value to its block. This is precisely
-the D-channel external drive the ensemble needs. Reservoir touch-ups:
+the D-channel external drive the ensemble needs. Reservoir touch-ups that landed alongside:
 
-- *Ergonomics (optional):* a vector-form `InjectFeedback(const float* φ, size_t count)`
-  that loops the per-channel call.
-- *Relax the divisibility throw* (`:50`) to permit any **D ≤ N**. The guard is
-  conservative, not load-bearing (verified): when D ∤ N only the `N mod D` (`≤ D−1`) tail
+- *Ergonomics:* a vector-form `InjectFeedback(const float* φ, size_t count)` that loops
+  the per-channel call — the D-channel external-drive entry point.
+- *Relaxed the divisibility throw* (`:50`) to permit any **D ≤ N**. The guard had been
+  conservative, not load-bearing: when D ∤ N only the `N mod D` (`≤ D−1`) tail
   vertices go unwritten — they hold reset-zero and act as zero feedback *sources* while
   still *receiving* coupling via the neighbor gather (`:269`); no index leaves `[0, N)`
   and `block ≥ 1` for any `D ≤ N`. Dropped fraction `(N mod D)/N` is negligible for the
   ensemble's small-D / large-N = 2^dim regime. No power-of-two restriction on D.
 
-**The ESN change — remove internal feedback entirely.** Binding decision: **all feedback
-is external; the ESN has no internal feedback policy.** Today the ESN builds an internal
-learned-F apparatus whenever `num_feedback_channels > 0` (the internal-F `if` block
-plus the `StepLive` F-injection branch): `feedback_readout_`, its eager
-`InitOnline`, `InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery,
-the decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by
-a guard that throws unless `num_feedback_channels == 1`. **All of it is deleted.** There is
+**The ESN change — internal feedback removed entirely.** Binding decision: **all feedback
+is external; the ESN has no internal feedback policy.** The ESN had built an internal
+learned-F apparatus whenever `num_feedback_channels > 0` (the internal-F `if` block plus
+the `StepLive` F-injection branch): `feedback_readout_`, its eager `InitOnline`,
+`InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery, the
+decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by a
+guard that threw unless `num_feedback_channels == 1`. **All of it was deleted.** There is
 no mode enum and no quarantined path, because there is no second kind of feedback to
 distinguish. After removal:
 
@@ -393,15 +393,15 @@ distinguish. After removal:
   channels the reservoir carries.** `0` = no feedback; `D > 0` = D externally-supplied
   channels. No learned policy, no F readout, no telemetry — ever.
 - The `== 1` guard is gone; any **D ≤ N** is allowed (the substrate handles it, §above).
-- `ESN::StepLive(inputs)` becomes **input-only** — the `tanh(F(x))`-on-channel-0 branch
-  is removed with F. It serves the no-feedback case.
+- `ESN::StepLive(inputs)` is **input-only** — the `tanh(F(x))`-on-channel-0 branch was
+  removed with F. It serves the no-feedback case.
 - `ESN::StepLiveExternalFeedback(inputs, φ)` (below) is the **only** way feedback enters.
 - **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
   `Readout` ctor**, so there is no readout-init step at all: members are born ready and the
   no-arg `InitOnline()` once planned here is unnecessary. `ESN::InitOnline(inputs, count)`
   survives as warm-up-only sugar for single-ESN users; the ensemble does not call it.
 
-This makes the ESN *simpler* — one fewer feature — not more complex.
+The result is a *simpler* ESN — one fewer feature, not more complex.
 
 **The step seam (ESN).**
 
@@ -414,12 +414,12 @@ void ESN::StepLiveExternalFeedback(const float* inputs,    // NumInputs() floats
 //   reservoir_->Step()
 ```
 
-**Net footprint:** **delete** the ESN internal-F apparatus; redefine `num_feedback_channels`
-as the external-channel count and drop the `== 1` guard; trim `StepLive` to input-only and
-add the `StepLiveExternalFeedback` seam. `Reservoir` touch-ups: verify the substrate,
-optional vector inject, relax the divisibility throw. **Zero** `Readout` / HypercubeCNN
-changes. Net effect: the ESN loses a half-baked feature and gains one clean, external,
-well-defined feedback path.
+**Net footprint (landed).** Deleted the ESN internal-F apparatus; redefined
+`num_feedback_channels` as the external-channel count and dropped the `== 1` guard; trimmed
+`StepLive` to input-only and added the `StepLiveExternalFeedback` seam. `Reservoir`
+touch-ups: the vector inject and the relaxed divisibility throw. **Zero** `Readout` /
+HypercubeCNN changes. Net effect: the ESN shed a half-baked feature and gained one clean,
+external, well-defined feedback path.
 
 ### 7.3 Orchestrator sketch (design pseudocode — not for implementation yet)
 
