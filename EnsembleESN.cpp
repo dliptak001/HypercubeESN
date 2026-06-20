@@ -74,6 +74,7 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
     }
 
     // The initial washout (§7.1): suppress the readout update for W steps.
+    washout_           = cfg.washout;
     washout_remaining_ = cfg.washout;
 
     // Pre-allocated per-step scratch (decision #5 — no per-tick heap traffic).
@@ -209,4 +210,46 @@ void EnsembleESN::MemberOutput(size_t i, float* out) const
 void EnsembleESN::AllMemberOutputs(float* out_MxD) const
 {
     std::copy(y_flat_.begin(), y_flat_.end(), out_MxD);
+}
+
+EnsembleESN::State EnsembleESN::GetState() const
+{
+    State s;
+    s.member_weights.reserve(M_);
+    for (const auto& e : esn_)
+        s.member_weights.push_back(e->GetReadoutState().weights);
+    s.kappa         = kappa_;
+    s.gate_open     = gate_open_;
+    s.consensus_err = consensus_err_;
+    s.err_init      = err_init_;
+    s.step          = t_;
+    return s;
+}
+
+void EnsembleESN::SetState(const State& s)
+{
+    if (s.member_weights.size() != M_)
+        throw std::invalid_argument(
+            "EnsembleESN::SetState: member_weights count (" +
+            std::to_string(s.member_weights.size()) +
+            ") != num_members (" + std::to_string(M_) + ")");
+
+    for (size_t i = 0; i < M_; ++i)
+    {
+        ESN::ReadoutState rs;
+        rs.weights    = s.member_weights[i];
+        rs.is_trained = true;   // SetReadoutState no-ops unless this is set
+        esn_[i]->SetReadoutState(rs);
+    }
+
+    kappa_         = s.kappa;
+    gate_open_     = s.gate_open;
+    consensus_err_ = s.consensus_err;
+    err_init_      = s.err_init;
+    t_             = s.step;
+
+    // Reservoirs are cold (their live state is not part of State), so re-impose
+    // the full initial washout: continued training is guarded against the x(0)=0
+    // transient, and inference is unaffected (washout gates only the update).
+    washout_remaining_ = washout_;
 }

@@ -544,5 +544,35 @@ PYBIND11_MODULE(_core, m)
         .def_property_readonly("num_members", &EnsembleESN::NumMembers)
         .def_property_readonly("num_outputs", &EnsembleESN::NumOutputs)
         .def_property_readonly("num_inputs", &EnsembleESN::NumInputs)
+
+        // ── Persistence (opaque blob consumed by the Python wrapper) ──
+        .def("_get_state", [](const EnsembleESN& self) -> py::dict {
+            auto s = self.GetState();
+            py::list member_weights;
+            for (const auto& w : s.member_weights)
+                member_weights.append(py::array_t<double>(
+                    {static_cast<py::ssize_t>(w.size())}, w.data()));
+            py::dict d;
+            d["member_weights"] = member_weights;
+            d["kappa"]          = s.kappa;
+            d["gate_open"]      = s.gate_open;
+            d["consensus_err"]  = s.consensus_err;
+            d["err_init"]       = s.err_init;
+            d["step"]           = s.step;
+            return d;
+        })
+        .def("_set_state", [](EnsembleESN& self, py::dict d) {
+            EnsembleESN::State s;
+            for (auto item : d["member_weights"].cast<py::list>()) {
+                auto w = item.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+                s.member_weights.emplace_back(w.data(), w.data() + w.size());
+            }
+            s.kappa         = d["kappa"].cast<float>();
+            s.gate_open     = d["gate_open"].cast<bool>();
+            s.consensus_err = d["consensus_err"].cast<float>();
+            s.err_init      = d["err_init"].cast<bool>();
+            s.step          = d["step"].cast<size_t>();
+            self.SetState(s);
+        })
         ;
 }

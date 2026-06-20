@@ -429,3 +429,57 @@ class TestEnsembleDiagnostics:
         ens = EnsembleESN(dim=5, num_members=3, combine="median", washout=5)
         c, _ = TestEnsembleStep()._run(ens, 30)
         assert np.all(np.isfinite(c))
+
+
+class TestEnsemblePersistence:
+
+    @staticmethod
+    def _trained(seed=7, **kw):
+        ens = EnsembleESN(dim=5, num_members=3, washout=20, gate_threshold=10.0,
+                          kappa_target=0.3, ensemble_seed=seed, **kw)
+        sig = np.sin(0.1 * np.arange(101)).astype(np.float32)
+        for k in range(100):
+            ens.step(sig[k:k + 1], sig[k + 1:k + 2])
+        return ens, sig
+
+    def test_pickle_roundtrip_preserves_schedule(self):
+        ens, _ = self._trained()
+        assert ens.gate_open is True and ens.kappa > 0  # precondition: it trained up
+        loaded = pickle.loads(pickle.dumps(ens))
+        assert loaded.kappa == pytest.approx(ens.kappa)
+        assert loaded.gate_open == ens.gate_open
+        assert loaded.current_step == ens.current_step
+        assert loaded.num_members == ens.num_members
+        assert loaded.num_outputs == ens.num_outputs
+
+    def test_config_preserved(self):
+        ens = EnsembleESN(dim=6, num_members=4, num_outputs=2, combine="median",
+                          kappa_target=0.42, ensemble_seed=99, lorentz_gamma=0.0)
+        loaded = pickle.loads(pickle.dumps(ens))
+        assert loaded.num_members == 4
+        assert loaded.num_outputs == 2
+        assert loaded._config["combine"] == "median"
+        assert loaded._config["kappa_target"] == pytest.approx(0.42)
+        assert loaded._config["ensemble_seed"] == 99
+
+    def test_save_load_behavioral_equivalence(self, tmp_path):
+        # Trained readouts + seed-derived reservoirs must restore exactly: driving
+        # a cold-started original and the loaded copy with identical inputs
+        # (inference, kappa held) must produce identical consensus trajectories.
+        ens, sig = self._trained(seed=11)
+        path = tmp_path / "ens.pkl"
+        ens.save(path)
+        loaded = EnsembleESN.load(path)
+
+        ens.begin_sequence()  # reset original's reservoirs to cold (loaded is cold)
+        for k in range(25):
+            c_orig = ens.step(sig[k:k + 1], None)
+            c_load = loaded.step(sig[k:k + 1], None)
+            np.testing.assert_allclose(c_orig, c_load, atol=1e-5)
+
+    def test_load_wrong_type_raises(self, tmp_path):
+        path = tmp_path / "not_ensemble.pkl"
+        with open(path, "wb") as f:
+            pickle.dump({"not": "an ensemble"}, f)
+        with pytest.raises(TypeError, match="Expected EnsembleESN"):
+            EnsembleESN.load(path)

@@ -161,11 +161,42 @@ public:
     [[nodiscard]] size_t NumOutputs() const { return D_; }
     [[nodiscard]] size_t NumInputs() const { return num_inputs_; }
 
+    // ---------------------------------------------------------------
+    //  Persistence
+    // ---------------------------------------------------------------
+
+    /// The persistable state of a trained ensemble: every member's readout
+    /// weights plus the schedule/competence state the ramp has reached. The
+    /// EnsembleConfig is NOT held here — the caller reconstructs an identically
+    /// configured EnsembleESN (which re-derives each member's reservoir seed,
+    /// §5) and then restores this. Like the single ESN, the reservoirs' live
+    /// dynamical state is NOT captured: a restored ensemble has cold reservoirs
+    /// and re-washes out (the full initial @c washout) before training resumes.
+    struct State
+    {
+        std::vector<std::vector<double>> member_weights; ///< M readout-weight blobs, member order
+        float  kappa         = 0.0f;  ///< current coupling intensity
+        bool   gate_open     = false; ///< has the competence ramp triggered
+        float  consensus_err = 0.0f;  ///< running consensus-error estimate (gate signal)
+        bool   err_init      = false; ///< has consensus_err been seeded
+        size_t step          = 0;     ///< monotone step counter t_ (diagnostic)
+    };
+
+    /// Capture the trained state (all member readout weights + schedule state).
+    [[nodiscard]] State GetState() const;
+
+    /// Restore a previously captured state into this (identically configured)
+    /// ensemble. Re-imposes the full initial washout, since the reservoirs are
+    /// cold (their dynamical state is not part of @ref State).
+    /// @throws std::invalid_argument if @p s.member_weights.size() != NumMembers().
+    void SetState(const State& s);
+
 private:
     size_t M_ = 0;            // member count
     size_t D_ = 0;            // output dim = num_feedback_channels (One D, three roles)
     size_t num_inputs_ = 0;   // task input width
     size_t t_ = 0;            // monotone step counter
+    size_t washout_ = 0;      // initial washout length W (for re-washout on restore)
     size_t washout_remaining_ = 0; // steps left with the readout update suppressed
 
     Combine combine_ = Combine::Mean;

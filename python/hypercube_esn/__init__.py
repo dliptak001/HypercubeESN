@@ -22,7 +22,7 @@ import numpy as np
 
 from ._core import _ESN, _EnsembleESN
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __all__ = ["ESN", "EnsembleESN"]
 
 # Valid hypercube dimensions (matches the C++ Reservoir::Create [5, 16] check).
@@ -1071,6 +1071,41 @@ class EnsembleESN:
     ):
         if not (self._DIM_MIN <= dim <= self._DIM_MAX):
             raise ValueError(f"dim must be {self._DIM_MIN}-{self._DIM_MAX}, got {dim}")
+        # Full constructor config, retained for pickling: reconstructing with the
+        # same config re-derives every member's reservoir seed identically, so a
+        # restored ensemble's members match the saved ones before their trained
+        # readout weights are loaded back (see __setstate__).
+        self._config = {
+            "dim": dim,
+            "num_members": num_members,
+            "combine": combine,
+            "ensemble_seed": ensemble_seed,
+            "num_outputs": num_outputs,
+            "spectral_radius": spectral_radius,
+            "input_scaling": input_scaling,
+            "leak_rate": leak_rate,
+            "num_inputs": num_inputs,
+            "history_depth": history_depth,
+            "history_floor": history_floor,
+            "feedback_scaling": feedback_scaling,
+            "bias_scaling": bias_scaling,
+            "lorentz_gamma": lorentz_gamma,
+            "lorentz_inv_sigma2": lorentz_inv_sigma2,
+            "output_fraction": output_fraction,
+            "readout_num_layers": readout_num_layers,
+            "readout_conv_channels": readout_conv_channels,
+            "readout_activation": readout_activation,
+            "readout_seed": readout_seed,
+            "lr": lr,
+            "weight_decay": weight_decay,
+            "washout": washout,
+            "resequence_washout": resequence_washout,
+            "kappa_start": kappa_start,
+            "kappa_target": kappa_target,
+            "kappa_ramp_rate": kappa_ramp_rate,
+            "gate_threshold": gate_threshold,
+            "gate_err_ema_alpha": gate_err_ema_alpha,
+        }
         self._impl = _EnsembleESN(
             dim=dim,
             ensemble_seed=ensemble_seed,
@@ -1185,3 +1220,61 @@ class EnsembleESN:
             f"step={self.current_step}, kappa={self.kappa:.4g}, "
             f"gate_open={self.gate_open})"
         )
+
+    # ── Persistence ──
+
+    # v1: initial EnsembleESN persistence — constructor config + per-member
+    # readout weights + schedule/competence state (kappa, gate, consensus_err,
+    # err_init, step). Reservoir live state is NOT saved (a restored ensemble has
+    # cold reservoirs and re-washes out), matching ESN's persistence contract.
+    _PERSISTENCE_VERSION = 1
+
+    def __getstate__(self) -> dict:
+        """Serialize the trained ensemble for pickling.
+
+        Persists the constructor config and the trained state (every member's
+        readout weights plus the kappa-ramp / competence state). The reservoirs'
+        live dynamical state is NOT saved — a restored ensemble has cold
+        reservoirs and re-washes out before training resumes (drive it through a
+        warmup, or call :meth:`begin_sequence`, before trusting outputs).
+        """
+        return {
+            "_version": self._PERSISTENCE_VERSION,
+            "config": dict(self._config),
+            "state": self._impl._get_state(),
+        }
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore an EnsembleESN from pickled state."""
+        version = state.get("_version", 0)
+        if version > self._PERSISTENCE_VERSION:
+            raise ValueError(
+                f"EnsembleESN was saved with persistence version {version}, "
+                f"but this version only supports up to "
+                f"{self._PERSISTENCE_VERSION}. Upgrade hypercube-esn."
+            )
+        self.__init__(**state["config"])
+        self._impl._set_state(state["state"])
+
+    def save(self, path) -> None:
+        """Save the trained ensemble to a file (a standard Python pickle).
+
+        Saves the configuration, every member's trained readout weights, and the
+        kappa-ramp / competence state. Reservoir live state is NOT saved, so the
+        file is compact. Restore with :meth:`load`.
+        """
+        with open(pathlib.Path(path), "wb") as f:
+            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def load(cls, path) -> "EnsembleESN":
+        """Load a saved EnsembleESN from a file.
+
+        The restored ensemble has cold reservoirs: drive it through a warmup
+        (or :meth:`begin_sequence`) before trusting its outputs.
+        """
+        with open(pathlib.Path(path), "rb") as f:
+            obj = pickle.load(f)
+        if not isinstance(obj, cls):
+            raise TypeError(f"Expected EnsembleESN, got {type(obj).__name__}")
+        return obj
