@@ -3,50 +3,65 @@
 #include <vector>
 #include <cstddef>
 
-class LorenzAttractor {
+class LorenzAttractor
+{
 public:
-    struct State {
+    struct State
+    {
         double x = 1.0, y = 1.0, z = 1.0;
     };
 
     double sigma = 10.0;
-    double rho   = 28.0;
-    double beta  = 8.0 / 3.0;
+    double rho = 28.0;
+    double beta = 8.0 / 3.0;
 
     State state;
 
     LorenzAttractor() = default;
-    explicit LorenzAttractor(State initial) : state(initial) {}
 
-    void reset()              { state = State{}; }
-    void reset(State initial) { state = initial; }
-
-    // Mutating integrators
-    void step(double dt) { state = advance(state, dt, false); }
-    void rk4 (double dt) { state = advance(state, dt, true); }
-
-    // Const, non-mutating advance (reusable)
-    State advance(State s, double dt, bool use_rk4 = true) const {
-        return use_rk4 ? rk4_step(s, dt) : euler_step(s, dt);
+    explicit LorenzAttractor(State initial) : state(initial)
+    {
     }
 
-    // Generate trajectory without modifying internal state
-    std::vector<State> trajectory(size_t steps, double dt, bool use_rk4 = true) const {
+    void reset() { state = State{}; }
+    void reset(State initial) { state = initial; }
+
+    void step(double dt) { state = peek(state, dt); }
+
+    State peek(State s, double dt) const { return rk4_step(s, dt); }
+
+    // Take MANY steps in a row and write down every spot the dot visits,
+    // like dropping a breadcrumb after each step so you can see the whole path.
+    //
+    // You say how many `steps` to take and how big each one is (`dt`). You get
+    // back a list of spots: the very first breadcrumb is where we start, then
+    // one more breadcrumb for every step. So `steps` steps = `steps + 1`
+    // breadcrumbs (the start, plus one per step). That's why we ask the list to
+    // get `steps + 1` spaces ready ahead of time (`reserve`) -- so it doesn't
+    // have to keep growing and slowing down.
+    //
+    // Just like `peek`, this is a "look only" helper: we copy our dot into
+    // `cur` and walk the COPY forward, so the real dot we keep inside this
+    // object stays put. You can ask for a path without losing your place.
+    std::vector<State> trajectory(size_t steps, double dt) const
+    {
         std::vector<State> points;
-        points.reserve(steps + 1);
+        points.reserve(steps + 1); // make room for start + one per step
 
-        State cur = state;
-        points.push_back(cur);
+        State cur = state; // copy our dot so we don't move the real one
+        points.push_back(cur); // drop the first breadcrumb (the start)
 
-        for (size_t i = 0; i < steps; ++i) {
-            cur = advance(cur, dt, use_rk4);
-            points.push_back(cur);
+        for (size_t i = 0; i < steps; ++i)
+        {
+            cur = peek(cur, dt); // move the copy one step
+            points.push_back(cur); // drop a breadcrumb where it landed
         }
         return points;
     }
 
 private:
-    State derivatives(const State& s) const {
+    State derivatives(const State& s) const
+    {
         return {
             sigma * (s.y - s.x),
             s.x * (rho - s.z) - s.y,
@@ -54,21 +69,17 @@ private:
         };
     }
 
-    State euler_step(const State& s, double dt) const {
-        State d = derivatives(s);
-        return {s.x + d.x * dt, s.y + d.y * dt, s.z + d.z * dt};
-    }
-
-    State rk4_step(const State& s, double dt) const {
+    State rk4_step(const State& s, double dt) const
+    {
         auto k1 = derivatives(s);
-        auto k2 = derivatives({s.x + k1.x*dt/2, s.y + k1.y*dt/2, s.z + k1.z*dt/2});
-        auto k3 = derivatives({s.x + k2.x*dt/2, s.y + k2.y*dt/2, s.z + k2.z*dt/2});
-        auto k4 = derivatives({s.x + k3.x*dt,   s.y + k3.y*dt,   s.z + k3.z*dt});
+        auto k2 = derivatives({s.x + k1.x * dt / 2, s.y + k1.y * dt / 2, s.z + k1.z * dt / 2});
+        auto k3 = derivatives({s.x + k2.x * dt / 2, s.y + k2.y * dt / 2, s.z + k2.z * dt / 2});
+        auto k4 = derivatives({s.x + k3.x * dt, s.y + k3.y * dt, s.z + k3.z * dt});
 
         return {
-            s.x + (k1.x + 2*k2.x + 2*k3.x + k4.x) * dt / 6,
-            s.y + (k1.y + 2*k2.y + 2*k3.y + k4.y) * dt / 6,
-            s.z + (k1.z + 2*k2.z + 2*k3.z + k4.z) * dt / 6
+            s.x + (k1.x + 2 * k2.x + 2 * k3.x + k4.x) * dt / 6,
+            s.y + (k1.y + 2 * k2.y + 2 * k3.y + k4.y) * dt / 6,
+            s.z + (k1.z + 2 * k2.z + 2 * k3.z + k4.z) * dt / 6
         };
     }
 };

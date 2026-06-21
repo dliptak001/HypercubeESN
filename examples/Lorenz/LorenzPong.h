@@ -8,8 +8,9 @@ class LorenzPong
 {
 public:
     LorenzPong(int32_t span);
-    
-    
+
+    void SetCenter(float center) { center_ = center; r_idx_ = 0; r_direction_ = 1; }
+
 private:
     LorenzAttractor attractor_;
 
