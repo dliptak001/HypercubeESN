@@ -15,7 +15,7 @@
  true s(t) ──[x,y,z,xyz]──▶ Step           resync on true s, then cut the cord:
         │                                    Predict ▶ ŝ(t+1)
         ▼                                          │
-   readout: state ▶ s(t+1)                  [x̂,ŷ,ẑ, x̂·ŷ·ẑ] ──▶ StepLive ──┐
+   readout: state ▶ s(t+1)                  [x̂,ŷ,ẑ, x̂·ŷ·ẑ] ──▶ Step     ──┐
    (3 outputs)                                     └── fed back as next input ◀┘
                                             error compounds → VPT
 ```

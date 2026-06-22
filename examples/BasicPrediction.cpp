@@ -53,8 +53,8 @@ int main(int argc, char* argv[])
               << ", lr=" << cfg.readout.lr_max
               << " (cosine, floor=" << (cfg.readout.lr_max * cfg.readout.lr_min_frac) << ")\n";
 
-    esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, train_size + test_size);
+    esn.ReservoirWarmup(signal.data(), warmup);
+    esn.ReservoirRun(signal.data() + warmup, train_size + test_size);
 
     std::cout << "  Training..." << std::flush;
     auto t0 = std::chrono::steady_clock::now();

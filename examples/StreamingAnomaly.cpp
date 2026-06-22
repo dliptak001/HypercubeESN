@@ -113,8 +113,8 @@ int main(int argc, char* argv[])
     constexpr size_t train_n = static_cast<size_t>(prime_steps * 0.7);
     constexpr size_t test_n = prime_steps - train_n;
 
-    esn.Warmup(prime_signal.data(), warmup);
-    esn.Run(prime_signal.data() + warmup, train_n + test_n);  // training + baseline states
+    esn.ReservoirWarmup(prime_signal.data(), warmup);
+    esn.ReservoirRun(prime_signal.data() + warmup, train_n + test_n);  // training + baseline states
     t_global += warmup + prime_steps;
 
     std::vector<float> prime_targets(prime_steps);
@@ -164,7 +164,7 @@ int main(int argc, char* argv[])
         for (size_t t = 0; t < window; ++t)
             tgt[t] = sig[t + 1];
 
-        esn.Run(sig.data(), window, /*clear_recorded=*/true);
+        esn.ReservoirRun(sig.data(), window, /*clear_recorded=*/true);
 
         std::vector<float> pred(window);
         for (size_t t = 0; t < window; ++t)

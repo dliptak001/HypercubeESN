@@ -99,11 +99,11 @@ int Run()
 
     // --- Phase 1: reservoir warmup (no training). ---
     std::size_t corpus_pos = 0;
-    esn.ClearReservoir();
+    esn.ReservoirClear();
     window.Clear();
     for (std::size_t i = 0; i < cfg.warmup_chars; ++i) {
         window.Push(corpus.text[corpus_pos++]);
-        esn.Warmup(window.Inputs(), 1);
+        esn.ReservoirWarmup(window.Inputs(), 1);
     }
 
     // --- Phase 2: drive warmup_train_chars to settle the reservoir before training. ---
@@ -115,10 +115,10 @@ int Run()
                     window.Inputs(),
                     channels_per_step * sizeof(float));
     }
-    esn.Warmup(warmup_embed.data(), cfg.warmup_train_chars);
+    esn.ReservoirWarmup(warmup_embed.data(), cfg.warmup_train_chars);
     warmup_embed.clear();
     warmup_embed.shrink_to_fit();
-    corpus_pos += cfg.warmup_train_chars;  // Warmup advanced the reservoir to here
+    corpus_pos += cfg.warmup_train_chars;  // ReservoirWarmup advanced the reservoir to here
 
     std::cerr << "[stext] CNN cfg: nl=" << esn_cfg.readout.num_layers
               << " ch=" << esn_cfg.readout.conv_channels
@@ -140,7 +140,7 @@ int Run()
     const std::size_t num_outputs = esn.NumOutputs();
 
     std::vector<float> accum_states(static_cast<std::size_t>(K) * state_dim);
-    std::vector<int>   accum_targets(K);
+    std::vector<float> accum_targets(K);  // class indices as floats (unified TrainStepBatch target)
     int accum_count = 0;
 
     const std::size_t total_batches =
@@ -168,11 +168,11 @@ int Run()
     for (std::size_t step = 0; step < cfg.total_steps; ++step) {
         // 1. Advance reservoir one char (true corpus char).
         window.Push(corpus.text[pos]);
-        esn.Warmup(window.Inputs(), 1);
+        esn.ReservoirWarmup(window.Inputs(), 1);
 
         // 2. Read live state into the accumulation slot and predict next char.
         float* slot = accum_states.data() + static_cast<std::size_t>(accum_count) * state_dim;
-        esn.CopyLiveState(slot);
+        esn.CopyReservoirState(slot);
         const std::vector<float> logits = esn.PredictFromState(slot);
 
         const std::size_t next_pos = (pos + 1) % L;
@@ -234,7 +234,8 @@ int Run()
             const float frac = static_cast<float>(batch_index)
                              / static_cast<float>(total_batches);
             step_lr = CosineLR(frac, lr_max, lr_min);
-            esn.TrainLiveBatch(accum_states.data(), accum_targets.data(), K, step_lr);
+            esn.TrainStepBatch(accum_states.data(), accum_targets.data(), K, step_lr,
+                               esn_cfg.readout.weight_decay);
             ++batch_index;
             accum_count = 0;
         }
@@ -264,7 +265,8 @@ int Run()
         const float frac = static_cast<float>(batch_index)
                          / static_cast<float>(total_batches);
         step_lr = CosineLR(frac, lr_max, lr_min);
-        esn.TrainLiveBatch(accum_states.data(), accum_targets.data(), accum_count, step_lr);
+        esn.TrainStepBatch(accum_states.data(), accum_targets.data(), accum_count, step_lr,
+                           esn_cfg.readout.weight_decay);
     }
 
     const std::size_t n_final = std::min(cfg.total_steps, W);

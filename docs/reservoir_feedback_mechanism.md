@@ -130,15 +130,15 @@ Either way the reservoir stays ignorant of the readout; the caller owns the loop
   Reservoir              vtx_feedback_ port  ── this document (the substrate)
      ▲  InjectFeedback / Step / clear
      │
-  ESN          StepLive(inputs, φ)                   ── the ONLY feedback entry point;
-     ▲                                                 StepLive(inputs) is input-only
+  ESN          ReservoirStep(inputs, φ)              ── the ONLY feedback entry point;
+     ▲                                                 ReservoirStep(inputs) is input-only
      │
   EnsembleESN  φ_i = κ·Δ_i across M members          ── the policy: consensus coupling
                                                         (ensemble_esn_feedback.md)
 ```
 
-`ESN::StepLive(inputs, φ)` stages `φ` (D floats) on the feedback channels
-and the task inputs on the input channels, then `Step`s — the only way feedback enters at
-the ESN layer; `ESN::StepLive(inputs)` (feedback omitted) is the input-only path. `EnsembleESN` drives its M
+`ESN::ReservoirStep(inputs, φ)` stages `φ` (D floats) on the feedback channels
+and the task inputs on the input channels, then steps — the only way feedback enters at
+the ESN layer; `ESN::ReservoirStep(inputs)` (feedback omitted) is the input-only path. `EnsembleESN` drives its M
 members through that seam with `φ_i = κ·Δ_i` (each member's scaled deviation from the
 consensus). The substrate specified here is the foundation both sit on.

@@ -141,13 +141,13 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     for (size_t i = 0; i < M_; ++i)
     {
         if (train)
-            esn_[i]->TrainLiveStepRegression(target, lr_, wd_);
+            esn_[i]->TrainStep(target, lr_, wd_);
 
         const float* y_i = y_flat_.data() + i * D_;
         for (size_t c = 0; c < D_; ++c)
             phi_[c] = kappa_ * (y_i[c] - c_out[c]);
 
-        esn_[i]->StepLive(input, phi_.data());
+        esn_[i]->ReservoirStep(input, phi_.data());
     }
 
     // 5. class drives kappa from the consensus error (§4.2) — not the caller.
@@ -197,7 +197,7 @@ void EnsembleESN::AdvanceKappa(const float* c_out, const float* target)
 void EnsembleESN::BeginSequence()
 {
     for (auto& e : esn_)
-        e->ClearReservoir();
+        e->ReservoirClear();
     // Re-impose a short washout; kappa schedule + gate state are preserved (§7.1).
     washout_remaining_ = resequence_washout_;
 }

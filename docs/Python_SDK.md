@@ -80,8 +80,8 @@ import hypercube_esn as he
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 esn = he.ESN(dim=7)
-esn.warmup(signal[:200])
-esn.run(signal[200:-1])
+esn.reservoir_warmup(signal[:200])
+esn.reservoir_run(signal[200:-1])
 
 targets = signal[201:]
 esn.train(targets[:1400])
@@ -128,9 +128,9 @@ esn.r2()                                        # test R² (no args after fit)
 esn.nrmse()                                     # test NRMSE
 
 # Low-level pipeline (full control)
-esn.warmup(inputs)                # drive without recording
-esn.run(inputs)                   # drive and collect states
-esn.run(inputs, clear_recorded=True)  # start a fresh batch (keeps readout)
+esn.reservoir_warmup(inputs)                # drive without recording
+esn.reservoir_run(inputs)                   # drive and collect states
+esn.reservoir_run(inputs, clear_recorded=True)  # start a fresh batch (keeps readout)
 esn.train(targets)                # HCNN readout (config fixed at construction)
 
 # Prediction & evaluation
@@ -155,7 +155,7 @@ ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
 
-Creates the reservoir; the readout consumes all N reservoir vertices. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) is also built eagerly at construction from the `readout_*` keyword arguments, ready before the first `train()` / `train_live_*` call.
+Creates the reservoir; the readout consumes all N reservoir vertices. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) is also built eagerly at construction from the `readout_*` keyword arguments, ready before the first `train()` / `train_step` call.
 
 **Reservoir parameters:**
 
@@ -246,7 +246,7 @@ print(esn.test_size)  # number of test samples
 
 The methods below give full control over each step. Use these for multi-step workflows, streaming, or when `fit()` doesn't match your use case.
 
-##### `warmup(inputs)`
+##### `reservoir_warmup(inputs)`
 
 Drive the reservoir for a number of timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training.
 
@@ -259,16 +259,16 @@ Drive the reservoir for a number of timesteps without recording state. Use this 
 
 ---
 
-##### `run(inputs, *, clear_recorded=False)`
+##### `reservoir_run(inputs, *, clear_recorded=False)`
 
-Drive the reservoir and record the full state vector at each step. States are appended — multiple `run()` calls accumulate.
+Drive the reservoir and record the full state vector at each step. States are appended — multiple `reservoir_run()` calls accumulate.
 
 **Parameters:**
-- `inputs` — NumPy array. Same shape convention as `warmup()`.
-- `clear_recorded` (keyword-only, default `False`) — if `True`, discard everything recorded by previous `run()` calls (and any cached `fit()` targets) before recording this batch, so it starts fresh. The reservoir's live state and the trained readout are untouched. Use this between independent sequences instead of rebuilding the ESN.
+- `inputs` — NumPy array. Same shape convention as `reservoir_warmup()`.
+- `clear_recorded` (keyword-only, default `False`) — if `True`, discard everything recorded by previous `reservoir_run()` calls (and any cached `fit()` targets) before recording this batch, so it starts fresh. The reservoir's live state and the trained readout are untouched. Use this between independent sequences instead of rebuilding the ESN.
 
 **Notes:**
-- After `run()`, collected states are available for training and evaluation.
+- After `reservoir_run()`, collected states are available for training and evaluation.
 - Features are computed lazily when first needed (by `train()`, `r2()`, etc.).
 
 ---
@@ -296,7 +296,7 @@ Train the HCNN readout on training samples taken from the start of the collected
 
 ##### `predict() → ndarray`
 
-Predict from the reservoir's current state. Returns a 1D float32 array of shape `(num_outputs,)`. For autoregressive / streaming inference loops: drive the reservoir one step (`run`/`warmup`), then read the prediction here without touching the recorded-state buffer.
+Predict from the reservoir's current state. Returns a 1D float32 array of shape `(num_outputs,)`. For autoregressive / streaming inference loops: drive the reservoir one step (`reservoir_run`/`reservoir_warmup`), then read the prediction here without touching the recorded-state buffer.
 
 ---
 
@@ -317,7 +317,7 @@ Predictions for all recorded timesteps as a 2D float32 array of shape `(num_coll
 
 ##### `predict_from_state(state) → ndarray`
 
-Run the readout on a caller-supplied reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_live_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
+Run the readout on a caller-supplied reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_reservoir_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
 
 ---
 
@@ -397,7 +397,7 @@ Extract all collected states (every reservoir vertex).
 |----------|------|-------------|
 | `dim` | `int` | Hypercube dimension. |
 | `N` | `int` | Number of neurons (2^dim). |
-| `num_collected` | `int` | Timesteps recorded by `run()`. |
+| `num_collected` | `int` | Timesteps recorded by `reservoir_run()`. |
 | `num_outputs` | `int` | Number of readout outputs (after training). |
 | `num_inputs` | `int` | Number of input channels. |
 | `num_output_verts` | `int` | Number of readout-input vertices (all N). |
@@ -419,19 +419,17 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 
 | Method | Description |
 |--------|-------------|
-| `warmup(inputs)` | Settle the reservoir before `train_live_*` (the readout CNN is already built at construction). |
-| `train_live_step(target_class, lr, weight_decay=0.0)` | Single-sample online gradient step (classification). |
-| `train_live_batch(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (classification). |
-| `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |
-| `train_live_batch_regression(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (regression). |
-| `copy_live_state()` | Copy current reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
+| `reservoir_warmup(inputs)` | Settle the reservoir before streaming training (the readout CNN is already built at construction). |
+| `train_step(target, lr, weight_decay=0.0)` | One streaming gradient step on the live state. `target`: regression → `(num_outputs,)`; classification → a single class index. |
+| `train_step_batch(states, targets, lr, weight_decay=0.0)` | One streaming gradient step over accumulated states. `targets`: regression → `(count, num_outputs)`; classification → `(count,)` class indices. |
+| `copy_reservoir_state()` | Copy current reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
 | `predict()` | Prediction from the reservoir's current state. Returns `(num_outputs,)` array. |
 
 #### Reservoir State Management
 
 | Method | Description |
 |--------|-------------|
-| `clear_reservoir()` | Clear the live reservoir state; recorded states and trained readout are preserved. For episodic tasks. |
+| `reservoir_clear()` | Clear the reservoir state; recorded states and trained readout are preserved. For episodic tasks. |
 
 ---
 
@@ -500,8 +498,8 @@ Load a saved ESN. Returns a new ESN with the trained readout intact and zero col
 
 ```python
 loaded = he.ESN.load("model.pkl")
-loaded.warmup(new_signal[:200])
-loaded.run(new_signal[200:])
+loaded.reservoir_warmup(new_signal[:200])
+loaded.reservoir_run(new_signal[200:])
 preds = loaded.predictions()
 ```
 
@@ -519,7 +517,7 @@ restored = pickle.loads(data)
 
 | Saved | Not saved |
 |-------|-----------|
-| All constructor parameters (dim, seed, spectral_radius, etc.) | Collected states (regenerate with `warmup()` + `run()`) |
+| All constructor parameters (dim, seed, spectral_radius, etc.) | Collected states (regenerate with `reservoir_warmup()` + `reservoir_run()`) |
 | Trained readout weights | Cached features |
 | Readout config (task, architecture) | `fit()` targets and train/test split |
 

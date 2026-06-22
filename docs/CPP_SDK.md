@@ -150,8 +150,8 @@ int main()
     ESN esn(cfg);
 
     // Drive and train
-    esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, collect);
+    esn.ReservoirWarmup(signal.data(), warmup);
+    esn.ReservoirRun(signal.data() + warmup, collect);
 
     std::vector<float> targets(collect);
     for (size_t t = 0; t < collect; ++t)
@@ -312,21 +312,19 @@ struct ESNConfig {
 ESN esn(cfg);
 
 // Reservoir driving
-esn.Warmup(inputs, num_steps);
-esn.Run(inputs, num_steps);                    // accumulate into the batch
-esn.Run(inputs, num_steps, /*clear_recorded=*/true);  // start a fresh batch
-esn.ClearReservoir();
+esn.ReservoirWarmup(inputs, num_steps);
+esn.ReservoirRun(inputs, num_steps);                    // accumulate into the batch
+esn.ReservoirRun(inputs, num_steps, /*clear_recorded=*/true);  // start a fresh batch
+esn.ReservoirClear();
 
 // Batch training (readout hyperparameters come from cfg.readout)
 esn.Train(targets, train_size);
 
-// Online (streaming) training
-esn.Warmup(warmup_inputs, warmup_count);   // settle the reservoir before train_live_*
-esn.TrainLiveStep(target_class, lr, weight_decay);
-esn.TrainLiveBatch(states, targets, count, lr, weight_decay);
-esn.TrainLiveStepRegression(target, lr, weight_decay);
-esn.TrainLiveBatchRegression(states, targets, count, lr, weight_decay);
-esn.CopyLiveState(out);
+// Streaming training (task fixed at construction)
+esn.ReservoirWarmup(warmup_inputs, warmup_count);   // settle the reservoir before streaming
+esn.TrainStep(target, lr, weight_decay);              // one step on the live state
+esn.TrainStepBatch(states, targets, count, lr, weight_decay);  // step over accumulated states
+esn.CopyReservoirState(out);
 
 // Prediction & evaluation (recorded states)
 esn.PredictFromRecorded(timestep);     // -> std::vector<float> (NumOutputs())
@@ -334,7 +332,7 @@ esn.R2(targets, start, count);
 esn.NRMSE(targets, start, count);
 esn.Accuracy(labels, start, count);
 
-// Prediction (live reservoir state)
+// Prediction (reservoir state)
 esn.Predict();                         // -> std::vector<float> (NumOutputs())
 esn.PredictFromState(state);           // run readout on a caller-supplied state
 
@@ -358,7 +356,7 @@ esn.SetReadoutState(state);
 explicit ESN(const ESNConfig& cfg);
 ```
 
-Creates the reservoir from `cfg.reservoir` and builds the readout from `cfg.readout`. Reservoir weights are generated and spectral-radius-rescaled at construction time; the HCNN readout is also built eagerly here, so it is ready before the first `Train()` / `TrainLive*` call.
+Creates the reservoir from `cfg.reservoir` and builds the readout from `cfg.readout`. Reservoir weights are generated and spectral-radius-rescaled at construction time; the HCNN readout is also built eagerly here, so it is ready before the first `Train()` / `TrainStep` call.
 
 **Parameters:**
 - `cfg` -- Full ESN configuration. See [ReservoirConfig](#reservoirconfig) and [ReadoutConfig](#readoutconfig).
@@ -380,10 +378,10 @@ ESN esn(cfg);
 
 #### Reservoir Driving
 
-##### `Warmup`
+##### `ReservoirWarmup`
 
 ```cpp
-void Warmup(const float* inputs, size_t num_steps);
+void ReservoirWarmup(const float* inputs, size_t num_steps);
 ```
 
 Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training.
@@ -394,25 +392,25 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 
 ---
 
-##### `Run`
+##### `ReservoirRun`
 
 ```cpp
-void Run(const float* inputs, size_t num_steps, bool clear_recorded = false);
+void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`Size()` floats — all N vertices). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
+Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`Size()` floats — all N vertices). States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate.
 
 **Parameters:**
-- `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `Warmup()`.
+- `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `ReservoirWarmup()`.
 - `num_steps` -- Number of timesteps to drive and record.
-- `clear_recorded` -- If `true`, discard everything recorded by previous `Run()` calls (and reset `NumCollected()`) before recording this batch, so this call starts fresh. The reservoir's live state and the trained readout are untouched. Default `false` (accumulate). Use this between independent recording batches — clear + record in one call — instead of rebuilding the ESN.
+- `clear_recorded` -- If `true`, discard everything recorded by previous `ReservoirRun()` calls (and reset `NumCollected()`) before recording this batch, so this call starts fresh. The reservoir's live state and the trained readout are untouched. Default `false` (accumulate). Use this between independent recording batches — clear + record in one call — instead of rebuilding the ESN.
 
 ---
 
-##### `ClearReservoir`
+##### `ReservoirClear`
 
 ```cpp
-void ClearReservoir();
+void ReservoirClear();
 ```
 
 Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
@@ -439,62 +437,38 @@ Trains the HCNN readout on the first `train_size` collected states. Readout hype
 
 ---
 
-#### Online (Streaming) Training
+#### Streaming Training
 
-For applications where data arrives continuously. The reservoir advances one step at a time; the readout is updated via per-sample or mini-batch gradient steps. The readout CNN is built eagerly at construction, so there is no separate online-init call — just `Warmup()` the reservoir to wash out the initial transient, then start the `TrainLive*` loop. (`cfg.readout.epochs` is ignored in online mode — the loop length is the caller's training loop.)
+For applications where data arrives continuously. The reservoir advances one step at a time; the readout is updated via per-sample or mini-batch gradient steps. The readout CNN is built eagerly at construction, so there is no separate init call — just `ReservoirWarmup()` the reservoir to wash out the initial transient, then start the `TrainStep` / `TrainStepBatch` loop. The task (regression vs classification) is fixed at construction; both methods dispatch on it, so a single `const float*` target serves both. (`cfg.readout.epochs` is ignored here — the loop length is the caller's.)
 
-##### `TrainLiveStep` (classification)
+##### `TrainStep`
 
 ```cpp
-void TrainLiveStep(float target_class, float lr, float weight_decay);
+void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 ```
 
-Single-sample online gradient step on the reservoir's current live state. Classification only -- `target_class` is cast to int internally.
+One streaming gradient step on the reservoir's current state. For regression, `target` is `NumOutputs()` floats; for classification, a single float holding the class index (cast to int internally).
 
 ---
 
-##### `TrainLiveBatch` (classification)
+##### `TrainStepBatch`
 
 ```cpp
-void TrainLiveBatch(const float* states, const int* targets,
-                    size_t count, float lr);
-void TrainLiveBatch(const float* states, const int* targets,
-                    size_t count, float lr, float weight_decay);
+void TrainStepBatch(const float* states, const float* targets, size_t count,
+                    float lr, float weight_decay = 0.0f);
 ```
 
-Mini-batch online gradient step. `states` is `count` rows of `Size()` floats (from `CopyLiveState`). `targets` is `count` int class indices. Parallelized across threads. The no-`weight_decay` overload inherits `cfg.readout.weight_decay`; the explicit form overrides it for this call.
+One streaming gradient step over a mini-batch of pre-accumulated states (parallelized across threads). `states` is `count` rows of `Size()` floats (from `CopyReservoirState`). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
 
 ---
 
-##### `TrainLiveStepRegression`
+##### `CopyReservoirState`
 
 ```cpp
-void TrainLiveStepRegression(const float* target, float lr,
-                             float weight_decay);
+void CopyReservoirState(float* out) const;
 ```
 
-Single-sample online gradient step on the reservoir's current live state. `target` is `NumOutputs()` floats.
-
----
-
-##### `TrainLiveBatchRegression`
-
-```cpp
-void TrainLiveBatchRegression(const float* states, const float* targets,
-                              size_t count, float lr, float weight_decay);
-```
-
-Mini-batch online gradient step for regression. `states` is `count` rows of `Size()` floats. `targets` is `count * NumOutputs()` floats (row-major).
-
----
-
-##### `CopyLiveState`
-
-```cpp
-void CopyLiveState(float* out) const;
-```
-
-Copies the current reservoir state into `out` (`Size()` floats — all N vertices). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
+Copies the current reservoir state into `out` (`Size()` floats — all N vertices). Use to accumulate states for `TrainStepBatch`.
 
 ---
 
@@ -559,7 +533,7 @@ Classification accuracy on collected timesteps.
 
 ---
 
-#### Prediction (Live Reservoir State)
+#### Prediction (Reservoir State)
 
 For streaming inference without recording states.
 
@@ -579,7 +553,7 @@ Returns `NumOutputs()` floats from the reservoir's current state. For autoregres
 [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 ```
 
-Runs the readout on a state buffer you pass in (`Size()` floats, e.g. one saved earlier with `CopyLiveState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the live reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a state buffer you pass in (`Size()` floats, e.g. one saved earlier with `CopyReservoirState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 
@@ -599,7 +573,7 @@ Returns all collected states: `NumCollected() * Size()` floats, row-major.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `NumCollected()` | `size_t` | Timesteps recorded by `Run()`. |
+| `NumCollected()` | `size_t` | Timesteps recorded by `ReservoirRun()`. |
 | `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
 | `NumInputs()` | `size_t` | Number of input channels from config. |
 | `Dim()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |

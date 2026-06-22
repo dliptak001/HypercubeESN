@@ -213,8 +213,8 @@ int main(int argc, char* argv[])
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth << "  Input Scaling=" << cfg.reservoir.input_scaling
               << "  Task=Classification  Classes=" << NUM_CLASSES << "\n";
 
-    esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, train_size + test_size);
+    esn.ReservoirWarmup(signal.data(), warmup);
+    esn.ReservoirRun(signal.data() + warmup, train_size + test_size);
 
     std::vector<float> float_labels(collect);
     for (size_t t = 0; t < collect; ++t)

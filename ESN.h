@@ -30,7 +30,7 @@ public:
     //  Reservoir driving
     // ---------------------------------------------------------------
 
-    /// @brief One timestep on the live reservoir: inject this step's inputs
+    /// @brief One timestep on the reservoir: inject this step's inputs
     /// (NumInputs() floats) and Step. No readout training occurs here.
     ///
     /// Open-loop by default (@p feedback == nullptr). To drive closed-loop, pass
@@ -42,69 +42,62 @@ public:
     /// @param feedback nullptr for open-loop, else NumFeedbackChannels() floats.
     /// @throws std::invalid_argument if @p feedback is non-null but feedback is
     ///         not configured (num_feedback_channels == 0).
-    void StepLive(const float* inputs, const float* feedback = nullptr);
+    void ReservoirStep(const float* inputs, const float* feedback = nullptr);
 
     /// @brief Drive the reservoir for @p num_steps without recording states
     /// (washes out the initial transient). @p inputs is row-major,
     /// num_steps * NumInputs() floats (NumInputs() values per timestep, one per
-    /// channel). Steps via @ref StepLive open-loop, so no feedback is injected
+    /// channel). Steps via @ref ReservoirStep open-loop, so no feedback is injected
     /// even on a feedback-configured ESN. Closed-loop drive is the caller's
-    /// responsibility via @ref StepLive (passing feedback).
+    /// responsibility via @ref ReservoirStep (passing feedback).
     ///
     /// This is also the warm-up step for online/streaming training: drive the
     /// reservoir here to wash out the x(0) = 0 transient before the first
-    /// @ref TrainLiveStep / @ref TrainLiveBatch. The readout CNN is built
+    /// @ref TrainStep / @ref TrainStepBatch. The readout CNN is built
     /// eagerly at construction, so no separate readout-init call is needed.
-    void Warmup(const float* inputs, size_t num_steps);
+    void ReservoirWarmup(const float* inputs, size_t num_steps);
 
     /// @brief Drive the reservoir for @p num_steps and append the full state at
     /// each step to the recorded-states buffer (for batch Train / R2 / NRMSE /
-    /// Accuracy). @p inputs has the same layout as @ref Warmup. Steps via
-    /// @ref StepLive — strictly open-loop, so the recorded states carry no
+    /// Accuracy). @p inputs has the same layout as @ref ReservoirWarmup. Steps via
+    /// @ref ReservoirStep — strictly open-loop, so the recorded states carry no
     /// feedback drive regardless of num_feedback_channels.
     ///
     /// By default successive calls **accumulate** into one growing batch. Pass
     /// @p clear_recorded = true to first discard everything recorded so far (and
     /// reset the timestep count) so this call starts a fresh batch — the trained
-    /// readout and the live reservoir state are left untouched either way.
-    void Run(const float* inputs, size_t num_steps, bool clear_recorded = false);
+    /// readout and the reservoir state are left untouched either way.
+    void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
 
-    /// @brief Clear the live reservoir state (zero its activations + history) so
+    /// @brief Clear the reservoir state (zero its activations + history) so
     /// a new input sequence starts from rest. The recorded states and the
     /// trained readout are preserved.
-    void ClearReservoir();
+    void ReservoirClear();
 
     // ---------------------------------------------------------------
     //  Training
     // ---------------------------------------------------------------
 
-    /// @brief Batch-train the readout on collected timesteps [0, train_size).
+    /// @brief Batch-train the readout on recorded timesteps [0, train_size).
     /// Requires train_size <= NumCollected(). @p targets layout matches @ref R2.
     void Train(const float* targets, size_t train_size);
 
-    /// @brief Single-step online classification training on the live reservoir
-    /// state against @p target_class.
-    void TrainLiveStep(float target_class, float lr, float weight_decay);
+    /// @brief One streaming gradient step on the reservoir's current state
+    /// toward @p target. The task is fixed at construction: for regression,
+    /// @p target is NumOutputs() floats; for classification, a single float
+    /// holding the class index.
+    void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 
-    /// @brief Copy the current live reservoir state (Size() floats = all N
-    /// vertices) into @p out, for external mini-batch accumulation.
-    void CopyLiveState(float* out) const;
+    /// @brief One streaming gradient step over a mini-batch of pre-accumulated
+    /// states (each Size() floats, e.g. from @ref CopyReservoirState). For
+    /// regression, @p targets is count * NumOutputs() floats; for
+    /// classification, @p targets is count floats (class indices).
+    void TrainStepBatch(const float* states, const float* targets, size_t count,
+                        float lr, float weight_decay = 0.0f);
 
-    /// No-weight_decay overload: inherits `cfg.readout.weight_decay`.
-    void TrainLiveBatch(const float* states, const int* targets, size_t count, float lr);
-
-    /// @brief Mini-batch online classification training on pre-accumulated
-    /// states (each Size() floats) with integer class @p targets.
-    void TrainLiveBatch(const float* states, const int* targets, size_t count, float lr, float weight_decay);
-
-    /// @brief Single-step online regression training on the live reservoir
-    /// state against @p target (NumOutputs() floats).
-    void TrainLiveStepRegression(const float* target, float lr, float weight_decay);
-
-    /// @brief Mini-batch online regression training on pre-accumulated states
-    /// (each Size() floats) with @p targets (count * NumOutputs()).
-    void TrainLiveBatchRegression(const float* states, const float* targets, size_t count, float lr,
-                                  float weight_decay);
+    /// @brief Copy the current reservoir state (Size() floats = all N
+    /// vertices) into @p out, to accumulate a mini-batch for @ref TrainStepBatch.
+    void CopyReservoirState(float* out) const;
 
     // ---------------------------------------------------------------
     //  Prediction & evaluation
@@ -113,19 +106,19 @@ public:
     /// @brief Predict from the reservoir's current state. Returns NumOutputs() floats.
     [[nodiscard]] std::vector<float> Predict() const;
 
-    /// @brief Predict from a recorded timestep (after Run). Returns NumOutputs() floats.
+    /// @brief Predict from a recorded timestep (after ReservoirRun). Returns NumOutputs() floats.
     [[nodiscard]] std::vector<float> PredictFromRecorded(size_t timestep) const;
 
     /// @brief Run the readout on a state buffer you pass in, instead of on the
     /// reservoir's current state.
     ///
     /// @p state is a reservoir state of Size() floats -- usually one you saved
-    /// earlier with CopyLiveState(). Returns NumOutputs() floats.
+    /// earlier with CopyReservoirState(). Returns NumOutputs() floats.
     ///
     /// Use this when you want to predict from a stored state, or to adjust the
     /// state before the readout sees it (for example, overwriting the first few
     /// entries with an external signal). Unlike Predict(), it never reads the
-    /// live reservoir.
+    /// reservoir.
     [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 
     /// @brief R-squared on collected timesteps [start, start+count).
@@ -165,7 +158,7 @@ public:
     [[nodiscard]] size_t Size() const { return n_; }
 
     /// Number of external feedback channels D (= cfg.reservoir.num_feedback_channels).
-    /// 0 means feedback is not configured; @ref StepLive expects this many
+    /// 0 means feedback is not configured; @ref ReservoirStep expects this many
     /// feedback values per step when driven closed-loop (non-null feedback).
     [[nodiscard]] size_t NumFeedbackChannels() const
     {

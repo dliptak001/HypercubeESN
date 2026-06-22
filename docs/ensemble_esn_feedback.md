@@ -82,7 +82,7 @@ coupling drive φ_i = κ · Δ_i                (scaled deviation; injected raw,
 ```
 
 `φ_i` (D values) is injected on member i's D feedback channels and consumed by its next
-`Step`. The coupling rides the existing feedback weight block — its own weights, its own
+`ReservoirStep`. The coupling rides the existing feedback weight block — its own weights, its own
 `feedback_scaling` fan-in, and (per the reservoir contract) it sits **outside** the
 spectral-radius estimate, so it does not silently inflate the open-loop stability
 budget.
@@ -98,7 +98,7 @@ budget.
    └───────────────────────────┬──────────────────────────────┘
                                ▼
    for each member i:
-       (training only) online-update readout_i toward target(t)   (TrainLive*)
+       (training only) online-update readout_i toward target(t)   (TrainStep)
        inject task input u(t)            on the input    channels
        inject φ_i = κ(t)·Δ_i(t)          on the feedback channels
        Step  ->  x_i(t+1)                                          (the seam, §7.2)
@@ -196,7 +196,7 @@ sign is fixed by convention (κ > 0, §4.1).
 
 **Readout learning rate (the members' online `lr` / `wd`) — held constant through the
 ramp.** This is separate from κ: it governs how fast each member's *readout* adapts via
-`TrainLiveStepRegression`, not how hard the members couple. One **shared** `lr` /
+`TrainStep`, not how hard the members couple. One **shared** `lr` /
 `weight_decay` is constructor config (§7) and is passed verbatim to every member's online
 step — members share the base config (§5), so there is no reason to differ them. The
 binding rule is the ramp interaction above: the κ ramp must stay slow *relative to* readout
@@ -278,16 +278,16 @@ Config choice; default mean, median for robustness studies. Both are worth explo
 Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns M
 `ESN` members (each owns a non-copyable `Reservoir`, held by `unique_ptr`), built with
 `num_feedback_channels = D`. The ensemble drives every member through its own loop on the
-`StepLive(inputs, φ)` feedback seam (there is no separate init step — readouts are built
+`ReservoirStep(inputs, φ)` feedback seam (there is no separate init step — readouts are built
 eagerly at construction and the ensemble owns its washout, §7.1), trains them online via
-`TrainLiveStepRegression`, and reads them via `Predict`.
+`TrainStep`, and reads them via `Predict`.
 
 ### 7.1 Online lifecycle — one loop, two scheduled knobs
 
 `EnsembleESN` runs in a **single execution mode** from the first step to the last. There
 is no separate warm-up mode, no reservoir-only path, and no `if (warming_up)` branch in
 the member loop. Every step — warm-up, training, inference — goes through the **same**
-`StepLive(inputs, φ)` feedback seam (§7.2). What changes over the run is not the code path
+`ReservoirStep(inputs, φ)` feedback seam (§7.2). What changes over the run is not the code path
 but the value of **two scheduled knobs**.
 
 **Why warm-up is not a separate mode.** A reservoir warm-up exists only to wash the
@@ -313,7 +313,7 @@ the normal loop:
   reservoir washout — there is no internal feedback path to interfere (the ESN has none,
   §7.2).
 
-- **The two scheduled knobs.** From step 0 the loop runs `Step()` (§7.3) unchanged. Two
+- **The two scheduled knobs.** From step 0 the loop runs `ReservoirStep()` (§7.3) unchanged. Two
   scalars move on a schedule the class owns (§4.2):
 
   ```
@@ -327,7 +327,7 @@ the normal loop:
                     after the W-step         competence gate fires
                     reservoir washout        (§4.2 / G3)
 
-    "warm-up" = steps [0, W): a normal Step() with κ = 0 and training not yet enabled.
+    "warm-up" = steps [0, W): a normal ReservoirStep() with κ = 0 and training not yet enabled.
   ```
 
   1. **`train` enable** flips on at step `W` (the washout length). During `[0, W)` the
@@ -345,7 +345,7 @@ the normal loop:
   training and inference — only whether the readout update runs this step.
 
 - **Sequence boundaries / reset.** When a fresh, independent sequence begins, every member
-  resets together via `ClearReservoir()` (clears live reservoir state only; trained readout
+  resets together via `ReservoirClear()` (clears reservoir state only; trained readout
   weights are preserved). The κ schedule and the `train`-enable knob are **not** rewound
   on such a reset — competence already achieved is not un-learned. Whether to re-impose a
   short washout (hold κ, suppress the readout update for a few steps while the dynamics
@@ -386,7 +386,7 @@ the D-channel external drive the ensemble needs. Reservoir touch-ups that landed
 **The ESN change — internal feedback removed entirely.** Binding decision: **all feedback
 is external; the ESN has no internal feedback policy.** The ESN had built an internal
 learned-F apparatus whenever `num_feedback_channels > 0` (the internal-F `if` block plus
-the `StepLive` F-injection branch): `feedback_readout_`, its eager `InitOnline`,
+the `ReservoirStep` F-injection branch): `feedback_readout_`, its eager `InitOnline`,
 `InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery, the
 decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by a
 guard that threw unless `num_feedback_channels == 1`. **All of it was deleted.** There is
@@ -397,12 +397,12 @@ distinguish. After removal:
   channels the reservoir carries.** `0` = no feedback; `D > 0` = D externally-supplied
   channels. No learned policy, no F readout, no telemetry — ever.
 - The `== 1` guard is gone; any **D ≤ N** is allowed (the substrate handles it, §above).
-- `ESN::StepLive(inputs)` (feedback omitted) is **input-only** — the `tanh(F(x))`-on-
+- `ESN::ReservoirStep(inputs)` (feedback omitted) is **input-only** — the `tanh(F(x))`-on-
   channel-0 branch was removed with F. It serves the no-feedback case.
-- `ESN::StepLive(inputs, φ)` (below) is the **only** way feedback enters.
+- `ESN::ReservoirStep(inputs, φ)` (below) is the **only** way feedback enters.
 - **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
   `Readout` ctor**, so there is no readout-init step at all: members are born ready. There
-  is no `InitOnline` on `ESN` — warm-up is just `ESN::Warmup(inputs, count)`, which the
+  is no `InitOnline` on `ESN` — warm-up is just `ESN::ReservoirWarmup(inputs, count)`, which the
   ensemble subsumes into its own washout loop.
 
 The result is a *simpler* ESN — one fewer feature, not more complex.
@@ -411,8 +411,8 @@ The result is a *simpler* ESN — one fewer feature, not more complex.
 
 ```
 // the only feedback entry point; feedback=nullptr is the input-only (no-feedback) path
-void ESN::StepLive(const float* inputs,              // NumInputs() floats (task input)
-                   const float* feedback = nullptr);  // D floats (the coupling drive φ_i), or null
+void ESN::ReservoirStep(const float* inputs,               // NumInputs() floats (task input)
+                        const float* feedback = nullptr);  // D floats (the coupling drive φ_i), or null
 //   if feedback:      for c in [0, D): reservoir_->InjectFeedback(c, feedback[c])  // raw, no clamp (§4.3)
 //   for ch in inputs: reservoir_->InjectInput(ch, inputs[ch])
 //   reservoir_->Step()
@@ -420,7 +420,7 @@ void ESN::StepLive(const float* inputs,              // NumInputs() floats (task
 
 **Net footprint (landed).** Deleted the ESN internal-F apparatus; redefined
 `num_feedback_channels` as the external-channel count and dropped the `== 1` guard; trimmed
-`StepLive` to input-only and added the `StepLive(inputs, φ)` feedback seam. `Reservoir`
+`ReservoirStep` to input-only and added the `ReservoirStep(inputs, φ)` feedback seam. `Reservoir`
 touch-ups: the vector inject and the relaxed divisibility throw. **Zero** `Readout` /
 HypercubeCNN changes. Net effect: the ESN shed a half-baked feature and gained one clean,
 external, well-defined feedback path.
@@ -453,9 +453,9 @@ class EnsembleESN {
         const bool train = target && (t_ >= W_);     // suppress fitting during the [0,W) washout (§7.1)
         std::vector<float> phi(D_);
         for (size_t i = 0; i < M_; ++i) {
-            if (train) esn_[i]->TrainLiveStepRegression(target, lr_, wd_);      // shared online lr/wd (§4.2/G4)
+            if (train) esn_[i]->TrainStep(target, lr_, wd_);      // shared online lr/wd (§4.2/G4)
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
-            esn_[i]->StepLive(input, phi.data());                               // the §7.2 seam
+            esn_[i]->ReservoirStep(input, phi.data());            // the §7.2 seam
         }
         AdvanceKappa(c_out, target);  // class drives κ from the consensus error (§4.2/G3) — not the caller
         ++t_;

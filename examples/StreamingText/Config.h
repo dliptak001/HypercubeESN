@@ -84,7 +84,7 @@ namespace streaming_text::config
             c.readout.weight_decay = 1e-5f;
             c.readout.lr_max = 0.001f;
             c.readout.lr_min_frac = 0.02f; // INERT in this example: the streaming path
-                                           // (Warmup + TrainLiveBatch) takes an explicit
+                                           // (ReservoirWarmup + TrainStepBatch) takes an explicit
                                            // per-batch lr; the readout's own cosine (the only
                                            // consumer of readout.lr_min_frac) is never run.
                                            // The active LR floor is Cfg::lr_min_frac below.
@@ -95,7 +95,7 @@ namespace streaming_text::config
         }();
 
         // --- Streaming knobs not in ESNConfig --------------------------------
-        int mini_batch_size = 64; ///< grad-accum chunk for TrainLiveBatch
+        int mini_batch_size = 64; ///< grad-accum chunk for TrainStepBatch
         float lr_min_frac = 0.2f; ///< cosine schedule floor as fraction of lr_max (1.0 = flat)
 
         // --- Prequential metric reporting ------------------------------------

@@ -195,7 +195,7 @@ public:
         // index-aligned: targets[t] = y(t) is the NARMA output for u(t).
         // When warmup_steps == 0 (the path MakeNARMATask hits -- the task
         // carries the full series intact; the ESN driver consumes the
-        // first `warmup` samples via ESN::Warmup before collecting states
+        // first `warmup` samples via ESN::ReservoirWarmup before collecting states
         // from the rest, and `targets()` skips the same prefix via a
         // pointer offset), skip the per-element copy and move the full
         // series out.
@@ -365,7 +365,7 @@ struct NARMATrialResult
 /// and `ESN(cfg)` is constructed here.
 ///
 /// Sequence: center targets on the train mean -> ESN(cfg) ->
-/// Warmup(ri, warmup) -> Run(ri + warmup, collect) -> Train(centered, tr) ->
+/// ReservoirWarmup(ri, warmup) -> ReservoirRun(ri + warmup, collect) -> Train(centered, tr) ->
 /// NRMSE/R2 on [tr, tr+te).
 ///
 /// NARMA output has a small positive mean and the readout no longer centers
@@ -385,8 +385,8 @@ inline NARMATrialResult RunNARMATrial(const ESNConfig& cfg, const NARMATask& tas
         centered[t] = y[t] - static_cast<float>(mean);
 
     ESN esn(cfg);
-    esn.Warmup(task.ri.data(), task.warmup);
-    esn.Run(task.ri.data() + task.warmup, task.collect);
+    esn.ReservoirWarmup(task.ri.data(), task.warmup);
+    esn.ReservoirRun(task.ri.data() + task.warmup, task.collect);
 
     const auto t0 = std::chrono::steady_clock::now();
     esn.Train(centered.data(), task.tr);

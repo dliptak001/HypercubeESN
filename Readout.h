@@ -74,27 +74,24 @@ public:
     /// per sample). Uses the ReadoutConfig supplied at construction.
     void Train(const float* states, const float* targets, size_t num_samples);
 
-    // ----- Online (streaming) training -----
+    // ----- Streaming training -----
     //
     // The CNN is built eagerly in the constructor (no separate init step):
     // net_ is ready to predict and to train (Adam + prepared buffers) from
-    // construction. Stream straight into the TrainOnline* methods.
+    // construction. Stream straight into TrainStep / TrainStepBatch. Both
+    // dispatch on the construction-time task (config_.task).
 
-    /// Single-sample online step (classification).
-    void TrainOnlineStep(const float* state, int target_class,
-                         float lr, float weight_decay = 0.0f);
+    /// One streaming gradient step on a single @p state. @p target is
+    /// num_outputs floats for regression, or a single class-index float (cast
+    /// to int) for classification.
+    void TrainStep(const float* state, const float* target,
+                   float lr, float weight_decay = 0.0f);
 
-    /// Mini-batch online step (classification). Parallelized via HCNN::TrainBatch.
-    void TrainOnlineBatch(const float* states, const int* targets,
-                          size_t count, float lr, float weight_decay = 0.0f);
-
-    /// Single-sample online step (regression).
-    void TrainOnlineStepRegression(const float* state, const float* target,
-                                   float lr, float weight_decay = 0.0f);
-
-    /// Mini-batch online step (regression).
-    void TrainOnlineBatchRegression(const float* states, const float* targets,
-                                    size_t count, float lr, float weight_decay = 0.0f);
+    /// One streaming gradient step over @p count states (each num_features
+    /// floats). @p targets is count*num_outputs floats for regression, or count
+    /// class-index floats for classification. Parallelized via HCNN::TrainBatch.
+    void TrainStepBatch(const float* states, const float* targets,
+                        size_t count, float lr, float weight_decay = 0.0f);
 
     // ----- Prediction -----
 
@@ -127,7 +124,7 @@ public:
     // ----- Serialization -----
 
     /// Snapshot the live CNN weights as an opaque blob. Returned by value so the
-    /// copy can't go stale behind a later TrainOnline* call.
+    /// copy can't go stale behind a later TrainStep* call.
     [[nodiscard]] std::vector<double> Weights() const;
 
     /// Load a previously saved weight blob into the (ctor-built) CNN.

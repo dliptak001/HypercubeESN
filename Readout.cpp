@@ -125,49 +125,41 @@ void Readout::Train(const float* states, const float* targets,
 }
 
 // ---------------------------------------------------------------------------
-//  Online (streaming) training
+//  Streaming training (dispatches on config_.task)
 // ---------------------------------------------------------------------------
 
-void Readout::TrainOnlineStep(const float* state, int target_class,
-                                 float lr, float weight_decay)
+void Readout::TrainStep(const float* state, const float* target,
+                        float lr, float weight_decay)
 {
     assert(net_);
-    const size_t n = num_features_;
+    const int n = static_cast<int>(num_features_);
 
-    net_->TrainStep(state, static_cast<int>(n), target_class,
-                    lr, config_.momentum, weight_decay);
+    if (config_.task == ReadoutTask::Classification)
+        net_->TrainStep(state, n, static_cast<int>(target[0]),
+                        lr, config_.momentum, weight_decay);
+    else
+        net_->TrainStepRegression(state, n, target,
+                                  lr, config_.momentum, weight_decay);
 }
 
-void Readout::TrainOnlineBatch(const float* states, const int* targets,
-                                  size_t count, float lr, float weight_decay)
+void Readout::TrainStepBatch(const float* states, const float* targets,
+                             size_t count, float lr, float weight_decay)
 {
     assert(net_);
-    const size_t n = num_features_;
+    const int n = static_cast<int>(num_features_);
 
-    net_->TrainBatch(states, static_cast<int>(n),
-                     targets, static_cast<int>(count),
-                     lr, config_.momentum, weight_decay);
-}
-
-void Readout::TrainOnlineStepRegression(const float* state, const float* target,
-                                           float lr, float weight_decay)
-{
-    assert(net_);
-    const size_t n = num_features_;
-
-    net_->TrainStepRegression(state, static_cast<int>(n), target,
-                              lr, config_.momentum, weight_decay);
-}
-
-void Readout::TrainOnlineBatchRegression(const float* states, const float* targets,
-                                            size_t count, float lr, float weight_decay)
-{
-    assert(net_);
-    const size_t n = num_features_;
-
-    net_->TrainBatchRegression(states, static_cast<int>(n),
-                               targets, static_cast<int>(count),
-                               lr, config_.momentum, weight_decay);
+    if (config_.task == ReadoutTask::Classification) {
+        // HCNN's classification path takes integer class labels; the unified
+        // float* target carries each class index as a float, so narrow here.
+        std::vector<int> labels(count);
+        for (size_t i = 0; i < count; ++i)
+            labels[i] = static_cast<int>(targets[i]);
+        net_->TrainBatch(states, n, labels.data(), static_cast<int>(count),
+                         lr, config_.momentum, weight_decay);
+    } else {
+        net_->TrainBatchRegression(states, n, targets, static_cast<int>(count),
+                                   lr, config_.momentum, weight_decay);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +259,7 @@ double Readout::Accuracy(const float* states, const float* labels,
 std::vector<double> Readout::Weights() const
 {
     // Snapshot the live network's weights on demand, by value — a returned copy
-    // can't go stale behind a later TrainOnline* call (online training mutates
+    // can't go stale behind a later TrainStep* call (streaming training mutates
     // net_ in place).
     const std::vector<float> fw = net_->GetWeights();
     return std::vector<double>(fw.begin(), fw.end());

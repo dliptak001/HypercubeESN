@@ -52,8 +52,8 @@ def classifier(sine):
     labels = np.where(sine >= 0, 1.0, 0.0).astype(np.float32)
     esn = ESN(dim=5, readout_num_outputs=2, readout_task="classification",
               readout_epochs=60, readout_batch_size=32)
-    esn.warmup(sine[:100])
-    esn.run(sine[100:])
+    esn.reservoir_warmup(sine[:100])
+    esn.reservoir_run(sine[100:])
     esn.train(labels[100:600])
     return esn, sine, labels
 
@@ -117,8 +117,8 @@ class TestMultiInput:
         esn = ESN(dim=5, num_inputs=4)  # 4 | 32
         rng = np.random.default_rng(0)
         inputs = (rng.standard_normal((300, 4)) * 0.1).astype(np.float32)
-        esn.warmup(inputs[:100])
-        esn.run(inputs[100:])
+        esn.reservoir_warmup(inputs[:100])
+        esn.reservoir_run(inputs[100:])
         assert esn.num_collected == 200
 
     def test_warmup_divisibility(self):
@@ -126,7 +126,7 @@ class TestMultiInput:
         # divisible by 4, so warmup must reject it.
         esn = ESN(dim=5, num_inputs=4)
         with pytest.raises(Exception, match="divisible"):
-            esn.warmup(np.ones(10, dtype=np.float32))
+            esn.reservoir_warmup(np.ones(10, dtype=np.float32))
 
 
 # ── Multi-output regression (collected + live retrieval) ──
@@ -149,7 +149,7 @@ class TestMultiOutput:
         np.testing.assert_allclose(allp[0], multi_output.predict_from_recorded(0), atol=1e-5)
 
     def test_predict_from_state_matches_live(self, multi_output):
-        state = multi_output.copy_live_state()
+        state = multi_output.copy_reservoir_state()
         assert state.shape == (multi_output.num_output_verts,)
         from_state = multi_output.predict_from_state(state)
         live = multi_output.predict()
@@ -187,27 +187,27 @@ class TestStreamingValidation:
     def test_step_regression_wrong_target_size(self):
         esn = ESN(dim=5, readout_num_outputs=3, verbose=False)
         with pytest.raises(ValueError, match="num_outputs"):
-            esn.train_live_step_regression(np.zeros(1, dtype=np.float32), lr=0.01)
+            esn.train_step(np.zeros(1, dtype=np.float32), lr=0.01)
 
     def test_batch_regression_targets_not_multiple(self):
         esn = ESN(dim=5, readout_num_outputs=3, verbose=False)
         states = np.zeros((2, esn.num_output_verts), dtype=np.float32)
         with pytest.raises(ValueError, match="multiple of num_outputs"):
-            esn.train_live_batch_regression(states, np.zeros(7, dtype=np.float32), lr=0.01)
+            esn.train_step_batch(states, np.zeros(7, dtype=np.float32), lr=0.01)
 
     def test_batch_regression_states_mismatch(self):
         esn = ESN(dim=5, readout_num_outputs=2, verbose=False)
         states = np.zeros((2, esn.num_output_verts), dtype=np.float32)  # 2 rows
         targets = np.zeros((3, 2), dtype=np.float32)                    # 3 samples
         with pytest.raises(ValueError, match="num_output_verts"):
-            esn.train_live_batch_regression(states, targets, lr=0.01)
+            esn.train_step_batch(states, targets, lr=0.01)
 
     def test_batch_classification_states_mismatch(self):
         esn = ESN(dim=5, readout_num_outputs=2, readout_task="classification",
                   verbose=False)
         states = np.zeros((2, esn.num_output_verts), dtype=np.float32)
         with pytest.raises(ValueError, match="num_output_verts"):
-            esn.train_live_batch(states, np.zeros(3, dtype=np.int32), lr=0.01)
+            esn.train_step_batch(states, np.zeros(3, dtype=np.int32), lr=0.01)
 
 
 # ── Surface parity: public wrapper exposes the full C++ method surface ──
@@ -215,10 +215,9 @@ class TestStreamingValidation:
 class TestSurfaceParity:
 
     EXPECTED = [
-        "warmup", "run", "clear_reservoir", "fit", "train",
-        "train_live_step", "train_live_batch",
-        "train_live_step_regression", "train_live_batch_regression",
-        "copy_live_state", "predict", "predict_from_recorded",
+        "reservoir_warmup", "reservoir_run", "reservoir_clear", "fit", "train",
+        "train_step", "train_step_batch",
+        "copy_reservoir_state", "predict", "predict_from_recorded",
         "predict_from_state",
         "predictions", "r2", "nrmse", "accuracy",
         "collected_states", "save", "load",
@@ -248,8 +247,8 @@ class TestPersistence:
         r2_before = esn.r2()
         loaded = pickle.loads(pickle.dumps(esn))
         assert loaded.num_collected == 0  # states are not persisted
-        loaded.warmup(sine[:100])
-        loaded.run(sine[100:-1])
+        loaded.reservoir_warmup(sine[:100])
+        loaded.reservoir_run(sine[100:-1])
         r2_after = loaded.r2(sine[101:], start=esn.train_size)
         assert abs(r2_before - r2_after) < 1e-5
 
@@ -259,8 +258,8 @@ class TestPersistence:
         esn.save(path)
         loaded = ESN.load(path)
         assert loaded.dim == esn.dim
-        loaded.warmup(sine[:100])
-        loaded.run(sine[100:-1])
+        loaded.reservoir_warmup(sine[:100])
+        loaded.reservoir_run(sine[100:-1])
         assert abs(esn.r2() - loaded.r2(sine[101:], start=esn.train_size)) < 1e-5
 
     def test_preserves_config(self):
@@ -279,8 +278,8 @@ class TestPersistence:
         acc_before = esn.accuracy(labels[100:], 500, 200)
         loaded = pickle.loads(pickle.dumps(esn))
         assert loaded.num_outputs == 2
-        loaded.warmup(sine[:100])
-        loaded.run(sine[100:])
+        loaded.reservoir_warmup(sine[:100])
+        loaded.reservoir_run(sine[100:])
         acc_after = loaded.accuracy(labels[100:], 500, 200)
         assert abs(acc_before - acc_after) < 1e-5
 

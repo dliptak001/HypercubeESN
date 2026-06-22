@@ -89,30 +89,30 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_seed")             = 42u)
 
         // ── Reservoir driving ──
-        .def("warmup", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {
+        .def("reservoir_warmup", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {
             auto buf = inputs.request();
             size_t total = static_cast<size_t>(buf.size);
             size_t K = self.NumInputs();
             if (total % K != 0)
                 throw std::invalid_argument("Input size must be divisible by num_inputs");
-            self.Warmup(static_cast<const float*>(buf.ptr), total / K);
+            self.ReservoirWarmup(static_cast<const float*>(buf.ptr), total / K);
         }, py::arg("inputs"),
            "Drive the reservoir without recording states (wash out initial transient).")
 
-        .def("run", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs,
+        .def("reservoir_run", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs,
                        bool clear_recorded) {
             auto buf = inputs.request();
             size_t total = static_cast<size_t>(buf.size);
             size_t K = self.NumInputs();
             if (total % K != 0)
                 throw std::invalid_argument("Input size must be divisible by num_inputs");
-            self.Run(static_cast<const float*>(buf.ptr), total / K, clear_recorded);
+            self.ReservoirRun(static_cast<const float*>(buf.ptr), total / K, clear_recorded);
         }, py::arg("inputs"), py::kw_only(), py::arg("clear_recorded") = false,
            "Drive the reservoir and record states for training/evaluation. "
            "Successive calls accumulate; pass clear_recorded=True to start a fresh batch.")
 
-        .def("clear_reservoir", &ESN::ClearReservoir,
-             "Clear the live reservoir state so a new sequence starts from rest. "
+        .def("reservoir_clear", &ESN::ReservoirClear,
+             "Clear the reservoir state so a new sequence starts from rest. "
              "Recorded states and trained readout preserved.")
 
         // ── Batch training ──
@@ -144,83 +144,63 @@ PYBIND11_MODULE(_core, m)
             "Train the HCNN readout on collected states.\n"
             "Uses the readout config supplied at ESN construction.")
 
-        // ── Online (streaming) HCNN training ──
-        .def("train_live_step", [](ESN& self, float target_class, float lr, float weight_decay) {
-            self.TrainLiveStep(target_class, lr, weight_decay);
+        // ── Streaming HCNN training (task fixed at construction) ──
+        .def("train_step", [](ESN& self,
+                              py::array_t<float, py::array::c_style | py::array::forcecast> target,
+                              float lr, float weight_decay) {
+            auto buf = target.request();
+            const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
+            const size_t expected = cls ? 1u : self.NumOutputs();
+            if (static_cast<size_t>(buf.size) != expected)
+                throw std::invalid_argument(
+                    cls ? "target size (" + std::to_string(buf.size) +
+                              ") must equal 1 (class index) for classification"
+                        : "target size (" + std::to_string(buf.size) +
+                              ") must equal num_outputs (" + std::to_string(expected) + ")");
+            self.TrainStep(static_cast<const float*>(buf.ptr), lr, weight_decay);
         },
-            py::arg("target_class"), py::arg("lr"), py::arg("weight_decay") = 0.0f,
-            "Single-step online classification training on the live reservoir state.")
+            py::arg("target"), py::arg("lr"), py::arg("weight_decay") = 0.0f,
+            "One streaming gradient step on the reservoir's current state.\n"
+            "target: regression -> (num_outputs,) values; classification -> (1,) class index.")
 
-        .def("train_live_batch", [](ESN& self,
+        .def("train_step_batch", [](ESN& self,
                                     py::array_t<float, py::array::c_style | py::array::forcecast> states,
-                                    py::array_t<int, py::array::c_style | py::array::forcecast> targets,
+                                    py::array_t<float, py::array::c_style | py::array::forcecast> targets,
                                     float lr, float weight_decay) {
             auto sbuf = states.request();
             auto tbuf = targets.request();
-            size_t count = static_cast<size_t>(tbuf.size);
-            size_t M = self.Size();
+            const size_t M = self.Size();
+            const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
+            const size_t K = self.NumOutputs();
+            size_t count;
+            if (cls) {
+                count = static_cast<size_t>(tbuf.size);
+            } else {
+                if (K == 0 || static_cast<size_t>(tbuf.size) % K != 0)
+                    throw std::invalid_argument(
+                        "targets size (" + std::to_string(tbuf.size) +
+                        ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
+                count = static_cast<size_t>(tbuf.size) / K;
+            }
             if (static_cast<size_t>(sbuf.size) != count * M)
                 throw std::invalid_argument(
                     "states size (" + std::to_string(sbuf.size) +
                     ") must equal count * num_output_verts (" + std::to_string(count) +
                     " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
-            self.TrainLiveBatch(static_cast<const float*>(sbuf.ptr),
-                                static_cast<const int*>(tbuf.ptr),
+            self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
+                                static_cast<const float*>(tbuf.ptr),
                                 count, lr, weight_decay);
         },
             py::arg("states"), py::arg("targets"),
             py::arg("lr"), py::arg("weight_decay") = 0.0f,
-            "Mini-batch online classification training on pre-accumulated states.\n"
-            "states: (count, num_output_verts) float array from copy_live_state.\n"
-            "targets: (count,) int array of class indices.")
+            "One streaming gradient step over a mini-batch of pre-accumulated states.\n"
+            "states: (count, num_output_verts) float array from copy_reservoir_state.\n"
+            "targets: regression -> (count, num_outputs); classification -> (count,) class indices.")
 
-        .def("train_live_step_regression", [](ESN& self,
-                                              py::array_t<float, py::array::c_style | py::array::forcecast> target,
-                                              float lr, float weight_decay) {
-            auto buf = target.request();
-            size_t K = self.NumOutputs();
-            if (static_cast<size_t>(buf.size) != K)
-                throw std::invalid_argument(
-                    "target size (" + std::to_string(buf.size) +
-                    ") must equal num_outputs (" + std::to_string(K) + ")");
-            self.TrainLiveStepRegression(static_cast<const float*>(buf.ptr), lr, weight_decay);
-        },
-            py::arg("target"), py::arg("lr"), py::arg("weight_decay") = 0.0f,
-            "Single-step online regression training on the live reservoir state.\n"
-            "target: (num_outputs,) float array.")
-
-        .def("train_live_batch_regression", [](ESN& self,
-                                               py::array_t<float, py::array::c_style | py::array::forcecast> states,
-                                               py::array_t<float, py::array::c_style | py::array::forcecast> targets,
-                                               float lr, float weight_decay) {
-            auto sbuf = states.request();
-            auto tbuf = targets.request();
-            size_t K = self.NumOutputs();
-            if (static_cast<size_t>(tbuf.size) % K != 0)
-                throw std::invalid_argument(
-                    "targets size (" + std::to_string(tbuf.size) +
-                    ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
-            size_t count = static_cast<size_t>(tbuf.size) / K;
-            size_t M = self.Size();
-            if (static_cast<size_t>(sbuf.size) != count * M)
-                throw std::invalid_argument(
-                    "states size (" + std::to_string(sbuf.size) +
-                    ") must equal count * num_output_verts (" + std::to_string(count) +
-                    " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
-            self.TrainLiveBatchRegression(static_cast<const float*>(sbuf.ptr),
-                                          static_cast<const float*>(tbuf.ptr),
-                                          count, lr, weight_decay);
-        },
-            py::arg("states"), py::arg("targets"),
-            py::arg("lr"), py::arg("weight_decay") = 0.0f,
-            "Mini-batch online regression training on pre-accumulated states.\n"
-            "states: (count, num_output_verts) float array from copy_live_state.\n"
-            "targets: (count, num_outputs) float array.")
-
-        .def("copy_live_state", [](const ESN& self) {
+        .def("copy_reservoir_state", [](const ESN& self) {
             size_t M = self.Size();
             py::array_t<float> arr(M);
-            self.CopyLiveState(arr.mutable_data());
+            self.CopyReservoirState(arr.mutable_data());
             return arr;
         }, "Copy the current reservoir state for external accumulation.\n"
            "Returns a (num_output_verts,) float array.")

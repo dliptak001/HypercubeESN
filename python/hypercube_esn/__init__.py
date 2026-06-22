@@ -120,8 +120,8 @@ class ESN:
     Explicit (multi-input, custom targets):
 
     >>> esn = he.ESN(dim=7, num_inputs=2)
-    >>> esn.warmup(inputs[:200])
-    >>> esn.run(inputs[200:])
+    >>> esn.reservoir_warmup(inputs[:200])
+    >>> esn.reservoir_run(inputs[200:])
     >>> esn.train(targets[:1400])
     >>> esn.r2(targets, start=1400)
     0.99...
@@ -186,7 +186,7 @@ class ESN:
         self._targets: np.ndarray | None = None
         self._train_size: int | None = None
 
-    def warmup(self, inputs: np.ndarray) -> None:
+    def reservoir_warmup(self, inputs: np.ndarray) -> None:
         """Drive the reservoir without recording states (wash out transient).
 
         Parameters
@@ -195,40 +195,41 @@ class ESN:
             Input signal. Shape ``(num_steps,)`` for single-input or
             ``(num_steps, num_inputs)`` for multi-input. Converted to float32.
         """
-        self._impl.warmup(_to_float32(inputs))
+        self._impl.reservoir_warmup(_to_float32(inputs))
 
-    def run(self, inputs: np.ndarray, *, clear_recorded: bool = False) -> None:
+    def reservoir_run(self, inputs: np.ndarray, *, clear_recorded: bool = False) -> None:
         """Drive the reservoir and record states for training/evaluation.
 
         Parameters
         ----------
         inputs : ndarray
-            Input signal. Same shape convention as ``warmup()``.
+            Input signal. Same shape convention as ``reservoir_warmup()``.
         clear_recorded : bool, keyword-only
-            If True, discard everything recorded by previous ``run()`` calls
-            (and any cached ``fit()`` targets) before recording this batch, so
-            this call starts fresh. The trained readout and the live reservoir
+            If True, discard everything recorded by previous ``reservoir_run()``
+            calls (and any cached ``fit()`` targets) before recording this batch,
+            so this call starts fresh. The trained readout and the reservoir
             state are left untouched. Default False.
 
         Notes
         -----
-        By default successive ``run()`` calls accumulate into one growing batch;
-        pass ``clear_recorded=True`` to start an independent sequence.
+        By default successive ``reservoir_run()`` calls accumulate into one
+        growing batch; pass ``clear_recorded=True`` to start an independent
+        sequence.
         """
         if clear_recorded:
             self._targets = None
             self._train_size = None
-        self._impl.run(_to_float32(inputs), clear_recorded=clear_recorded)
+        self._impl.reservoir_run(_to_float32(inputs), clear_recorded=clear_recorded)
 
-    def clear_reservoir(self) -> None:
-        """Clear the live reservoir state so a new sequence starts from rest.
+    def reservoir_clear(self) -> None:
+        """Clear the reservoir state so a new sequence starts from rest.
 
         Zeros the reservoir's activations and history. The recorded states and
         the trained readout are preserved. Useful for episodic tasks where each
         sequence should start from a clean reservoir without discarding
         previously recorded training data.
         """
-        self._impl.clear_reservoir()
+        self._impl.reservoir_clear()
 
     def fit(
         self,
@@ -316,8 +317,8 @@ class ESN:
                     f"warmup ({warmup}) + horizon ({horizon}) >= len(inputs) "
                     f"({len(inputs)}). Not enough data to collect any states."
                 )
-            self.warmup(inputs[:warmup])
-            self.run(inputs[warmup:-horizon], clear_recorded=True)
+            self.reservoir_warmup(inputs[:warmup])
+            self.reservoir_run(inputs[warmup:-horizon], clear_recorded=True)
             self._targets = _to_float32(inputs[warmup + horizon:])
         else:
             # Explicit-target mode: works for any num_inputs
@@ -327,8 +328,8 @@ class ESN:
                     f"warmup ({warmup}) >= number of input steps. "
                     "Not enough data to collect any states."
                 )
-            self.warmup(inputs[:warmup])
-            self.run(inputs[warmup:], clear_recorded=True)
+            self.reservoir_warmup(inputs[:warmup])
+            self.reservoir_run(inputs[warmup:], clear_recorded=True)
             if len(targets) != self.num_collected:
                 raise ValueError(
                     f"targets length ({len(targets)}) must equal num_collected "
@@ -377,7 +378,7 @@ class ESN:
         """Predict from the reservoir's current state.
 
         For autoregressive / closed-loop inference: drive the reservoir one step
-        (``run``/``warmup``), then read the prediction here without touching the
+        (``reservoir_run``/``reservoir_warmup``), then read the prediction here without touching the
         recorded-state buffer.
 
         Returns
@@ -410,7 +411,7 @@ class ESN:
         ----------
         state : ndarray
             A reservoir state of shape ``(num_output_verts,)``,
-            e.g. one returned by :meth:`copy_live_state`. Converted to float32.
+            e.g. one returned by :meth:`copy_reservoir_state`. Converted to float32.
 
         Returns
         -------
@@ -568,95 +569,62 @@ class ESN:
 
     # ── Streaming / online training ──
 
-    def copy_live_state(self) -> np.ndarray:
+    def copy_reservoir_state(self) -> np.ndarray:
         """Copy the current reservoir state.
 
         Returns
         -------
         ndarray
             1D array of shape ``(num_output_verts,)``. Accumulate these across
-            steps to build the ``states`` batch for ``train_live_batch*``.
+            steps to build the ``states`` batch for :meth:`train_step_batch`.
         """
-        return self._impl.copy_live_state()
+        return self._impl.copy_reservoir_state()
 
-    def train_live_step(
-        self, target_class: float, lr: float, weight_decay: float = 0.0
+    def train_step(
+        self, target, lr: float, weight_decay: float = 0.0
     ) -> None:
-        """Single-sample online classification step on the live reservoir state.
+        """One streaming gradient step on the reservoir's current state.
+
+        The task is fixed at construction.
 
         Parameters
         ----------
-        target_class : float
-            Class index as a float (0.0, 1.0, ...).
+        target : float or ndarray
+            For regression: shape ``(num_outputs,)`` target values.
+            For classification: a single class index. Converted to float32.
         lr : float
             Learning rate for this step.
         weight_decay : float, optional
             L2 weight decay. Default 0.0.
         """
-        self._impl.train_live_step(target_class, lr, weight_decay)
+        self._impl.train_step(_to_float32(np.atleast_1d(target)), lr, weight_decay)
 
-    def train_live_batch(
+    def train_step_batch(
         self,
         states: np.ndarray,
         targets: np.ndarray,
         lr: float,
         weight_decay: float = 0.0,
     ) -> None:
-        """Mini-batch online classification step on pre-accumulated states.
+        """One streaming gradient step over a mini-batch of pre-accumulated states.
+
+        The task is fixed at construction.
 
         Parameters
         ----------
         states : ndarray
             Shape ``(count, num_output_verts)`` of states from
-            :meth:`copy_live_state`. Converted to float32.
+            :meth:`copy_reservoir_state`. Converted to float32.
         targets : ndarray
-            Shape ``(count,)`` of integer class indices.
+            For regression: shape ``(count, num_outputs)`` target values.
+            For classification: shape ``(count,)`` of class indices.
+            Converted to float32.
         lr : float
             Learning rate.
         weight_decay : float, optional
             L2 weight decay. Default 0.0.
         """
-        targets = np.ascontiguousarray(targets, dtype=np.int32)
-        self._impl.train_live_batch(_to_float32(states), targets, lr, weight_decay)
-
-    def train_live_step_regression(
-        self, target: np.ndarray, lr: float, weight_decay: float = 0.0
-    ) -> None:
-        """Single-sample online regression step on the live reservoir state.
-
-        Parameters
-        ----------
-        target : ndarray
-            Shape ``(num_outputs,)`` target values. Converted to float32.
-        lr : float
-            Learning rate.
-        weight_decay : float, optional
-            L2 weight decay. Default 0.0.
-        """
-        self._impl.train_live_step_regression(_to_float32(target), lr, weight_decay)
-
-    def train_live_batch_regression(
-        self,
-        states: np.ndarray,
-        targets: np.ndarray,
-        lr: float,
-        weight_decay: float = 0.0,
-    ) -> None:
-        """Mini-batch online regression step on pre-accumulated states.
-
-        Parameters
-        ----------
-        states : ndarray
-            Shape ``(count, num_output_verts)`` of states from
-            :meth:`copy_live_state`. Converted to float32.
-        targets : ndarray
-            Shape ``(count, num_outputs)`` target values. Converted to float32.
-        lr : float
-            Learning rate.
-        weight_decay : float, optional
-            L2 weight decay. Default 0.0.
-        """
-        self._impl.train_live_batch_regression(
+        self._impl.train_step_batch(
             _to_float32(states), _to_float32(targets), lr, weight_decay
         )
 
@@ -855,13 +823,13 @@ class ESN:
         Notes
         -----
         The restored ESN has zero collected states. To make predictions
-        on new data, call ``warmup()`` and ``run()`` first.
+        on new data, call ``reservoir_warmup()`` and ``reservoir_run()`` first.
 
         Examples
         --------
         >>> esn = he.ESN.load("model.pkl")
-        >>> esn.warmup(new_signal[:200])
-        >>> esn.run(new_signal[200:])
+        >>> esn.reservoir_warmup(new_signal[:200])
+        >>> esn.reservoir_run(new_signal[200:])
         >>> preds = esn.predictions()
         """
         with open(pathlib.Path(path), "rb") as f:

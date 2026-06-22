@@ -170,28 +170,30 @@ throughput collapses.
 **When not to use:** Small-DIM tasks (5-6) where the architecture has
 minimal depth and training cost isn't justified by accuracy gains.
 
-## Online Training API
+## Streaming Training API
 
-Readout supports per-sample and mini-batch online gradient steps
-for streaming applications where data arrives continuously.
+Readout supports per-sample and mini-batch streaming gradient steps
+for applications where data arrives continuously.
 
 ### Setup
 
 The architecture and Adam optimizer are built eagerly in the `Readout`
-constructor — no separate online-init call. Warm up the reservoir (via
-`ESN::Warmup`) before the first gradient step.
+constructor — no separate init call. Warm up the reservoir (via
+`ESN::ReservoirWarmup`) before the first gradient step.
 
 ### Gradient steps
 
-| Method | Task | Granularity |
-|--------|------|-------------|
-| `TrainOnlineStep(state, class, lr, wd)` | Classification | Single sample |
-| `TrainOnlineBatch(states, classes, count, lr, wd)` | Classification | Mini-batch |
-| `TrainOnlineStepRegression(state, target, lr, wd)` | Regression | Single sample |
-| `TrainOnlineBatchRegression(states, targets, count, lr, wd)` | Regression | Mini-batch |
+Both methods dispatch on the construction-time task (`config_.task`), so a
+single `const float*` target serves both — for regression it is `num_outputs`
+floats; for classification, a single class-index float (cast to int).
 
-Mini-batch variants are parallelized via `HCNN::TrainBatch` (classification)
-and `HCNN::TrainBatchRegression` (regression).
+| Method | Granularity | target |
+|--------|-------------|--------|
+| `TrainStep(state, target, lr, wd)` | Single sample | `num_outputs` floats, or a (1,) class index |
+| `TrainStepBatch(states, targets, count, lr, wd)` | Mini-batch | `count * num_outputs`, or `count` class indices |
+
+Mini-batch is parallelized via `HCNN::TrainBatch` (classification) and
+`HCNN::TrainBatchRegression` (regression).
 
 See `examples/StreamingText/` for a working streaming implementation
 and `examples/StreamingAnomaly.cpp` for an anomaly-detection use case.
@@ -229,7 +231,7 @@ and evaluation to it. The methods below are on Readout; see
 The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at ESN construction — `Train` takes no config argument, and the readout CNN is built eagerly in the ESN ctor.
 
 - `ESN::Train(targets, train_size)` → `Readout::Train` using `cfg.readout`
-- `ESN::Warmup(inputs, num_steps)` → settle the reservoir before `TrainLive*`
+- `ESN::ReservoirWarmup(inputs, num_steps)` → settle the reservoir before `TrainStep` / `TrainStepBatch`
 - `ESN::Predict()` / `ESN::PredictFromRecorded(timestep)` / `ESN::PredictFromState(state)` → return `std::vector<float>` (NumOutputs())
 - `ESN::NumOutputs()` → delegates to `Readout::NumOutputs()`
 - `ESN::R2/NRMSE/Accuracy` → handle multi-output target layout

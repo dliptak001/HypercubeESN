@@ -87,7 +87,7 @@ constant; pick one and leave it.
 2. **Phase 1 — warmup** (`warmup_chars`): drive the reservoir, no training,
    to wash out the zero-init transient.
 3. **Phase 2 — extra warmup** (`warmup_train_chars`): drive the reservoir
-   further with `Warmup`. (This window is a holdover from the old standardization
+   further with `ReservoirWarmup`. (This window is a holdover from the old standardization
    era; with standardization removed, and the CNN now built eagerly at
    construction, it is simply extra reservoir warmup before training.)
 4. **Phase 3 — ring loop** (`total_steps`): the per-char body above (advance →
@@ -108,7 +108,7 @@ A single `Cfg` struct (no mode enum):
 | `warmup_train_chars` | extra warmup chars to settle the reservoir before training |
 | `total_steps` | single stream budget; laps ≈ `total_steps / L` |
 | `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) block |
-| `mini_batch_size` | grad-accum chunk for `TrainLiveBatch` |
+| `mini_batch_size` | grad-accum chunk for `TrainStepBatch` |
 | `lr_min_frac` | cosine schedule floor as a fraction of `lr_max` (this is the **active** floor; `esn.readout.lr_min_frac` is inert in the streaming path) |
 | `report_window` | rolling-BPC / top-1 window length (chars) |
 | `report_every` | live-line print cadence (0 = end only) |

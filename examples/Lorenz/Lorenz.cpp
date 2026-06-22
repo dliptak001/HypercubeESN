@@ -250,8 +250,8 @@ int main()
     const size_t train_size = static_cast<size_t>(COLLECT * TRAIN_FRACTION);
     const size_t test_size  = COLLECT - train_size;
 
-    esn.Warmup(inputs_wc.data(), WARMUP);
-    esn.Run(inputs_wc.data() + WARMUP * NUM_INPUTS, COLLECT);
+    esn.ReservoirWarmup(inputs_wc.data(), WARMUP);
+    esn.ReservoirRun(inputs_wc.data() + WARMUP * NUM_INPUTS, COLLECT);
 
     std::cout << "  Training readout (" << cfg.readout.epochs << " epochs)..." << std::flush;
     auto t0 = std::chrono::steady_clock::now();
@@ -287,8 +287,8 @@ int main()
         const size_t L = first_launch + k * LAUNCH_STRIDE;
 
         // re-sync the reservoir onto the true trajectory ending just before L
-        esn.ClearReservoir();
-        for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
+        esn.ReservoirClear();
+        for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.ReservoirStep(in4); }
 
         // cut the cord: predict the increment, reconstruct the next state by
         // adding it to the current estimate, feed that back. Current estimate
@@ -309,7 +309,7 @@ int main()
             if (e > VPT_THRESH) { reached = h; break; }
 
             fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
-            esn.StepLive(in4);
+            esn.ReservoirStep(in4);
             cx = px; cy = py; cz = pz;
         }
         vpt_steps[k] = static_cast<double>(reached);
@@ -320,8 +320,8 @@ int main()
             std::cout << "  -- Free-run sample (launch 0), denormalized Lorenz units --\n";
             std::cout << "    step |    x_true   x_pred  |    z_true   z_pred  |  norm.err\n";
             std::cout << "    -----+---------------------+---------------------+----------\n";
-            esn.ClearReservoir();
-            for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
+            esn.ReservoirClear();
+            for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.ReservoirStep(in4); }
             double dx = nx[L - 1], dy = ny[L - 1], dz = nz[L - 1];
             for (size_t h = 0; h < 20; ++h)
             {
@@ -339,7 +339,7 @@ int main()
                           << " " << std::setw(8) << zp
                           << "  | " << std::setw(8) << std::setprecision(4) << e << "\n";
                 fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
-                esn.StepLive(in4);
+                esn.ReservoirStep(in4);
                 dx = px; dy = py; dz = pz;
             }
             std::cout << "\n";

@@ -28,7 +28,7 @@ ESN::ESN(const ESNConfig& cfg)
     scratch_state_.resize(n_);
 }
 
-void ESN::StepLive(const float* inputs, const float* feedback)
+void ESN::ReservoirStep(const float* inputs, const float* feedback)
 {
     // Closed-loop only when feedback is actually supplied. Stage it on the D
     // feedback channels (raw, no clamp) through the reservoir's dedicated port
@@ -42,7 +42,7 @@ void ESN::StepLive(const float* inputs, const float* feedback)
         // instead, so a feedback caller on a non-feedback ESN fails loud.
         if (esn_config_.reservoir.num_feedback_channels == 0)
             throw std::invalid_argument(
-                "ESN::StepLive: feedback supplied but not configured "
+                "ESN::ReservoirStep: feedback supplied but not configured "
                 "(num_feedback_channels == 0); pass feedback=nullptr for open-loop drive");
         reservoir_->InjectFeedback(feedback, esn_config_.reservoir.num_feedback_channels);
     }
@@ -52,13 +52,13 @@ void ESN::StepLive(const float* inputs, const float* feedback)
     reservoir_->Step();
 }
 
-void ESN::Warmup(const float* inputs, size_t num_steps)
+void ESN::ReservoirWarmup(const float* inputs, size_t num_steps)
 {
     for (size_t s = 0; s < num_steps; ++s)
-        StepLive(inputs + s * num_inputs_);
+        ReservoirStep(inputs + s * num_inputs_);
 }
 
-void ESN::Run(const float* inputs, size_t num_steps, bool clear_recorded)
+void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded)
 {
     if (clear_recorded)
     {
@@ -68,13 +68,13 @@ void ESN::Run(const float* inputs, size_t num_steps, bool clear_recorded)
     states_.resize((num_collected_ + num_steps) * n_);
     for (size_t s = 0; s < num_steps; ++s)
     {
-        StepLive(inputs + s * num_inputs_);
-        CopyLiveState(states_.data() + (num_collected_ + s) * n_);
+        ReservoirStep(inputs + s * num_inputs_);
+        CopyReservoirState(states_.data() + (num_collected_ + s) * n_);
     }
     num_collected_ += num_steps;
 }
 
-void ESN::ClearReservoir()
+void ESN::ReservoirClear()
 {
     reservoir_->Clear();
 }
@@ -88,48 +88,27 @@ void ESN::Train(const float* targets, size_t train_size)
     readout_.Train(ReadoutInput(0), targets, train_size);
 }
 
-void ESN::TrainLiveStep(float target_class, float lr, float weight_decay)
+void ESN::TrainStep(const float* target, float lr, float weight_decay)
 {
-    CopyLiveState(scratch_state_.data());
-    readout_.TrainOnlineStep(scratch_state_.data(),
-                             static_cast<int>(target_class), lr, weight_decay);
+    CopyReservoirState(scratch_state_.data());
+    readout_.TrainStep(scratch_state_.data(), target, lr, weight_decay);
 }
 
-void ESN::CopyLiveState(float* out) const
+void ESN::CopyReservoirState(float* out) const
 {
     const float* src = reservoir_->Outputs();
     std::memcpy(out, src, n_ * sizeof(float));
 }
 
-void ESN::TrainLiveBatch(const float* states, const int* targets,
-                         size_t count, float lr)
-{
-    TrainLiveBatch(states, targets, count, lr, readout_.GetConfig().weight_decay);
-}
-
-void ESN::TrainLiveBatch(const float* states, const int* targets,
+void ESN::TrainStepBatch(const float* states, const float* targets,
                          size_t count, float lr, float weight_decay)
 {
-    readout_.TrainOnlineBatch(states, targets, count, lr, weight_decay);
-}
-
-void ESN::TrainLiveStepRegression(const float* target, float lr,
-                                  float weight_decay)
-{
-    CopyLiveState(scratch_state_.data());
-    readout_.TrainOnlineStepRegression(scratch_state_.data(), target,
-                                       lr, weight_decay);
-}
-
-void ESN::TrainLiveBatchRegression(const float* states, const float* targets,
-                                   size_t count, float lr, float weight_decay)
-{
-    readout_.TrainOnlineBatchRegression(states, targets, count, lr, weight_decay);
+    readout_.TrainStepBatch(states, targets, count, lr, weight_decay);
 }
 
 std::vector<float> ESN::Predict() const
 {
-    CopyLiveState(scratch_state_.data());
+    CopyReservoirState(scratch_state_.data());
     std::vector<float> out(readout_.NumOutputs());
     readout_.PredictRaw(scratch_state_.data(), out.data());
     return out;
