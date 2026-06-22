@@ -1,8 +1,5 @@
 /// @file LorenzPong.cpp
-/// @brief Scaffold for the LorenzPong example — build target wired up; the
-/// experiment itself is not yet implemented.
-///
-/// This file exists so `LorenzPong` is a first-class build target alongside
+/// @brief This file exists so `LorenzPong` is a first-class build target alongside
 /// `Lorenz` and `LorenzOnline`. Flesh out main() with the actual run.
 
 #include <iostream>
@@ -10,14 +7,14 @@
 
 void LorenzPong::Eval()
 {
-    LorenzAttractor::State center_state = {0.1,0.1,0.1};
+    LorenzAttractor::State center_state = {0.1, 0.1, 0.1};
     int32_t span = 10;
     float dt = 0.01;
     LorenzPong lp(center_state, span, dt);
 
     for (int i = 0; i < 21; i++)
     {
-        lp.BoundedStep();
+        lp.UnBoundedStep();
     }
 }
 
@@ -30,7 +27,7 @@ void LorenzPong::BoundedStep()
 {
     if (r_idx_ == 0)
     {
-        // re-anchor a, and re-align b with a once every cycle
+        // once every cycle, re-anchor attractor_a_ and then re-align attractor_b with attractor_a_
         attractor_a_.reset(center_state_);
         attractor_b_.reset(center_state_);
     }
@@ -55,15 +52,37 @@ void LorenzPong::BoundedStep()
     r_idx_ += r_direction_;
 }
 
-void LorenzPong::UnBoundedStep()
+int32_t LorenzPong::UnBoundedStep()
 {
-    // todo - cache reservoir state
+    int32_t retval = 0;
+    if (r_idx_ > ub_)
+        retval = 1;
+    else if (r_idx_ < lb_)
+        retval = -1;
+
+    if (r_idx_ == 0)
+    {
+        // once every cycle, re-anchor attractor_a_ and then re-align attractor_b with attractor_a_
+        attractor_a_.reset(center_state_);
+        attractor_b_.reset(center_state_);
+    }
+    else
+    {
+        const float dt_adj_ = r_direction_ == 1 ? dt_ : -dt_;
+        attractor_a_.step(dt_adj_);
+        attractor_b_.step(-dt_adj_);
+    }
+
+    std::cout << "[" << retval << "]: ";
+    print();
+
     r_idx_ += r_direction_;
+    return retval;
 }
 
 void LorenzPong::print()
 {
-    std::cout << r_idx_*dt_ << ",";
+    std::cout << r_idx_ * dt_ << ",";
     attractor_a_.state.print();
     std::cout << " || ";
     attractor_b_.state.print();

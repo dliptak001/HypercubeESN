@@ -17,7 +17,7 @@ public:
     }
 
     void BoundedStep();
-    void UnBoundedStep();
+    int32_t UnBoundedStep();
     static void Eval();
     LorenzAttractor attractor_a_;
     LorenzAttractor attractor_b_;
