@@ -8,32 +8,69 @@
 #include <iostream>
 #include "LorenzPong.h"
 
-LorenzPong::LorenzPong(const int32_t span) : lb_(-span / 2), ub_(span / 2)
+void LorenzPong::Eval()
+{
+    LorenzAttractor::State center_state = {0.1,0.1,0.1};
+    int32_t span = 10;
+    float dt = 0.01;
+    LorenzPong lp(center_state, span, dt);
+
+    for (int i = 0; i < 21; i++)
+    {
+        lp.BoundedStep();
+    }
+}
+
+void LorenzPong::print()
+{
+    std::cout << r_idx_ << ":" << r_idx_*dt_ << ": ";
+    attractor_a_.state.print();
+    std::cout << std::endl;
+}
+
+LorenzPong::LorenzPong(const LorenzAttractor::State& center_state, const int32_t span, const float dt)
+    : center_state_(center_state), lb_(-span / 2), ub_(span / 2), dt_(dt)
 {
 }
 
-LorenzPong::positions_ LorenzPong::BoundedStep()
+void LorenzPong::BoundedStep()
 {
-    r_idx_ += r_direction_;
+    if (r_idx_ == 0)
+    {
+        // re-anchor a, and re-align b with a once every cycle
+        attractor_a_.reset(center_state_);
+        attractor_b_.reset(center_state_);
+    }
+    else
+    {
+        const float dt_adj_ = r_direction_ == 1 ? dt_ : -dt_;
+        attractor_a_.step(dt_adj_);
+        attractor_b_.step(-dt_adj_);
+    }
 
+    print();
+
+    // Flip at the turning points *before* advancing, so the step that lands on
+    // the boundary index is still taken in the outgoing direction. Checking the
+    // bound after the increment flips one index too early, which eats the peak
+    // step and makes the cycle return to center two indices early.
     if (r_idx_ >= ub_)
         r_direction_ = -1;
-    else  if (r_idx_ <= lb_)
+    else if (r_idx_ <= lb_)
         r_direction_ = 1;
 
-    return {center_ - r_idx_*dt_, center_ + r_idx_*dt_};
+    r_idx_ += r_direction_;
 }
 
-LorenzPong::positions_ LorenzPong::UnBoundedStep()
+void LorenzPong::UnBoundedStep()
 {
     // todo - cache reservoir state
     r_idx_ += r_direction_;
-    return {center_ - r_idx_*dt_, center_ + r_idx_*dt_};
 }
 
 int main()
 {
     std::cout << "=== HypercubeESN: LorenzPong (scaffold) ===\n";
-    std::cout << "Not yet implemented.\n";
+    LorenzPong::Eval();
     return 0;
 }

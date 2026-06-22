@@ -1,7 +1,7 @@
 #pragma once
-#include <cmath>
-#include <vector>
+
 #include <cstddef>
+#include <vector>
 
 class LorenzAttractor
 {
@@ -9,6 +9,7 @@ public:
     struct State
     {
         double x = 1.0, y = 1.0, z = 1.0;
+        void print(){ std::cout << x << ", " << y << ", " << z << std::endl;};
     };
 
     double sigma = 10.0;
@@ -19,39 +20,26 @@ public:
 
     LorenzAttractor() = default;
 
-    explicit LorenzAttractor(State initial) : state(initial)
+    explicit LorenzAttractor(const State& initial) : state(initial)
     {
     }
 
     void reset() { state = State{}; }
-    void reset(State initial) { state = initial; }
+    void reset(const State& initial) { state = initial; }
 
-    void step(double dt) { state = peek(state, dt); }
+    void step(const double dt) { state = peek(state, dt); }
 
-    State peek(State s, double dt) const { return rk4_step(s, dt); }
+    [[nodiscard]] State peek(const State& s, const double dt) const { return rk4_step(s, dt); }
 
-    // Take MANY steps in a row and write down every spot the dot visits,
-    // like dropping a breadcrumb after each step so you can see the whole path.
-    //
-    // You say how many `steps` to take and how big each one is (`dt`). You get
-    // back a list of spots: the very first breadcrumb is where we start, then
-    // one more breadcrumb for every step. So `steps` steps = `steps + 1`
-    // breadcrumbs (the start, plus one per step). That's why we ask the list to
-    // get `steps + 1` spaces ready ahead of time (`reserve`) -- so it doesn't
-    // have to keep growing and slowing down.
-    //
-    // Just like `peek`, this is a "look only" helper: we copy our dot into
-    // `cur` and walk the COPY forward, so the real dot we keep inside this
-    // object stays put. You can ask for a path without losing your place.
-    std::vector<State> trajectory(size_t steps, double dt) const
+    [[nodiscard]] std::vector<State> trajectory(const State& initial_state, const std::size_t steps, const double dt) const
     {
         std::vector<State> points;
         points.reserve(steps + 1); // make room for start + one per step
 
-        State cur = state; // copy our dot so we don't move the real one
+        State cur = initial_state;
         points.push_back(cur); // drop the first breadcrumb (the start)
 
-        for (size_t i = 0; i < steps; ++i)
+        for (std::size_t i = 0; i < steps; ++i)
         {
             cur = peek(cur, dt); // move the copy one step
             points.push_back(cur); // drop a breadcrumb where it landed
@@ -60,7 +48,7 @@ public:
     }
 
 private:
-    State derivatives(const State& s) const
+    [[nodiscard]] State derivatives(const State& s) const
     {
         return {
             sigma * (s.y - s.x),
@@ -69,7 +57,7 @@ private:
         };
     }
 
-    State rk4_step(const State& s, double dt) const
+    [[nodiscard]] State rk4_step(const State& s, const double dt) const
     {
         auto k1 = derivatives(s);
         auto k2 = derivatives({s.x + k1.x * dt / 2, s.y + k1.y * dt / 2, s.z + k1.z * dt / 2});

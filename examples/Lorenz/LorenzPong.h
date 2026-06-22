@@ -7,21 +7,30 @@
 class LorenzPong
 {
 public:
-    LorenzPong(int32_t span);
+    LorenzPong(const LorenzAttractor::State& center_state, int32_t span, float dt);
 
-    void SetCenter(float center) { center_ = center; r_idx_ = 0; r_direction_ = 1; }
+    void SetCenter(const LorenzAttractor::State& center_state)
+    {
+        center_state_ = center_state;
+        r_idx_ = 0;
+        r_direction_ = 1;
+    }
+
+    void BoundedStep();
+    void UnBoundedStep();
+    static void Eval();
+    LorenzAttractor attractor_a_;
+    LorenzAttractor attractor_b_;
 
 private:
-    LorenzAttractor attractor_;
 
-    int32_t lb_;    // lower bound
-    int32_t ub_;    // upper bound
+    LorenzAttractor::State center_state_; // center is associated with a State
+    int32_t lb_; // lower bound
+    int32_t ub_; // upper bound
     int32_t r_idx_ = 0;
     int32_t r_direction_ = 1;
-    float center_ = 0.0f;
     float dt_ = 0.0f;
 
     using positions_ = std::tuple<float, float>;
-    positions_ BoundedStep();
-    positions_ UnBoundedStep();
+    void print();
 };
