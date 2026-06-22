@@ -341,10 +341,9 @@ esn.PredictLiveRaw(output);
 esn.PredictFromState(state, output);   // run readout on a caller-supplied state
 
 // State access & persistence
-esn.SelectedStates();
+esn.CollectedStates();
 esn.NumCollected();
 esn.NumOutputs();
-esn.NumOutputVerts();
 esn.NumInputs();
 esn.Dim();                   // hypercube dimension (cfg.reservoir.dim)
 esn.Size();                  // reservoir neuron count N = 2^Dim()
@@ -403,7 +402,7 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 void Run(const float* inputs, size_t num_steps);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`NumOutputVerts()` floats — all N vertices). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
+Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`Size()` floats — all N vertices). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `Warmup()`.
@@ -492,7 +491,7 @@ void TrainLiveBatch(const float* states, const int* targets,
                     size_t count, float lr, float weight_decay);
 ```
 
-Mini-batch online gradient step. `states` is `count` rows of `NumOutputVerts()` floats (from `CopyLiveState`). `targets` is `count` int class indices. Parallelized across threads. The no-`weight_decay` overload inherits `cfg.readout.weight_decay`; the explicit form overrides it for this call.
+Mini-batch online gradient step. `states` is `count` rows of `Size()` floats (from `CopyLiveState`). `targets` is `count` int class indices. Parallelized across threads. The no-`weight_decay` overload inherits `cfg.readout.weight_decay`; the explicit form overrides it for this call.
 
 ---
 
@@ -514,7 +513,7 @@ void TrainLiveBatchRegression(const float* states, const float* targets,
                               size_t count, float lr, float weight_decay);
 ```
 
-Mini-batch online gradient step for regression. `states` is `count` rows of `NumOutputVerts()` floats. `targets` is `count * NumOutputs()` floats (row-major).
+Mini-batch online gradient step for regression. `states` is `count` rows of `Size()` floats. `targets` is `count * NumOutputs()` floats (row-major).
 
 ---
 
@@ -524,7 +523,7 @@ Mini-batch online gradient step for regression. `states` is `count` rows of `Num
 void CopyLiveState(float* out) const;
 ```
 
-Copies the current reservoir state into `out` (`NumOutputVerts()` floats — all N vertices). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
+Copies the current reservoir state into `out` (`Size()` floats — all N vertices). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
 
 ---
 
@@ -629,19 +628,19 @@ Writes `NumOutputs()` floats to `output` from the reservoir's current live state
 void PredictFromState(const float* state, float* output) const;
 ```
 
-Runs the readout on a caller-supplied state buffer (`NumOutputVerts()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a caller-supplied state buffer (`Size()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 
 #### State Access and Persistence
 
-##### `SelectedStates`
+##### `CollectedStates`
 
 ```cpp
-[[nodiscard]] std::vector<float> SelectedStates() const;
+[[nodiscard]] std::vector<float> CollectedStates() const;
 ```
 
-Returns all collected states: `NumCollected() * NumOutputVerts()` floats, row-major.
+Returns all collected states: `NumCollected() * Size()` floats, row-major.
 
 ---
 
@@ -651,7 +650,6 @@ Returns all collected states: `NumCollected() * NumOutputVerts()` floats, row-ma
 |--------|---------|-------------|
 | `NumCollected()` | `size_t` | Timesteps recorded by `Run()`. |
 | `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
-| `NumOutputVerts()` | `size_t` | Number of readout-input vertices = N (all reservoir vertices). |
 | `NumInputs()` | `size_t` | Number of input channels from config. |
 | `Dim()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
 | `Size()` | `size_t` | Reservoir neuron count N = 2^`Dim()`. |

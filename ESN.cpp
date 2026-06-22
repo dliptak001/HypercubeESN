@@ -1,5 +1,4 @@
 #include "ESN.h"
-#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -22,10 +21,11 @@ ESN::ESN(const ESNConfig& cfg)
     n_                = reservoir_->Size();
     num_inputs_       = cfg.reservoir.num_inputs;
     esn_config_       = cfg;
+    // The user leaves cfg.readout.dim at 0 ("do not set"); reflect the value the
+    // readout was actually built with so GetConfig() doesn't report a stale 0.
+    esn_config_.readout.dim = reservoir_->Dim();
 
-    // The readout consumes the full reservoir state: NumOutputVerts() == N.
-    num_output_verts_ = n_;
-    scratch_state_.resize(num_output_verts_);
+    scratch_state_.resize(n_);
 }
 
 void ESN::StepLive(const float* inputs)
@@ -67,12 +67,11 @@ void ESN::Warmup(const float* inputs, size_t num_steps)
 
 void ESN::Run(const float* inputs, size_t num_steps)
 {
-    const size_t M = num_output_verts_;
-    states_.resize((num_collected_ + num_steps) * M);
+    states_.resize((num_collected_ + num_steps) * n_);
     for (size_t s = 0; s < num_steps; ++s)
     {
         StepLive(inputs + s * num_inputs_);
-        CopyLiveState(states_.data() + (num_collected_ + s) * M);
+        CopyLiveState(states_.data() + (num_collected_ + s) * n_);
     }
     num_collected_ += num_steps;
 }
@@ -277,19 +276,19 @@ void ESN::SetReadoutState(const ReadoutState& state)
 
 const float* ESN::ReadoutInput(size_t timestep) const
 {
-    return states_.data() + timestep * num_output_verts_;
+    return states_.data() + timestep * n_;
 }
 
 std::vector<float> ESN::ReadoutStates(size_t start, size_t count) const
 {
-    std::vector<float> buf(count * num_output_verts_);
+    std::vector<float> buf(count * n_);
     std::memcpy(buf.data(),
-                states_.data() + start * num_output_verts_,
-                count * num_output_verts_ * sizeof(float));
+                states_.data() + start * n_,
+                count * n_ * sizeof(float));
     return buf;
 }
 
-std::vector<float> ESN::SelectedStates() const
+std::vector<float> ESN::CollectedStates() const
 {
     return ReadoutStates(0, num_collected_);
 }

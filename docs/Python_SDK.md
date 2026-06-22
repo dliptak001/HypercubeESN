@@ -141,7 +141,7 @@ esn.nrmse(targets, start, count)    # normalized RMSE
 esn.accuracy(labels, start, count)  # classification accuracy
 
 # State access
-esn.selected_states()               # all collected states as ndarray
+esn.collected_states()              # all collected states as ndarray
 ```
 
 ---
@@ -402,7 +402,7 @@ Compute classification accuracy on a slice of collected states.
 
 #### State and Feature Access
 
-##### `selected_states() → ndarray`
+##### `collected_states() → ndarray`
 
 Extract all collected states (every reservoir vertex).
 
@@ -548,7 +548,7 @@ restored = pickle.loads(data)
 ## Limitations
 
 - **No scikit-learn compatibility.** The ESN is a temporal pipeline (input order matters, warmup required, states accumulate sequentially), not a static feature→label model. The sklearn estimator protocol assumes i.i.d. samples and row-shuffled cross-validation, which would destroy the temporal structure.
-- **No raw buffer access.** The C++ SDK exposes raw state buffers for diagnostics. The Python bindings provide `selected_states()` and `predictions()` instead, which return NumPy arrays.
+- **No raw buffer access.** The C++ SDK exposes raw state buffers for diagnostics. The Python bindings provide `collected_states()` and `predictions()` instead, which return NumPy arrays.
 
 ---
 

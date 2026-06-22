@@ -173,7 +173,7 @@ PYBIND11_MODULE(_core, m)
             auto sbuf = states.request();
             auto tbuf = targets.request();
             size_t count = static_cast<size_t>(tbuf.size);
-            size_t M = self.NumOutputVerts();
+            size_t M = self.Size();
             if (static_cast<size_t>(sbuf.size) != count * M)
                 throw std::invalid_argument(
                     "states size (" + std::to_string(sbuf.size) +
@@ -216,7 +216,7 @@ PYBIND11_MODULE(_core, m)
                     "targets size (" + std::to_string(tbuf.size) +
                     ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
             size_t count = static_cast<size_t>(tbuf.size) / K;
-            size_t M = self.NumOutputVerts();
+            size_t M = self.Size();
             if (static_cast<size_t>(sbuf.size) != count * M)
                 throw std::invalid_argument(
                     "states size (" + std::to_string(sbuf.size) +
@@ -233,7 +233,7 @@ PYBIND11_MODULE(_core, m)
             "targets: (count, num_outputs) float array.")
 
         .def("copy_live_state", [](const ESN& self) {
-            size_t M = self.NumOutputVerts();
+            size_t M = self.Size();
             py::array_t<float> arr(M);
             self.CopyLiveState(arr.mutable_data());
             return arr;
@@ -287,7 +287,7 @@ PYBIND11_MODULE(_core, m)
         .def("predict_from_state", [](const ESN& self,
                                       py::array_t<float, py::array::c_style | py::array::forcecast> state) {
             auto buf = state.request();
-            size_t M = self.NumOutputVerts();
+            size_t M = self.Size();
             if (static_cast<size_t>(buf.size) != M)
                 throw std::invalid_argument(
                     "state size (" + std::to_string(buf.size) +
@@ -334,9 +334,9 @@ PYBIND11_MODULE(_core, m)
            "Compute classification accuracy on a slice of collected states.")
 
         // ── State access ──
-        .def("selected_states", [](const ESN& self) {
-            auto vec = self.SelectedStates();
-            size_t M = self.NumOutputVerts();
+        .def("collected_states", [](const ESN& self) {
+            auto vec = self.CollectedStates();
+            size_t M = self.Size();
             size_t T = self.NumCollected();
             py::array_t<float> arr({T, M});
             memcpy(arr.mutable_data(), vec.data(), vec.size() * sizeof(float));
@@ -355,7 +355,7 @@ PYBIND11_MODULE(_core, m)
         // ── Properties ──
         .def_property_readonly("num_collected", &ESN::NumCollected)
         .def_property_readonly("num_outputs", &ESN::NumOutputs)
-        .def_property_readonly("num_output_verts", &ESN::NumOutputVerts)
+        .def_property_readonly("num_output_verts", &ESN::Size)
         .def_property_readonly("dim", &ESN::Dim)
         .def_property_readonly("N", &ESN::Size)
         .def_property_readonly("num_inputs", &ESN::NumInputs)

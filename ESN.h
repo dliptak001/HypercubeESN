@@ -91,15 +91,15 @@ public:
     /// state against @p target_class.
     void TrainLiveStep(float target_class, float lr, float weight_decay);
 
-    /// @brief Copy the current live reservoir state (NumOutputVerts() floats,
-    /// = all N vertices) into @p out, for external mini-batch accumulation.
+    /// @brief Copy the current live reservoir state (Size() floats = all N
+    /// vertices) into @p out, for external mini-batch accumulation.
     void CopyLiveState(float* out) const;
 
     /// No-weight_decay overload: inherits `cfg.readout.weight_decay`.
     void TrainLiveBatch(const float* states, const int* targets, size_t count, float lr);
 
     /// @brief Mini-batch online classification training on pre-accumulated
-    /// states (each NumOutputVerts() floats) with integer class @p targets.
+    /// states (each Size() floats) with integer class @p targets.
     void TrainLiveBatch(const float* states, const int* targets, size_t count, float lr, float weight_decay);
 
     /// @brief Single-step online regression training on the live reservoir
@@ -107,7 +107,7 @@ public:
     void TrainLiveStepRegression(const float* target, float lr, float weight_decay);
 
     /// @brief Mini-batch online regression training on pre-accumulated states
-    /// (each NumOutputVerts() floats) with @p targets (count * NumOutputs()).
+    /// (each Size() floats) with @p targets (count * NumOutputs()).
     void TrainLiveBatchRegression(const float* states, const float* targets,
                                   size_t count, float lr, float weight_decay);
 
@@ -125,10 +125,10 @@ public:
     /// input (e.g. brand a side channel onto the first few slots).
     void PredictLiveRaw(float* output) const;
 
-    /// Run the readout on a caller-supplied state buffer (NumOutputVerts()
-    /// floats).  Lets the caller modify the readout input -- e.g. brand a
-    /// side channel onto the first few slots -- before prediction, without
-    /// touching live reservoir state.
+    /// Run the readout on a caller-supplied state buffer (Size() floats).
+    /// Lets the caller modify the readout input -- e.g. brand a side channel
+    /// onto the first few slots -- before prediction, without touching live
+    /// reservoir state.
     void PredictFromState(const float* state, float* output) const;
 
     /// @brief R-squared on collected timesteps [start, start+count).
@@ -153,14 +153,13 @@ public:
     //  State access
     // ---------------------------------------------------------------
 
-    /// @brief All collected states, row-major: NumCollected() * NumOutputVerts().
-    [[nodiscard]] std::vector<float> SelectedStates() const;
+    /// @brief All collected states, row-major: NumCollected() * Size().
+    [[nodiscard]] std::vector<float> CollectedStates() const;
 
     // ---------------------------------------------------------------
     //  Accessors
     // ---------------------------------------------------------------
     [[nodiscard]] size_t NumCollected() const { return num_collected_; }
-    [[nodiscard]] size_t NumOutputVerts() const { return num_output_verts_; }
     [[nodiscard]] size_t NumInputs() const { return num_inputs_; }
 
     /// Hypercube dimension of the underlying reservoir (cfg.reservoir.dim).
@@ -196,7 +195,6 @@ private:
 
     size_t n_ = 0; // reservoir neuron count N = 2^dim
     size_t num_inputs_ = 1;
-    size_t num_output_verts_ = 0; // readout-input width; == n_ (readout sees all N)
 
     std::vector<float> states_;
     size_t num_collected_ = 0;

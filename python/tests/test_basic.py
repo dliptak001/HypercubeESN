@@ -102,9 +102,9 @@ class TestPipeline:
         assert esn.train_size == int(esn.num_collected * 0.7)
         assert esn.test_size == esn.num_collected - esn.train_size
 
-    def test_selected_states_shape(self, fitted):
+    def test_collected_states_shape(self, fitted):
         esn, _ = fitted
-        states = esn.selected_states()
+        states = esn.collected_states()
         assert states.shape == (esn.num_collected, esn.num_output_verts)
         assert states.dtype == np.float32
 
@@ -229,7 +229,7 @@ class TestSurfaceParity:
         "copy_live_state", "predict_raw", "predict_raw_multi",
         "predict_live_raw", "predict_live_raw_multi", "predict_from_state",
         "predictions", "predictions_multi", "r2", "nrmse", "accuracy",
-        "selected_states", "save", "load",
+        "collected_states", "save", "load",
     ]
 
     @pytest.mark.parametrize("name", EXPECTED)

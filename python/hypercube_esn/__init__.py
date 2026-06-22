@@ -617,7 +617,7 @@ class ESN:
                 )
         return targets, start, count
 
-    def selected_states(self) -> np.ndarray:
+    def collected_states(self) -> np.ndarray:
         """Return all collected states.
 
         Returns
@@ -625,7 +625,7 @@ class ESN:
         ndarray
             Array of shape ``(num_collected, num_output_verts)``.
         """
-        return self._impl.selected_states()
+        return self._impl.collected_states()
 
     # ── Streaming / online training ──
 
