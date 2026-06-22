@@ -134,8 +134,9 @@ esn.run(inputs, clear_recorded=True)  # start a fresh batch (keeps readout)
 esn.train(targets)                # HCNN readout (config fixed at construction)
 
 # Prediction & evaluation
-esn.predict_raw(timestep)           # single continuous prediction
-esn.predictions()                   # all predictions as ndarray
+esn.predict_from_recorded(timestep) # prediction for a recorded timestep -> (num_outputs,)
+esn.predict()                       # prediction from current live state -> (num_outputs,)
+esn.predictions()                   # all recorded predictions -> (num_collected, num_outputs)
 esn.r2(targets, start=1400)         # R² from index 1400 to end
 esn.nrmse(targets, start, count)    # normalized RMSE
 esn.accuracy(labels, start, count)  # classification accuracy
@@ -293,37 +294,24 @@ Train the HCNN readout on training samples taken from the start of the collected
 
 #### Prediction and Evaluation
 
-##### `predict_raw(timestep) → float`
+##### `predict() → ndarray`
 
-Return the raw continuous prediction for a single collected timestep.
-
-**Parameters:**
-- `timestep` — Index into collected states, in [0, num_collected).
-
-**Returns:** Continuous float prediction. For regression: the predicted value. For binary classification (single output): threshold at 0.0. For multi-class classification: a single logit (use `accuracy()` for evaluation, which applies argmax internally).
-
-**Requires `num_outputs == 1`.** Scalar prediction raises `ValueError` for multi-output readouts — use `predict_raw_multi()` instead.
+Predict from the reservoir's current state. Returns a 1D float32 array of shape `(num_outputs,)`. For autoregressive / streaming inference loops: drive the reservoir one step (`run`/`warmup`), then read the prediction here without touching the recorded-state buffer.
 
 ---
 
-##### `predict_raw_multi(timestep) → ndarray`
+##### `predict_from_recorded(timestep) → ndarray`
 
-Multi-output prediction for a single collected timestep. Returns a 1D float32 array of shape `(num_outputs,)`. Works for any `num_outputs` (including 1).
+Prediction for a single recorded timestep. Returns a 1D float32 array of shape `(num_outputs,)`. Works for any `num_outputs` (including 1). For regression: the predicted values. For classification: raw logits (apply argmax for the predicted class, or use `accuracy()`).
 
 **Parameters:**
-- `timestep` — Index into collected states, in [0, num_collected).
+- `timestep` — Index into recorded states, in [0, num_collected).
 
 ---
 
 ##### `predictions() → ndarray`
 
-Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`. Requires `num_outputs == 1` (one scalar per timestep); raises `ValueError` for multi-output readouts — use `predictions_multi()` to retrieve all channels, or `r2()` / `nrmse()` to evaluate them.
-
----
-
-##### `predictions_multi() → ndarray`
-
-Multi-output predictions for all collected timesteps as a 2D float32 array of shape `(num_collected, num_outputs)`. Works for any `num_outputs` (including 1).
+Predictions for all recorded timesteps as a 2D float32 array of shape `(num_collected, num_outputs)`. Works for any `num_outputs` (including 1).
 
 ---
 
@@ -437,8 +425,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 | `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |
 | `train_live_batch_regression(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (regression). |
 | `copy_live_state()` | Copy current reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
-| `predict_live_raw()` | Scalar prediction from current live state. Requires `num_outputs == 1` (raises `ValueError` otherwise). |
-| `predict_live_raw_multi()` | Multi-output prediction from current live state. Returns `(num_outputs,)` array. |
+| `predict()` | Prediction from the reservoir's current state. Returns `(num_outputs,)` array. |
 
 #### Reservoir State Management
 
@@ -486,8 +473,8 @@ signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 The Python bindings validate arguments at the boundary and raise clear exceptions:
 
-- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), input array size not divisible by `num_inputs`, or a scalar predictor (`predict_raw`, `predict_live_raw`, `predictions`) called on a multi-output readout (`num_outputs > 1`).
-- **`IndexError`** — `predict_raw(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
+- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), or input array size not divisible by `num_inputs`.
+- **`IndexError`** — `predict_from_recorded(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
 
 These checks happen before calling into C++, so you get a Python traceback instead of a crash.
 

@@ -92,7 +92,7 @@ budget.
 ```
    all members at internal state x_i(t)
    ┌──────────────────────────────────────────────────────────┐
-   │ 1. read outputs:   y_i(t) = readout_i( x_i(t) )           │   (PredictLiveRaw)
+   │ 1. read outputs:   y_i(t) = readout_i( x_i(t) )           │   (Predict)
    │ 2. consensus:      c(t)   = mean_i y_i(t)                  │   (= ensemble output)
    │ 3. deviations:     Δ_i(t) = y_i(t) − c(t)                 │   (Σ_i Δ_i = 0)
    └───────────────────────────┬──────────────────────────────┘
@@ -280,7 +280,7 @@ Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns 
 `num_feedback_channels = D`. The ensemble drives every member through its own loop on the
 `StepLive(inputs, φ)` feedback seam (there is no separate init step — readouts are built
 eagerly at construction and the ensemble owns its washout, §7.1), trains them online via
-`TrainLiveStepRegression`, and reads them via `PredictLiveRaw`.
+`TrainLiveStepRegression`, and reads them via `Predict`.
 
 ### 7.1 Online lifecycle — one loop, two scheduled knobs
 
@@ -448,7 +448,7 @@ class EnsembleESN {
     // one lockstep online step; writes consensus c(t). target == nullptr at inference.
     void Step(const float* input, const float* target, float* c_out) {
         std::vector<std::vector<float>> y(M_, std::vector<float>(D_));
-        for (size_t i = 0; i < M_; ++i) esn_[i]->PredictLiveRaw(y[i].data());
+        for (size_t i = 0; i < M_; ++i) y[i] = esn_[i]->Predict();
         combine(y, c_out, combine_);                 // consensus (= ensemble output)
         const bool train = target && (t_ >= W_);     // suppress fitting during the [0,W) washout (§7.1)
         std::vector<float> phi(D_);

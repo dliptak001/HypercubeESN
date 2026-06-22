@@ -226,48 +226,25 @@ PYBIND11_MODULE(_core, m)
            "Returns a (num_output_verts,) float array.")
 
         // ── Prediction & evaluation ──
-        .def("predict_raw", [](const ESN& self, size_t timestep) {
+        .def("predict", [](const ESN& self) {
+            auto v = self.Predict();
+            py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
+            memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
+            return arr;
+        }, "Predict from the reservoir's current state.\n"
+           "Returns (num_outputs,) float array. For autoregressive / streaming loops.")
+
+        .def("predict_from_recorded", [](const ESN& self, size_t timestep) {
             if (timestep >= self.NumCollected())
                 throw std::out_of_range(
                     "timestep (" + std::to_string(timestep) +
                     ") >= num_collected (" + std::to_string(self.NumCollected()) + ")");
-            return self.PredictRaw(timestep);
-        }, py::arg("timestep"),
-           "Return the raw continuous prediction for a collected timestep.")
-
-        .def("predict_live_raw", [](const ESN& self) {
-            return self.PredictLiveRaw();
-        }, "Predict from the reservoir's current live state (no cached states needed).\n"
-           "For autoregressive / streaming inference loops.")
-
-        .def("predict_live_raw_multi", [](const ESN& self) {
-            size_t K = self.NumOutputs();
-            py::array_t<float> arr(K);
-            self.PredictLiveRaw(arr.mutable_data());
-            return arr;
-        }, "Multi-output live predict: returns (num_outputs,) float array.")
-
-        .def("predict_raw_multi", [](const ESN& self, size_t timestep) {
-            if (timestep >= self.NumCollected())
-                throw std::out_of_range(
-                    "timestep (" + std::to_string(timestep) +
-                    ") >= num_collected (" + std::to_string(self.NumCollected()) + ")");
-            size_t K = self.NumOutputs();
-            py::array_t<float> arr(K);
-            self.PredictRaw(timestep, arr.mutable_data());
+            auto v = self.PredictFromRecorded(timestep);
+            py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
+            memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
             return arr;
         }, py::arg("timestep"),
-           "Multi-output prediction for a collected timestep: returns (num_outputs,) array.")
-
-        .def("predictions_multi", [](const ESN& self) {
-            size_t T = self.NumCollected();
-            size_t K = self.NumOutputs();
-            py::array_t<float> arr({T, K});
-            float* ptr = arr.mutable_data();
-            for (size_t t = 0; t < T; ++t)
-                self.PredictRaw(t, ptr + t * K);
-            return arr;
-        }, "Multi-output predictions for all collected timesteps: (num_collected, num_outputs) array.")
+           "Predict from a recorded timestep: returns (num_outputs,) float array.")
 
         .def("predict_from_state", [](const ESN& self,
                                       py::array_t<float, py::array::c_style | py::array::forcecast> state) {
@@ -277,9 +254,9 @@ PYBIND11_MODULE(_core, m)
                 throw std::invalid_argument(
                     "state size (" + std::to_string(buf.size) +
                     ") must equal num_output_verts (" + std::to_string(M) + ")");
-            size_t K = self.NumOutputs();
-            py::array_t<float> arr(K);
-            self.PredictFromState(static_cast<const float*>(buf.ptr), arr.mutable_data());
+            auto v = self.PredictFromState(static_cast<const float*>(buf.ptr));
+            py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
+            memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
             return arr;
         }, py::arg("state"),
            "Run the readout on a caller-supplied (num_output_verts,) state.\n"
@@ -330,12 +307,15 @@ PYBIND11_MODULE(_core, m)
 
         .def("predictions", [](const ESN& self) {
             size_t T = self.NumCollected();
-            py::array_t<float> arr(T);
+            size_t K = self.NumOutputs();
+            py::array_t<float> arr({T, K});
             float* ptr = arr.mutable_data();
-            for (size_t t = 0; t < T; ++t)
-                ptr[t] = self.PredictRaw(t);
+            for (size_t t = 0; t < T; ++t) {
+                auto v = self.PredictFromRecorded(t);
+                memcpy(ptr + t * K, v.data(), K * sizeof(float));
+            }
             return arr;
-        }, "Return predictions for all collected timesteps as a 1D array.")
+        }, "Predictions for all collected timesteps: (num_collected, num_outputs) array.")
 
         // ── Properties ──
         .def_property_readonly("num_collected", &ESN::NumCollected)

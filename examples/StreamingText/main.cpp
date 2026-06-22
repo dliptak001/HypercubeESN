@@ -143,8 +143,6 @@ int Run()
     std::vector<int>   accum_targets(K);
     int accum_count = 0;
 
-    std::vector<float> logits(num_outputs);
-
     const std::size_t total_batches =
         (cfg.total_steps + static_cast<std::size_t>(K) - 1) / static_cast<std::size_t>(K);
     std::size_t batch_index = 0;
@@ -175,7 +173,7 @@ int Run()
         // 2. Read live state into the accumulation slot and predict next char.
         float* slot = accum_states.data() + static_cast<std::size_t>(accum_count) * state_dim;
         esn.CopyLiveState(slot);
-        esn.PredictFromState(slot, logits.data());
+        const std::vector<float> logits = esn.PredictFromState(slot);
 
         const std::size_t next_pos = (pos + 1) % L;
         const char next_ch = corpus.text[next_pos];

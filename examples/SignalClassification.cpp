@@ -231,10 +231,9 @@ int main(int argc, char* argv[])
     std::cout << " done (" << std::fixed << std::setprecision(1) << secs << "s)\n\n";
 
     std::vector<size_t> predictions(test_size);
-    std::vector<float> logits(NUM_CLASSES);
     for (size_t t = 0; t < test_size; ++t)
     {
-        esn.PredictRaw(train_size + t, logits.data());
+        const std::vector<float> logits = esn.PredictFromRecorded(train_size + t);
         size_t predicted = 0;
         float best = logits[0];
         for (size_t c = 1; c < NUM_CLASSES; ++c)

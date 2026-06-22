@@ -328,17 +328,15 @@ esn.TrainLiveStepRegression(target, lr, weight_decay);
 esn.TrainLiveBatchRegression(states, targets, count, lr, weight_decay);
 esn.CopyLiveState(out);
 
-// Prediction & evaluation (collected states)
-esn.PredictRaw(timestep);
-esn.PredictRaw(timestep, output);
+// Prediction & evaluation (recorded states)
+esn.PredictFromRecorded(timestep);     // -> std::vector<float> (NumOutputs())
 esn.R2(targets, start, count);
 esn.NRMSE(targets, start, count);
 esn.Accuracy(labels, start, count);
 
 // Prediction (live reservoir state)
-esn.PredictLiveRaw();
-esn.PredictLiveRaw(output);
-esn.PredictFromState(state, output);   // run readout on a caller-supplied state
+esn.Predict();                         // -> std::vector<float> (NumOutputs())
+esn.PredictFromState(state);           // run readout on a caller-supplied state
 
 // State access & persistence
 esn.CollectedStates();
@@ -500,28 +498,18 @@ Copies the current reservoir state into `out` (`Size()` floats — all N vertice
 
 ---
 
-#### Prediction and Evaluation (Collected States)
+#### Prediction and Evaluation (Recorded States)
 
-##### `PredictRaw` (scalar)
+##### `PredictFromRecorded`
 
 ```cpp
-[[nodiscard]] float PredictRaw(size_t timestep) const;
+[[nodiscard]] std::vector<float> PredictFromRecorded(size_t timestep) const;
 ```
 
-Returns the scalar prediction for a collected timestep. Asserts `NumOutputs() == 1`.
+Returns `NumOutputs()` floats for a recorded timestep. For regression: de-centered predictions. For classification: raw logits (apply argmax for the predicted class).
 
 **Parameters:**
-- `timestep` -- Index into collected states, in [0, NumCollected()).
-
----
-
-##### `PredictRaw` (multi-output)
-
-```cpp
-void PredictRaw(size_t timestep, float* output) const;
-```
-
-Writes `NumOutputs()` floats to `output` for a collected timestep. For regression: de-centered predictions. For classification: raw logits (apply argmax for predicted class).
+- `timestep` -- Index into recorded states, in [0, NumCollected()).
 
 ---
 
@@ -573,35 +561,25 @@ Classification accuracy on collected timesteps.
 
 #### Prediction (Live Reservoir State)
 
-For streaming inference without collecting states.
+For streaming inference without recording states.
 
-##### `PredictLiveRaw` (scalar)
-
-```cpp
-[[nodiscard]] float PredictLiveRaw() const;
-```
-
-Scalar prediction from the reservoir's current live state. Asserts `NumOutputs() == 1`.
-
----
-
-##### `PredictLiveRaw` (multi-output)
+##### `Predict`
 
 ```cpp
-void PredictLiveRaw(float* output) const;
+[[nodiscard]] std::vector<float> Predict() const;
 ```
 
-Writes `NumOutputs()` floats to `output` from the reservoir's current live state. For autoregressive / streaming inference loops.
+Returns `NumOutputs()` floats from the reservoir's current state. For autoregressive / streaming inference loops.
 
 ---
 
 ##### `PredictFromState`
 
 ```cpp
-void PredictFromState(const float* state, float* output) const;
+[[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 ```
 
-Runs the readout on a caller-supplied state buffer (`Size()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a state buffer you pass in (`Size()` floats, e.g. one saved earlier with `CopyLiveState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the live reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 

@@ -280,7 +280,6 @@ int main()
     const double err_denom = std::sqrt(denom_acc / denom_n);
 
     std::vector<double> vpt_steps(NUM_LAUNCH, 0);
-    float pred[NUM_OUTPUTS];
     float in4[NUM_INPUTS];
 
     for (size_t k = 0; k < NUM_LAUNCH; ++k)
@@ -298,7 +297,7 @@ int main()
         size_t reached = HORIZON;
         for (size_t h = 0; h < HORIZON; ++h)
         {
-            esn.PredictLiveRaw(pred);             // pred = predicted increment delta
+            const std::vector<float> pred = esn.Predict();  // predicted increment delta
             const double px = cx + pred[0];       // reconstructed normalized s[L+h]
             const double py = cy + pred[1];
             const double pz = cz + pred[2];
@@ -326,7 +325,7 @@ int main()
             double dx = nx[L - 1], dy = ny[L - 1], dz = nz[L - 1];
             for (size_t h = 0; h < 20; ++h)
             {
-                esn.PredictLiveRaw(pred);
+                const std::vector<float> pred = esn.Predict();
                 const double px = dx + pred[0], py = dy + pred[1], pz = dz + pred[2];
                 const size_t tt = L + h;
                 const double ex = px - nx[tt], ey = py - ny[tt], ez = pz - nz[tt];

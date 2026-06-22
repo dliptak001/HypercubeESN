@@ -127,49 +127,30 @@ void ESN::TrainLiveBatchRegression(const float* states, const float* targets,
     readout_.TrainOnlineBatchRegression(states, targets, count, lr, weight_decay);
 }
 
-float ESN::PredictRaw(size_t timestep) const
+std::vector<float> ESN::Predict() const
+{
+    CopyLiveState(scratch_state_.data());
+    std::vector<float> out(readout_.NumOutputs());
+    readout_.PredictRaw(scratch_state_.data(), out.data());
+    return out;
+}
+
+std::vector<float> ESN::PredictFromRecorded(size_t timestep) const
 {
     if (timestep >= num_collected_)
         throw std::out_of_range(
-            "ESN::PredictRaw: timestep (" + std::to_string(timestep) +
+            "ESN::PredictFromRecorded: timestep (" + std::to_string(timestep) +
             ") >= num_collected (" + std::to_string(num_collected_) + ")");
-    if (readout_.NumOutputs() != 1)
-        throw std::invalid_argument(
-            "ESN::PredictRaw(timestep): scalar prediction requires num_outputs == 1 "
-            "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
-            "). Use PredictRaw(timestep, float*) for multi-output readouts.");
-    return readout_.PredictRaw(ReadoutInput(timestep));
+    std::vector<float> out(readout_.NumOutputs());
+    readout_.PredictRaw(ReadoutInput(timestep), out.data());
+    return out;
 }
 
-void ESN::PredictRaw(size_t timestep, float* output) const
+std::vector<float> ESN::PredictFromState(const float* state) const
 {
-    if (timestep >= num_collected_)
-        throw std::out_of_range(
-            "ESN::PredictRaw: timestep (" + std::to_string(timestep) +
-            ") >= num_collected (" + std::to_string(num_collected_) + ")");
-    readout_.PredictRaw(ReadoutInput(timestep), output);
-}
-
-float ESN::PredictLiveRaw() const
-{
-    if (readout_.NumOutputs() != 1)
-        throw std::invalid_argument(
-            "ESN::PredictLiveRaw(): scalar prediction requires num_outputs == 1 "
-            "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
-            "). Use the PredictLiveRaw(float*) overload for multi-output readouts.");
-    CopyLiveState(scratch_state_.data());
-    return readout_.PredictRaw(scratch_state_.data());
-}
-
-void ESN::PredictLiveRaw(float* output) const
-{
-    CopyLiveState(scratch_state_.data());
-    readout_.PredictRaw(scratch_state_.data(), output);
-}
-
-void ESN::PredictFromState(const float* state, float* output) const
-{
-    readout_.PredictRaw(state, output);
+    std::vector<float> out(readout_.NumOutputs());
+    readout_.PredictRaw(state, out.data());
+    return out;
 }
 
 double ESN::R2(const float* targets, size_t start, size_t count) const

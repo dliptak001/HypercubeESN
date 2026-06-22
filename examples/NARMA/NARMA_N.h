@@ -403,7 +403,7 @@ inline NARMATrialResult RunNARMATrial(const ESNConfig& cfg, const NARMATask& tas
     for (size_t i = 0; i < task.te; ++i)
     {
         const size_t idx = task.tr + i;
-        r.test_pred[i]   = esn.PredictRaw(idx) + static_cast<float>(mean);
+        r.test_pred[i]   = esn.PredictFromRecorded(idx)[0] + static_cast<float>(mean);
         r.test_actual[i] = y[idx];
     }
     return r;

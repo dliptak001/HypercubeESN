@@ -83,7 +83,7 @@ int main(int argc, char* argv[])
     for (size_t i = 0; i < 10; ++i)
     {
         float actual = targets[train_size + i];
-        float predicted = esn.PredictRaw(train_size + i);
+        float predicted = esn.PredictFromRecorded(train_size + i)[0];
         float error = actual - predicted;
         std::cout << "  " << std::setw(5) << (train_size + i)
                   << " | " << std::showpos << std::setprecision(5) << std::setw(10) << actual

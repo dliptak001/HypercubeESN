@@ -102,9 +102,6 @@ public:
     /// Classification: logits.
     void PredictRaw(const float* state, float* output) const;
 
-    /// Scalar prediction. Asserts num_outputs == 1.
-    [[nodiscard]] float PredictRaw(const float* state) const;
-
     /// Returns predicted class index (argmax over logits).
     [[nodiscard]] int PredictClass(const float* state) const;
 

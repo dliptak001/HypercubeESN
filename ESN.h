@@ -103,28 +103,30 @@ public:
 
     /// @brief Mini-batch online regression training on pre-accumulated states
     /// (each Size() floats) with @p targets (count * NumOutputs()).
-    void TrainLiveBatchRegression(const float* states, const float* targets,
-                                  size_t count, float lr, float weight_decay);
+    void TrainLiveBatchRegression(const float* states, const float* targets, size_t count, float lr,
+                                  float weight_decay);
 
     // ---------------------------------------------------------------
     //  Prediction & evaluation
     // ---------------------------------------------------------------
 
-    [[nodiscard]] float PredictRaw(size_t timestep) const;
-    void PredictRaw(size_t timestep, float* output) const;
+    /// @brief Predict from the reservoir's current state. Returns NumOutputs() floats.
+    [[nodiscard]] std::vector<float> Predict() const;
 
-    [[nodiscard]] float PredictLiveRaw() const;
+    /// @brief Predict from a recorded timestep (after Run). Returns NumOutputs() floats.
+    [[nodiscard]] std::vector<float> PredictFromRecorded(size_t timestep) const;
 
-    /// Sugar for: CopyLiveState(buf); PredictFromState(buf, output).
-    /// Use the explicit two-call form when you need to modify the readout
-    /// input (e.g. brand a side channel onto the first few slots).
-    void PredictLiveRaw(float* output) const;
-
-    /// Run the readout on a caller-supplied state buffer (Size() floats).
-    /// Lets the caller modify the readout input -- e.g. brand a side channel
-    /// onto the first few slots -- before prediction, without touching live
-    /// reservoir state.
-    void PredictFromState(const float* state, float* output) const;
+    /// @brief Run the readout on a state buffer you pass in, instead of on the
+    /// reservoir's current state.
+    ///
+    /// @p state is a reservoir state of Size() floats -- usually one you saved
+    /// earlier with CopyLiveState(). Returns NumOutputs() floats.
+    ///
+    /// Use this when you want to predict from a stored state, or to adjust the
+    /// state before the readout sees it (for example, overwriting the first few
+    /// entries with an external signal). Unlike Predict(), it never reads the
+    /// live reservoir.
+    [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 
     /// @brief R-squared on collected timesteps [start, start+count).
     /// @param targets  Must span timesteps [0, start+count): for regression,

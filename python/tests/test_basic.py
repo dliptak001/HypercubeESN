@@ -94,7 +94,7 @@ class TestPipeline:
     def test_predictions_array(self, fitted):
         esn, _ = fitted
         preds = esn.predictions()
-        assert preds.shape == (esn.num_collected,)
+        assert preds.shape == (esn.num_collected, esn.num_outputs)
         assert preds.dtype == np.float32
 
     def test_train_test_split(self, fitted):
@@ -137,32 +137,24 @@ class TestMultiOutput:
         assert multi_output.num_outputs == 3
         assert multi_output.r2() > 0.80, f"R² too low: {multi_output.r2()}"
 
-    def test_predict_raw_multi(self, multi_output):
-        p = multi_output.predict_raw_multi(0)
+    def test_predict_from_recorded(self, multi_output):
+        p = multi_output.predict_from_recorded(0)
         assert p.shape == (3,)
         assert p.dtype == np.float32
 
-    def test_predictions_multi(self, multi_output):
-        allp = multi_output.predictions_multi()
+    def test_predictions(self, multi_output):
+        allp = multi_output.predictions()
         assert allp.shape == (multi_output.num_collected, 3)
         # row 0 of the bulk call must equal the single-timestep call
-        np.testing.assert_allclose(allp[0], multi_output.predict_raw_multi(0), atol=1e-5)
+        np.testing.assert_allclose(allp[0], multi_output.predict_from_recorded(0), atol=1e-5)
 
     def test_predict_from_state_matches_live(self, multi_output):
         state = multi_output.copy_live_state()
         assert state.shape == (multi_output.num_output_verts,)
         from_state = multi_output.predict_from_state(state)
-        live = multi_output.predict_live_raw_multi()
+        live = multi_output.predict()
         assert from_state.shape == (3,)
         np.testing.assert_allclose(from_state, live, atol=1e-5)
-
-    def test_scalar_predictors_reject_multi_output(self, multi_output):
-        with pytest.raises(ValueError, match="num_outputs"):
-            multi_output.predict_raw(0)
-        with pytest.raises(ValueError, match="num_outputs"):
-            multi_output.predict_live_raw()
-        with pytest.raises(ValueError, match="num_outputs"):
-            multi_output.predictions()
 
 
 # ── Config parity: every C++ SDK config field is settable from Python ──
@@ -226,9 +218,9 @@ class TestSurfaceParity:
         "warmup", "run", "clear_reservoir", "fit", "train",
         "train_live_step", "train_live_batch",
         "train_live_step_regression", "train_live_batch_regression",
-        "copy_live_state", "predict_raw", "predict_raw_multi",
-        "predict_live_raw", "predict_live_raw_multi", "predict_from_state",
-        "predictions", "predictions_multi", "r2", "nrmse", "accuracy",
+        "copy_live_state", "predict", "predict_from_recorded",
+        "predict_from_state",
+        "predictions", "r2", "nrmse", "accuracy",
         "collected_states", "save", "load",
     ]
 

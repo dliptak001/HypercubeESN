@@ -132,7 +132,7 @@ int main(int argc, char* argv[])
 
     std::vector<float> prime_pred(test_n);
     for (size_t i = 0; i < test_n; ++i)
-        prime_pred[i] = esn.PredictRaw(train_n + i);
+        prime_pred[i] = esn.PredictFromRecorded(train_n + i)[0];
     double baseline = ComputeRMSE(prime_pred.data(),
                                   prime_targets.data() + train_n, test_n);
     double threshold = baseline * anomaly_threshold;
@@ -168,7 +168,7 @@ int main(int argc, char* argv[])
 
         std::vector<float> pred(window);
         for (size_t t = 0; t < window; ++t)
-            pred[t] = esn.PredictRaw(t);
+            pred[t] = esn.PredictFromRecorded(t)[0];
         double rmse = ComputeRMSE(pred.data(), tgt.data(), window);
         double ratio = rmse / baseline;
         bool anom = (rmse > threshold);

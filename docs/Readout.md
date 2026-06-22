@@ -215,7 +215,6 @@ and evaluation to it. The methods below are on Readout; see
 | Method | Returns |
 |--------|---------|
 | `Train(states, targets, num_samples)` | void |
-| `PredictRaw(state)` | float (scalar, single-output) |
 | `PredictRaw(state, output)` | void (multi-output) |
 | `PredictClass(state)` | int (argmax over logits) |
 | `R2(states, targets, num_samples)` | double |
@@ -231,8 +230,7 @@ The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at E
 
 - `ESN::Train(targets, train_size)` → `Readout::Train` using `cfg.readout`
 - `ESN::Warmup(inputs, num_steps)` → settle the reservoir before `TrainLive*`
-- `ESN::PredictRaw(timestep)` → scalar (asserts `num_outputs == 1`)
-- `ESN::PredictRaw(timestep, float* output)` → multi-output
+- `ESN::Predict()` / `ESN::PredictFromRecorded(timestep)` / `ESN::PredictFromState(state)` → return `std::vector<float>` (NumOutputs())
 - `ESN::NumOutputs()` → delegates to `Readout::NumOutputs()`
 - `ESN::R2/NRMSE/Accuracy` → handle multi-output target layout
 

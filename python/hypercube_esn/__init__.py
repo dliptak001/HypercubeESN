@@ -373,35 +373,27 @@ class ESN:
         """
         self._impl.train(_to_float32(targets))
 
-    def predict_raw(self, timestep: int) -> float:
-        """Return the raw continuous prediction for a collected timestep.
+    def predict(self) -> np.ndarray:
+        """Predict from the reservoir's current state.
 
-        Parameters
-        ----------
-        timestep : int
-            Index into collected states, in [0, num_collected).
+        For autoregressive / closed-loop inference: drive the reservoir one step
+        (``run``/``warmup``), then read the prediction here without touching the
+        recorded-state buffer.
 
         Returns
         -------
-        float
-            Continuous prediction value.
-
-        Raises
-        ------
-        ValueError
-            If the readout has more than one output. Scalar prediction
-            requires ``num_outputs == 1``; use :meth:`predict_raw_multi` for
-            multi-output readouts.
+        ndarray
+            1D array of shape ``(num_outputs,)`` with float32 predictions.
         """
-        return self._impl.predict_raw(timestep)
+        return self._impl.predict()
 
-    def predict_raw_multi(self, timestep: int) -> np.ndarray:
-        """Multi-output prediction for a single collected timestep.
+    def predict_from_recorded(self, timestep: int) -> np.ndarray:
+        """Predict from a recorded timestep (after :meth:`run`).
 
         Parameters
         ----------
         timestep : int
-            Index into collected states, in [0, num_collected).
+            Index into recorded states, in [0, num_collected).
 
         Returns
         -------
@@ -409,41 +401,7 @@ class ESN:
             1D array of shape ``(num_outputs,)`` with float32 predictions.
             Works for any ``num_outputs`` (including 1).
         """
-        return self._impl.predict_raw_multi(timestep)
-
-    def predict_live_raw(self) -> float:
-        """Predict from the reservoir's current live state (single output).
-
-        For autoregressive / closed-loop inference loops: drive the reservoir
-        one step (``run``/``warmup``), then read the prediction here without
-        touching the collected-state buffer.
-
-        Returns
-        -------
-        float
-            Continuous prediction value.
-
-        Raises
-        ------
-        ValueError
-            If the readout has more than one output. Use
-            :meth:`predict_live_raw_multi` for multi-output readouts.
-        """
-        return self._impl.predict_live_raw()
-
-    def predict_live_raw_multi(self) -> np.ndarray:
-        """Multi-output predict from the reservoir's current live state.
-
-        The closed-loop feedback primitive for multi-output readouts: after
-        driving the reservoir one step, returns every channel's prediction so
-        they can be fed back together.
-
-        Returns
-        -------
-        ndarray
-            1D array of shape ``(num_outputs,)`` with float32 predictions.
-        """
-        return self._impl.predict_live_raw_multi()
+        return self._impl.predict_from_recorded(timestep)
 
     def predict_from_state(self, state: np.ndarray) -> np.ndarray:
         """Run the readout on a caller-supplied reservoir state.
@@ -462,24 +420,7 @@ class ESN:
         return self._impl.predict_from_state(_to_float32(state))
 
     def predictions(self) -> np.ndarray:
-        """Return predictions for all collected timesteps.
-
-        Returns
-        -------
-        ndarray
-            1D array of shape ``(num_collected,)`` with float32 predictions.
-
-        Raises
-        ------
-        ValueError
-            If the readout has more than one output (this returns one scalar
-            per timestep). Use :meth:`predictions_multi` to retrieve all
-            channels, or :meth:`r2` / :meth:`nrmse` to evaluate them.
-        """
-        return self._impl.predictions()
-
-    def predictions_multi(self) -> np.ndarray:
-        """Return multi-output predictions for all collected timesteps.
+        """Return predictions for all recorded timesteps.
 
         Returns
         -------
@@ -487,7 +428,7 @@ class ESN:
             2D array of shape ``(num_collected, num_outputs)`` with float32
             predictions. Works for any ``num_outputs`` (including 1).
         """
-        return self._impl.predictions_multi()
+        return self._impl.predictions()
 
     def r2(
         self,
