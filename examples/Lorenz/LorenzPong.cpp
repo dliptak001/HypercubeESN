@@ -21,13 +21,6 @@ void LorenzPong::Eval()
     }
 }
 
-void LorenzPong::print()
-{
-    std::cout << r_idx_ << ":" << r_idx_*dt_ << ": ";
-    attractor_a_.state.print();
-    std::cout << std::endl;
-}
-
 LorenzPong::LorenzPong(const LorenzAttractor::State& center_state, const int32_t span, const float dt)
     : center_state_(center_state), lb_(-span / 2), ub_(span / 2), dt_(dt)
 {
@@ -48,7 +41,7 @@ void LorenzPong::BoundedStep()
         attractor_b_.step(-dt_adj_);
     }
 
-    print();
+    //print();
 
     // Flip at the turning points *before* advancing, so the step that lands on
     // the boundary index is still taken in the outgoing direction. Checking the
@@ -67,6 +60,16 @@ void LorenzPong::UnBoundedStep()
     // todo - cache reservoir state
     r_idx_ += r_direction_;
 }
+
+void LorenzPong::print()
+{
+    std::cout << r_idx_*dt_ << ",";
+    attractor_a_.state.print();
+    std::cout << " || ";
+    attractor_b_.state.print();
+    std::cout << std::endl;
+}
+
 
 int main()
 {

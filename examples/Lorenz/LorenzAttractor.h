@@ -9,7 +9,7 @@ public:
     struct State
     {
         double x = 1.0, y = 1.0, z = 1.0;
-        void print(){ std::cout << x << ", " << y << ", " << z << std::endl;};
+        void print(){ std::cout << x << "," << y << "," << z;};
     };
 
     double sigma = 10.0;
