@@ -28,32 +28,25 @@ ESN::ESN(const ESNConfig& cfg)
     scratch_state_.resize(n_);
 }
 
-void ESN::StepLive(const float* inputs)
+void ESN::StepLive(const float* inputs, const float* feedback)
 {
-    // Input-only (open-loop) step. External feedback drive goes through
-    // StepLiveExternalFeedback; the ESN never generates feedback itself.
-    for (size_t ch = 0; ch < num_inputs_; ++ch)
-        reservoir_->InjectInput(ch, inputs[ch]);
-    reservoir_->Step();
-}
+    // Closed-loop only when feedback is actually supplied. Stage it on the D
+    // feedback channels (raw, no clamp) through the reservoir's dedicated port
+    // (own weights + feedback_scaling, outside the SR rescale — a twin of the
+    // input port). The ESN never generates feedback itself.
+    if (feedback != nullptr)
+    {
+        // Guard the contract explicitly: with D == 0 the reservoir has no
+        // feedback port, and InjectFeedback(ptr, 0) would no-op (0 == 0 passes
+        // its count check) — silently degrading this to an open-loop step. Throw
+        // instead, so a feedback caller on a non-feedback ESN fails loud.
+        if (esn_config_.reservoir.num_feedback_channels == 0)
+            throw std::invalid_argument(
+                "ESN::StepLive: feedback supplied but not configured "
+                "(num_feedback_channels == 0); pass feedback=nullptr for open-loop drive");
+        reservoir_->InjectFeedback(feedback, esn_config_.reservoir.num_feedback_channels);
+    }
 
-void ESN::StepLiveExternalFeedback(const float* inputs, const float* feedback)
-{
-    // Guard the documented contract explicitly: with D == 0 the reservoir has no
-    // feedback port, and InjectFeedback(ptr, 0) would no-op (0 == 0 passes its
-    // count check) — silently degrading this to an open-loop Step. Throw instead,
-    // so a feedback caller on a non-feedback ESN fails loud rather than running
-    // input-only without notice.
-    if (esn_config_.reservoir.num_feedback_channels == 0)
-        throw std::invalid_argument(
-            "ESN::StepLiveExternalFeedback: feedback is not configured "
-            "(num_feedback_channels == 0); use StepLive for open-loop drive");
-
-    // Stage the caller-supplied feedback on the D feedback channels (raw, no
-    // clamp), then the task inputs, then Step. The reservoir routes feedback
-    // through its dedicated port (own weights + feedback_scaling, outside the SR
-    // rescale) — structurally a twin of the input port.
-    reservoir_->InjectFeedback(feedback, esn_config_.reservoir.num_feedback_channels);
     for (size_t ch = 0; ch < num_inputs_; ++ch)
         reservoir_->InjectInput(ch, inputs[ch]);
     reservoir_->Step();
@@ -65,8 +58,13 @@ void ESN::Warmup(const float* inputs, size_t num_steps)
         StepLive(inputs + s * num_inputs_);
 }
 
-void ESN::Run(const float* inputs, size_t num_steps)
+void ESN::Run(const float* inputs, size_t num_steps, bool clear_recorded)
 {
+    if (clear_recorded)
+    {
+        states_.clear();        // keep capacity; the resize below refills it
+        num_collected_ = 0;
+    }
     states_.resize((num_collected_ + num_steps) * n_);
     for (size_t s = 0; s < num_steps; ++s)
     {
@@ -76,16 +74,9 @@ void ESN::Run(const float* inputs, size_t num_steps)
     num_collected_ += num_steps;
 }
 
-void ESN::ClearStates()
+void ESN::ClearReservoir()
 {
-    states_.clear();
-    states_.shrink_to_fit();
-    num_collected_ = 0;
-}
-
-void ESN::ResetReservoirOnly()
-{
-    reservoir_->Reset();
+    reservoir_->Clear();
 }
 
 void ESN::Train(const float* targets, size_t train_size)

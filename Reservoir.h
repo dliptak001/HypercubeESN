@@ -65,7 +65,7 @@ struct ReservoirConfig
 /// @c ReservoirConfig::seed as @c U(-1,1) * bias_scaling and summed into the
 /// pre-activation just before the @c tanh. Like feedback, bias is OFF by default
 /// (bias_scaling = 0.0); set bias_scaling > 0 to enable it. It is a fixed model
-/// parameter, not dynamical state — @ref Reset leaves it untouched and @ref TakeSnapshot
+/// parameter, not dynamical state — @ref Clear leaves it untouched and @ref TakeSnapshot
 /// does not capture it. Like the feedback block it sits OUTSIDE the spectral-radius
 /// estimate (it is an additive constant, not part of the linear recurrent operator)
 /// and carries no fan-in normalization (a single per-neuron term has no fan-in).
@@ -113,11 +113,11 @@ public:
     /// @brief Clear all state and history to zero and re-home the slice ring.
     /// Returns the reservoir to its post-construction (undriven) state; the
     /// learned/initialized weights are left unchanged.
-    void Reset();
+    void Clear();
 
     /// @brief The current reservoir state — the most-recent history slice.
     /// @return Pointer to N floats (the readout feature vector), valid until the
-    ///         next @ref Step or @ref Reset.
+    ///         next @ref Step or @ref Clear.
     [[nodiscard]] const float* Outputs() const { return slice_ptrs_[0]; }
 
     /// @brief Realized post-rescale spectral radius measured at construction

@@ -223,7 +223,7 @@ class TestStreamingValidation:
 class TestSurfaceParity:
 
     EXPECTED = [
-        "warmup", "run", "clear_states", "reset_reservoir_only", "fit", "train",
+        "warmup", "run", "clear_reservoir", "fit", "train",
         "init_online", "train_live_step", "train_live_batch",
         "train_live_step_regression", "train_live_batch_regression",
         "copy_live_state", "predict_raw", "predict_raw_multi",

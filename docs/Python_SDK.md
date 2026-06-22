@@ -130,7 +130,7 @@ esn.nrmse()                                     # test NRMSE
 # Low-level pipeline (full control)
 esn.warmup(inputs)                # drive without recording
 esn.run(inputs)                   # drive and collect states
-esn.clear_states()                # clear collected data (keeps readout)
+esn.run(inputs, clear_recorded=True)  # start a fresh batch (keeps readout)
 esn.train(targets)                # HCNN readout (config fixed at construction)
 
 # Prediction & evaluation
@@ -258,24 +258,17 @@ Drive the reservoir for a number of timesteps without recording state. Use this 
 
 ---
 
-##### `run(inputs)`
+##### `run(inputs, *, clear_recorded=False)`
 
 Drive the reservoir and record the full state vector at each step. States are appended — multiple `run()` calls accumulate.
 
 **Parameters:**
 - `inputs` — NumPy array. Same shape convention as `warmup()`.
+- `clear_recorded` (keyword-only, default `False`) — if `True`, discard everything recorded by previous `run()` calls (and any cached `fit()` targets) before recording this batch, so it starts fresh. The reservoir's live state and the trained readout are untouched. Use this between independent sequences instead of rebuilding the ESN.
 
 **Notes:**
 - After `run()`, collected states are available for training and evaluation.
 - Features are computed lazily when first needed (by `train()`, `r2()`, etc.).
-
----
-
-##### `clear_states()`
-
-Clear all collected states and cached features. The reservoir's live internal state is **not** reset — it retains its current activation. The trained readout is also preserved.
-
-Use this between independent sequences: clear the collected data, then `warmup()` + `run()` on a new input sequence without rebuilding the ESN.
 
 ---
 
@@ -451,7 +444,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 
 | Method | Description |
 |--------|-------------|
-| `reset_reservoir_only()` | Zero the reservoir state; collected states and trained readout are preserved. For episodic tasks. |
+| `clear_reservoir()` | Clear the live reservoir state; recorded states and trained readout are preserved. For episodic tasks. |
 
 ---
 

@@ -22,7 +22,7 @@ independently and outputs combined) and a **feedback ensemble** (online only; th
 consensus coupling is always engaged across training and inference; the feedback
 intensity starts low and ramps up once members are competent, to avoid early
 destabilization). Output-space combination (mean/median); members differ by seed.
-Feedback needs one additive `ESN` seam (`StepLiveExternalFeedback`). Task-agnostic;
+Feedback needs one additive `ESN` seam (`StepLive`'s optional feedback arg). Task-agnostic;
 demonstration examples come after the capability.
 
 → Finalized design note: [ensemble_esn_feedback.md](ensemble_esn_feedback.md)

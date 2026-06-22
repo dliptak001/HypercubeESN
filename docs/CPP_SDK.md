@@ -313,9 +313,9 @@ ESN esn(cfg);
 
 // Reservoir driving
 esn.Warmup(inputs, num_steps);
-esn.Run(inputs, num_steps);
-esn.ClearStates();
-esn.ResetReservoirOnly();
+esn.Run(inputs, num_steps);                    // accumulate into the batch
+esn.Run(inputs, num_steps, /*clear_recorded=*/true);  // start a fresh batch
+esn.ClearReservoir();
 
 // Batch training (readout hyperparameters come from cfg.readout)
 esn.Train(targets, train_size);
@@ -399,7 +399,7 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 ##### `Run`
 
 ```cpp
-void Run(const float* inputs, size_t num_steps);
+void Run(const float* inputs, size_t num_steps, bool clear_recorded = false);
 ```
 
 Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`Size()` floats — all N vertices). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
@@ -407,28 +407,17 @@ Drives the reservoir for `num_steps` timesteps, recording the full state at each
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `Warmup()`.
 - `num_steps` -- Number of timesteps to drive and record.
+- `clear_recorded` -- If `true`, discard everything recorded by previous `Run()` calls (and reset `NumCollected()`) before recording this batch, so this call starts fresh. The reservoir's live state and the trained readout are untouched. Default `false` (accumulate). Use this between independent recording batches — clear + record in one call — instead of rebuilding the ESN.
 
 ---
 
-##### `ClearStates`
+##### `ClearReservoir`
 
 ```cpp
-void ClearStates();
+void ClearReservoir();
 ```
 
-Clears all collected states. The reservoir's live internal state is **not** reset -- it retains its current activation. The trained readout is also preserved.
-
-Use this between independent sequences: clear the collected data, then `Warmup()` + `Run()` on a new input sequence without rebuilding the ESN.
-
----
-
-##### `ResetReservoirOnly`
-
-```cpp
-void ResetReservoirOnly();
-```
-
-Zeros the reservoir's internal state — `vtx_state_` plus every output-history slice. Recurrent weights, input weights, and all hyperparameters are untouched. Collected states are **not** cleared. The trained readout is preserved.
+Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
 
 Use for episodic tasks where each episode starts from a clean slate (e.g., per-sequence reset).
 

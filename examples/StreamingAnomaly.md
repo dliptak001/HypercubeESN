@@ -74,8 +74,8 @@ Normal signal ──> ESN ──> HCNN train     Live signal ──> ESN ──>
    compute RMSE.
 3. If the window RMSE exceeds the threshold, flag as anomaly.
 
-Between windows, `ClearStates()` clears the collected output buffer
-(so the readout can index the new window's timesteps from zero). The
+Between windows, `Run(..., clear_recorded=true)` clears the recorded output
+buffer (so the readout can index the new window's timesteps from zero). The
 reservoir neurons' live activations are not reset — they carry over,
 which is what allows the model to detect when dynamics have changed
 and to recover gradually when they return to normal.

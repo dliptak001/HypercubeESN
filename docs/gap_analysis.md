@@ -58,7 +58,7 @@ construct ──► per-member InitOnline(warmup) ──► coupled online train
 The **uncoupled-warmup necessity** is a real subtlety: coupling cannot begin until
 after `InitOnline` because there are no member outputs (no consensus) during warmup.
 Also unaddressed: **sequence-boundary reset** — across multiple sequences, do all
-members `ResetReservoirOnly()` together?
+members `ClearReservoir()` together?
 
 **Recommendation:** add a §7.0 "lifecycle" with the four phases, the
 warmup-is-uncoupled note, and reset semantics.

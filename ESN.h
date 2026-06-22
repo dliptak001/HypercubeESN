@@ -30,46 +30,44 @@ public:
     //  Reservoir driving
     // ---------------------------------------------------------------
 
-    /// @brief One timestep on the live reservoir, input only: inject this
-    /// step's inputs (NumInputs() floats) and Step. This is the open-loop
-    /// (no-feedback) driver; for external-feedback drive use
-    /// @ref StepLiveExternalFeedback. No readout training occurs here.
-    void StepLive(const float* inputs);
-
-    /// @brief One timestep with external feedback drive — the only feedback
-    /// entry point. Stages @p feedback on the D = num_feedback_channels feedback
-    /// channels and @p inputs on the input channels, then Steps. The feedback is
-    /// caller-supplied and injected RAW (no clamp) through the reservoir's
-    /// dedicated feedback port (its own weight block + feedback_scaling, outside
-    /// the spectral-radius rescale). The ESN does not generate or learn it.
+    /// @brief One timestep on the live reservoir: inject this step's inputs
+    /// (NumInputs() floats) and Step. No readout training occurs here.
+    ///
+    /// Open-loop by default (@p feedback == nullptr). To drive closed-loop, pass
+    /// @p feedback — NumFeedbackChannels() floats staged RAW (no clamp) on the
+    /// reservoir's dedicated feedback port (its own weight block +
+    /// feedback_scaling, outside the spectral-radius rescale). This is the only
+    /// feedback entry point; the ESN never generates or learns the feedback.
     /// @param inputs   NumInputs() floats (task input for this step).
-    /// @param feedback NumFeedbackChannels() floats (the external drive).
-    /// @throws std::invalid_argument if feedback is not configured
-    ///         (num_feedback_channels == 0).
-    void StepLiveExternalFeedback(const float* inputs, const float* feedback);
+    /// @param feedback nullptr for open-loop, else NumFeedbackChannels() floats.
+    /// @throws std::invalid_argument if @p feedback is non-null but feedback is
+    ///         not configured (num_feedback_channels == 0).
+    void StepLive(const float* inputs, const float* feedback = nullptr);
 
     /// @brief Drive the reservoir for @p num_steps without recording states
     /// (washes out the initial transient). @p inputs is row-major,
     /// num_steps * NumInputs() floats (NumInputs() values per timestep, one per
-    /// channel). Steps via @ref StepLive, so this is strictly open-loop: no
-    /// feedback is injected even on a feedback-configured ESN. Closed-loop drive
-    /// is the caller's responsibility via @ref StepLiveExternalFeedback.
+    /// channel). Steps via @ref StepLive open-loop, so no feedback is injected
+    /// even on a feedback-configured ESN. Closed-loop drive is the caller's
+    /// responsibility via @ref StepLive (passing feedback).
     void Warmup(const float* inputs, size_t num_steps);
 
-    /// @brief Drive the reservoir for @p num_steps and append the full
-    /// state at each step to the collected-states buffer (for batch Train /
-    /// R2 / NRMSE / Accuracy). @p inputs has the same layout as @ref Warmup.
-    /// Steps via @ref StepLive — strictly open-loop, so the collected states
-    /// carry no feedback drive regardless of num_feedback_channels.
-    void Run(const float* inputs, size_t num_steps);
+    /// @brief Drive the reservoir for @p num_steps and append the full state at
+    /// each step to the recorded-states buffer (for batch Train / R2 / NRMSE /
+    /// Accuracy). @p inputs has the same layout as @ref Warmup. Steps via
+    /// @ref StepLive — strictly open-loop, so the recorded states carry no
+    /// feedback drive regardless of num_feedback_channels.
+    ///
+    /// By default successive calls **accumulate** into one growing batch. Pass
+    /// @p clear_recorded = true to first discard everything recorded so far (and
+    /// reset the timestep count) so this call starts a fresh batch — the trained
+    /// readout and the live reservoir state are left untouched either way.
+    void Run(const float* inputs, size_t num_steps, bool clear_recorded = false);
 
-    /// @brief Discard the collected-states buffer and free its memory. The
-    /// trained readout and reservoir weights are left intact.
-    void ClearStates();
-
-    /// @brief Zero the reservoir's live state only; collected states and the
+    /// @brief Clear the live reservoir state (zero its activations + history) so
+    /// a new input sequence starts from rest. The recorded states and the
     /// trained readout are preserved.
-    void ResetReservoirOnly();
+    void ClearReservoir();
 
     // ---------------------------------------------------------------
     //  Training
@@ -168,8 +166,8 @@ public:
     [[nodiscard]] size_t Size() const { return n_; }
 
     /// Number of external feedback channels D (= cfg.reservoir.num_feedback_channels).
-    /// 0 means feedback is not configured; @ref StepLiveExternalFeedback expects
-    /// this many feedback values per step.
+    /// 0 means feedback is not configured; @ref StepLive expects this many
+    /// feedback values per step when driven closed-loop (non-null feedback).
     [[nodiscard]] size_t NumFeedbackChannels() const
     {
         return esn_config_.reservoir.num_feedback_channels;

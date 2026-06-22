@@ -197,39 +197,38 @@ class ESN:
         """
         self._impl.warmup(_to_float32(inputs))
 
-    def run(self, inputs: np.ndarray) -> None:
+    def run(self, inputs: np.ndarray, *, clear_recorded: bool = False) -> None:
         """Drive the reservoir and record states for training/evaluation.
 
         Parameters
         ----------
         inputs : ndarray
             Input signal. Same shape convention as ``warmup()``.
+        clear_recorded : bool, keyword-only
+            If True, discard everything recorded by previous ``run()`` calls
+            (and any cached ``fit()`` targets) before recording this batch, so
+            this call starts fresh. The trained readout and the live reservoir
+            state are left untouched. Default False.
 
         Notes
         -----
-        Multiple ``run()`` calls accumulate states. Use ``clear_states()``
-        to reset between independent sequences.
+        By default successive ``run()`` calls accumulate into one growing batch;
+        pass ``clear_recorded=True`` to start an independent sequence.
         """
-        self._impl.run(_to_float32(inputs))
+        if clear_recorded:
+            self._targets = None
+            self._train_size = None
+        self._impl.run(_to_float32(inputs), clear_recorded=clear_recorded)
 
-    def clear_states(self) -> None:
-        """Clear collected states and cached features.
+    def clear_reservoir(self) -> None:
+        """Clear the live reservoir state so a new sequence starts from rest.
 
-        The reservoir's live internal state is preserved. The trained
-        readout is also preserved. Stored targets from ``fit()`` are cleared.
+        Zeros the reservoir's activations and history. The recorded states and
+        the trained readout are preserved. Useful for episodic tasks where each
+        sequence should start from a clean reservoir without discarding
+        previously recorded training data.
         """
-        self._impl.clear_states()
-        self._targets = None
-        self._train_size = None
-
-    def reset_reservoir_only(self) -> None:
-        """Zero the reservoir's live internal state only.
-
-        Collected states and the trained readout are preserved. Useful for
-        episodic tasks where each sequence should start from a clean reservoir
-        without discarding previously collected training data.
-        """
-        self._impl.reset_reservoir_only()
+        self._impl.clear_reservoir()
 
     def fit(
         self,
@@ -297,7 +296,6 @@ class ESN:
         >>> print(esn.r2())
         """
         inputs = _to_float32(inputs)
-        self.clear_states()
 
         if targets is None:
             # Auto-target mode: next-step prediction on single-input signal
@@ -319,7 +317,7 @@ class ESN:
                     f"({len(inputs)}). Not enough data to collect any states."
                 )
             self.warmup(inputs[:warmup])
-            self.run(inputs[warmup:-horizon])
+            self.run(inputs[warmup:-horizon], clear_recorded=True)
             self._targets = _to_float32(inputs[warmup + horizon:])
         else:
             # Explicit-target mode: works for any num_inputs
@@ -330,7 +328,7 @@ class ESN:
                     "Not enough data to collect any states."
                 )
             self.warmup(inputs[:warmup])
-            self.run(inputs[warmup:])
+            self.run(inputs[warmup:], clear_recorded=True)
             if len(targets) != self.num_collected:
                 raise ValueError(
                     f"targets length ({len(targets)}) must equal num_collected "

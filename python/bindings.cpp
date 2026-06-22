@@ -99,21 +99,21 @@ PYBIND11_MODULE(_core, m)
         }, py::arg("inputs"),
            "Drive the reservoir without recording states (wash out initial transient).")
 
-        .def("run", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {
+        .def("run", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs,
+                       bool clear_recorded) {
             auto buf = inputs.request();
             size_t total = static_cast<size_t>(buf.size);
             size_t K = self.NumInputs();
             if (total % K != 0)
                 throw std::invalid_argument("Input size must be divisible by num_inputs");
-            self.Run(static_cast<const float*>(buf.ptr), total / K);
-        }, py::arg("inputs"),
-           "Drive the reservoir and record states for training/evaluation.")
+            self.Run(static_cast<const float*>(buf.ptr), total / K, clear_recorded);
+        }, py::arg("inputs"), py::kw_only(), py::arg("clear_recorded") = false,
+           "Drive the reservoir and record states for training/evaluation. "
+           "Successive calls accumulate; pass clear_recorded=True to start a fresh batch.")
 
-        .def("clear_states", &ESN::ClearStates,
-             "Clear collected states and cached features. Keeps trained readout.")
-
-        .def("reset_reservoir_only", &ESN::ResetReservoirOnly,
-             "Zero only the reservoir state; collected states preserved.")
+        .def("clear_reservoir", &ESN::ClearReservoir,
+             "Clear the live reservoir state so a new sequence starts from rest. "
+             "Recorded states and trained readout preserved.")
 
         // ── Batch training ──
         .def("train", [](ESN& self,

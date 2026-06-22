@@ -63,7 +63,7 @@ private:
 /// Slot 0 holds the oldest embedding; slot (history-1) holds the newest.
 /// Push() shifts left by one slot, dropping the oldest.  Clear() zeros the
 /// buffer (call at the start of each Warmup / Train phase, paired with
-/// esn.ResetReservoirOnly()).
+/// esn.ClearReservoir()).
 class RollingCharWindow
 {
 public:

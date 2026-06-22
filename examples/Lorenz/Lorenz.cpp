@@ -288,7 +288,7 @@ int main()
         const size_t L = first_launch + k * LAUNCH_STRIDE;
 
         // re-sync the reservoir onto the true trajectory ending just before L
-        esn.ResetReservoirOnly();
+        esn.ClearReservoir();
         for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
 
         // cut the cord: predict the increment, reconstruct the next state by
@@ -321,7 +321,7 @@ int main()
             std::cout << "  -- Free-run sample (launch 0), denormalized Lorenz units --\n";
             std::cout << "    step |    x_true   x_pred  |    z_true   z_pred  |  norm.err\n";
             std::cout << "    -----+---------------------+---------------------+----------\n";
-            esn.ResetReservoirOnly();
+            esn.ClearReservoir();
             for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
             double dx = nx[L - 1], dy = ny[L - 1], dz = nz[L - 1];
             for (size_t h = 0; h < 20; ++h)

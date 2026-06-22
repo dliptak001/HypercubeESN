@@ -99,7 +99,7 @@ int Run()
 
     // --- Phase 1: reservoir warmup (no training). ---
     std::size_t corpus_pos = 0;
-    esn.ResetReservoirOnly();
+    esn.ClearReservoir();
     window.Clear();
     for (std::size_t i = 0; i < cfg.warmup_chars; ++i) {
         window.Push(corpus.text[corpus_pos++]);

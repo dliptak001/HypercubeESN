@@ -100,7 +100,7 @@ void Reservoir::Initialize()
     std::mt19937_64 bias_rng(seed_for(SeedRole::Bias));
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
-    Reset();
+    Clear();
 
     for (size_t i = 0; i < n_; ++i)
         vtx_bias_[i] = static_cast<float>(dist(bias_rng)) * bias_scaling_;
@@ -366,7 +366,7 @@ ReservoirConfig Reservoir::GetConfig() const
     return cfg;
 }
 
-void Reservoir::Reset()
+void Reservoir::Clear()
 {
     std::memset(vtx_state_.get(), 0, n_ * sizeof(float));
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));

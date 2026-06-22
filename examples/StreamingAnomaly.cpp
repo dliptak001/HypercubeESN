@@ -164,8 +164,7 @@ int main(int argc, char* argv[])
         for (size_t t = 0; t < window; ++t)
             tgt[t] = sig[t + 1];
 
-        esn.ClearStates();
-        esn.Run(sig.data(), window);
+        esn.Run(sig.data(), window, /*clear_recorded=*/true);
 
         std::vector<float> pred(window);
         for (size_t t = 0; t < window; ++t)

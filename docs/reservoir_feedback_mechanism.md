@@ -76,7 +76,7 @@ The feedback path mirrors `vtx_input_` member-for-member. Everything below is re
 - **Per-step lifecycle.** Staged **before** `Step`, consumed **during** it (in
   `UpdateState`), and **cleared** (memset to 0) at the end of every `Step` — exactly like
   input. So a drive must be re-injected each step it is wanted.
-- **Not dynamical state.** `Reset` zeros it; `TakeSnapshot` does **not** capture it (a
+- **Not dynamical state.** `Clear` zeros it; `TakeSnapshot` does **not** capture it (a
   staged drive, not persistent state), and `RestoreSnapshot` clears it — so a
   restore-and-replay reproduces the trajectory bit-for-bit from the snapshot plus the
   subsequent injections alone.
@@ -130,15 +130,15 @@ Either way the reservoir stays ignorant of the readout; the caller owns the loop
   Reservoir              vtx_feedback_ port  ── this document (the substrate)
      ▲  InjectFeedback / Step / clear
      │
-  ESN          StepLiveExternalFeedback(inputs, φ)  ── the ONLY feedback entry point;
+  ESN          StepLive(inputs, φ)                   ── the ONLY feedback entry point;
      ▲                                                 StepLive(inputs) is input-only
      │
   EnsembleESN  φ_i = κ·Δ_i across M members          ── the policy: consensus coupling
                                                         (ensemble_esn_feedback.md)
 ```
 
-`ESN::StepLiveExternalFeedback(inputs, φ)` stages `φ` (D floats) on the feedback channels
+`ESN::StepLive(inputs, φ)` stages `φ` (D floats) on the feedback channels
 and the task inputs on the input channels, then `Step`s — the only way feedback enters at
-the ESN layer; `ESN::StepLive(inputs)` is the input-only path. `EnsembleESN` drives its M
+the ESN layer; `ESN::StepLive(inputs)` (feedback omitted) is the input-only path. `EnsembleESN` drives its M
 members through that seam with `φ_i = κ·Δ_i` (each member's scaled deviation from the
 consensus). The substrate specified here is the foundation both sit on.
