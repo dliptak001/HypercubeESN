@@ -154,7 +154,7 @@ ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
 
-Creates the reservoir; the readout consumes all N reservoir vertices. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) configuration is also fixed at construction via the `readout_*` keyword arguments and consumed by `train()` / `init_online()`.
+Creates the reservoir; the readout consumes all N reservoir vertices. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) is also built eagerly at construction from the `readout_*` keyword arguments, ready before the first `train()` / `train_live_*` call.
 
 **Reservoir parameters:**
 
@@ -431,7 +431,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 
 | Method | Description |
 |--------|-------------|
-| `init_online(warmup_inputs)` | Initialize HCNN for streaming. Runs warmup, builds CNN. Call before `train_live_*`. |
+| `warmup(inputs)` | Settle the reservoir before `train_live_*` (the readout CNN is already built at construction). |
 | `train_live_step(target_class, lr, weight_decay=0.0)` | Single-sample online gradient step (classification). |
 | `train_live_batch(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (classification). |
 | `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |

@@ -224,7 +224,7 @@ class TestSurfaceParity:
 
     EXPECTED = [
         "warmup", "run", "clear_reservoir", "fit", "train",
-        "init_online", "train_live_step", "train_live_batch",
+        "train_live_step", "train_live_batch",
         "train_live_step_regression", "train_live_batch_regression",
         "copy_live_state", "predict_raw", "predict_raw_multi",
         "predict_live_raw", "predict_live_raw_multi", "predict_from_state",

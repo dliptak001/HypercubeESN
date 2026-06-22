@@ -88,13 +88,6 @@ void ESN::Train(const float* targets, size_t train_size)
     readout_.Train(ReadoutInput(0), targets, train_size);
 }
 
-void ESN::InitOnline(const float* warmup_inputs, size_t warmup_count)
-{
-    // The readout CNN is built eagerly in the ctor, so InitOnline now only runs
-    // the reservoir warm-up to wash out the x(0) = 0 transient.
-    Warmup(warmup_inputs, warmup_count);
-}
-
 void ESN::TrainLiveStep(float target_class, float lr, float weight_decay)
 {
     CopyLiveState(scratch_state_.data());

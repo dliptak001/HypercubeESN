@@ -50,6 +50,11 @@ public:
     /// channel). Steps via @ref StepLive open-loop, so no feedback is injected
     /// even on a feedback-configured ESN. Closed-loop drive is the caller's
     /// responsibility via @ref StepLive (passing feedback).
+    ///
+    /// This is also the warm-up step for online/streaming training: drive the
+    /// reservoir here to wash out the x(0) = 0 transient before the first
+    /// @ref TrainLiveStep / @ref TrainLiveBatch. The readout CNN is built
+    /// eagerly at construction, so no separate readout-init call is needed.
     void Warmup(const float* inputs, size_t num_steps);
 
     /// @brief Drive the reservoir for @p num_steps and append the full state at
@@ -76,14 +81,6 @@ public:
     /// @brief Batch-train the readout on collected timesteps [0, train_size).
     /// Requires train_size <= NumCollected(). @p targets layout matches @ref R2.
     void Train(const float* targets, size_t train_size);
-
-    /// @brief Prepare for online (streaming) training by warming up the
-    /// reservoir on @p warmup_inputs (same layout as @ref Warmup) to wash out
-    /// the initial transient. The readout's CNN is built eagerly at ESN
-    /// construction, so no readout init happens here — this is purely the
-    /// reservoir washout. (Single-ESN online-user sugar; the ensemble owns its
-    /// own warm-up loop.)
-    void InitOnline(const float* warmup_inputs, size_t warmup_count);
 
     /// @brief Single-step online classification training on the live reservoir
     /// state against @p target_class.

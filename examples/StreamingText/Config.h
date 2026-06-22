@@ -60,7 +60,7 @@ namespace streaming_text::config
         // "lap" (the analogue of an epoch).  total_steps is the single budget;
         // there is no per-pass reset — reservoir state flows continuously.
         std::size_t warmup_chars = 1024; ///< transient reservoir warmup (no training)
-        std::size_t warmup_train_chars = 32768; ///< chars driven through InitOnline (builds the CNN)
+        std::size_t warmup_train_chars = 32768; ///< extra warmup chars to settle the reservoir before training
         std::size_t total_steps = 45000000; ///< total streamed chars (laps = total_steps / L)
 
         // ESN config: struct defaults + StreamingText overrides.  Edit fields
@@ -84,7 +84,7 @@ namespace streaming_text::config
             c.readout.weight_decay = 1e-5f;
             c.readout.lr_max = 0.001f;
             c.readout.lr_min_frac = 0.02f; // INERT in this example: the streaming path
-                                           // (InitOnline + TrainLiveBatch) takes an explicit
+                                           // (Warmup + TrainLiveBatch) takes an explicit
                                            // per-batch lr; the readout's own cosine (the only
                                            // consumer of readout.lr_min_frac) is never run.
                                            // The active LR floor is Cfg::lr_min_frac below.

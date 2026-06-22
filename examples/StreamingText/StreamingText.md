@@ -86,10 +86,10 @@ constant; pick one and leave it.
    `0x20–0x7E`); any out-of-vocab byte is a hard error.
 2. **Phase 1 — warmup** (`warmup_chars`): drive the reservoir, no training,
    to wash out the zero-init transient.
-3. **Phase 2 — `InitOnline`** (`warmup_train_chars`): drive further and build the
-   CNN readout. (This window is a holdover from the old standardization era; with
-   standardization removed it is functionally extra reservoir warmup, but
-   `InitOnline` still needs to build the CNN.)
+3. **Phase 2 — extra warmup** (`warmup_train_chars`): drive the reservoir
+   further with `Warmup`. (This window is a holdover from the old standardization
+   era; with standardization removed, and the CNN now built eagerly at
+   construction, it is simply extra reservoir warmup before training.)
 4. **Phase 3 — ring loop** (`total_steps`): the per-char body above (advance →
    predict → score → teacher-forced display → accumulate → mini-batch update),
    wrapping `pos = (pos + 1) % L`.
@@ -105,7 +105,7 @@ A single `Cfg` struct (no mode enum):
 |------|---------|
 | `corpus_path` | plain-text corpus, not bundled — see [The corpus](#the-corpus-not-bundled) (default `tinyshakespeare.txt`, relative to the working directory) |
 | `warmup_chars` | transient reservoir warmup (no training) |
-| `warmup_train_chars` | chars driven through `InitOnline` (builds the CNN) |
+| `warmup_train_chars` | extra warmup chars to settle the reservoir before training |
 | `total_steps` | single stream budget; laps ≈ `total_steps / L` |
 | `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) block |
 | `mini_batch_size` | grad-accum chunk for `TrainLiveBatch` |

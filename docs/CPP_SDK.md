@@ -300,7 +300,7 @@ struct ReadoutConfig {
 
 ### ESN
 
-The complete pipeline wrapper: Reservoir -> Readout. Constructed from a single `ESNConfig` that bundles the reservoir and readout configs (the hypercube dimension comes from `cfg.reservoir.dim`); no further config arguments are passed to `Train` / `InitOnline`.
+The complete pipeline wrapper: Reservoir -> Readout. Constructed from a single `ESNConfig` that bundles the reservoir and readout configs (the hypercube dimension comes from `cfg.reservoir.dim`); no further config arguments are passed to `Train`.
 
 ```cpp
 struct ESNConfig {
@@ -321,7 +321,7 @@ esn.ClearReservoir();
 esn.Train(targets, train_size);
 
 // Online (streaming) training
-esn.InitOnline(warmup_inputs, warmup_count);
+esn.Warmup(warmup_inputs, warmup_count);   // settle the reservoir before train_live_*
 esn.TrainLiveStep(target_class, lr, weight_decay);
 esn.TrainLiveBatch(states, targets, count, lr, weight_decay);
 esn.TrainLiveStepRegression(target, lr, weight_decay);
@@ -360,7 +360,7 @@ esn.SetReadoutState(state);
 explicit ESN(const ESNConfig& cfg);
 ```
 
-Creates the reservoir from `cfg.reservoir` and prepares the readout with `cfg.readout`. Reservoir weights are generated and spectral-radius-rescaled at construction time; the HCNN readout itself is built when `Train()` or `InitOnline()` is called.
+Creates the reservoir from `cfg.reservoir` and builds the readout from `cfg.readout`. Reservoir weights are generated and spectral-radius-rescaled at construction time; the HCNN readout is also built eagerly here, so it is ready before the first `Train()` / `TrainLive*` call.
 
 **Parameters:**
 - `cfg` -- Full ESN configuration. See [ReservoirConfig](#reservoirconfig) and [ReadoutConfig](#readoutconfig).
@@ -443,23 +443,7 @@ Trains the HCNN readout on the first `train_size` collected states. Readout hype
 
 #### Online (Streaming) Training
 
-For applications where data arrives continuously. The reservoir advances one step at a time; the readout is updated via per-sample or mini-batch gradient steps.
-
-##### `InitOnline`
-
-```cpp
-void InitOnline(const float* warmup_inputs, size_t warmup_count);
-```
-
-Initializes the HCNN readout for online training. Internally calls `Warmup()` on the warmup inputs to drive the reservoir to a representative state, then builds the CNN architecture from `cfg.readout` (passed at construction) and sets the Adam optimizer. After this call the reservoir's live state reflects having processed `warmup_count` steps; `NumCollected()` is unchanged (Warmup does not collect). Call before any `TrainLive*` method.
-
-**Parameters:**
-- `warmup_inputs` -- Warmup signal: `warmup_count * num_inputs` floats. These drive the reservoir forward without collecting state.
-- `warmup_count` -- Number of warmup timesteps.
-
-`cfg.readout.epochs` is ignored in online mode — the loop epoch count is determined by the caller's training loop.
-
----
+For applications where data arrives continuously. The reservoir advances one step at a time; the readout is updated via per-sample or mini-batch gradient steps. The readout CNN is built eagerly at construction, so there is no separate online-init call — just `Warmup()` the reservoir to wash out the initial transient, then start the `TrainLive*` loop. (`cfg.readout.epochs` is ignored in online mode — the loop length is the caller's training loop.)
 
 ##### `TrainLiveStep` (classification)
 

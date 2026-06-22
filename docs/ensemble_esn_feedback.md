@@ -278,9 +278,9 @@ Config choice; default mean, median for robustness studies. Both are worth explo
 Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns M
 `ESN` members (each owns a non-copyable `Reservoir`, held by `unique_ptr`), built with
 `num_feedback_channels = D`. The ensemble drives every member through its own loop on the
-`StepLive(inputs, φ)` feedback seam (it does **not** call `ESN::InitOnline` — it owns the
-washout itself, §7.1), trains them online via `TrainLiveStepRegression`, and reads them
-via `PredictLiveRaw`.
+`StepLive(inputs, φ)` feedback seam (there is no separate init step — readouts are built
+eagerly at construction and the ensemble owns its washout, §7.1), trains them online via
+`TrainLiveStepRegression`, and reads them via `PredictLiveRaw`.
 
 ### 7.1 Online lifecycle — one loop, two scheduled knobs
 
@@ -401,9 +401,9 @@ distinguish. After removal:
   channel-0 branch was removed with F. It serves the no-feedback case.
 - `ESN::StepLive(inputs, φ)` (below) is the **only** way feedback enters.
 - **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
-  `Readout` ctor**, so there is no readout-init step at all: members are born ready and the
-  no-arg `InitOnline()` once planned here is unnecessary. `ESN::InitOnline(inputs, count)`
-  survives as warm-up-only sugar for single-ESN users; the ensemble does not call it.
+  `Readout` ctor**, so there is no readout-init step at all: members are born ready. There
+  is no `InitOnline` on `ESN` — warm-up is just `ESN::Warmup(inputs, count)`, which the
+  ensemble subsumes into its own washout loop.
 
 The result is a *simpler* ESN — one fewer feature, not more complex.
 

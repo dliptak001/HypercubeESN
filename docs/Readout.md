@@ -177,7 +177,9 @@ for streaming applications where data arrives continuously.
 
 ### Setup
 
-`InitOnline()` builds the architecture and sets the Adam optimizer.
+The architecture and Adam optimizer are built eagerly in the `Readout`
+constructor — no separate online-init call. Warm up the reservoir (via
+`ESN::Warmup`) before the first gradient step.
 
 ### Gradient steps
 
@@ -225,10 +227,10 @@ and evaluation to it. The methods below are on Readout; see
 
 ### ESN Integration Points
 
-The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at ESN construction — `Train` and `InitOnline` take no config argument.
+The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at ESN construction — `Train` takes no config argument, and the readout CNN is built eagerly in the ESN ctor.
 
 - `ESN::Train(targets, train_size)` → `Readout::Train` using `cfg.readout`
-- `ESN::InitOnline(warmup_inputs, warmup_count)` → build architecture
+- `ESN::Warmup(inputs, num_steps)` → settle the reservoir before `TrainLive*`
 - `ESN::PredictRaw(timestep)` → scalar (asserts `num_outputs == 1`)
 - `ESN::PredictRaw(timestep, float* output)` → multi-output
 - `ESN::NumOutputs()` → delegates to `Readout::NumOutputs()`

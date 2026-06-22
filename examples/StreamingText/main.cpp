@@ -106,7 +106,7 @@ int Run()
         esn.Warmup(window.Inputs(), 1);
     }
 
-    // --- Phase 2: drive warmup_train_chars through InitOnline (builds the CNN). ---
+    // --- Phase 2: drive warmup_train_chars to settle the reservoir before training. ---
     const std::size_t channels_per_step = window.InputSize();
     std::vector<float> warmup_embed(cfg.warmup_train_chars * channels_per_step);
     for (std::size_t i = 0; i < cfg.warmup_train_chars; ++i) {
@@ -115,10 +115,10 @@ int Run()
                     window.Inputs(),
                     channels_per_step * sizeof(float));
     }
-    esn.InitOnline(warmup_embed.data(), cfg.warmup_train_chars);
+    esn.Warmup(warmup_embed.data(), cfg.warmup_train_chars);
     warmup_embed.clear();
     warmup_embed.shrink_to_fit();
-    corpus_pos += cfg.warmup_train_chars;  // InitOnline advanced the reservoir to here
+    corpus_pos += cfg.warmup_train_chars;  // Warmup advanced the reservoir to here
 
     std::cerr << "[stext] CNN cfg: nl=" << esn_cfg.readout.num_layers
               << " ch=" << esn_cfg.readout.conv_channels

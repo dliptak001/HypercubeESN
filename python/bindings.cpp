@@ -18,7 +18,7 @@ PYBIND11_MODULE(_core, m)
     py::class_<ESN>(m, "_ESN")
         // ── Construction ──
         // All reservoir + readout parameters fixed at construction time.
-        // The readout config is consumed by train() / init_online() — no
+        // The readout config is consumed by train() / warmup() — no
         // per-call config overrides.
         .def(py::init([](size_t dim, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
@@ -145,21 +145,6 @@ PYBIND11_MODULE(_core, m)
             "Uses the readout config supplied at ESN construction.")
 
         // ── Online (streaming) HCNN training ──
-        .def("init_online", [](ESN& self,
-                               py::array_t<float, py::array::c_style | py::array::forcecast> warmup_inputs) {
-            auto buf = warmup_inputs.request();
-            size_t total = static_cast<size_t>(buf.size);
-            size_t K = self.NumInputs();
-            if (total % K != 0)
-                throw std::invalid_argument("warmup_inputs size must be divisible by num_inputs");
-            self.InitOnline(static_cast<const float*>(buf.ptr), total / K);
-        },
-            py::arg("warmup_inputs"),
-            "Initialize HCNN for online (streaming) training.\n\n"
-            "Runs warmup_inputs through reservoir to reach a representative state,\n"
-            "then builds CNN architecture. Uses the readout config supplied at construction.\n"
-            "Call before train_live_step/train_live_batch.")
-
         .def("train_live_step", [](ESN& self, float target_class, float lr, float weight_decay) {
             self.TrainLiveStep(target_class, lr, weight_decay);
         },

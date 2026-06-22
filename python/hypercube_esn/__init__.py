@@ -627,20 +627,6 @@ class ESN:
 
     # ── Streaming / online training ──
 
-    def init_online(self, warmup_inputs: np.ndarray) -> None:
-        """Initialize the readout for online (streaming) training.
-
-        Runs ``warmup_inputs`` through the reservoir to reach a representative
-        state, then builds the readout CNN. Call before any ``train_live_*``
-        method. Uses the readout configuration supplied at construction.
-
-        Parameters
-        ----------
-        warmup_inputs : ndarray
-            Warmup signal. Same shape convention as :meth:`warmup`.
-        """
-        self._impl.init_online(_to_float32(warmup_inputs))
-
     def copy_live_state(self) -> np.ndarray:
         """Copy the current reservoir state.
 
