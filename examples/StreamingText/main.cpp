@@ -136,7 +136,7 @@ int Run()
     std::size_t pos = train_start_pos;
 
     const int K = cfg.mini_batch_size;
-    const std::size_t state_dim   = esn.Size();
+    const std::size_t state_dim   = esn.ReservoirNeuronCount();
     const std::size_t num_outputs = esn.NumOutputs();
 
     std::vector<float> accum_states(static_cast<std::size_t>(K) * state_dim);

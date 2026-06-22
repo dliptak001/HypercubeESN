@@ -181,7 +181,7 @@ import numpy as np
 import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-esn = he.ESN(dim=7, seed=73895)  # surveyed default seed
+esn = he.ESN(reservoir_hypercube_dimension=7, seed=73895)  # surveyed default seed
 esn.fit(signal, warmup=200)
 print(f"R2 = {esn.r2():.6f}")
 ```

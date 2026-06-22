@@ -187,11 +187,6 @@ double ESN::Accuracy(const float* labels, size_t start, size_t count) const
     return readout_.Accuracy(ReadoutInput(start), labels + start, count);
 }
 
-size_t ESN::NumOutputs() const
-{
-    return readout_.NumOutputs();
-}
-
 ESNConfig ESN::GetConfig() const
 {
     return esn_config_;

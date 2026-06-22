@@ -20,7 +20,7 @@ PYBIND11_MODULE(_core, m)
         // All reservoir + readout parameters fixed at construction time.
         // The readout config is consumed by train() / warmup() — no
         // per-call config overrides.
-        .def(py::init([](size_t dim, uint64_t seed, float spectral_radius, float input_scaling,
+        .def(py::init([](size_t reservoir_hypercube_dimension, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
                          float history_floor,
                          bool verbose,
@@ -32,7 +32,7 @@ PYBIND11_MODULE(_core, m)
                          float readout_momentum, const char* readout_activation,
                          unsigned readout_seed) {
             ESNConfig cfg;
-            cfg.reservoir.dim              = dim;
+            cfg.reservoir.dim              = reservoir_hypercube_dimension;
             cfg.reservoir.seed             = seed;
             cfg.reservoir.spectral_radius  = spectral_radius;
             cfg.reservoir.input_scaling    = input_scaling;
@@ -65,7 +65,7 @@ PYBIND11_MODULE(_core, m)
             cfg.readout.seed               = readout_seed;
             return std::make_unique<ESN>(cfg);
         }),
-            py::arg("dim"),
+            py::arg("reservoir_hypercube_dimension"),
             py::arg("seed")                     = 73895ULL,
             py::arg("spectral_radius")          = 0.99f,
             py::arg("input_scaling")            = 0.5f,
@@ -133,10 +133,10 @@ PYBIND11_MODULE(_core, m)
                     ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
             size_t train_size = total / K;
 
-            if (train_size > self.NumCollected())
+            if (train_size > self.NumCollectedStates())
                 throw std::invalid_argument(
                     "train_size (" + std::to_string(train_size) +
-                    ") exceeds num_collected (" + std::to_string(self.NumCollected()) + ")");
+                    ") exceeds num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
 
             self.Train(ptr, train_size);
         },
@@ -169,7 +169,7 @@ PYBIND11_MODULE(_core, m)
                                     float lr, float weight_decay) {
             auto sbuf = states.request();
             auto tbuf = targets.request();
-            const size_t M = self.Size();
+            const size_t M = self.ReservoirNeuronCount();
             const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
             const size_t K = self.NumOutputs();
             size_t count;
@@ -185,7 +185,7 @@ PYBIND11_MODULE(_core, m)
             if (static_cast<size_t>(sbuf.size) != count * M)
                 throw std::invalid_argument(
                     "states size (" + std::to_string(sbuf.size) +
-                    ") must equal count * num_output_verts (" + std::to_string(count) +
+                    ") must equal count * reservoir_neuron_count (" + std::to_string(count) +
                     " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
             self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
                                 static_cast<const float*>(tbuf.ptr),
@@ -194,16 +194,16 @@ PYBIND11_MODULE(_core, m)
             py::arg("states"), py::arg("targets"),
             py::arg("lr"), py::arg("weight_decay") = 0.0f,
             "One streaming gradient step over a mini-batch of pre-accumulated states.\n"
-            "states: (count, num_output_verts) float array from copy_reservoir_state.\n"
+            "states: (count, reservoir_neuron_count) float array from copy_reservoir_state.\n"
             "targets: regression -> (count, num_outputs); classification -> (count,) class indices.")
 
         .def("copy_reservoir_state", [](const ESN& self) {
-            size_t M = self.Size();
+            size_t M = self.ReservoirNeuronCount();
             py::array_t<float> arr(M);
             self.CopyReservoirState(arr.mutable_data());
             return arr;
         }, "Copy the current reservoir state for external accumulation.\n"
-           "Returns a (num_output_verts,) float array.")
+           "Returns a (reservoir_neuron_count,) float array.")
 
         // ── Prediction & evaluation ──
         .def("predict", [](const ESN& self) {
@@ -215,10 +215,10 @@ PYBIND11_MODULE(_core, m)
            "Returns (num_outputs,) float array. For autoregressive / streaming loops.")
 
         .def("predict_from_recorded", [](const ESN& self, size_t timestep) {
-            if (timestep >= self.NumCollected())
+            if (timestep >= self.NumCollectedStates())
                 throw std::out_of_range(
                     "timestep (" + std::to_string(timestep) +
-                    ") >= num_collected (" + std::to_string(self.NumCollected()) + ")");
+                    ") >= num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
             auto v = self.PredictFromRecorded(timestep);
             py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
             memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
@@ -229,26 +229,26 @@ PYBIND11_MODULE(_core, m)
         .def("predict_from_state", [](const ESN& self,
                                       py::array_t<float, py::array::c_style | py::array::forcecast> state) {
             auto buf = state.request();
-            size_t M = self.Size();
+            size_t M = self.ReservoirNeuronCount();
             if (static_cast<size_t>(buf.size) != M)
                 throw std::invalid_argument(
                     "state size (" + std::to_string(buf.size) +
-                    ") must equal num_output_verts (" + std::to_string(M) + ")");
+                    ") must equal reservoir_neuron_count (" + std::to_string(M) + ")");
             auto v = self.PredictFromState(static_cast<const float*>(buf.ptr));
             py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
             memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
             return arr;
         }, py::arg("state"),
-           "Run the readout on a caller-supplied (num_output_verts,) state.\n"
+           "Run the readout on a caller-supplied (reservoir_neuron_count,) state.\n"
            "Returns (num_outputs,) float array.")
 
         .def("r2", [](const ESN& self,
                       py::array_t<float, py::array::c_style | py::array::forcecast> targets,
                       size_t start, size_t count) {
-            if (start + count > self.NumCollected())
+            if (start + count > self.NumCollectedStates())
                 throw std::out_of_range(
                     "start + count (" + std::to_string(start + count) +
-                    ") > num_collected (" + std::to_string(self.NumCollected()) + ")");
+                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
             return self.R2(static_cast<const float*>(targets.request().ptr), start, count);
         }, py::arg("targets"), py::arg("start"), py::arg("count"),
            "Compute R-squared on a slice of collected states.")
@@ -256,10 +256,10 @@ PYBIND11_MODULE(_core, m)
         .def("nrmse", [](const ESN& self,
                          py::array_t<float, py::array::c_style | py::array::forcecast> targets,
                          size_t start, size_t count) {
-            if (start + count > self.NumCollected())
+            if (start + count > self.NumCollectedStates())
                 throw std::out_of_range(
                     "start + count (" + std::to_string(start + count) +
-                    ") > num_collected (" + std::to_string(self.NumCollected()) + ")");
+                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
             return self.NRMSE(static_cast<const float*>(targets.request().ptr), start, count);
         }, py::arg("targets"), py::arg("start"), py::arg("count"),
            "Compute Normalized RMSE on a slice of collected states.")
@@ -267,10 +267,10 @@ PYBIND11_MODULE(_core, m)
         .def("accuracy", [](const ESN& self,
                             py::array_t<float, py::array::c_style | py::array::forcecast> labels,
                             size_t start, size_t count) {
-            if (start + count > self.NumCollected())
+            if (start + count > self.NumCollectedStates())
                 throw std::out_of_range(
                     "start + count (" + std::to_string(start + count) +
-                    ") > num_collected (" + std::to_string(self.NumCollected()) + ")");
+                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
             return self.Accuracy(static_cast<const float*>(labels.request().ptr), start, count);
         }, py::arg("labels"), py::arg("start"), py::arg("count"),
            "Compute classification accuracy on a slice of collected states.")
@@ -278,15 +278,15 @@ PYBIND11_MODULE(_core, m)
         // ── State access ──
         .def("collected_states", [](const ESN& self) {
             auto vec = self.CollectedStates();
-            size_t M = self.Size();
-            size_t T = self.NumCollected();
+            size_t M = self.ReservoirNeuronCount();
+            size_t T = self.NumCollectedStates();
             py::array_t<float> arr({T, M});
             memcpy(arr.mutable_data(), vec.data(), vec.size() * sizeof(float));
             return arr;
-        }, "Return collected states as a (num_collected, num_output_verts) array.")
+        }, "Return collected states as a (num_collected_states, reservoir_neuron_count) array.")
 
         .def("predictions", [](const ESN& self) {
-            size_t T = self.NumCollected();
+            size_t T = self.NumCollectedStates();
             size_t K = self.NumOutputs();
             py::array_t<float> arr({T, K});
             float* ptr = arr.mutable_data();
@@ -295,14 +295,13 @@ PYBIND11_MODULE(_core, m)
                 memcpy(ptr + t * K, v.data(), K * sizeof(float));
             }
             return arr;
-        }, "Predictions for all collected timesteps: (num_collected, num_outputs) array.")
+        }, "Predictions for all collected timesteps: (num_collected_states, num_outputs) array.")
 
         // ── Properties ──
-        .def_property_readonly("num_collected", &ESN::NumCollected)
+        .def_property_readonly("num_collected_states", &ESN::NumCollectedStates)
         .def_property_readonly("num_outputs", &ESN::NumOutputs)
-        .def_property_readonly("num_output_verts", &ESN::Size)
-        .def_property_readonly("dim", &ESN::Dim)
-        .def_property_readonly("N", &ESN::Size)
+        .def_property_readonly("reservoir_hypercube_dimension", &ESN::ReservoirHypercubeDimension)
+        .def_property_readonly("reservoir_neuron_count", &ESN::ReservoirNeuronCount)
         .def_property_readonly("num_inputs", &ESN::NumInputs)
         .def_property_readonly("history_depth", [](const ESN& self) { return self.GetConfig().reservoir.history_depth; })
         .def_property_readonly("history_floor", [](const ESN& self) { return self.GetConfig().reservoir.history_floor; })
@@ -335,7 +334,7 @@ PYBIND11_MODULE(_core, m)
     // "One D, three roles" identity is enforced here: num_feedback_channels is
     // set from num_outputs, so the Python caller passes a single D.
     py::class_<EnsembleESN>(m, "_EnsembleESN")
-        .def(py::init([](size_t dim, uint64_t ensemble_seed, size_t num_members,
+        .def(py::init([](size_t reservoir_hypercube_dimension, uint64_t ensemble_seed, size_t num_members,
                          const char* combine,
                          float spectral_radius, float input_scaling, float leak_rate,
                          size_t num_inputs, size_t history_depth, float history_floor,
@@ -349,7 +348,7 @@ PYBIND11_MODULE(_core, m)
                          float gate_threshold, float gate_err_ema_alpha) {
             EnsembleConfig cfg;
             ReservoirConfig& r = cfg.base.reservoir;
-            r.dim                    = dim;
+            r.dim                    = reservoir_hypercube_dimension;
             r.spectral_radius        = spectral_radius;
             r.input_scaling          = input_scaling;
             r.leak_rate              = leak_rate;
@@ -395,7 +394,7 @@ PYBIND11_MODULE(_core, m)
             cfg.gate_err_ema_alpha = gate_err_ema_alpha;
             return std::make_unique<EnsembleESN>(cfg);
         }),
-            py::arg("dim"),
+            py::arg("reservoir_hypercube_dimension"),
             py::arg("ensemble_seed")        = 73895ULL,
             py::arg("num_members")          = 3ULL,
             py::arg("combine")              = "mean",

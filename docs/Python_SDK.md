@@ -7,7 +7,7 @@ Python bindings for reservoir computing on Boolean hypercube graphs.
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
-  - [The dim parameter](#the-dim-parameter)
+  - [The reservoir_hypercube_dimension parameter](#the-reservoir_hypercube_dimension-parameter)
   - [ESN](#esn)
   - [Streaming / Online Training](#streaming--online-training)
 - [Input Data Layout](#input-data-layout)
@@ -64,7 +64,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
+esn = he.ESN(reservoir_hypercube_dimension=7)
 esn.fit(signal, warmup=200)       # warmup, run, train in one call
 
 print(f"R² = {esn.r2():.6f}")     # test R²
@@ -79,7 +79,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
+esn = he.ESN(reservoir_hypercube_dimension=7)
 esn.reservoir_warmup(signal[:200])
 esn.reservoir_run(signal[200:-1])
 
@@ -94,9 +94,9 @@ print(f"R² = {r2:.6f}")
 
 ## API Reference
 
-### The `dim` parameter
+### The `reservoir_hypercube_dimension` parameter
 
-`dim` controls the hypercube dimension. The reservoir has N = 2^dim neurons. Supported values: 5-16.
+`reservoir_hypercube_dimension` controls the hypercube dimension. The reservoir has N = 2^dim neurons. Supported values: 5-16.
 
 | dim  | Neurons   | Typical use |
 |------|-----------|-------------|
@@ -118,8 +118,8 @@ are available for advanced use (see [Streaming / Online Training](#streaming--on
 import hypercube_esn as he
 
 # Construction
-esn = he.ESN(dim=7)                                                    # defaults
-esn = he.ESN(dim=7, leak_rate=0.3, history_depth=8)                    # custom config
+esn = he.ESN(reservoir_hypercube_dimension=7)                                                    # defaults
+esn = he.ESN(reservoir_hypercube_dimension=7, leak_rate=0.3, history_depth=8)                    # custom config
 
 # High-level pipeline (recommended)
 esn.fit(signal, warmup=200)                     # warmup + run + train
@@ -136,7 +136,7 @@ esn.train(targets)                # HCNN readout (config fixed at construction)
 # Prediction & evaluation
 esn.predict_from_recorded(timestep) # prediction for a recorded timestep -> (num_outputs,)
 esn.predict()                       # prediction from current live state -> (num_outputs,)
-esn.predictions()                   # all recorded predictions -> (num_collected, num_outputs)
+esn.predictions()                   # all recorded predictions -> (num_collected_states, num_outputs)
 esn.r2(targets, start=1400)         # R² from index 1400 to end
 esn.nrmse(targets, start, count)    # normalized RMSE
 esn.accuracy(labels, start, count)  # classification accuracy
@@ -150,7 +150,7 @@ esn.collected_states()              # all collected states as ndarray
 #### Construction
 
 ```python
-ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
+ESN(reservoir_hypercube_dimension, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
     leak_rate=1.0, num_inputs=1, history_depth=16, history_floor=1.0,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
@@ -161,7 +161,7 @@ Creates the reservoir; the readout consumes all N reservoir vertices. The reserv
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `dim` | `int` | — | Hypercube dimension (5-16). N = 2^dim neurons. |
+| `reservoir_hypercube_dimension` | `int` | — | Hypercube dimension (5-16). N = 2^dim neurons. |
 | `seed` | `int` | `73895` | RNG seed for weight initialization. Every seed produces a valid weight topology; different seeds yield measurably different performance. `73895` is a surveyed default; run a seed survey to tune for your task. |
 | `spectral_radius` | `float` | `0.99` | Target spectral radius. DIM-invariant across all dim values (vertex-transitive topology property). No per-size re-tuning needed. |
 | `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights carry a 1/√dim fan-in normalization, so a given value yields the same `tanh` drive at any dim. (The legacy `0.02` was a normalization artifact and no longer applies.) |
@@ -286,7 +286,7 @@ Train the HCNN readout on training samples taken from the start of the collected
 | `targets` | `ndarray` | — | Target values. Regression: `(train_size,)` or `(train_size · num_outputs,)`. Classification: `(train_size,)` float class labels. |
 
 **Notes:**
-- Raises `ValueError` if the implied `train_size` (`len(targets) // num_outputs`) exceeds `num_collected`, or if `len(targets)` is not a multiple of `num_outputs`.
+- Raises `ValueError` if the implied `train_size` (`len(targets) // num_outputs`) exceeds `num_collected_states`, or if `len(targets)` is not a multiple of `num_outputs`.
 - Calling `train()` again replaces the previous solution entirely.
 - To change the readout architecture or training schedule, construct a new `ESN` with different `readout_*` arguments.
 
@@ -305,19 +305,19 @@ Predict from the reservoir's current state. Returns a 1D float32 array of shape 
 Prediction for a single recorded timestep. Returns a 1D float32 array of shape `(num_outputs,)`. Works for any `num_outputs` (including 1). For regression: the predicted values. For classification: raw logits (apply argmax for the predicted class, or use `accuracy()`).
 
 **Parameters:**
-- `timestep` — Index into recorded states, in [0, num_collected).
+- `timestep` — Index into recorded states, in [0, num_collected_states).
 
 ---
 
 ##### `predictions() → ndarray`
 
-Predictions for all recorded timesteps as a 2D float32 array of shape `(num_collected, num_outputs)`. Works for any `num_outputs` (including 1).
+Predictions for all recorded timesteps as a 2D float32 array of shape `(num_collected_states, num_outputs)`. Works for any `num_outputs` (including 1).
 
 ---
 
 ##### `predict_from_state(state) → ndarray`
 
-Run the readout on a caller-supplied reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_reservoir_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
+Run the readout on a caller-supplied reservoir state of shape `(reservoir_neuron_count,)` (e.g. one returned by `copy_reservoir_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
 
 ---
 
@@ -387,7 +387,7 @@ Compute classification accuracy on a slice of collected states.
 
 Extract all collected states (every reservoir vertex).
 
-**Returns:** Array of shape `(num_collected, num_output_verts)`, dtype float32.
+**Returns:** Array of shape `(num_collected_states, reservoir_neuron_count)`, dtype float32.
 
 ---
 
@@ -395,12 +395,11 @@ Extract all collected states (every reservoir vertex).
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `dim` | `int` | Hypercube dimension. |
-| `N` | `int` | Number of neurons (2^dim). |
-| `num_collected` | `int` | Timesteps recorded by `reservoir_run()`. |
+| `reservoir_hypercube_dimension` | `int` | Hypercube dimension of the reservoir. |
+| `reservoir_neuron_count` | `int` | Number of reservoir neurons N = 2^reservoir_hypercube_dimension. |
+| `num_collected_states` | `int` | Reservoir-state snapshots recorded by `reservoir_run()` (one per timestep). |
 | `num_outputs` | `int` | Number of readout outputs (after training). |
 | `num_inputs` | `int` | Number of input channels. |
-| `num_output_verts` | `int` | Number of readout-input vertices (all N). |
 | `history_depth` | `int` | Delay-line depth M (past output slices the readout sees). |
 | `history_floor` | `float` | Depth taper K: deepest-history recurrent weight scale (1.0 = no taper). |
 | `seed` | `int` | RNG seed used to initialize reservoir weights. |
@@ -422,7 +421,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 | `reservoir_warmup(inputs)` | Settle the reservoir before streaming training (the readout CNN is already built at construction). |
 | `train_step(target, lr, weight_decay=0.0)` | One streaming gradient step on the live state. `target`: regression → `(num_outputs,)`; classification → a single class index. |
 | `train_step_batch(states, targets, lr, weight_decay=0.0)` | One streaming gradient step over accumulated states. `targets`: regression → `(count, num_outputs)`; classification → `(count,)` class indices. |
-| `copy_reservoir_state()` | Copy current reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
+| `copy_reservoir_state()` | Copy current reservoir state for batch accumulation. Returns `(reservoir_neuron_count,)` array. |
 | `predict()` | Prediction from the reservoir's current state. Returns `(num_outputs,)` array. |
 
 #### Reservoir State Management
@@ -471,8 +470,8 @@ signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 The Python bindings validate arguments at the boundary and raise clear exceptions:
 
-- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), or input array size not divisible by `num_inputs`.
-- **`IndexError`** — `predict_from_recorded(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
+- **`ValueError`** — invalid `reservoir_hypercube_dimension` (not 5-16), `train_size > num_collected_states` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), or input array size not divisible by `num_inputs`.
+- **`IndexError`** — `predict_from_recorded(timestep)` with `timestep >= num_collected_states`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected_states`.
 
 These checks happen before calling into C++, so you get a Python traceback instead of a crash.
 
@@ -487,7 +486,7 @@ Trained ESN models can be saved to disk and restored without retraining. The res
 Save the trained ESN to a file (standard Python pickle).
 
 ```python
-esn = he.ESN(dim=7)
+esn = he.ESN(reservoir_hypercube_dimension=7)
 esn.fit(signal, warmup=200)
 esn.save("model.pkl")
 ```
@@ -517,7 +516,7 @@ restored = pickle.loads(data)
 
 | Saved | Not saved |
 |-------|-----------|
-| All constructor parameters (dim, seed, spectral_radius, etc.) | Collected states (regenerate with `reservoir_warmup()` + `reservoir_run()`) |
+| All constructor parameters (reservoir_hypercube_dimension, seed, spectral_radius, etc.) | Collected states (regenerate with `reservoir_warmup()` + `reservoir_run()`) |
 | Trained readout weights | Cached features |
 | Readout config (task, architecture) | `fit()` targets and train/test split |
 

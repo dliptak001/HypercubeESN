@@ -338,11 +338,11 @@ esn.PredictFromState(state);           // run readout on a caller-supplied state
 
 // State access & persistence
 esn.CollectedStates();
-esn.NumCollected();
+esn.NumCollectedStates();
 esn.NumOutputs();
 esn.NumInputs();
-esn.Dim();                   // hypercube dimension (cfg.reservoir.dim)
-esn.Size();                  // reservoir neuron count N = 2^Dim()
+esn.ReservoirHypercubeDimension();  // hypercube dimension (cfg.reservoir.dim)
+esn.ReservoirNeuronCount();         // reservoir neuron count N = 2^ReservoirHypercubeDimension()
 esn.GetConfig();             // returns ESNConfig
 esn.GetReadoutState();
 esn.SetReadoutState(state);
@@ -398,12 +398,12 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`Size()` floats — all N vertices). States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate.
+Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`ReservoirNeuronCount()` floats — all N vertices). States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `ReservoirWarmup()`.
 - `num_steps` -- Number of timesteps to drive and record.
-- `clear_recorded` -- If `true`, discard everything recorded by previous `ReservoirRun()` calls (and reset `NumCollected()`) before recording this batch, so this call starts fresh. The reservoir's live state and the trained readout are untouched. Default `false` (accumulate). Use this between independent recording batches — clear + record in one call — instead of rebuilding the ESN.
+- `clear_recorded` -- If `true`, discard everything recorded by previous `ReservoirRun()` calls (and reset `NumCollectedStates()`) before recording this batch, so this call starts fresh. The reservoir's live state and the trained readout are untouched. Default `false` (accumulate). Use this between independent recording batches — clear + record in one call — instead of rebuilding the ESN.
 
 ---
 
@@ -458,7 +458,7 @@ void TrainStepBatch(const float* states, const float* targets, size_t count,
                     float lr, float weight_decay = 0.0f);
 ```
 
-One streaming gradient step over a mini-batch of pre-accumulated states (parallelized across threads). `states` is `count` rows of `Size()` floats (from `CopyReservoirState`). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
+One streaming gradient step over a mini-batch of pre-accumulated states (parallelized across threads). `states` is `count` rows of `ReservoirNeuronCount()` floats (from `CopyReservoirState`). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
 
 ---
 
@@ -468,7 +468,7 @@ One streaming gradient step over a mini-batch of pre-accumulated states (paralle
 void CopyReservoirState(float* out) const;
 ```
 
-Copies the current reservoir state into `out` (`Size()` floats — all N vertices). Use to accumulate states for `TrainStepBatch`.
+Copies the current reservoir state into `out` (`ReservoirNeuronCount()` floats — all N vertices). Use to accumulate states for `TrainStepBatch`.
 
 ---
 
@@ -483,7 +483,7 @@ Copies the current reservoir state into `out` (`Size()` floats — all N vertice
 Returns `NumOutputs()` floats for a recorded timestep. For regression: de-centered predictions. For classification: raw logits (apply argmax for the predicted class).
 
 **Parameters:**
-- `timestep` -- Index into recorded states, in [0, NumCollected()).
+- `timestep` -- Index into recorded states, in [0, NumCollectedStates()).
 
 ---
 
@@ -553,7 +553,7 @@ Returns `NumOutputs()` floats from the reservoir's current state. For autoregres
 [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 ```
 
-Runs the readout on a state buffer you pass in (`Size()` floats, e.g. one saved earlier with `CopyReservoirState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a state buffer you pass in (`ReservoirNeuronCount()` floats, e.g. one saved earlier with `CopyReservoirState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 
@@ -565,7 +565,7 @@ Runs the readout on a state buffer you pass in (`Size()` floats, e.g. one saved 
 [[nodiscard]] std::vector<float> CollectedStates() const;
 ```
 
-Returns all collected states: `NumCollected() * Size()` floats, row-major.
+Returns all collected states: `NumCollectedStates() * ReservoirNeuronCount()` floats, row-major.
 
 ---
 
@@ -573,11 +573,11 @@ Returns all collected states: `NumCollected() * Size()` floats, row-major.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `NumCollected()` | `size_t` | Timesteps recorded by `ReservoirRun()`. |
+| `NumCollectedStates()` | `size_t` | Recorded reservoir-state snapshots (one per timestep) from `ReservoirRun()`. |
 | `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
 | `NumInputs()` | `size_t` | Number of input channels from config. |
-| `Dim()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
-| `Size()` | `size_t` | Reservoir neuron count N = 2^`Dim()`. |
+| `ReservoirHypercubeDimension()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
+| `ReservoirNeuronCount()` | `size_t` | Reservoir neuron count N = 2^`ReservoirHypercubeDimension()`. |
 | `GetConfig()` | `ESNConfig` | Full config used to construct this ESN (both reservoir and readout). |
 
 ---

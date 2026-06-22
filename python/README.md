@@ -32,7 +32,7 @@ import hypercube_esn as he
 
 # One-step-ahead sine prediction
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-esn = he.ESN(dim=7)
+esn = he.ESN(reservoir_hypercube_dimension=7)
 esn.fit(signal, warmup=200)
 print(f"R2 = {esn.r2():.6f}")
 print(f"NRMSE = {esn.nrmse():.6f}")

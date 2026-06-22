@@ -79,7 +79,7 @@ public:
     // ---------------------------------------------------------------
 
     /// @brief Batch-train the readout on recorded timesteps [0, train_size).
-    /// Requires train_size <= NumCollected(). @p targets layout matches @ref R2.
+    /// Requires train_size <= NumCollectedStates(). @p targets layout matches @ref R2.
     void Train(const float* targets, size_t train_size);
 
     /// @brief One streaming gradient step on the reservoir's current state
@@ -89,13 +89,13 @@ public:
     void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 
     /// @brief One streaming gradient step over a mini-batch of pre-accumulated
-    /// states (each Size() floats, e.g. from @ref CopyReservoirState). For
+    /// states (each ReservoirNeuronCount() floats, e.g. from @ref CopyReservoirState). For
     /// regression, @p targets is count * NumOutputs() floats; for
     /// classification, @p targets is count floats (class indices).
     void TrainStepBatch(const float* states, const float* targets, size_t count,
                         float lr, float weight_decay = 0.0f);
 
-    /// @brief Copy the current reservoir state (Size() floats = all N
+    /// @brief Copy the current reservoir state (ReservoirNeuronCount() floats = all N
     /// vertices) into @p out, to accumulate a mini-batch for @ref TrainStepBatch.
     void CopyReservoirState(float* out) const;
 
@@ -112,7 +112,7 @@ public:
     /// @brief Run the readout on a state buffer you pass in, instead of on the
     /// reservoir's current state.
     ///
-    /// @p state is a reservoir state of Size() floats -- usually one you saved
+    /// @p state is a reservoir state of ReservoirNeuronCount() floats -- usually one you saved
     /// earlier with CopyReservoirState(). Returns NumOutputs() floats.
     ///
     /// Use this when you want to predict from a stored state, or to adjust the
@@ -137,25 +137,27 @@ public:
     ///               floats (class indices).  Indexed from labels[start]. @param start @param count
     [[nodiscard]] double Accuracy(const float* labels, size_t start, size_t count) const;
 
-    [[nodiscard]] size_t NumOutputs() const;
-
     // ---------------------------------------------------------------
     //  State access
     // ---------------------------------------------------------------
 
-    /// @brief All collected states, row-major: NumCollected() * Size().
+    /// @brief All collected states, row-major: NumCollectedStates() * ReservoirNeuronCount().
     [[nodiscard]] std::vector<float> CollectedStates() const;
 
     // ---------------------------------------------------------------
     //  Accessors
     // ---------------------------------------------------------------
-    [[nodiscard]] size_t NumCollected() const { return num_collected_; }
+    /// Number of recorded reservoir-state snapshots — one per timestep driven
+    /// through @ref ReservoirRun. This is the row count of @ref CollectedStates
+    /// and the valid index range [0, n) for @ref PredictFromRecorded.
+    [[nodiscard]] size_t NumCollectedStates() const { return num_collected_; }
     [[nodiscard]] size_t NumInputs() const { return num_inputs_; }
+    [[nodiscard]] size_t NumOutputs() const { return readout_.NumOutputs(); }
 
     /// Hypercube dimension of the underlying reservoir (cfg.reservoir.dim).
-    [[nodiscard]] size_t Dim() const { return reservoir_->Dim(); }
-    /// Reservoir neuron count N = 2^Dim().
-    [[nodiscard]] size_t Size() const { return n_; }
+    [[nodiscard]] size_t ReservoirHypercubeDimension() const { return reservoir_->Dim(); }
+    /// Reservoir neuron count N = 2^ReservoirHypercubeDimension().
+    [[nodiscard]] size_t ReservoirNeuronCount() const { return n_; }
 
     /// Number of external feedback channels D (= cfg.reservoir.num_feedback_channels).
     /// 0 means feedback is not configured; @ref ReservoirStep expects this many

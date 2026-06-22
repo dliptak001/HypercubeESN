@@ -9,7 +9,7 @@ Quick start::
     import hypercube_esn as he
 
     signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-    esn = he.ESN(dim=7)
+    esn = he.ESN(reservoir_hypercube_dimension=7)
     esn.fit(signal, warmup=200)
     print(f"R² = {esn.r2()}")
 """
@@ -44,7 +44,7 @@ class ESN:
 
     Parameters
     ----------
-    dim : int
+    reservoir_hypercube_dimension : int
         Hypercube dimension (5-16). Determines the number of neurons: N = 2^dim.
     seed : int
         RNG seed for weight initialization. Default: 73895 (a surveyed default
@@ -111,15 +111,15 @@ class ESN:
     >>> import numpy as np
     >>> import hypercube_esn as he
     >>> signal = np.sin(np.linspace(0, 20*np.pi, 2000)).astype(np.float32)
-    >>> esn = he.ESN(dim=6)
+    >>> esn = he.ESN(reservoir_hypercube_dimension=6)
     >>> esn.fit(signal, warmup=200)
-    ESN(dim=6, ...)
+    ESN(reservoir_hypercube_dimension=6, ...)
     >>> esn.r2()
     0.999...
 
     Explicit (multi-input, custom targets):
 
-    >>> esn = he.ESN(dim=7, num_inputs=2)
+    >>> esn = he.ESN(reservoir_hypercube_dimension=7, num_inputs=2)
     >>> esn.reservoir_warmup(inputs[:200])
     >>> esn.reservoir_run(inputs[200:])
     >>> esn.train(targets[:1400])
@@ -129,7 +129,7 @@ class ESN:
 
     def __init__(
         self,
-        dim: int,
+        reservoir_hypercube_dimension: int,
         *,
         seed: int = 73895,
         spectral_radius: float = 0.99,
@@ -153,8 +153,10 @@ class ESN:
         readout_activation: str = "tanh",
         readout_seed: int = 42,
     ):
-        if not (_DIM_MIN <= dim <= _DIM_MAX):
-            raise ValueError(f"dim must be {_DIM_MIN}-{_DIM_MAX}, got {dim}")
+        if not (_DIM_MIN <= reservoir_hypercube_dimension <= _DIM_MAX):
+            raise ValueError(
+                f"reservoir_hypercube_dimension must be {_DIM_MIN}-{_DIM_MAX}, "
+                f"got {reservoir_hypercube_dimension}")
         self._verbose = verbose
         self._readout_kwargs = {
             "readout_num_outputs": readout_num_outputs,
@@ -172,7 +174,7 @@ class ESN:
             "readout_seed": readout_seed,
         }
         self._impl = _ESN(
-            dim=dim,
+            reservoir_hypercube_dimension=reservoir_hypercube_dimension,
             seed=seed,
             spectral_radius=spectral_radius,
             input_scaling=input_scaling,
@@ -286,13 +288,13 @@ class ESN:
         --------
         Single-input next-step prediction:
 
-        >>> esn = he.ESN(dim=7)
+        >>> esn = he.ESN(reservoir_hypercube_dimension=7)
         >>> esn.fit(signal, warmup=200)
         >>> print(esn.r2())
 
         Multi-input with explicit targets:
 
-        >>> esn = he.ESN(dim=7, num_inputs=3)
+        >>> esn = he.ESN(reservoir_hypercube_dimension=7, num_inputs=3)
         >>> esn.fit(inputs, targets=channel_0[201:], warmup=200)
         >>> print(esn.r2())
         """
@@ -330,10 +332,10 @@ class ESN:
                 )
             self.reservoir_warmup(inputs[:warmup])
             self.reservoir_run(inputs[warmup:], clear_recorded=True)
-            if len(targets) != self.num_collected:
+            if len(targets) != self.num_collected_states:
                 raise ValueError(
-                    f"targets length ({len(targets)}) must equal num_collected "
-                    f"({self.num_collected}). Provide one target per collected state."
+                    f"targets length ({len(targets)}) must equal num_collected_states "
+                    f"({self.num_collected_states}). Provide one target per collected state."
                 )
             self._targets = targets
 
@@ -344,11 +346,11 @@ class ESN:
         else:
             if train_frac is None:
                 train_frac = 0.7
-            train_size = int(self.num_collected * train_frac)
+            train_size = int(self.num_collected_states * train_frac)
 
-        if train_size <= 0 or train_size > self.num_collected:
+        if train_size <= 0 or train_size > self.num_collected_states:
             raise ValueError(
-                f"train_size ({train_size}) must be in [1, num_collected={self.num_collected}]"
+                f"train_size ({train_size}) must be in [1, num_collected_states={self.num_collected_states}]"
             )
 
         self._train_size = train_size
@@ -394,7 +396,7 @@ class ESN:
         Parameters
         ----------
         timestep : int
-            Index into recorded states, in [0, num_collected).
+            Index into recorded states, in [0, num_collected_states).
 
         Returns
         -------
@@ -410,7 +412,7 @@ class ESN:
         Parameters
         ----------
         state : ndarray
-            A reservoir state of shape ``(num_output_verts,)``,
+            A reservoir state of shape ``(reservoir_neuron_count,)``,
             e.g. one returned by :meth:`copy_reservoir_state`. Converted to float32.
 
         Returns
@@ -426,7 +428,7 @@ class ESN:
         Returns
         -------
         ndarray
-            2D array of shape ``(num_collected, num_outputs)`` with float32
+            2D array of shape ``(num_collected_states, num_outputs)`` with float32
             predictions. Works for any ``num_outputs`` (including 1).
         """
         return self._impl.predictions()
@@ -541,13 +543,13 @@ class ESN:
             if start is None:
                 start = self._train_size
             if count is None:
-                count = self.num_collected - start
+                count = self.num_collected_states - start
         else:
             targets = _to_float32(targets)
             if start is None:
                 start = 0
             if count is None:
-                count = self.num_collected - start
+                count = self.num_collected_states - start
             if len(targets) < start + count:
                 raise ValueError(
                     f"targets too short ({len(targets)}) for start={start}, "
@@ -563,7 +565,7 @@ class ESN:
         Returns
         -------
         ndarray
-            Array of shape ``(num_collected, num_output_verts)``.
+            Array of shape ``(num_collected_states, reservoir_neuron_count)``.
         """
         return self._impl.collected_states()
 
@@ -575,7 +577,7 @@ class ESN:
         Returns
         -------
         ndarray
-            1D array of shape ``(num_output_verts,)``. Accumulate these across
+            1D array of shape ``(reservoir_neuron_count,)``. Accumulate these across
             steps to build the ``states`` batch for :meth:`train_step_batch`.
         """
         return self._impl.copy_reservoir_state()
@@ -613,7 +615,7 @@ class ESN:
         Parameters
         ----------
         states : ndarray
-            Shape ``(count, num_output_verts)`` of states from
+            Shape ``(count, reservoir_neuron_count)`` of states from
             :meth:`copy_reservoir_state`. Converted to float32.
         targets : ndarray
             For regression: shape ``(count, num_outputs)`` target values.
@@ -629,19 +631,19 @@ class ESN:
         )
 
     @property
-    def dim(self) -> int:
-        """Hypercube dimension."""
-        return self._impl.dim
+    def reservoir_hypercube_dimension(self) -> int:
+        """Hypercube dimension of the reservoir."""
+        return self._impl.reservoir_hypercube_dimension
 
     @property
-    def N(self) -> int:
-        """Number of neurons (2^dim)."""
-        return self._impl.N
+    def reservoir_neuron_count(self) -> int:
+        """Number of reservoir neurons N = 2^reservoir_hypercube_dimension."""
+        return self._impl.reservoir_neuron_count
 
     @property
-    def num_collected(self) -> int:
-        """Number of timesteps recorded by ``run()``."""
-        return self._impl.num_collected
+    def num_collected_states(self) -> int:
+        """Number of reservoir-state snapshots recorded by ``reservoir_run()``."""
+        return self._impl.num_collected_states
 
     @property
     def num_outputs(self) -> int:
@@ -652,11 +654,6 @@ class ESN:
     def num_inputs(self) -> int:
         """Number of input channels."""
         return self._impl.num_inputs
-
-    @property
-    def num_output_verts(self) -> int:
-        """Number of readout-input vertices (all N reservoir vertices)."""
-        return self._impl.num_output_verts
 
     @property
     def history_depth(self) -> int:
@@ -703,12 +700,13 @@ class ESN:
         """Number of test samples from ``fit()``, or None."""
         if self._train_size is None:
             return None
-        return self.num_collected - self._train_size
+        return self.num_collected_states - self._train_size
 
     def __repr__(self) -> str:
         parts = [
-            f"ESN(dim={self.dim}, N={self.N}",
-            f"collected={self.num_collected}",
+            f"ESN(reservoir_hypercube_dimension={self.reservoir_hypercube_dimension}, "
+            f"N={self.reservoir_neuron_count}",
+            f"collected={self.num_collected_states}",
         ]
         if self._train_size is not None:
             parts.append(f"train={self._train_size}, test={self.test_size}")
@@ -742,7 +740,7 @@ class ESN:
         """
         return {
             "_version": self._PERSISTENCE_VERSION,
-            "dim": self.dim,
+            "reservoir_hypercube_dimension": self.reservoir_hypercube_dimension,
             "seed": self.seed,
             "spectral_radius": self.spectral_radius,
             "input_scaling": self.input_scaling,
@@ -770,7 +768,7 @@ class ESN:
         readout_kwargs.pop("readout_verbose", None)
         readout_kwargs.pop("readout_verbose_train_acc", None)
         self.__init__(
-            dim=state["dim"],
+            reservoir_hypercube_dimension=state["reservoir_hypercube_dimension"],
             seed=state["seed"],
             spectral_radius=state["spectral_radius"],
             input_scaling=state["input_scaling"],
@@ -861,7 +859,7 @@ class EnsembleESN:
 
     Parameters
     ----------
-    dim : int
+    reservoir_hypercube_dimension : int
         Hypercube dimension (5-16); each member has N = 2^dim neurons.
     num_members : int
         M, the member count. Default 3 (the smallest M for which a median is
@@ -905,7 +903,7 @@ class EnsembleESN:
     Examples
     --------
     >>> import numpy as np, hypercube_esn as he
-    >>> ens = he.EnsembleESN(dim=6, num_members=3, num_outputs=1,
+    >>> ens = he.EnsembleESN(reservoir_hypercube_dimension=6, num_members=3, num_outputs=1,
     ...                      gate_threshold=0.2, kappa_target=0.2)
     >>> sig = np.sin(0.1 * np.arange(4000)).astype(np.float32)
     >>> c = np.zeros(1, np.float32)
@@ -919,7 +917,7 @@ class EnsembleESN:
 
     def __init__(
         self,
-        dim: int,
+        reservoir_hypercube_dimension: int,
         *,
         num_members: int = 3,
         combine: str = "mean",
@@ -949,14 +947,16 @@ class EnsembleESN:
         gate_threshold: float = 0.0,
         gate_err_ema_alpha: float = 0.05,
     ):
-        if not (self._DIM_MIN <= dim <= self._DIM_MAX):
-            raise ValueError(f"dim must be {self._DIM_MIN}-{self._DIM_MAX}, got {dim}")
+        if not (self._DIM_MIN <= reservoir_hypercube_dimension <= self._DIM_MAX):
+            raise ValueError(
+                f"reservoir_hypercube_dimension must be {self._DIM_MIN}-{self._DIM_MAX}, "
+                f"got {reservoir_hypercube_dimension}")
         # Full constructor config, retained for pickling: reconstructing with the
         # same config re-derives every member's reservoir seed identically, so a
         # restored ensemble's members match the saved ones before their trained
         # readout weights are loaded back (see __setstate__).
         self._config = {
-            "dim": dim,
+            "reservoir_hypercube_dimension": reservoir_hypercube_dimension,
             "num_members": num_members,
             "combine": combine,
             "ensemble_seed": ensemble_seed,
@@ -986,7 +986,7 @@ class EnsembleESN:
             "gate_err_ema_alpha": gate_err_ema_alpha,
         }
         self._impl = _EnsembleESN(
-            dim=dim,
+            reservoir_hypercube_dimension=reservoir_hypercube_dimension,
             ensemble_seed=ensemble_seed,
             num_members=num_members,
             combine=combine,
