@@ -120,7 +120,7 @@ scaling, history depth). A reservoir is *specified*, not stored.
 | History depth | M = `history_depth` (default 16, range 1–64) — each update taps the last M states via an addressable delay line; M = 1 is a single-step ESN, M > 1 deepens temporal memory |
 | Step cost | O(N · DIM · M) per timestep — sparse, never O(N²) |
 | Configuration | `ReservoirConfig` (`Reservoir.h`): `seed`, `spectral_radius`, `leak_rate`, `input_scaling`, `history_depth`, `history_floor` |
-| Readout | HypercubeCNN; `output_fraction` selects a stride-reduced vertex subset — decouples reservoir size from readout cost |
+| Readout | HypercubeCNN; consumes all N reservoir vertices as features |
 
 ## Pipeline
 

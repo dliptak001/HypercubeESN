@@ -106,8 +106,6 @@ print(f"R² = {r2:.6f}")
 | 8    | 256       | Production, complex tasks |
 | 9-16 | 512-65536 | Research, high-capacity tasks |
 
-For dim 9+, reduce `output_fraction` to control readout input size (e.g., 0.25 for dim 10).
-
 ---
 
 ### ESN
@@ -143,7 +141,7 @@ esn.nrmse(targets, start, count)    # normalized RMSE
 esn.accuracy(labels, start, count)  # classification accuracy
 
 # State access
-esn.selected_states()               # stride-selected states as ndarray
+esn.selected_states()               # all collected states as ndarray
 ```
 
 ---
@@ -153,11 +151,10 @@ esn.selected_states()               # stride-selected states as ndarray
 ```python
 ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
     leak_rate=1.0, num_inputs=1, history_depth=16, history_floor=1.0,
-    output_fraction=1.0,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
 
-Creates the reservoir and computes output selection parameters from `output_fraction`. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) configuration is also fixed at construction via the `readout_*` keyword arguments and consumed by `train()` / `init_online()`.
+Creates the reservoir; the readout consumes all N reservoir vertices. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) configuration is also fixed at construction via the `readout_*` keyword arguments and consumed by `train()` / `init_online()`.
 
 **Reservoir parameters:**
 
@@ -172,7 +169,6 @@ Creates the reservoir and computes output selection parameters from `output_frac
 | `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |
 | `history_floor` | `float` | `1.0` | Depth taper K in [0.1, 1.0]. Recurrent weights are linearly scaled from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less; applied before the spectral-radius rescale. `1.0` = no taper; no effect when `history_depth == 1`. |
 | `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. Set `False` to silence it. |
-| `output_fraction` | `float` | `1.0` | Fraction of N vertices used as readout features, in (0.0, 1.0]. |
 
 **Readout (HCNN) parameters:**
 
@@ -264,7 +260,7 @@ Drive the reservoir for a number of timesteps without recording state. Use this 
 
 ##### `run(inputs)`
 
-Drive the reservoir and record the subsampled state vector at each step. States are appended — multiple `run()` calls accumulate.
+Drive the reservoir and record the full state vector at each step. States are appended — multiple `run()` calls accumulate.
 
 **Parameters:**
 - `inputs` — NumPy array. Same shape convention as `warmup()`.
@@ -340,7 +336,7 @@ Multi-output predictions for all collected timesteps as a 2D float32 array of sh
 
 ##### `predict_from_state(state) → ndarray`
 
-Run the readout on a caller-supplied subsampled reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_live_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
+Run the readout on a caller-supplied reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_live_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
 
 ---
 
@@ -408,7 +404,7 @@ Compute classification accuracy on a slice of collected states.
 
 ##### `selected_states() → ndarray`
 
-Extract stride-selected vertices from all collected states.
+Extract all collected states (every reservoir vertex).
 
 **Returns:** Array of shape `(num_collected, num_output_verts)`, dtype float32.
 
@@ -423,8 +419,7 @@ Extract stride-selected vertices from all collected states.
 | `num_collected` | `int` | Timesteps recorded by `run()`. |
 | `num_outputs` | `int` | Number of readout outputs (after training). |
 | `num_inputs` | `int` | Number of input channels. |
-| `output_fraction` | `float` | Fraction of vertices used as readout input. |
-| `num_output_verts` | `int` | Number of selected output vertices M. |
+| `num_output_verts` | `int` | Number of readout-input vertices (all N). |
 | `history_depth` | `int` | Delay-line depth M (past output slices the readout sees). |
 | `history_floor` | `float` | Depth taper K: deepest-history recurrent weight scale (1.0 = no taper). |
 | `seed` | `int` | RNG seed used to initialize reservoir weights. |
@@ -448,7 +443,7 @@ streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
 | `train_live_batch(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (classification). |
 | `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |
 | `train_live_batch_regression(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (regression). |
-| `copy_live_state()` | Copy current subsampled reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
+| `copy_live_state()` | Copy current reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
 | `predict_live_raw()` | Scalar prediction from current live state. Requires `num_outputs == 1` (raises `ValueError` otherwise). |
 | `predict_live_raw_multi()` | Multi-output prediction from current live state. Returns `(num_outputs,)` array. |
 

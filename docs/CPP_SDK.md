@@ -248,8 +248,6 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
 | `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
 
-> **Note:** `output_fraction` (reservoir->readout subsampling) lives on `ESNConfig`, not `ReservoirConfig` — the reservoir does not consume it. See [ESN](#esn). `float output_fraction = 1.0` — fraction of N vertices used as readout features, in range (0.0, 1.0]; must yield a power-of-2 stride. At 0.5, a stride-selected sub-hypercube of N/2 vertices is passed to the readout. The mapping is lossy: intermediate values round down to the nearest power-of-2 stride (e.g. `0.4` → effectively `0.5`), and values that would yield a non-power-of-2 stride (e.g. `0.3`) throw. Exactly-honored values: `{1.0, 0.5, 0.25, 0.125, 0.0625, ...}`.
-
 ---
 
 ### ReadoutConfig
@@ -279,7 +277,7 @@ struct ReadoutConfig {
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `0` | Input feature dimension (features per sample = 2^dim). **Set internally by the ESN** from `output_fraction` — consumers do not set this; any value here is overwritten at construction. |
+| `dim` | `size_t` | `0` | Input feature dimension (features per sample = 2^dim). **Set internally by the ESN** to `cfg.reservoir.dim` (the readout sees all N vertices) — consumers do not set this; any value here is overwritten at construction. |
 | `num_outputs` | `int` | `1` | Number of output neurons. For regression: number of targets. For classification: number of classes. |
 | `task` | `ReadoutTask` | `Regression` | Task head. See [ReadoutTask](#readouttask). |
 | `num_layers` | `int` | `1` | Number of Conv+Pool pairs. `1` (default) builds a single Conv+Pool layer. `0` auto-computes `min(DIM - 2, 2)`. Each Pool halves the hypercube dimension, capped by `DIM - 2` (HCNNConv requires DIM >= 3). |
@@ -308,7 +306,6 @@ The complete pipeline wrapper: Reservoir -> Readout. Constructed from a single `
 struct ESNConfig {
     ReservoirConfig reservoir;
     ReadoutConfig   readout;
-    float           output_fraction = 1.0f;  // reservoir->readout subsampling; (0.0, 1.0], power-of-2 stride
 };
 
 // Construction (dimension comes from cfg.reservoir.dim)
@@ -406,7 +403,7 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 void Run(const float* inputs, size_t num_steps);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the **subsampled** state at each step (`NumOutputVerts()` floats — the stride-selected vertices set by `output_fraction`, not the full N). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
+Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`NumOutputVerts()` floats — all N vertices). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `Warmup()`.
@@ -527,7 +524,7 @@ Mini-batch online gradient step for regression. `states` is `count` rows of `Num
 void CopyLiveState(float* out) const;
 ```
 
-Copies the current subsampled reservoir state into `out` (`NumOutputVerts()` floats). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
+Copies the current reservoir state into `out` (`NumOutputVerts()` floats — all N vertices). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
 
 ---
 
@@ -632,7 +629,7 @@ Writes `NumOutputs()` floats to `output` from the reservoir's current live state
 void PredictFromState(const float* state, float* output) const;
 ```
 
-Runs the readout on a caller-supplied state buffer (already subsampled to `NumOutputVerts()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a caller-supplied state buffer (`NumOutputVerts()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 
@@ -644,7 +641,7 @@ Runs the readout on a caller-supplied state buffer (already subsampled to `NumOu
 [[nodiscard]] std::vector<float> SelectedStates() const;
 ```
 
-Returns stride-selected vertices from all collected states: `NumCollected() * NumOutputVerts()` floats, row-major.
+Returns all collected states: `NumCollected() * NumOutputVerts()` floats, row-major.
 
 ---
 
@@ -654,7 +651,7 @@ Returns stride-selected vertices from all collected states: `NumCollected() * Nu
 |--------|---------|-------------|
 | `NumCollected()` | `size_t` | Timesteps recorded by `Run()`. |
 | `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
-| `NumOutputVerts()` | `size_t` | Number of selected vertices M = ceil(N / stride). |
+| `NumOutputVerts()` | `size_t` | Number of readout-input vertices = N (all reservoir vertices). |
 | `NumInputs()` | `size_t` | Number of input channels from config. |
 | `Dim()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
 | `Size()` | `size_t` | Reservoir neuron count N = 2^`Dim()`. |

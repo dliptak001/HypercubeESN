@@ -74,9 +74,6 @@ class ESN:
         taper (default); has no effect when history_depth == 1.
     verbose : bool
         Print the one-line reservoir construction banner. Default: True.
-    output_fraction : float
-        Fraction of N vertices used as readout features, in (0.0, 1.0]. Default: 1.0.
-        Reduce for large dim to control readout cost via sub-hypercube selection.
     readout_num_outputs : int
         Output dimensionality. Targets for regression, classes for classification.
         Default: 1.
@@ -142,7 +139,6 @@ class ESN:
         history_depth: int = 16,
         history_floor: float = 1.0,
         verbose: bool = True,
-        output_fraction: float = 1.0,
         readout_num_outputs: int = 1,
         readout_task: str = "regression",
         readout_num_layers: int = 0,
@@ -185,7 +181,6 @@ class ESN:
             history_depth=history_depth,
             history_floor=history_floor,
             verbose=verbose,
-            output_fraction=output_fraction,
             **self._readout_kwargs,
         )
         self._targets: np.ndarray | None = None
@@ -458,7 +453,7 @@ class ESN:
         Parameters
         ----------
         state : ndarray
-            A subsampled reservoir state of shape ``(num_output_verts,)``,
+            A reservoir state of shape ``(num_output_verts,)``,
             e.g. one returned by :meth:`copy_live_state`. Converted to float32.
 
         Returns
@@ -623,7 +618,7 @@ class ESN:
         return targets, start, count
 
     def selected_states(self) -> np.ndarray:
-        """Return stride-selected states.
+        """Return all collected states.
 
         Returns
         -------
@@ -649,7 +644,7 @@ class ESN:
         self._impl.init_online(_to_float32(warmup_inputs))
 
     def copy_live_state(self) -> np.ndarray:
-        """Copy the current subsampled reservoir state.
+        """Copy the current reservoir state.
 
         Returns
         -------
@@ -766,13 +761,8 @@ class ESN:
         return self._impl.num_inputs
 
     @property
-    def output_fraction(self) -> float:
-        """Fraction of vertices used as readout features."""
-        return self._impl.output_fraction
-
-    @property
     def num_output_verts(self) -> int:
-        """Number of selected output vertices."""
+        """Number of readout-input vertices (all N reservoir vertices)."""
         return self._impl.num_output_verts
 
     @property
@@ -868,7 +858,6 @@ class ESN:
             "history_depth": self.history_depth,
             "history_floor": self.history_floor,
             "verbose": self._verbose,
-            "output_fraction": self.output_fraction,
             "readout_kwargs": dict(self._readout_kwargs),
             "readout_state": self._impl._get_readout_state(),
         }
@@ -897,7 +886,6 @@ class ESN:
             history_depth=state["history_depth"],
             history_floor=state.get("history_floor", 1.0),
             verbose=state.get("verbose", True),
-            output_fraction=state["output_fraction"],
             **readout_kwargs,
         )
         self._impl._set_readout_state(state["readout_state"])
@@ -994,7 +982,7 @@ class EnsembleESN:
         Output dimension D = readout outputs = feedback channels. Default: 1.
     spectral_radius, input_scaling, leak_rate, num_inputs, history_depth, \
     history_floor, feedback_scaling, bias_scaling, lorentz_gamma, \
-    lorentz_inv_sigma2, output_fraction :
+    lorentz_inv_sigma2 :
         Shared reservoir parameters (see :class:`ESN`). Identical across members.
     readout_num_layers, readout_conv_channels, readout_activation, readout_seed :
         Shared readout (HCNN) architecture. The readout trains online via
@@ -1054,7 +1042,6 @@ class EnsembleESN:
         bias_scaling: float = 0.02,
         lorentz_gamma: float = 1.1,
         lorentz_inv_sigma2: float = 250.0,
-        output_fraction: float = 1.0,
         readout_num_layers: int = 0,
         readout_conv_channels: int = 16,
         readout_activation: str = "tanh",
@@ -1091,7 +1078,6 @@ class EnsembleESN:
             "bias_scaling": bias_scaling,
             "lorentz_gamma": lorentz_gamma,
             "lorentz_inv_sigma2": lorentz_inv_sigma2,
-            "output_fraction": output_fraction,
             "readout_num_layers": readout_num_layers,
             "readout_conv_channels": readout_conv_channels,
             "readout_activation": readout_activation,
@@ -1122,7 +1108,6 @@ class EnsembleESN:
             bias_scaling=bias_scaling,
             lorentz_gamma=lorentz_gamma,
             lorentz_inv_sigma2=lorentz_inv_sigma2,
-            output_fraction=output_fraction,
             readout_num_layers=readout_num_layers,
             readout_conv_channels=readout_conv_channels,
             readout_activation=readout_activation,

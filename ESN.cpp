@@ -6,64 +6,26 @@
 #include <stdexcept>
 #include <string>
 
-ESN::ReadoutGeometry
-ESN::ComputeReadoutGeometry(size_t dim, float of)
+ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
 {
-    if (!(of > 0.0f && of <= 1.0f))
-        throw std::invalid_argument("ESN: output_fraction must be in (0.0, 1.0]");
-
-    // Guard the N = 2^dim shift below: dim >= 64 would be undefined behavior
-    // (shift >= width of unsigned long long). Reservoir::Create enforces the
-    // authoritative [5, 16] range; this only keeps the shift well-defined for a
-    // config that hasn't reached the reservoir ctor yet.
-    if (dim >= 64)
-        throw std::invalid_argument(
-            "ESN: reservoir.dim too large to form N = 2^dim (Reservoir requires 5-16)");
-
-    const size_t n = 1ULL << dim;
-    const size_t M = std::max<size_t>(1, static_cast<size_t>(std::round(n * of)));
-    const size_t stride = std::max<size_t>(1, n / M);
-
-    if ((stride & (stride - 1)) != 0)
-        throw std::invalid_argument(
-            "ESN: output_fraction must yield a power-of-2 stride "
-            "(1, 2, 4, 8, 16, ...). Use output_fraction in "
-            "{1.0, 0.5, 0.25, 0.125, 0.0625, ...}.");
-
-    const size_t verts = (n + stride - 1) / stride;
-    size_t d = 0;
-    for (size_t k = verts; k > 1; k >>= 1) ++d;
-    return {stride, verts, d};
-}
-
-ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry& geo)
-{
+    // The readout sees all N = 2^dim reservoir vertices, so its hypercube
+    // dimension is simply the reservoir's dim.
     ReadoutConfig rc = cfg.readout;
-    rc.dim = geo.dim;
+    rc.dim = cfg.reservoir.dim;
     return rc;
 }
 
 ESN::ESN(const ESNConfig& cfg)
-    // Compute geometry once here (this also validates output_fraction, before
-    // any member is constructed), then hand it to the delegating-target ctor.
-    : ESN(cfg, ComputeReadoutGeometry(cfg.reservoir.dim, cfg.output_fraction))
-{
-}
-
-ESN::ESN(const ESNConfig& cfg, const ReadoutGeometry& geo)
     : reservoir_(Reservoir::Create(cfg.reservoir)),
-      readout_(MakeReadoutConfig(cfg, geo))
+      readout_(MakeReadoutConfig(cfg))
 {
     n_                = reservoir_->Size();
     num_inputs_       = cfg.reservoir.num_inputs;
     esn_config_       = cfg;
 
-    // cfg.output_fraction is the user-requested value; the readout sees
-    // num_output_verts_ stride-selected vertices. Query NumOutputVerts() for
-    // the effective readout-side feature count.
-    output_stride_    = geo.output_stride;
-    num_output_verts_ = geo.num_output_verts;
-    scratch_subsampled_.resize(num_output_verts_);
+    // The readout consumes the full reservoir state: NumOutputVerts() == N.
+    num_output_verts_ = n_;
+    scratch_state_.resize(num_output_verts_);
 }
 
 void ESN::StepLive(const float* inputs)
@@ -145,17 +107,15 @@ void ESN::InitOnline(const float* warmup_inputs, size_t warmup_count)
 
 void ESN::TrainLiveStep(float target_class, float lr, float weight_decay)
 {
-    CopyLiveState(scratch_subsampled_.data());
-    readout_.TrainOnlineStep(scratch_subsampled_.data(),
+    CopyLiveState(scratch_state_.data());
+    readout_.TrainOnlineStep(scratch_state_.data(),
                              static_cast<int>(target_class), lr, weight_decay);
 }
 
 void ESN::CopyLiveState(float* out) const
 {
     const float* src = reservoir_->Outputs();
-    size_t j = 0;
-    for (size_t v = 0; v < n_; v += output_stride_)
-        out[j++] = src[v];
+    std::memcpy(out, src, n_ * sizeof(float));
 }
 
 void ESN::TrainLiveBatch(const float* states, const int* targets,
@@ -173,8 +133,8 @@ void ESN::TrainLiveBatch(const float* states, const int* targets,
 void ESN::TrainLiveStepRegression(const float* target, float lr,
                                   float weight_decay)
 {
-    CopyLiveState(scratch_subsampled_.data());
-    readout_.TrainOnlineStepRegression(scratch_subsampled_.data(), target,
+    CopyLiveState(scratch_state_.data());
+    readout_.TrainOnlineStepRegression(scratch_state_.data(), target,
                                        lr, weight_decay);
 }
 
@@ -214,14 +174,14 @@ float ESN::PredictLiveRaw() const
             "ESN::PredictLiveRaw(): scalar prediction requires num_outputs == 1 "
             "(num_outputs=" + std::to_string(readout_.NumOutputs()) +
             "). Use the PredictLiveRaw(float*) overload for multi-output readouts.");
-    CopyLiveState(scratch_subsampled_.data());
-    return readout_.PredictRaw(scratch_subsampled_.data());
+    CopyLiveState(scratch_state_.data());
+    return readout_.PredictRaw(scratch_state_.data());
 }
 
 void ESN::PredictLiveRaw(float* output) const
 {
-    CopyLiveState(scratch_subsampled_.data());
-    readout_.PredictRaw(scratch_subsampled_.data(), output);
+    CopyLiveState(scratch_state_.data());
+    readout_.PredictRaw(scratch_state_.data(), output);
 }
 
 void ESN::PredictFromState(const float* state, float* output) const
@@ -312,7 +272,7 @@ void ESN::SetReadoutState(const ReadoutState& state)
 }
 
 // ---------------------------------------------------------------
-//  HCNN sub-hypercube subsampling helpers
+//  Collected-state access helpers
 // ---------------------------------------------------------------
 
 const float* ESN::ReadoutInput(size_t timestep) const

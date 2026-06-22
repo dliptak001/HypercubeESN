@@ -24,7 +24,6 @@ PYBIND11_MODULE(_core, m)
                          float leak_rate, size_t num_inputs, size_t history_depth,
                          float history_floor,
                          bool verbose,
-                         float output_fraction,
                          int readout_num_outputs, const char* readout_task,
                          int readout_num_layers, int readout_conv_channels,
                          int readout_epochs, int readout_batch_size,
@@ -42,7 +41,6 @@ PYBIND11_MODULE(_core, m)
             cfg.reservoir.history_depth    = history_depth;
             cfg.reservoir.history_floor    = history_floor;
             cfg.reservoir.verbose          = verbose;
-            cfg.output_fraction            = output_fraction;
             cfg.readout.num_outputs        = readout_num_outputs;
             cfg.readout.task               = (std::strcmp(readout_task, "classification") == 0)
                                                  ? ReadoutTask::Classification
@@ -76,7 +74,6 @@ PYBIND11_MODULE(_core, m)
             py::arg("history_depth")            = 16ULL,
             py::arg("history_floor")            = 1.0f,
             py::arg("verbose")                  = true,
-            py::arg("output_fraction")          = 1.0f,
             py::arg("readout_num_outputs")      = 1,
             py::arg("readout_task")             = "regression",
             py::arg("readout_num_layers")       = 0,
@@ -240,7 +237,7 @@ PYBIND11_MODULE(_core, m)
             py::array_t<float> arr(M);
             self.CopyLiveState(arr.mutable_data());
             return arr;
-        }, "Copy the current subsampled reservoir state for external accumulation.\n"
+        }, "Copy the current reservoir state for external accumulation.\n"
            "Returns a (num_output_verts,) float array.")
 
         // ── Prediction & evaluation ──
@@ -344,7 +341,7 @@ PYBIND11_MODULE(_core, m)
             py::array_t<float> arr({T, M});
             memcpy(arr.mutable_data(), vec.data(), vec.size() * sizeof(float));
             return arr;
-        }, "Return stride-selected states as a (num_collected, M) array.")
+        }, "Return collected states as a (num_collected, num_output_verts) array.")
 
         .def("predictions", [](const ESN& self) {
             size_t T = self.NumCollected();
@@ -358,7 +355,6 @@ PYBIND11_MODULE(_core, m)
         // ── Properties ──
         .def_property_readonly("num_collected", &ESN::NumCollected)
         .def_property_readonly("num_outputs", &ESN::NumOutputs)
-        .def_property_readonly("output_fraction", [](const ESN& self) { return self.GetConfig().output_fraction; })
         .def_property_readonly("num_output_verts", &ESN::NumOutputVerts)
         .def_property_readonly("dim", &ESN::Dim)
         .def_property_readonly("N", &ESN::Size)
@@ -400,7 +396,6 @@ PYBIND11_MODULE(_core, m)
                          size_t num_inputs, size_t history_depth, float history_floor,
                          size_t num_outputs, float feedback_scaling, float bias_scaling,
                          float lorentz_gamma, float lorentz_inv_sigma2,
-                         float output_fraction,
                          int readout_num_layers, int readout_conv_channels,
                          const char* readout_activation, unsigned readout_seed,
                          float lr, float weight_decay,
@@ -423,7 +418,6 @@ PYBIND11_MODULE(_core, m)
             r.lorentz_inv_sigma2     = lorentz_inv_sigma2;
             // r.seed is derived per member by the EnsembleESN ctor; r.verbose is
             // forced false per member there (no per-member banners).
-            cfg.base.output_fraction = output_fraction;
 
             ReadoutConfig& ro = cfg.base.readout;
             ro.num_outputs   = static_cast<int>(num_outputs);
@@ -471,7 +465,6 @@ PYBIND11_MODULE(_core, m)
             py::arg("bias_scaling")         = 0.02f,
             py::arg("lorentz_gamma")        = 1.1f,
             py::arg("lorentz_inv_sigma2")   = 250.0f,
-            py::arg("output_fraction")      = 1.0f,
             py::arg("readout_num_layers")   = 0,
             py::arg("readout_conv_channels")= 16,
             py::arg("readout_activation")   = "tanh",

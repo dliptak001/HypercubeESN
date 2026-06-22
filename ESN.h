@@ -9,22 +9,11 @@ struct ESNConfig
 {
     ReservoirConfig reservoir;
     ReadoutConfig readout;
-    /// Fraction of the N reservoir vertices fed to the readout, in (0.0, 1.0].
-    /// The readout sees a stride-selected sub-hypercube of ceil(N / stride)
-    /// vertices, where stride = N / round(N * output_fraction).
-    ///
-    /// Only values whose resulting stride is a power of two are accepted; the
-    /// ESN ctor throws std::invalid_argument otherwise. The mapping is lossy:
-    /// values between the exact points round down to the nearest power-of-2
-    /// stride (e.g. 0.4 -> stride 2 -> effectively 0.5), and values that would
-    /// yield a non-power-of-2 stride (e.g. 0.3 -> stride 3) are rejected. The
-    /// exactly-honored values are {1.0, 0.5, 0.25, 0.125, 0.0625, ...}.
-    float output_fraction = 1.0f;
 };
 
 
 /// @brief Echo-state network implementing the full pipeline:
-///        Reservoir -> [Output Selection] -> Readout.
+///        Reservoir -> Readout. The readout sees all N reservoir vertices.
 ///
 /// @note Not thread-safe: even the const prediction methods write to a shared
 ///       internal scratch buffer, so a single ESN instance must not be driven
@@ -67,7 +56,7 @@ public:
     /// is the caller's responsibility via @ref StepLiveExternalFeedback.
     void Warmup(const float* inputs, size_t num_steps);
 
-    /// @brief Drive the reservoir for @p num_steps and append the subsampled
+    /// @brief Drive the reservoir for @p num_steps and append the full
     /// state at each step to the collected-states buffer (for batch Train /
     /// R2 / NRMSE / Accuracy). @p inputs has the same layout as @ref Warmup.
     /// Steps via @ref StepLive — strictly open-loop, so the collected states
@@ -102,8 +91,8 @@ public:
     /// state against @p target_class.
     void TrainLiveStep(float target_class, float lr, float weight_decay);
 
-    /// @brief Copy the current subsampled live reservoir state (NumOutputVerts()
-    /// floats) into @p out, for external mini-batch accumulation.
+    /// @brief Copy the current live reservoir state (NumOutputVerts() floats,
+    /// = all N vertices) into @p out, for external mini-batch accumulation.
     void CopyLiveState(float* out) const;
 
     /// No-weight_decay overload: inherits `cfg.readout.weight_decay`.
@@ -136,10 +125,10 @@ public:
     /// input (e.g. brand a side channel onto the first few slots).
     void PredictLiveRaw(float* output) const;
 
-    /// Run the readout on a caller-supplied state buffer (already
-    /// subsampled to NumOutputVerts()).  Lets the caller modify the
-    /// readout input -- e.g. brand a side channel onto the first few
-    /// slots -- before prediction, without touching live reservoir state.
+    /// Run the readout on a caller-supplied state buffer (NumOutputVerts()
+    /// floats).  Lets the caller modify the readout input -- e.g. brand a
+    /// side channel onto the first few slots -- before prediction, without
+    /// touching live reservoir state.
     void PredictFromState(const float* state, float* output) const;
 
     /// @brief R-squared on collected timesteps [start, start+count).
@@ -164,7 +153,7 @@ public:
     //  State access
     // ---------------------------------------------------------------
 
-    /// @brief Extract stride-selected vertices from collected states.
+    /// @brief All collected states, row-major: NumCollected() * NumOutputVerts().
     [[nodiscard]] std::vector<float> SelectedStates() const;
 
     // ---------------------------------------------------------------
@@ -207,28 +196,15 @@ private:
 
     size_t n_ = 0; // reservoir neuron count N = 2^dim
     size_t num_inputs_ = 1;
-    size_t output_stride_ = 1;
-    size_t num_output_verts_ = 0;
+    size_t num_output_verts_ = 0; // readout-input width; == n_ (readout sees all N)
 
     std::vector<float> states_;
     size_t num_collected_ = 0;
 
-    struct ReadoutGeometry
-    {
-        size_t output_stride;
-        size_t num_output_verts;
-        size_t dim;
-    };
-
-    static ReadoutGeometry ComputeReadoutGeometry(size_t dim, float output_fraction);
-    static ReadoutConfig MakeReadoutConfig(const ESNConfig& cfg, const ReadoutGeometry& geo);
-
-    // Delegating-target ctor: receives the geometry computed once by the public
-    // ctor, so ComputeReadoutGeometry is not run again for the member init.
-    ESN(const ESNConfig& cfg, const ReadoutGeometry& geo);
+    static ReadoutConfig MakeReadoutConfig(const ESNConfig& cfg);
 
     const float* ReadoutInput(size_t timestep) const;
     [[nodiscard]] std::vector<float> ReadoutStates(size_t start, size_t count) const;
 
-    mutable std::vector<float> scratch_subsampled_;
+    mutable std::vector<float> scratch_state_;
 };

@@ -220,7 +220,7 @@ and evaluation to it. The methods below are on Readout; see
 | `Accuracy(states, labels, num_samples)` | double |
 | `Weights()` | `vector<double>` (flattened blob) |
 | `SetState(weights)` | void (rebuild network from blob) |
-| `NumFeatures()` | size_t — features per sample = 2^dim; equals the reservoir's N unless the ESN's `output_fraction` stride-reduces it |
+| `NumFeatures()` | size_t — features per sample = 2^dim; equals the reservoir's N (the readout sees all N vertices) |
 | `NumOutputs()` | size_t |
 
 ### ESN Integration Points
@@ -232,7 +232,7 @@ The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at E
 - `ESN::PredictRaw(timestep)` → scalar (asserts `num_outputs == 1`)
 - `ESN::PredictRaw(timestep, float* output)` → multi-output
 - `ESN::NumOutputs()` → delegates to `Readout::NumOutputs()`
-- `ESN::R2/NRMSE/Accuracy` → handle multi-output target layout and state subsampling
+- `ESN::R2/NRMSE/Accuracy` → handle multi-output target layout
 
 ## Implementation Notes
 
