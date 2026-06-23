@@ -19,7 +19,7 @@ into the neurons by the reservoir, then cleared. The reservoir does **not** know
 where the injected values come from. It computes nothing about its own output and routes
 nothing back internally.
 
-That is a binding decision, not an omission (ensemble design §7.2): **all feedback is
+That is a binding decision, not an omission: **all feedback is
 external; the ESN has no internal feedback policy.** An earlier exploration imagined two
 *sources* for the drive —
 

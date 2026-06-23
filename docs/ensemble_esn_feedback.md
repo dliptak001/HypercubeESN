@@ -1,11 +1,16 @@
 # Ensemble ESN — Design
 
-> Status: **implementing**. Design finalized; the `EnsembleESN` orchestrator
-> (§7.3) is now being built in code (`EnsembleESN.{h,cpp}`). Task-agnostic by
-> intent: this specifies the
-> general `EnsembleESN` capability. Demonstration examples are deliberately **out of
-> scope** and will be built *after* the capability lands. No example drives this
-> design.
+> Status: **implemented**. The `EnsembleESN` orchestrator (§7.2) is built in code
+> (`EnsembleESN.{h,cpp}`), with Python bindings and persistence. The class is
+> deliberately a **thin lockstep stepper**: each step it computes the consensus
+> and injects each member's scaled deviation, but the **coupling-intensity
+> schedule is the caller's policy** — the class only stores the current κ and
+> applies it. An earlier design folded a competence-gated κ ramp and an initial
+> washout *into* the class; both were removed as premature for this stage of
+> development (see §4.2 and §7.1). Task-agnostic by intent: this specifies the
+> general `EnsembleESN` capability. Demonstration examples are deliberately **out
+> of scope** and will be built *after* the capability lands. No example drives
+> this design.
 >
 > The mechanism builds on the single-reservoir feedback driver path documented in
 > [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md).
@@ -32,15 +37,18 @@ boundaries are binding:
 - **No feedback-less / averaging-only case.** A developer who wants a plain
   output-averaging ensemble (no coupling) can assemble one trivially from independent
   `ESN` instances — it needs nothing from this class. `EnsembleESN` therefore carries
-  **no config flag, no code path, and no special case** for the no-feedback ensemble,
-  and that use case is **not permitted to drive any design decision here.**
+  **no config flag and no special code path** for the no-feedback ensemble, and that
+  use case is **not permitted to drive any design decision here.** (Uncoupled
+  operation is still reachable — it is just the κ = 0 operating point, not a separate
+  mode; see below.)
 
-- **The mechanism is always engaged.** There is no "feedback on/off" switch. From the
-  first online step the consensus is computed and injected; only its **intensity**
-  varies over time (§4). A zero-intensity operating point exists (it falls out of the
-  ramp's low-intensity start), but it is a degenerate setting of the one mechanism,
-  **not** a supported feedback-less
-  configuration.
+- **The consensus is always computed; intensity is the knob.** There is no
+  "feedback on/off" switch in the code. From the first online step the consensus is
+  formed and each member's deviation is available to inject; what scales that
+  injection is the scalar **intensity** κ (§4). κ starts at 0 (members uncoupled)
+  and is moved by the **caller** via `SetKappa`. A run that leaves κ = 0 throughout
+  is the degenerate, uncoupled operating point of the one mechanism — not a separate
+  feedback-less configuration.
 
 Everything below describes that single, feedback-centric, online machine.
 
@@ -73,7 +81,7 @@ is live for the entire online run — training and inference alike.
 feedback-channel count are the **same number**: `D = NumOutputs() = num_feedback_channels`.
 The readout emits D values, the consensus/deviation live in `R^D`, and the coupling drive
 `φ_i` is injected on exactly D feedback channels — there is no separate sizing knob. Members
-are built with `num_feedback_channels = D` (§7.2).
+are built with `num_feedback_channels = D` (§7).
 
 ```
 consensus      c   = mean_i  y_i           (per channel; or median, §6)
@@ -100,8 +108,8 @@ budget.
    for each member i:
        (training only) online-update readout_i toward target(t)   (TrainStep)
        inject task input u(t)            on the input    channels
-       inject φ_i = κ(t)·Δ_i(t)          on the feedback channels
-       Step  ->  x_i(t+1)                                          (the seam, §7.2)
+       inject φ_i = κ·Δ_i(t)             on the feedback channels
+       Step  ->  x_i(t+1)                                          (the ReservoirStep seam)
                                │
                                ▼
                  ensemble output = c(t)
@@ -110,7 +118,8 @@ budget.
 Standard single-step closed-loop causality: the feedback injected into the t→t+1 step
 is built from outputs read at state x(t), which already exist. No delay line. The only
 difference between training and inference is whether each member's readout takes an
-online update this step.
+online update this step. κ is whatever the caller has set; the class does not move it
+(§4.2).
 
 **What is fed back is the deviation, not the average.** Member i never receives the
 consensus `c` itself — it receives its own departure from it, `Δ_i = y_i − c`. That
@@ -126,7 +135,7 @@ injects the average as a net bias.
 
 ## 4. Feedback intensity
 
-### 4.1 The mechanism is always on; intensity is the knob
+### 4.1 The consensus is always formed; intensity is the knob
 
 There is no "engage feedback" switch (§1). From the first online step the consensus is
 computed, the deviations are formed, and `φ_i` is injected. What moves is the scalar
@@ -141,78 +150,47 @@ computed, the deviations are formed, and `φ_i` is injected. What moves is the s
   flipping the random feedback weights, a statistically identical realization; the
   readouts adapt either way). We fix **κ > 0** for consistency; a negative convention
   would work as well. Training sorts out how each member uses the signal.
-- **Magnitude — the intensity.** This is what the schedule (§4.2) ramps. At `κ = 0` the
-  mechanism is engaged but injects nothing; as κ rises, the deviation signal drives the
-  members more strongly.
-- **Over-driving.** The coupling cannot blow up (Δ_i is bounded by the members' bounded
-  outputs and the reservoir's `tanh` bounds the state, §4.3), but too large a κ lets the
-  injected drive dominate the dynamics — saturating neurons and swamping the task input —
-  which degrades the members. So κ has a useful upper bound, found empirically. What
-  the useful coupling buys, and how it degrades past the optimum, is empirical — not
-  assumed from a consensus-dynamics analogy.
+- **Magnitude — the intensity.** This is the knob the caller sets via `SetKappa`
+  (§4.2). At `κ = 0` the mechanism is engaged but injects nothing; as κ rises, the
+  deviation signal drives the members more strongly.
 
-### 4.2 Intensity ramp — start low, ramp on competence
+### 4.2 Intensity is caller-managed
 
-Early in online training the members are still poor, so the consensus is poor, so
-coupling hard would **destabilize training** — every member driven by a meaningless,
-noise-level deviation signal. The schedule keeps the intensity low until the members
-are good enough that their deviation signal is meaningful rather than noise:
+κ is a **single scalar the class stores and applies** — nothing more. The caller sets
+it with `SetKappa(κ)` and reads it with `Kappa()`; the class holds it fixed between
+calls and uses it verbatim in `φ_i = κ·Δ_i` on every `Step`. κ starts at **0**
+(uncoupled), so a freshly constructed ensemble runs its members independently until the
+caller raises it.
+
+**Why the schedule lives with the caller, not the class.** Early in online training the
+members are still poor, so the consensus is poor, so coupling hard immediately would
+**destabilize training** — every member driven by a meaningless, noise-level deviation
+signal. The sensible remedy is to keep κ low until the members are competent and then
+raise it gradually. But *when* to raise, *how fast*, and *what competence signal* to
+gate on are **policy**, not mechanism — and they depend on the task and the training
+regime. So the class exposes only the mechanism (set κ, apply κ) and leaves the schedule
+to the caller, who can implement any policy by calling `SetKappa` between `Step`s:
 
 ```
 κ
-κ*                          ┌───────────────  hold at target κ*
+κ*                          ┌───────────────  caller holds at its target κ*
                             ╱
-                          ╱    ramp (gradual or small steps)
- κ₀ (≈0) ─────────────────
-          └─── low while consensus error > threshold ──┘└ ramp once it crosses ┘
+                          ╱    caller ramps (any shape) once it judges the
+ 0 ───────────────────────     readouts competent
+   └─ caller keeps κ = 0 while the consensus is still poor ─┘
 ```
 
-- **Start** at `κ₀` (zero or low): the mechanism is live but barely biting.
-- **Gate on competence — measured on the ensemble output.** Hold `κ₀` until the
-  **ensemble's training error crosses a low threshold**. The competence signal is the
-  error of the **consensus output** `c` against the target — **not** per-member errors:
-  `c` is the quantity the ensemble actually delivers, and (being an average) it reaches
-  competence at least as cleanly as any single member. This keeps the gate to **one
-  scalar error stream** instead of M. The class maintains **one running estimate** of
-  this error (e.g. an EMA or windowed mean of the per-step consensus error); the gate
-  reads it. The exact smoothing and threshold are tunable (§9 Q2).
-- **Ramp** the intensity up to target `κ*` once the gate opens — gradually
-  (linear/smooth) or in small steps with dwell. The ramp should be slow relative to the
-  readout's online adaptation, so the readouts track the rising coupling rather than
-  being shocked.
-- **Hold** at `κ*` through the rest of training and into inference.
 
-Because feedback is never off, the readouts learn under the rising coupling and reach
-inference already adapted to `κ*` — there is no train/inference mismatch.
-
-**Ownership — the class drives κ, not the consumer.** The ramp is **owned by
-`EnsembleESN`**. Its schedule parameters — `kappa_start` (≈ 0), `kappa_target` (κ*), the
-competence gate (threshold), and the ramp shape/rate — are **constructor
-config**. The class advances κ internally on each `Step`: it forms the consensus, so it
-owns the single consensus-error signal the gate reads, and the consumer never computes
-κ — it just feeds data and reads the ensemble output. (`EnsembleESN` is therefore a
-*policy* object, not a bare lockstep stepper.) The schedule moves κ over [0, κ*]; the
-sign is fixed by convention (κ > 0, §4.1).
-
-**Readout learning rate (the members' online `lr` / `wd`) — held constant through the
-ramp.** This is separate from κ: it governs how fast each member's *readout* adapts via
-`TrainStep`, not how hard the members couple. One **shared** `lr` /
-`weight_decay` is constructor config (§7) and is passed verbatim to every member's online
-step — members share the base config (§5), so there is no reason to differ them. The
-binding rule is the ramp interaction above: the κ ramp must stay slow *relative to* readout
-adaptation, which fails if the readouts stop adapting — so **`lr` is held effectively
-constant (or floored) through the ramp**, never annealed toward zero while κ is still
-moving. Annealing `lr` is optional and only *after* κ reaches κ* and holds (a convergence
-refinement); that schedule is tunable (§9 Q3). Note this is the ESN *online* `lr` passed
-per step, not `ReadoutConfig`'s batch cosine fields, which the online path ignores.
-
-### 4.3 No clamp on the coupling drive
-
-The coupling drive `φ_i = κ·Δ_i` is injected **raw** — no bounding nonlinearity, for
-either sign of κ. The drive cannot run away: the deviation `Δ_i` is bounded by the
-members' bounded outputs, and the reservoir's own `tanh` already bounds the resulting
-state. Over-large κ degrades by saturation (§4.1), not by blow-up — so there is nothing
-for a clamp to guard.
+**Readout learning rate (the members' online `lr` / `wd`).** Separate from κ: it governs
+how fast each member's *readout* adapts via `TrainStep`, not how hard the members couple.
+One **shared** `lr` / `weight_decay` is constructor config (§7) and is passed verbatim to
+every member's online step — members share the base config (§5), so there is no reason to
+differ them. If the caller ramps κ, that ramp should stay slow *relative to* readout
+adaptation (so the readouts track the rising coupling rather than being shocked), which
+means not annealing `lr` toward zero while κ is still moving — but that coordination is
+now the caller's to manage, since the class owns neither schedule. Note this is the ESN
+*online* `lr` passed per step, not `ReadoutConfig`'s batch cosine fields, which the online
+path ignores.
 
 ---
 
@@ -278,197 +256,95 @@ Config choice; default mean, median for robustness studies. Both are worth explo
 Verified against the current `ESN` / `Reservoir` public API. `EnsembleESN` owns M
 `ESN` members (each owns a non-copyable `Reservoir`, held by `unique_ptr`), built with
 `num_feedback_channels = D`. The ensemble drives every member through its own loop on the
-`ReservoirStep(inputs, φ)` feedback seam (there is no separate init step — readouts are built
-eagerly at construction and the ensemble owns its washout, §7.1), trains them online via
-`TrainStep`, and reads them via `Predict`.
+`ReservoirStep(inputs, φ)` feedback seam, trains them online via `TrainStep`, and reads
+them via `Predict`.
 
-### 7.1 Online lifecycle — one loop, two scheduled knobs
+### 7.1 Online lifecycle — one loop
 
 `EnsembleESN` runs in a **single execution mode** from the first step to the last. There
 is no separate warm-up mode, no reservoir-only path, and no `if (warming_up)` branch in
-the member loop. Every step — warm-up, training, inference — goes through the **same**
-`ReservoirStep(inputs, φ)` feedback seam (§7.2). What changes over the run is not the code path
-but the value of **two scheduled knobs**.
-
-**Why warm-up is not a separate mode.** A reservoir warm-up exists only to wash the
-arbitrary initial state `x(0) = 0` out of the dynamics before the readout's outputs are
-used. Historically the readout build was *deferred* until after warm-up — but that build
-takes no arguments and consumes no warm-up state; it is pure network construction
-(allocate weights, init Adam moments). So the ordering "warm up, then build readout" was
-**incidental, not a data dependency**: nothing about the readout needs the warm-up to have
-happened first. That observation is now **realized in code (G14)**: the readout CNN is
-built eagerly in the `Readout` ctor, the lazy-init dance (`Readout::InitOnline`) is gone,
-and members are born ready. Warm-up is therefore just normal stepping with the early
-outputs ignored — no dedicated execution mode.
-
-`EnsembleESN` therefore **builds every member's readout up front** and folds warm-up into
-the normal loop:
-
-- **Construction.** Each member is built with `num_feedback_channels = D` (§7.2). The
-  readout CNN is built **eagerly in the `Readout` ctor** (landed — G14), so members are
-  **born ready**: there is no readout-init step of any kind, and the ensemble simply runs
-  its unified loop from step 0.
-  The ensemble owns the washout itself, through its own loop, on the external-feedback seam,
-  with the coupling drive held at `φ = 0` (κ = 0). So warm-up is a clean, **input-only**
-  reservoir washout — there is no internal feedback path to interfere (the ESN has none,
-  §7.2).
-
-- **The two scheduled knobs.** From step 0 the loop runs `ReservoirStep()` (§7.3) unchanged. Two
-  scalars move on a schedule the class owns (§4.2):
-
-  ```
-    ONE loop, same seam throughout. Two scheduled flips, nothing else:
-
-    step:   0 ............. W ..................... competence ............→
-    κ:      0 ───────────────────────────────────┐ ramp ┌──── κ*
-    train:  off ──────────┐ on ───────────────────────────────────────────
-                          ▲                        ▲
-                    enable training          open the κ ramp once the
-                    after the W-step         competence gate fires
-                    reservoir washout        (§4.2 / G3)
-
-    "warm-up" = steps [0, W): a normal ReservoirStep() with κ = 0 and training not yet enabled.
-  ```
-
-  1. **`train` enable** flips on at step `W` (the washout length). During `[0, W)` the
-     reservoir is driven by the task input and the zero-deviation feedback only (κ = 0, so
-     `φ_i = 0`), and **no readout update is taken** — we do not fit the readout on
-     transient states that still remember `x(0) = 0`. `W` plays exactly the
-     transient-killing role of the single-`ESN` `warmup_count`.
-  2. **κ ramp** holds at `κ₀ ≈ 0` until the competence gate fires, then ramps to `κ*`
-     (§4.2). Because κ = 0 across `[0, W)` anyway, the consensus is computed and read out
-     but injected as ~nothing — warm-up is the natural **left edge of the κ schedule**,
-     not a thing bolted on beside it.
-
-- **Inference.** Same loop, same seam. The readout update is simply not taken
-  (equivalently `target == nullptr`); κ holds at `κ*`. There is no mode switch between
-  training and inference — only whether the readout update runs this step.
-
-- **Sequence boundaries / reset.** When a fresh, independent sequence begins, every member
-  resets together via `ReservoirClear()` (clears reservoir state only; trained readout
-  weights are preserved). The κ schedule and the `train`-enable knob are **not** rewound
-  on such a reset — competence already achieved is not un-learned. Whether to re-impose a
-  short washout (hold κ, suppress the readout update for a few steps while the dynamics
-  re-settle) at each sequence boundary is a config choice; **default: yes, a short one.**
-
-This collapses the lifecycle to **one run mode plus a two-knob schedule** — that is the
-entire state machine. (This supersedes the earlier framing of warm-up as a distinct
-"uncoupled phase that predates the readouts": with readouts built up front, warm-up is
-just the schedule's left edge.)
-
-### 7.2 Core changes — external-only feedback
-
-> **Decision (2026-06-19), landed (G12, c355c8e).** The existing feedback machinery had
-> never been exercised and was not treated as a fixed constraint. **All feedback is
-> external; the ESN has no internal feedback policy.** The reservoir's sound feedback
-> *substrate* was reused as the external-drive port, and the unfinished internal-F *policy*
-> was **deleted** from the ESN. Footprint: a focused `ESN` refactor + small `Reservoir`
-> touch-ups. The HCNN `Readout` was **untouched**.
-
-**The substrate is sound and is reused (Reservoir).** Per-vertex state update already adds
-a feedback term identical in form to the input term —
-`Σ_i vtx_feedback_[v ^ NearestMask(i)] · fw[i]` (`Reservoir.cpp:266-270`) — fed by an
-independent `n_·dim_` weight block (`:68`), scaled by `feedback_scaling` (`:118`), and
-**excluded from the spectral-radius rescale** (`:164`, exactly as input is).
-`InjectFeedback(channel, value)` (`:294-303`) block-partitions the N vertices into
-`num_feedback_channels` regions and broadcasts each value to its block. This is precisely
-the D-channel external drive the ensemble needs. Reservoir touch-ups that landed alongside:
-
-- *Ergonomics:* a vector-form `InjectFeedback(const float* φ, size_t count)` that loops
-  the per-channel call — the D-channel external-drive entry point.
-- *Relaxed the divisibility throw* (`:50`) to permit any **D ≤ N**. The guard had been
-  conservative, not load-bearing: when D ∤ N only the `N mod D` (`≤ D−1`) tail
-  vertices go unwritten — they hold reset-zero and act as zero feedback *sources* while
-  still *receiving* coupling via the neighbor gather (`:269`); no index leaves `[0, N)`
-  and `block ≥ 1` for any `D ≤ N`. Dropped fraction `(N mod D)/N` is negligible for the
-  ensemble's small-D / large-N = 2^dim regime. No power-of-two restriction on D.
-
-**The ESN change — internal feedback removed entirely.** Binding decision: **all feedback
-is external; the ESN has no internal feedback policy.** The ESN had built an internal
-learned-F apparatus whenever `num_feedback_channels > 0` (the internal-F `if` block plus
-the `ReservoirStep` F-injection branch): `feedback_readout_`, its eager `InitOnline`,
-`InjectFeedbackClamped`, the `ProbeLoss` / `TrainFeedbackCycle` machinery, the
-decision/prediction/telemetry buffers, and the `Get/SetFeedback*` accessors — gated by a
-guard that threw unless `num_feedback_channels == 1`. **All of it was deleted.** There is
-no mode enum and no quarantined path, because there is no second kind of feedback to
-distinguish. After removal:
-
-- `num_feedback_channels` means exactly one thing: **how many external-drive feedback
-  channels the reservoir carries.** `0` = no feedback; `D > 0` = D externally-supplied
-  channels. No learned policy, no F readout, no telemetry — ever.
-- The `== 1` guard is gone; any **D ≤ N** is allowed (the substrate handles it, §above).
-- `ESN::ReservoirStep(inputs)` (feedback omitted) is **input-only** — the `tanh(F(x))`-on-
-  channel-0 branch was removed with F. It serves the no-feedback case.
-- `ESN::ReservoirStep(inputs, φ)` (below) is the **only** way feedback enters.
-- **Readout init — already done (G14).** The readout CNN is now built **eagerly in the
-  `Readout` ctor**, so there is no readout-init step at all: members are born ready. There
-  is no `InitOnline` on `ESN` — warm-up is just `ESN::ReservoirWarmup(inputs, count)`, which the
-  ensemble subsumes into its own washout loop.
-
-The result is a *simpler* ESN — one fewer feature, not more complex.
-
-**The step seam (ESN).**
+the member loop. Every step goes through the **same** `ReservoirStep(inputs, φ)` feedback
+seam. Only two things vary across the run, and both are decided per call, not by
+an internal schedule:
 
 ```
-// the only feedback entry point; feedback=nullptr is the input-only (no-feedback) path
-void ESN::ReservoirStep(const float* inputs,               // NumInputs() floats (task input)
-                        const float* feedback = nullptr);  // D floats (the coupling drive φ_i), or null
-//   if feedback:      for c in [0, D): reservoir_->InjectFeedback(c, feedback[c])  // raw, no clamp (§4.3)
-//   for ch in inputs: reservoir_->InjectInput(ch, inputs[ch])
-//   reservoir_->Step()
+   ONE loop, same seam throughout. Two per-call inputs decide everything:
+
+     • target == nullptr ?   → no, fit each readout this step;  yes, inference only
+     • κ (caller-set)        → scales the injected deviation φ_i = κ·Δ_i
+
+   step:  0 .................................................→
+   train: governed solely by whether `target` is passed each step
+   κ:     0 by default; whatever the caller last set via SetKappa
 ```
 
-**Net footprint (landed).** Deleted the ESN internal-F apparatus; redefined
-`num_feedback_channels` as the external-channel count and dropped the `== 1` guard; trimmed
-`ReservoirStep` to input-only and added the `ReservoirStep(inputs, φ)` feedback seam. `Reservoir`
-touch-ups: the vector inject and the relaxed divisibility throw. **Zero** `Readout` /
-HypercubeCNN changes. Net effect: the ESN shed a half-baked feature and gained one clean,
-external, well-defined feedback path.
+- **Construction.** Each member is built with `num_feedback_channels = D` (§7); its
+  readout is ready immediately, so the ensemble simply runs its unified loop from step 0.
+  κ starts at 0.
 
-### 7.3 Orchestrator sketch (the implementation blueprint — landed in `EnsembleESN.{h,cpp}`)
+- **Warm-up is the caller's concern, not the class's.** A reservoir warm-up exists only
+  to wash the arbitrary initial state `x(0) = 0` out of the dynamics before the readout's
+  outputs are trusted. The class no longer owns one. A caller that wants a washout simply
+  drives the first few steps with `target = nullptr` (the reservoir is driven by the task
+  input; no readout update is taken) — exactly the transient-killing role of a single
+  `ESN`'s `warmup_count` — and only then starts passing targets. Leaving κ = 0 over those
+  steps keeps the warm-up input-only.
+
+- **Training vs inference.** The same loop, the same seam. Whether a step trains is
+  decided by one thing: was a `target` supplied? `target == nullptr` is an inference step
+  (no readout update). There is no mode switch.
+
+- **Sequence boundaries / reset.** When a fresh, independent sequence begins, the caller
+  calls `ResetReservoirStates()`: every member's reservoir state is cleared
+  (`ReservoirClear()`), while trained readout weights, κ, and the step counter are all
+  **preserved** — competence already achieved is not un-learned. The reservoirs are cold
+  afterward, so the caller re-warms (step with `target = nullptr`) before trusting outputs
+  if the sequence break warrants it.
+
+This collapses the lifecycle to **one run mode with two per-call inputs** — that is the
+entire state machine.
+
+### 7.2 Orchestrator sketch (the implementation blueprint — landed in `EnsembleESN.{h,cpp}`)
 
 ```cpp
 class EnsembleESN {
     size_t M_, D_;
-    size_t t_ = 0, W_;                               // step counter; W_ = washout length (§7.1)
-    Combine   combine_;                              // Mean (default) | Median (§6)
-    RampConfig ramp_;                                // kappa_start/target, gate, shape — ctor config (§4.2)
-    float     kappa_;                                // current intensity, advanced INTERNALLY (§4.2)
-    float     lr_, wd_;                              // shared readout online lr / weight-decay — ctor config;
-                                                     // held constant through the ramp (§4.2 / G4)
-    float     consensus_err_;                        // running estimate (EMA/window) of the consensus-vs-
-                                                     // target error — the competence signal (§4.2 / G3)
-    std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback,
-                                                     // §7.2), readout born ready (built in ctor, §7.1)
+    size_t t_ = 0;                                   // monotone step counter
+    Combine combine_;                                // Mean (default) | Median (§6)
+    float   kappa_ = 0.0f;                           // coupling intensity — caller-managed (§4.2)
+    float   lr_, wd_;                                // shared readout online lr / weight-decay (ctor config)
+    std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback),
+                                                     // readout born ready (built in ctor, §7.1)
 
-    // class-owned competence-gated ramp (§4.2): fold this step's consensus error
-    // into consensus_err_, and once it crosses the gate threshold, step kappa_ → κ*.
-    void AdvanceKappa(const float* c_out, const float* target);
+    void SetKappa(float k) { kappa_ = k; }           // the caller's only handle on intensity (§4.2)
 
     // one lockstep online step; writes consensus c(t). target == nullptr at inference.
     void Step(const float* input, const float* target, float* c_out) {
         std::vector<std::vector<float>> y(M_, std::vector<float>(D_));
         for (size_t i = 0; i < M_; ++i) y[i] = esn_[i]->Predict();
         combine(y, c_out, combine_);                 // consensus (= ensemble output)
-        const bool train = target && (t_ >= W_);     // suppress fitting during the [0,W) washout (§7.1)
+        const bool train = (target != nullptr);      // fit iff a target is supplied (§7.1)
         std::vector<float> phi(D_);
         for (size_t i = 0; i < M_; ++i) {
-            if (train) esn_[i]->TrainStep(target, lr_, wd_);      // shared online lr/wd (§4.2/G4)
+            if (train) esn_[i]->TrainStep(target, lr_, wd_);     // shared online lr/wd
             for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
-            esn_[i]->ReservoirStep(input, phi.data());            // the §7.2 seam
+            esn_[i]->ReservoirStep(input, phi.data());            // the ReservoirStep feedback seam
         }
-        AdvanceKappa(c_out, target);  // class drives κ from the consensus error (§4.2/G3) — not the caller
         ++t_;
     }
 };
 ```
 
-### 7.4 Diagnostic surface (read-only)
+The class is intentionally tiny: it forms the consensus, injects the scaled deviation,
+and advances the step counter. It never moves κ and owns no washout — both are decided
+by the caller (§4.2, §7.1).
+
+### 7.3 Diagnostic surface (read-only)
 
 A consumer often needs more than the consensus `c_out` that `Step` hands back — the
-per-member outputs behind it, the current coupling intensity, and where the schedule
-stands. The design commits to this **minimal** read-only surface; all are `const` getters
-over existing private state and none change the mechanism.
+per-member outputs behind it and the current coupling intensity. The design commits to
+this **minimal** read-only surface; all are `const` getters over existing private state
+and none change the mechanism.
 
 ```cpp
 // Member outputs behind the consensus — e.g. to gauge inter-member agreement or read
@@ -477,58 +353,19 @@ over existing private state and none change the mechanism.
 void   MemberOutput(size_t i, float* out) const;   // member i: D floats (y_i)
 void   AllMemberOutputs(float* out_MxD)  const;     // all members: M×D, row-major
 
-float  Kappa()       const;   // current intensity — the operating point of the κ schedule (§4.2)
-bool   GateOpen()    const;   // has the competence ramp triggered? — marks where coupling began
-size_t CurrentStep() const;   // t_ — aligns traces to the §7.1 schedule (e.g. the ramp's trigger step)
+float  Kappa()       const;   // current intensity (whatever the caller last set, §4.2)
+size_t CurrentStep() const;   // t_ — total Step calls; useful for aligning traces
 ```
 
 Deliberately **not** exposed:
-- **Per-member training error.** G3 made the competence gate read the *consensus* error
-  only; any per-member error a consumer wants is computable externally from `MemberOutput`
-  + the target. Keeping it off the surface avoids implying the gate consumes it.
-- **The raw gate signal (`consensus_err_`).** `GateOpen()` — the boolean outcome — is the
-  observable that matters; exposing the smoothed scalar would only invite coupling to a
-  knob whose smoothing and threshold are still open (§9 Q2).
+- **Per-member training error.** Any per-member error a consumer wants is computable
+  externally from `MemberOutput` + the target; the class does not track it.
 
 ---
 
-## 8. Risks, caveats, and out-of-scope
+## 8. Open questions
 
-**Risks / caveats:**
-- **Correlated errors from shared training data** cap what the consensus can average
-  out; diversity (§5) is the mitigation.
-- **Over-driving collapses the benefit** (§4.1): too large a κ lets the injected drive
-  dominate the dynamics (saturation, swamped input), degrading members and the
-  independence the consensus depends on.
-- **Common-mode bias is invisible to coupling.** If all members drift the same way the
-  consensus drifts with them and every Δ_i → 0; coupling controls disagreement, not
-  shared bias.
-- **Early-training instability** is what the ramp (§4.2) guards against; a badly-tuned
-  gate/ramp can either destabilize (ramp too early/fast) or waste training (too
-  late/slow).
-
-**Out of scope (and explicitly NOT design drivers):**
-- **Feedback-less / averaging-only ensembles** — trivial for a consumer to build from
-  independent `ESN`s; no footprint here (§1).
-- **Batch mode** — feedback cannot exist there (§1).
-- **Weighted / learned combiners (stacking)** — consensus is mean/median only in v1.
-- **Large M / topologies beyond mean-field** — v1 is small-M, all-to-all.
-- **Demonstration examples** — built after the capability lands.
-
----
-
-## 9. Open questions
-
-1. **Does the coupling beat the κ = 0 point?** The decisive A/B the whole mechanism rests on.
-2. **Competence gate** — the signal is fixed: the running error of the **ensemble
-   (consensus) output** vs target (§4.2). Still open: the smoothing (EMA factor vs
-   window length) and the threshold value that opens the ramp.
-3. **Ramp shape/rate** — gradual vs stepwise, how slow relative to online readout
-   adaptation, and whether/how to anneal the readout `lr` *after* κ holds (it is held
-   constant through the ramp, §4.2/G4).
-4. **Intensity magnitude** — the useful range of κ and where over-driving begins to
-   degrade members (the sign is fixed by convention, §4.1).
-5. **Common-mode bias** — out of scope here (the consensus is blind to it, §8), but if
+1. **Common-mode bias** — out of scope here (the consensus is blind to it, §8), but if
    ever pursued, **member heterogeneity** (mixed activations first — tanh vs `A` are
    known to decorrelate — then operating points / bagged data) is the lever that shrinks
    the shared-error floor; only an external reference can remove it.

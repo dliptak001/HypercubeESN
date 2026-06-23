@@ -14,6 +14,18 @@
 > references (e.g. the §8 experiments that shaped the G6 accessor list, the §10.x
 > open-question cross-refs) reflect the doc **at resolution time**, not its current
 > numbering. The resolved outcomes still hold — the §7.4 diagnostic surface remains.
+>
+> **NOTE (2026-06-23, decision reversed):** the **"class owns the ramp" resolution
+> of G1/G2/G3 was later reversed.** The competence-gated κ ramp (EMA consensus-error
+> gate → linear ramp to `kappa_target`), the `AdvanceKappa` step, the ramp/gate
+> config fields, *and* the class-owned washout were all **removed** as premature —
+> κ is now a bare scalar the **caller** manages via `SetKappa` (starts at 0), and the
+> reset entry point is `ResetReservoirStates()` (cold reservoir clear, no washout).
+> `GateOpen()` is gone from the diagnostic surface (now §7.3); `Kappa()`/`CurrentStep()`
+> remain. See
+> the current [ensemble_esn_feedback.md](ensemble_esn_feedback.md) §4.2/§7.1 for the
+> live design. Entries below that recommend or assume the class-owned ramp/gate are
+> **historical** — they record the design as it stood, not the shipped code.
 
 ---
 

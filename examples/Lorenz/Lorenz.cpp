@@ -24,15 +24,12 @@ EnsembleConfig Lorenz::MakeConfig()
 
     cfg.base.readout.epochs = config::EPOCHS;
 
-    cfg.washout = config::WASHOUT;
     cfg.lr = config::LR;
     cfg.weight_decay = config::WEIGHT_DECAY;
     return cfg;
 }
 
-Lorenz::Lorenz()
-    : esn_config_(MakeConfig()),
-      esn(esn_config_)
+Lorenz::Lorenz() : esn_config_(MakeConfig()), esn(esn_config_)
 {
 }
 

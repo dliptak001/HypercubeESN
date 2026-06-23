@@ -847,11 +847,11 @@ class EnsembleESN:
     median), and injects each member's scaled deviation ``phi_i = kappa*(y_i-c)``
     on its feedback channels before stepping — a single-step closed loop.
 
-    The class is **online-only and feedback-only**: there is no batch path and no
-    feedback-less mode. The coupling intensity ``kappa`` rises on a
-    competence-gated ramp the class owns — held at ``kappa_start`` until the
-    smoothed consensus error crosses ``gate_threshold``, then ramped to
-    ``kappa_target``.
+    The class is **online-only**: there is no batch path. The coupling intensity
+    ``kappa`` is caller-managed — set it at construction and adjust it at runtime
+    via the ``kappa`` property (e.g. ramp it up once the readouts are competent).
+    The class holds it fixed between steps; ``kappa = 0`` runs the members
+    uncoupled.
 
     "One D, three roles": the output dimension, the readout output count, and the
     per-member feedback-channel count are the same number — you pass it once as
@@ -880,36 +880,25 @@ class EnsembleESN:
         regression; the batch cosine-schedule fields do not apply.
     lr, weight_decay : float
         Shared online learning rate / L2, passed to every member's readout each
-        training step. Held constant through the kappa ramp. Defaults: 0.01, 0.0.
-    washout : int
-        W — initial steps with the readout update suppressed (transient washout).
-        Default: 100.
-    resequence_washout : int
-        Short washout re-imposed at each :meth:`begin_sequence`. Default: 16.
-    kappa_start, kappa_target : float
-        Start and target coupling intensity. Defaults: 0.0, 0.5.
-    kappa_ramp_rate : float
-        Per-step linear increment of kappa once the gate opens. <= 0 snaps to
-        ``kappa_target`` immediately. Default: 0.0 (snap).
-    gate_threshold : float
-        The ramp opens once the smoothed consensus |error| falls below this.
-        **Default 0.0 means the gate never fires** (kappa stays at
-        ``kappa_start`` — the kappa=0 baseline); set a positive value for a
-        coupled run.
-    gate_err_ema_alpha : float
-        EMA factor for the running consensus-error estimate, in (0, 1].
-        Default: 0.05.
+        training step. Defaults: 0.01, 0.0.
+
+    Notes
+    -----
+    The consensus-deviation coupling intensity ``kappa`` (``phi_i = kappa*(y_i-c)``)
+    is caller-managed and starts at 0.0 (members uncoupled). Set it at runtime via
+    the ``kappa`` property.
 
     Examples
     --------
     >>> import numpy as np, hypercube_esn as he
-    >>> ens = he.EnsembleESN(reservoir_hypercube_dimension=6, num_members=3, num_outputs=1,
-    ...                      gate_threshold=0.2, kappa_target=0.2)
+    >>> ens = he.EnsembleESN(reservoir_hypercube_dimension=6, num_members=3, num_outputs=1)
     >>> sig = np.sin(0.1 * np.arange(4000)).astype(np.float32)
     >>> c = np.zeros(1, np.float32)
     >>> for t in range(len(sig) - 1):
+    ...     if t == 500:
+    ...         ens.kappa = 0.2                  # turn on coupling once warmed up
     ...     c = ens.step(sig[t], sig[t + 1])     # input, next-step target
-    >>> ens.kappa, ens.gate_open
+    >>> ens.kappa
     """
 
     _DIM_MIN = 5
@@ -939,13 +928,6 @@ class EnsembleESN:
         readout_seed: int = 42,
         lr: float = 0.01,
         weight_decay: float = 0.0,
-        washout: int = 100,
-        resequence_washout: int = 16,
-        kappa_start: float = 0.0,
-        kappa_target: float = 0.5,
-        kappa_ramp_rate: float = 0.0,
-        gate_threshold: float = 0.0,
-        gate_err_ema_alpha: float = 0.05,
     ):
         if not (self._DIM_MIN <= reservoir_hypercube_dimension <= self._DIM_MAX):
             raise ValueError(
@@ -977,13 +959,6 @@ class EnsembleESN:
             "readout_seed": readout_seed,
             "lr": lr,
             "weight_decay": weight_decay,
-            "washout": washout,
-            "resequence_washout": resequence_washout,
-            "kappa_start": kappa_start,
-            "kappa_target": kappa_target,
-            "kappa_ramp_rate": kappa_ramp_rate,
-            "gate_threshold": gate_threshold,
-            "gate_err_ema_alpha": gate_err_ema_alpha,
         }
         self._impl = _EnsembleESN(
             reservoir_hypercube_dimension=reservoir_hypercube_dimension,
@@ -1007,13 +982,6 @@ class EnsembleESN:
             readout_seed=readout_seed,
             lr=lr,
             weight_decay=weight_decay,
-            washout=washout,
-            resequence_washout=resequence_washout,
-            kappa_start=kappa_start,
-            kappa_target=kappa_target,
-            kappa_ramp_rate=kappa_ramp_rate,
-            gate_threshold=gate_threshold,
-            gate_err_ema_alpha=gate_err_ema_alpha,
         )
 
     def step(
@@ -1027,9 +995,9 @@ class EnsembleESN:
             Task input for this step, shape ``(num_inputs,)`` (a scalar is
             accepted when ``num_inputs == 1``). Converted to float32.
         target : ndarray or float, optional
-            Regression target, shape ``(num_outputs,)``. When given (and past the
-            washout), each member's readout takes an online update toward it.
-            Pass ``None`` for inference: no update is taken and kappa holds.
+            Regression target, shape ``(num_outputs,)``. When given, each member's
+            readout takes an online update toward it. Pass ``None`` for inference:
+            no update is taken.
 
         Returns
         -------
@@ -1040,15 +1008,14 @@ class EnsembleESN:
         t = None if target is None else _to_float32(target)
         return self._impl.step(_to_float32(input), t)
 
-    def begin_sequence(self) -> None:
-        """Start a fresh, independent sequence.
+    def reset_reservoir_states(self) -> None:
+        """Clear every member's reservoir to cold (``x = 0``).
 
-        Resets every member's reservoir state together (trained readouts
-        preserved) and re-imposes the short ``resequence_washout``. The kappa
-        schedule, the competence already achieved, and the step counter are not
-        rewound.
+        Use to start a fresh, independent sequence. Trained readouts, ``kappa``,
+        and the step counter are all preserved — only the live reservoir dynamics
+        are reset.
         """
-        self._impl.begin_sequence()
+        self._impl.reset_reservoir_states()
 
     def member_output(self, i: int) -> np.ndarray:
         """Member ``i``'s last output (shape ``(num_outputs,)``).
@@ -1064,13 +1031,16 @@ class EnsembleESN:
 
     @property
     def kappa(self) -> float:
-        """Current coupling intensity (the operating point of the ramp)."""
+        """Consensus-deviation coupling intensity, ``phi_i = kappa*(y_i-c)``.
+
+        Caller-managed: assign to it to change the coupling on subsequent steps
+        (the class holds it fixed between steps).
+        """
         return self._impl.kappa
 
-    @property
-    def gate_open(self) -> bool:
-        """Whether the competence-gated kappa ramp has triggered."""
-        return self._impl.gate_open
+    @kappa.setter
+    def kappa(self, value: float) -> None:
+        self._impl.kappa = float(value)
 
     @property
     def current_step(self) -> int:
@@ -1095,26 +1065,25 @@ class EnsembleESN:
     def __repr__(self) -> str:
         return (
             f"EnsembleESN(M={self.num_members}, D={self.num_outputs}, "
-            f"step={self.current_step}, kappa={self.kappa:.4g}, "
-            f"gate_open={self.gate_open})"
+            f"step={self.current_step}, kappa={self.kappa:.4g})"
         )
 
     # ── Persistence ──
 
     # v1: initial EnsembleESN persistence — constructor config + per-member
-    # readout weights + schedule/competence state (kappa, gate, consensus_err,
-    # err_init, step). Reservoir live state is NOT saved (a restored ensemble has
-    # cold reservoirs and re-washes out), matching ESN's persistence contract.
+    # readout weights + coupling intensity and step counter (kappa, step).
+    # Reservoir live state is NOT saved (a restored ensemble has cold reservoirs
+    # and re-washes out), matching ESN's persistence contract.
     _PERSISTENCE_VERSION = 1
 
     def __getstate__(self) -> dict:
         """Serialize the trained ensemble for pickling.
 
         Persists the constructor config and the trained state (every member's
-        readout weights plus the kappa-ramp / competence state). The reservoirs'
-        live dynamical state is NOT saved — a restored ensemble has cold
-        reservoirs and re-washes out before training resumes (drive it through a
-        warmup, or call :meth:`begin_sequence`, before trusting outputs).
+        readout weights plus the coupling intensity and step counter). The
+        reservoirs' live dynamical state is NOT saved — a restored ensemble has
+        cold reservoirs (drive it through a warmup, or call
+        :meth:`reset_reservoir_states`, before trusting outputs).
         """
         return {
             "_version": self._PERSISTENCE_VERSION,
@@ -1138,8 +1107,8 @@ class EnsembleESN:
         """Save the trained ensemble to a file (a standard Python pickle).
 
         Saves the configuration, every member's trained readout weights, and the
-        kappa-ramp / competence state. Reservoir live state is NOT saved, so the
-        file is compact. Restore with :meth:`load`.
+        coupling intensity + step counter. Reservoir live state is NOT saved, so
+        the file is compact. Restore with :meth:`load`.
         """
         with open(pathlib.Path(path), "wb") as f:
             pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1149,7 +1118,7 @@ class EnsembleESN:
         """Load a saved EnsembleESN from a file.
 
         The restored ensemble has cold reservoirs: drive it through a warmup
-        (or :meth:`begin_sequence`) before trusting its outputs.
+        (or :meth:`reset_reservoir_states`) before trusting its outputs.
         """
         with open(pathlib.Path(path), "rb") as f:
             obj = pickle.load(f)

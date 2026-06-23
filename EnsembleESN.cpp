@@ -1,7 +1,6 @@
 #include "EnsembleESN.h"
 
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 namespace
@@ -30,12 +29,7 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
       combine_(cfg.combine),
       lr_(cfg.lr),
       wd_(cfg.weight_decay),
-      kappa_(cfg.kappa_start),
-      kappa_target_(cfg.kappa_target),
-      kappa_ramp_rate_(cfg.kappa_ramp_rate),
-      gate_threshold_(cfg.gate_threshold),
-      gate_err_ema_alpha_(cfg.gate_err_ema_alpha),
-      resequence_washout_(cfg.resequence_washout)
+      kappa_(0.0)
 {
     if (M_ < 1)
         throw std::invalid_argument("EnsembleESN: num_members must be >= 1");
@@ -58,10 +52,6 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
             "base.reservoir.num_feedback_channels");
     D_ = d_feedback;
 
-    if (gate_err_ema_alpha_ <= 0.0f || gate_err_ema_alpha_ > 1.0f)
-        throw std::invalid_argument(
-            "EnsembleESN: gate_err_ema_alpha must be in (0, 1]");
-
     // Build the M members from the single shared base config (§5), overriding
     // only the seed (derived) and verbose (silenced).
     esn_.reserve(M_);
@@ -72,10 +62,6 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
         member.reservoir.seed = mix64(cfg.ensemble_seed ^ (GOLDEN * (i + 1)));
         esn_.push_back(std::make_unique<ESN>(member));
     }
-
-    // The initial washout (§7.1): suppress the readout update for W steps.
-    washout_           = cfg.washout;
-    washout_remaining_ = cfg.washout;
 
     // Pre-allocated per-step scratch (decision #5 — no per-tick heap traffic).
     y_flat_.assign(M_ * D_, 0.0f);
@@ -125,7 +111,8 @@ void EnsembleESN::Consensus(float* c_out) const
 void EnsembleESN::Step(const float* input, const float* target, float* c_out)
 {
     // 1. read every member's output y_i at its current state x_i(t).
-    for (size_t i = 0; i < M_; ++i) {
+    for (size_t i = 0; i < M_; ++i)
+    {
         const std::vector<float> yi = esn_[i]->Predict();
         std::copy(yi.begin(), yi.end(), y_flat_.data() + i * D_);
     }
@@ -134,7 +121,7 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     Consensus(c_out);
 
     // 3. train flag: fit only past the washout, and only when a target is given.
-    const bool train = (target != nullptr) && (washout_remaining_ == 0);
+    const bool train = (target != nullptr);
 
     // 4. for each member: (train) update readout on x_i(t), then inject the
     //    scaled deviation phi_i = kappa*(y_i - c) and step to x_i(t+1).
@@ -149,57 +136,12 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
 
         esn_[i]->ReservoirStep(input, phi_.data());
     }
-
-    // 5. class drives kappa from the consensus error (§4.2) — not the caller.
-    AdvanceKappa(c_out, target);
-
-    if (washout_remaining_ > 0)
-        --washout_remaining_;
-    ++t_;
 }
 
-void EnsembleESN::AdvanceKappa(const float* c_out, const float* target)
-{
-    // Hold kappa at inference (no target) and through the washout: do not seed
-    // the competence EMA with pre-training transient (decision #4).
-    if (target == nullptr || washout_remaining_ > 0)
-        return;
-
-    // This step's consensus error: mean absolute error over the D channels.
-    float e = 0.0f;
-    for (size_t c = 0; c < D_; ++c)
-        e += std::fabs(c_out[c] - target[c]);
-    e /= static_cast<float>(D_);
-
-    if (!err_init_)
-    {
-        consensus_err_ = e;     // seed directly rather than blending from 0
-        err_init_ = true;
-    }
-    else
-    {
-        consensus_err_ = (1.0f - gate_err_ema_alpha_) * consensus_err_
-                         + gate_err_ema_alpha_ * e;
-    }
-
-    if (!gate_open_ && consensus_err_ < gate_threshold_)
-        gate_open_ = true;
-
-    if (gate_open_)
-    {
-        if (kappa_ramp_rate_ <= 0.0f)
-            kappa_ = kappa_target_;                       // snap on gate open
-        else
-            kappa_ = std::min(kappa_target_, kappa_ + kappa_ramp_rate_);
-    }
-}
-
-void EnsembleESN::BeginSequence()
+void EnsembleESN::ResetReservoirStates()
 {
     for (auto& e : esn_)
         e->ReservoirClear();
-    // Re-impose a short washout; kappa schedule + gate state are preserved (§7.1).
-    washout_remaining_ = resequence_washout_;
 }
 
 void EnsembleESN::MemberOutput(size_t i, float* out) const
@@ -220,11 +162,7 @@ EnsembleESN::State EnsembleESN::GetState() const
     s.member_weights.reserve(M_);
     for (const auto& e : esn_)
         s.member_weights.push_back(e->GetReadoutState().weights);
-    s.kappa         = kappa_;
-    s.gate_open     = gate_open_;
-    s.consensus_err = consensus_err_;
-    s.err_init      = err_init_;
-    s.step          = t_;
+    s.kappa = kappa_;
     return s;
 }
 
@@ -239,19 +177,10 @@ void EnsembleESN::SetState(const State& s)
     for (size_t i = 0; i < M_; ++i)
     {
         ESN::ReadoutState rs;
-        rs.weights    = s.member_weights[i];
-        rs.is_trained = true;   // SetReadoutState no-ops unless this is set
+        rs.weights = s.member_weights[i];
+        rs.is_trained = true; // SetReadoutState no-ops unless this is set
         esn_[i]->SetReadoutState(rs);
     }
 
-    kappa_         = s.kappa;
-    gate_open_     = s.gate_open;
-    consensus_err_ = s.consensus_err;
-    err_init_      = s.err_init;
-    t_             = s.step;
-
-    // Reservoirs are cold (their live state is not part of State), so re-impose
-    // the full initial washout: continued training is guarded against the x(0)=0
-    // transient, and inference is unaffected (washout gates only the update).
-    washout_remaining_ = washout_;
+    kappa_ = s.kappa;
 }

@@ -294,8 +294,8 @@ class TestPersistence:
 # ── EnsembleESN: consensus feedback coupling (online-only) ──
 #
 # Kept lean (small dim, short runs). The assertions cover API correctness and
-# the *mechanical* schedule (washout -> gate -> ramp, inference holds, reset),
-# not learning quality — the latter is verified in the C++ smoke harness.
+# the mechanical lifecycle (caller-managed kappa, reservoir reset), not learning
+# quality — the latter is verified in the C++ smoke harness.
 
 class TestEnsembleConstruction:
 
@@ -306,7 +306,6 @@ class TestEnsembleConstruction:
         assert ens.num_inputs == 1
         assert ens.current_step == 0
         assert ens.kappa == pytest.approx(0.0)
-        assert ens.gate_open is False
 
     def test_invalid_dim(self):
         with pytest.raises(ValueError, match="reservoir_hypercube_dimension must be 5-16"):
@@ -340,45 +339,39 @@ class TestEnsembleStep:
         return out, sig
 
     def test_step_shape_and_advances(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=20)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
         c, _ = self._run(ens, 50)
         assert c.shape == (1,)
         assert c.dtype == np.float32
         assert np.all(np.isfinite(c))
         assert ens.current_step == 50
 
-    def test_gate_fires_and_kappa_snaps(self):
-        # threshold huge => competent immediately after washout; ramp_rate 0 => snap.
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=20, gate_threshold=10.0,
-                          kappa_target=0.3, kappa_ramp_rate=0.0)
-        self._run(ens, 60)
-        assert ens.gate_open is True
-        assert ens.kappa == pytest.approx(0.3)
+    def test_kappa_defaults_to_zero(self):
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
+        assert ens.kappa == pytest.approx(0.0)  # uncoupled until the caller sets it
 
-    def test_gate_held_closed_by_default_threshold(self):
-        # default gate_threshold=0.0 => never fires => kappa stays at start.
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=20, kappa_target=0.5)
-        self._run(ens, 60)
-        assert ens.gate_open is False
-        assert ens.kappa == pytest.approx(0.0)
-
-    def test_inference_holds_kappa(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=20, gate_threshold=10.0, kappa_target=0.3)
-        self._run(ens, 40)
-        k = ens.kappa
+    def test_kappa_settable_and_held(self):
+        # The class never moves kappa on its own: the caller owns it. Setting it
+        # sticks across steps (training and inference alike).
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
+        self._run(ens, 30)
+        assert ens.kappa == pytest.approx(0.0)  # untouched by stepping
+        ens.kappa = 0.25
+        self._run(ens, 10)
+        assert ens.kappa == pytest.approx(0.25)
         ens.step(np.zeros(1, np.float32), None)  # inference
-        assert ens.kappa == pytest.approx(k)
+        assert ens.kappa == pytest.approx(0.25)
 
-    def test_begin_sequence(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=20)
+    def test_reset_reservoir_states(self):
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
         self._run(ens, 40)
         before = ens.current_step
-        ens.begin_sequence()
+        ens.reset_reservoir_states()
         ens.step(np.zeros(1, np.float32), np.zeros(1, np.float32))
         assert ens.current_step == before + 1  # counter not rewound
 
     def test_scalar_input_accepted(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, washout=5)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
         c = ens.step(0.5, 0.6)  # plain floats
         assert c.shape == (1,)
 
@@ -396,26 +389,26 @@ class TestEnsembleStep:
 class TestEnsembleDiagnostics:
 
     def test_all_member_outputs_shape(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=4, num_outputs=2, washout=5)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=4, num_outputs=2)
         ens.step(np.zeros(1, np.float32), np.zeros(2, np.float32))
         allm = ens.all_member_outputs()
         assert allm.shape == (4, 2)
         assert allm.dtype == np.float32
 
     def test_member_output_matches_row(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3, washout=5)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3)
         ens.step(0.1, 0.2)
         allm = ens.all_member_outputs()
         np.testing.assert_allclose(ens.member_output(1), allm[1], atol=1e-6)
 
     def test_member_index_out_of_range(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3, washout=5)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3)
         ens.step(0.1, 0.2)
         with pytest.raises(Exception):
             ens.member_output(3)
 
     def test_median_runs(self):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3, combine="median", washout=5)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3, combine="median")
         c, _ = TestEnsembleStep()._run(ens, 30)
         assert np.all(np.isfinite(c))
 
@@ -424,31 +417,29 @@ class TestEnsemblePersistence:
 
     @staticmethod
     def _trained(seed=7, **kw):
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3, washout=20, gate_threshold=10.0,
-                          kappa_target=0.3, ensemble_seed=seed, **kw)
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, num_members=3,
+                          ensemble_seed=seed, **kw)
+        ens.kappa = 0.3  # caller-managed coupling; nonzero so persistence has something to carry
         sig = np.sin(0.1 * np.arange(101)).astype(np.float32)
         for k in range(100):
             ens.step(sig[k:k + 1], sig[k + 1:k + 2])
         return ens, sig
 
-    def test_pickle_roundtrip_preserves_schedule(self):
+    def test_pickle_roundtrip_preserves_state(self):
         ens, _ = self._trained()
-        assert ens.gate_open is True and ens.kappa > 0  # precondition: it trained up
         loaded = pickle.loads(pickle.dumps(ens))
         assert loaded.kappa == pytest.approx(ens.kappa)
-        assert loaded.gate_open == ens.gate_open
         assert loaded.current_step == ens.current_step
         assert loaded.num_members == ens.num_members
         assert loaded.num_outputs == ens.num_outputs
 
     def test_config_preserved(self):
         ens = EnsembleESN(reservoir_hypercube_dimension=6, num_members=4, num_outputs=2, combine="median",
-                          kappa_target=0.42, ensemble_seed=99, lorentz_gamma=0.0)
+                          ensemble_seed=99, lorentz_gamma=0.0)
         loaded = pickle.loads(pickle.dumps(ens))
         assert loaded.num_members == 4
         assert loaded.num_outputs == 2
         assert loaded._config["combine"] == "median"
-        assert loaded._config["kappa_target"] == pytest.approx(0.42)
         assert loaded._config["ensemble_seed"] == 99
 
     def test_save_load_behavioral_equivalence(self, tmp_path):
@@ -460,7 +451,7 @@ class TestEnsemblePersistence:
         ens.save(path)
         loaded = EnsembleESN.load(path)
 
-        ens.begin_sequence()  # reset original's reservoirs to cold (loaded is cold)
+        ens.reset_reservoir_states()  # reset original's reservoirs to cold (loaded is cold)
         for k in range(25):
             c_orig = ens.step(sig[k:k + 1], None)
             c_load = loaded.step(sig[k:k + 1], None)

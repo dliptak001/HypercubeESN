@@ -342,10 +342,7 @@ PYBIND11_MODULE(_core, m)
                          float lorentz_gamma, float lorentz_inv_sigma2,
                          int readout_num_layers, int readout_conv_channels,
                          const char* readout_activation, unsigned readout_seed,
-                         float lr, float weight_decay,
-                         size_t washout, size_t resequence_washout,
-                         float kappa_start, float kappa_target, float kappa_ramp_rate,
-                         float gate_threshold, float gate_err_ema_alpha) {
+                         float lr, float weight_decay) {
             EnsembleConfig cfg;
             ReservoirConfig& r = cfg.base.reservoir;
             r.dim                    = reservoir_hypercube_dimension;
@@ -385,13 +382,6 @@ PYBIND11_MODULE(_core, m)
                 std::string("combine must be 'mean' or 'median' (got '") + combine + "')");
             cfg.lr                 = lr;
             cfg.weight_decay       = weight_decay;
-            cfg.washout            = washout;
-            cfg.resequence_washout = resequence_washout;
-            cfg.kappa_start        = kappa_start;
-            cfg.kappa_target       = kappa_target;
-            cfg.kappa_ramp_rate    = kappa_ramp_rate;
-            cfg.gate_threshold     = gate_threshold;
-            cfg.gate_err_ema_alpha = gate_err_ema_alpha;
             return std::make_unique<EnsembleESN>(cfg);
         }),
             py::arg("reservoir_hypercube_dimension"),
@@ -414,14 +404,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_activation")   = "tanh",
             py::arg("readout_seed")         = 42u,
             py::arg("lr")                   = 0.01f,
-            py::arg("weight_decay")         = 0.0f,
-            py::arg("washout")              = 100ULL,
-            py::arg("resequence_washout")   = 16ULL,
-            py::arg("kappa_start")          = 0.0f,
-            py::arg("kappa_target")         = 0.5f,
-            py::arg("kappa_ramp_rate")      = 0.0f,
-            py::arg("gate_threshold")       = 0.0f,
-            py::arg("gate_err_ema_alpha")   = 0.05f)
+            py::arg("weight_decay")         = 0.0f)
 
         // ── Lockstep online step ──
         .def("step", [](EnsembleESN& self,
@@ -452,12 +435,11 @@ PYBIND11_MODULE(_core, m)
             "One lockstep online step across all members. Injects task `input`,\n"
             "(when `target` is given) trains each readout, couples members via the\n"
             "consensus deviation, and steps. Returns the consensus (num_outputs,).\n"
-            "Pass target=None for inference (no readout update; kappa holds).")
+            "Pass target=None for inference (no readout update).")
 
-        .def("begin_sequence", &EnsembleESN::BeginSequence,
-             "Start a fresh sequence: reset every member's reservoir state and\n"
-             "re-impose the short washout. The kappa schedule and competence\n"
-             "already achieved are preserved.")
+        .def("reset_reservoir_states", &EnsembleESN::ResetReservoirStates,
+             "Clear every member's reservoir to cold (x=0), e.g. to start a fresh\n"
+             "sequence. Trained readouts, kappa, and the step counter are preserved.")
 
         // ── Diagnostic surface (read-only) ──
         .def("member_output", [](const EnsembleESN& self, size_t i) {
@@ -475,8 +457,11 @@ PYBIND11_MODULE(_core, m)
         }, "All members' last outputs as an (num_members, num_outputs) array.")
 
         // ── Properties ──
-        .def_property_readonly("kappa", &EnsembleESN::Kappa)
-        .def_property_readonly("gate_open", &EnsembleESN::GateOpen)
+        // kappa is caller-managed: read the current intensity or set it (the
+        // class holds it fixed between steps).
+        .def_property("kappa",
+            [](const EnsembleESN& self) { return self.Kappa(); },
+            [](EnsembleESN& self, float k) { self.SetKappa(k); })
         .def_property_readonly("current_step", &EnsembleESN::CurrentStep)
         .def_property_readonly("num_members", &EnsembleESN::NumMembers)
         .def_property_readonly("num_outputs", &EnsembleESN::NumOutputs)
@@ -492,9 +477,6 @@ PYBIND11_MODULE(_core, m)
             py::dict d;
             d["member_weights"] = member_weights;
             d["kappa"]          = s.kappa;
-            d["gate_open"]      = s.gate_open;
-            d["consensus_err"]  = s.consensus_err;
-            d["err_init"]       = s.err_init;
             d["step"]           = s.step;
             return d;
         })
@@ -504,11 +486,8 @@ PYBIND11_MODULE(_core, m)
                 auto w = item.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
                 s.member_weights.emplace_back(w.data(), w.data() + w.size());
             }
-            s.kappa         = d["kappa"].cast<float>();
-            s.gate_open     = d["gate_open"].cast<bool>();
-            s.consensus_err = d["consensus_err"].cast<float>();
-            s.err_init      = d["err_init"].cast<bool>();
-            s.step          = d["step"].cast<size_t>();
+            s.kappa = d["kappa"].cast<float>();
+            s.step  = d["step"].cast<size_t>();
             self.SetState(s);
         })
         ;

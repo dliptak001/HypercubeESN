@@ -21,7 +21,6 @@ namespace config
     constexpr float LORENTZ_INV_SIGMA2 = 250.0f; // 1/sigma^2 of the envelope
 
     // ---- (B) Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr size_t WASHOUT = 100;
     constexpr float LR = 0.0015f; // per-step online learning rate (Adam)
     constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
     constexpr size_t EPOCHS = 600;

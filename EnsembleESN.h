@@ -15,9 +15,9 @@ enum class Combine
 
 /// Configuration for an EnsembleESN — M ESN members coupled through the
 /// consensus feedback driver path (design §1, §7). Members share ONE base
-/// config and differ only by their derived reservoir seed (§5). The schedule
-/// parameters (the kappa ramp + competence gate, the washout) are owned here:
-/// EnsembleESN is a *policy* object, not a bare lockstep stepper (§4.2).
+/// config and differ only by their derived reservoir seed (§5). The coupling
+/// intensity kappa is not configured here — the caller drives it at runtime via
+/// EnsembleESN::SetKappa.
 struct EnsembleConfig
 {
     /// Shared base config for every member. Two fields are overridden per
@@ -45,47 +45,10 @@ struct EnsembleConfig
     /// Consensus statistic (§6). Default mean.
     Combine combine = Combine::Mean;
 
-    // ----- Online readout training (shared, §4.2/G4) -----
+    // ----- Online readout training (shared) -----
     // One lr / weight_decay passed verbatim to every member's online step.
-    // Held effectively constant through the kappa ramp (the ramp must stay slow
-    // relative to readout adaptation); never annealed toward zero while kappa
-    // is still moving. Annealing, if any, is the caller's business after kappa
-    // holds (§10 Q3).
     float lr = 0.01f;
     float weight_decay = 0.0f;
-
-    // ----- Lifecycle (§7.1) -----
-    /// W — initial washout length. During steps [0, W) the readout update is
-    /// suppressed (we do not fit on transient states that still remember
-    /// x(0)=0); the reservoir is still driven (input + zero-deviation feedback,
-    /// since kappa starts at ~0). Plays the transient-killing role of a single
-    /// ESN's warmup_count.
-    size_t washout = 100;
-
-    /// Short re-washout imposed at each BeginSequence() boundary: that many
-    /// steps with the readout update suppressed while the reset dynamics
-    /// re-settle. The kappa schedule and competence already achieved are NOT
-    /// rewound on a sequence reset (§7.1). 0 disables the re-washout.
-    size_t resequence_washout = 16;
-
-    // ----- Kappa ramp + competence gate (§4.2, class-owned) -----
-    /// kappa_0 — the starting intensity (mechanism live but barely biting).
-    float kappa_start = 0.0f;
-    /// kappa* — the target intensity held after the ramp completes.
-    float kappa_target = 0.5f;
-    /// Per-step linear increment of kappa once the gate opens. <= 0 snaps kappa
-    /// straight to kappa_target the moment the gate fires. The ramp should be
-    /// slow relative to online readout adaptation (§4.2).
-    float kappa_ramp_rate = 0.0f;
-    /// Competence gate: the ramp opens once the smoothed consensus error falls
-    /// below this threshold (§4.2/G3). NOTE: with the default 0.0 the gate
-    /// never fires (a smoothed |error| is never < 0), so kappa is held at
-    /// `kappa_start` for the whole run — that is exactly the kappa=0 / fixed-low
-    /// measurement baseline. A coupled run must set a positive threshold.
-    float gate_threshold = 0.0f;
-    /// EMA factor for the running consensus-error estimate the gate reads
-    /// (consensus_err_ <- (1-a)*consensus_err_ + a*step_error). In (0, 1].
-    float gate_err_ema_alpha = 0.05f;
 };
 
 /// @brief Consensus feedback coupling of M ESN members (design doc
@@ -95,13 +58,14 @@ struct EnsembleConfig
 /// current state, forms the consensus c (mean/median), and injects each
 /// member's scaled deviation phi_i = kappa * (y_i - c) on its D feedback
 /// channels before stepping — single-step closed-loop causality, no delay line
-/// (§3). The coupling is live for the entire run, training and inference alike;
-/// only the intensity kappa varies, on a competence-gated ramp this class owns
-/// (§4.2).
+/// (§3). The coupling is live for the entire run, training and inference alike.
 ///
-/// Feedback-only, online-only (§1): there is no batch path and no
-/// feedback-less / averaging-only mode. The kappa=0 baseline is just the
-/// degenerate left edge of the one ramp, not a separate configuration.
+/// The coupling intensity kappa is set by the caller (@ref SetKappa) and held
+/// fixed by this class between calls. Ramping or gating it over the run, if
+/// wanted, is the caller's policy — not this class's job. kappa = 0 runs the
+/// members uncoupled.
+///
+/// Online-only (§1): there is no batch path.
 ///
 /// @note Not thread-safe at the instance level (each member ESN owns mutable
 ///       scratch). One EnsembleESN per thread.
@@ -117,24 +81,25 @@ public:
     /// @brief One lockstep online step across all members (§3, §7.3).
     /// Reads every member's output, forms the consensus, (when training)
     /// updates each readout toward @p target, then injects each member's scaled
-    /// deviation and steps it. The class advances kappa internally from the
-    /// consensus error (§4.2) — the caller never computes kappa.
+    /// deviation phi_i = kappa*(y_i - c) and steps it.
     /// @param input    NumInputs() floats — the task input u(t) for this step,
     ///                 injected on every member's input channels.
-    /// @param target   NumOutputs() floats — the regression target. Pass
-    ///                 nullptr for inference: no readout update is taken and
-    ///                 kappa holds. During the washout (the initial W steps and
-    ///                 any re-washout) the readout update is suppressed even if
-    ///                 @p target is non-null.
+    /// @param target   NumOutputs() floats — the regression target: each member's
+    ///                 readout takes one online update toward it. Pass nullptr for
+    ///                 inference (no readout update).
     /// @param c_out    NumOutputs() floats — receives the consensus c(t), the
     ///                 ensemble's output for this step.
     void Step(const float* input, const float* target, float* c_out);
 
-    /// @brief Begin a fresh, independent sequence. Resets every member's
-    /// reservoir state together (trained readout weights preserved) and
-    /// re-imposes the short `resequence_washout` (§7.1). The kappa schedule,
-    /// the competence already achieved, and the step counter are NOT rewound.
-    void BeginSequence();
+    /// @brief Set the feedback coupling intensity kappa applied on subsequent
+    /// steps (phi_i = kappa*(y_i - c)). The caller owns the schedule; this class
+    /// holds kappa fixed between calls. Takes effect on the next @ref Step.
+    void SetKappa(float kappa) { kappa_ = kappa; }
+
+    /// @brief Clear every member's reservoir state to cold (x = 0) — e.g. to
+    /// start a fresh, independent sequence. Trained readout weights, kappa, and
+    /// the step counter are all preserved.
+    void ResetReservoirStates();
 
     // ---------------------------------------------------------------
     //  Diagnostic surface (read-only, §7.4)
@@ -148,14 +113,8 @@ public:
     /// (NumMembers()*NumOutputs() floats), filled in one call.
     void AllMemberOutputs(float* out_MxD) const;
 
-    /// Current feedback intensity kappa — the operating point of the ramp schedule.
+    /// Current feedback coupling intensity kappa (set via @ref SetKappa).
     [[nodiscard]] float Kappa() const { return kappa_; }
-
-    /// Has the competence-gated ramp triggered yet? (§4.2)
-    [[nodiscard]] bool GateOpen() const { return gate_open_; }
-
-    /// Monotone step counter t_ (aligns traces to the §7.1 schedule).
-    [[nodiscard]] size_t CurrentStep() const { return t_; }
 
     // ---------------------------------------------------------------
     //  Accessors
@@ -170,28 +129,25 @@ public:
     // ---------------------------------------------------------------
 
     /// The persistable state of a trained ensemble: every member's readout
-    /// weights plus the schedule/competence state the ramp has reached. The
-    /// EnsembleConfig is NOT held here — the caller reconstructs an identically
-    /// configured EnsembleESN (which re-derives each member's reservoir seed,
-    /// §5) and then restores this. Like the single ESN, the reservoirs' live
-    /// dynamical state is NOT captured: a restored ensemble has cold reservoirs
-    /// and re-washes out (the full initial @c washout) before training resumes.
+    /// weights plus the coupling intensity and step counter. The EnsembleConfig
+    /// is NOT held here — the caller reconstructs an identically configured
+    /// EnsembleESN (which re-derives each member's reservoir seed, §5) and then
+    /// restores this. Like the single ESN, the reservoirs' live dynamical state
+    /// is NOT captured: a restored ensemble has cold reservoirs (drive them
+    /// through a warmup before trusting outputs).
     struct State
     {
         std::vector<std::vector<double>> member_weights; ///< M readout-weight blobs, member order
-        float kappa = 0.0f; ///< current coupling intensity
-        bool gate_open = false; ///< has the competence ramp triggered
-        float consensus_err = 0.0f; ///< running consensus-error estimate (gate signal)
-        bool err_init = false; ///< has consensus_err been seeded
+        float kappa = 0.0f; ///< coupling intensity at capture
         size_t step = 0; ///< monotone step counter t_ (diagnostic)
     };
 
-    /// Capture the trained state (all member readout weights + schedule state).
+    /// Capture the trained state (all member readout weights + kappa + step).
     [[nodiscard]] State GetState() const;
 
     /// Restore a previously captured state into this (identically configured)
-    /// ensemble. Re-imposes the full initial washout, since the reservoirs are
-    /// cold (their dynamical state is not part of @ref State).
+    /// ensemble. The reservoirs stay cold (their dynamical state is not part of
+    /// @ref State) — drive them through a warmup before trusting outputs.
     /// @throws std::invalid_argument if @p s.member_weights.size() != NumMembers().
     void SetState(const State& s);
 
@@ -199,24 +155,13 @@ private:
     size_t M_ = 0; // member count
     size_t D_ = 0; // output dim = num_feedback_channels (One D, three roles)
     size_t num_inputs_ = 0; // task input width
-    size_t t_ = 0; // monotone step counter
-    size_t washout_ = 0; // initial washout length W (for re-washout on restore)
-    size_t washout_remaining_ = 0; // steps left with the readout update suppressed
 
     Combine combine_ = Combine::Mean;
     float lr_ = 0.0f;
     float wd_ = 0.0f;
 
-    // kappa ramp + competence gate (§4.2)
+    // feedback coupling intensity (caller-managed via SetKappa)
     float kappa_ = 0.0f;
-    float kappa_target_ = 0.0f;
-    float kappa_ramp_rate_ = 0.0f;
-    float gate_threshold_ = 0.0f;
-    float gate_err_ema_alpha_ = 0.0f;
-    float consensus_err_ = 0.0f; // EMA of |consensus - target|
-    bool gate_open_ = false;
-    bool err_init_ = false; // has consensus_err_ been seeded yet?
-    size_t resequence_washout_ = 0;
 
     std::vector<std::unique_ptr<ESN>> esn_;
 
@@ -224,12 +169,6 @@ private:
     std::vector<float> y_flat_; // M*D — last member outputs (also the §7.4 source)
     std::vector<float> phi_; // D   — current member's coupling drive
     mutable std::vector<float> median_scratch_; // M — per-channel gather for the median
-
-    // class-owned competence-gated ramp (§4.2): fold this step's consensus
-    // error into consensus_err_, open the gate when it crosses the threshold,
-    // and step kappa toward kappa_target. No-op at inference (target==nullptr)
-    // and during the washout.
-    void AdvanceKappa(const float* c_out, const float* target);
 
     // write the consensus of y_flat_ (M x D) into c_out (D), per combine_.
     void Consensus(float* c_out) const;
