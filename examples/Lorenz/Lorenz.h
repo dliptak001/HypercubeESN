@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EnsembleESN.h"
+#include "LorenzAttractorPong.h"
 #include <cstddef>
 #include <vector>
 #include <iostream>
