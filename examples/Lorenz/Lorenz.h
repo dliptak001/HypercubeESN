@@ -33,6 +33,8 @@ public:
     Lorenz();
 
 private:
+    static EnsembleConfig MakeConfig();
+
     EnsembleConfig esn_config_;
-    //nsembleESN esn;
+    EnsembleESN esn;
 };
