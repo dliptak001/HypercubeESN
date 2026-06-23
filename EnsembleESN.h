@@ -9,8 +9,8 @@
 /// Consensus statistic used to combine member outputs (design §6).
 enum class Combine
 {
-    Mean,   ///< per-channel mean. Exact conservation Sum_i Delta_i = 0. Default.
-    Median  ///< per-channel median. Robust to one straying member; needs M >= 3.
+    Mean, ///< per-channel mean. Exact conservation Sum_i Delta_i = 0. Default.
+    Median ///< per-channel median. Robust to one straying member; needs M >= 3.
 };
 
 /// Configuration for an EnsembleESN — M ESN members coupled through the
@@ -29,6 +29,10 @@ struct EnsembleConfig
     /// enforced: `readout.num_outputs == reservoir.num_feedback_channels == D`,
     /// and D must be > 0 (feedback is the whole point, §1/§3).
     ESNConfig base;
+
+    void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
+
+    void SetSeed(const size_t seed){ ensemble_seed = seed; base.readout.seed = seed;};
 
     /// Master seed; per-member seeds are derived from it (§5). Equal
     /// `ensemble_seed` reproduces the whole ensemble exactly.
@@ -175,11 +179,11 @@ public:
     struct State
     {
         std::vector<std::vector<double>> member_weights; ///< M readout-weight blobs, member order
-        float  kappa         = 0.0f;  ///< current coupling intensity
-        bool   gate_open     = false; ///< has the competence ramp triggered
-        float  consensus_err = 0.0f;  ///< running consensus-error estimate (gate signal)
-        bool   err_init      = false; ///< has consensus_err been seeded
-        size_t step          = 0;     ///< monotone step counter t_ (diagnostic)
+        float kappa = 0.0f; ///< current coupling intensity
+        bool gate_open = false; ///< has the competence ramp triggered
+        float consensus_err = 0.0f; ///< running consensus-error estimate (gate signal)
+        bool err_init = false; ///< has consensus_err been seeded
+        size_t step = 0; ///< monotone step counter t_ (diagnostic)
     };
 
     /// Capture the trained state (all member readout weights + schedule state).
@@ -192,11 +196,11 @@ public:
     void SetState(const State& s);
 
 private:
-    size_t M_ = 0;            // member count
-    size_t D_ = 0;            // output dim = num_feedback_channels (One D, three roles)
-    size_t num_inputs_ = 0;   // task input width
-    size_t t_ = 0;            // monotone step counter
-    size_t washout_ = 0;      // initial washout length W (for re-washout on restore)
+    size_t M_ = 0; // member count
+    size_t D_ = 0; // output dim = num_feedback_channels (One D, three roles)
+    size_t num_inputs_ = 0; // task input width
+    size_t t_ = 0; // monotone step counter
+    size_t washout_ = 0; // initial washout length W (for re-washout on restore)
     size_t washout_remaining_ = 0; // steps left with the readout update suppressed
 
     Combine combine_ = Combine::Mean;
@@ -209,16 +213,16 @@ private:
     float kappa_ramp_rate_ = 0.0f;
     float gate_threshold_ = 0.0f;
     float gate_err_ema_alpha_ = 0.0f;
-    float consensus_err_ = 0.0f;   // EMA of |consensus - target|
+    float consensus_err_ = 0.0f; // EMA of |consensus - target|
     bool gate_open_ = false;
-    bool err_init_ = false;        // has consensus_err_ been seeded yet?
+    bool err_init_ = false; // has consensus_err_ been seeded yet?
     size_t resequence_washout_ = 0;
 
     std::vector<std::unique_ptr<ESN>> esn_;
 
     // pre-allocated per-step scratch (no heap traffic per tick, decision #5)
-    std::vector<float> y_flat_;        // M*D — last member outputs (also the §7.4 source)
-    std::vector<float> phi_;           // D   — current member's coupling drive
+    std::vector<float> y_flat_; // M*D — last member outputs (also the §7.4 source)
+    std::vector<float> phi_; // D   — current member's coupling drive
     mutable std::vector<float> median_scratch_; // M — per-channel gather for the median
 
     // class-owned competence-gated ramp (§4.2): fold this step's consensus
