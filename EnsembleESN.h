@@ -30,10 +30,6 @@ struct EnsembleConfig
     /// and D must be > 0 (feedback is the whole point, §1/§3).
     ESNConfig base;
 
-    void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
-
-    void SetSeed(const size_t seed){ ensemble_seed = seed; base.readout.seed = seed;};
-
     /// Master seed; per-member seeds are derived from it (§5). Equal
     /// `ensemble_seed` reproduces the whole ensemble exactly.
     uint64_t ensemble_seed = 73895;
@@ -45,10 +41,13 @@ struct EnsembleConfig
     /// Consensus statistic (§6). Default mean.
     Combine combine = Combine::Mean;
 
-    // ----- Online readout training (shared) -----
-    // One lr / weight_decay passed verbatim to every member's online step.
-    float lr = 0.01f;
-    float weight_decay = 0.0f;
+    void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
+
+    void SetSeed(const size_t seed)
+    {
+        ensemble_seed = seed;
+        base.readout.seed = seed;
+    };
 };
 
 /// @brief Consensus feedback coupling of M ESN members (design doc
@@ -108,7 +107,7 @@ public:
     /// @brief Clear every member's reservoir state to cold (x = 0) — e.g. to
     /// start a fresh, independent sequence. Trained readout weights and kappa
     /// are preserved.
-    void ResetReservoirStates();
+    void ResetReservoirStates() const;
 
     // ---------------------------------------------------------------
     //  Diagnostic surface (read-only, §7.4)

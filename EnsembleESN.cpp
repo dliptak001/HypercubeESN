@@ -26,10 +26,7 @@ namespace
 EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
     : M_(cfg.num_members),
       num_inputs_(cfg.base.reservoir.num_inputs),
-      combine_(cfg.combine),
-      lr_(cfg.lr),
-      wd_(cfg.weight_decay),
-      kappa_(0.0)
+      combine_(cfg.combine)
 {
     if (M_ < 1)
         throw std::invalid_argument("EnsembleESN: num_members must be >= 1");
@@ -136,7 +133,7 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     }
 }
 
-void EnsembleESN::ResetReservoirStates()
+void EnsembleESN::ResetReservoirStates() const
 {
     for (auto& e : esn_)
         e->ReservoirClear();

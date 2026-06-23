@@ -361,10 +361,10 @@ class TestEnsembleStep:
         assert ens.kappa == pytest.approx(0.25)
 
     def test_lr_and_weight_decay_settable(self):
-        # Shared online lr / L2 are construction config but caller-settable at
-        # runtime (e.g. to anneal); the value sticks.
-        ens = EnsembleESN(reservoir_hypercube_dimension=5, lr=0.01, weight_decay=0.0)
-        assert ens.lr == pytest.approx(0.01)
+        # Shared online lr / L2 are runtime-only (not ctor config), starting at
+        # 0.0 and caller-set via the properties; the value sticks.
+        ens = EnsembleESN(reservoir_hypercube_dimension=5)
+        assert ens.lr == pytest.approx(0.0)
         assert ens.weight_decay == pytest.approx(0.0)
         ens.lr = 0.0003
         ens.weight_decay = 1e-5

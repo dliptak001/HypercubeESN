@@ -23,9 +23,6 @@ EnsembleConfig Lorenz::MakeConfig()
     cfg.base.reservoir.lorentz_inv_sigma2 = config::LORENTZ_INV_SIGMA2;
 
     cfg.base.readout.epochs = config::EPOCHS;
-
-    cfg.lr = config::LR;
-    cfg.weight_decay = config::WEIGHT_DECAY;
     return cfg;
 }
 

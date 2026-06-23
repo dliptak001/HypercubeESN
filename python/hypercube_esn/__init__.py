@@ -878,15 +878,15 @@ class EnsembleESN:
     readout_num_layers, readout_conv_channels, readout_activation, readout_seed :
         Shared readout (HCNN) architecture. The readout trains online via
         regression; the batch cosine-schedule fields do not apply.
-    lr, weight_decay : float
-        Shared online learning rate / L2, passed to every member's readout each
-        training step. Defaults: 0.01, 0.0.
 
     Notes
     -----
-    The consensus-deviation coupling intensity ``kappa`` (``phi_i = kappa*(y_i-c)``)
-    is caller-managed and starts at 0.0 (members uncoupled). Set it at runtime via
-    the ``kappa`` property.
+    Three knobs are caller-managed at runtime rather than constructor config, each
+    starting at 0.0 and set via its property: the coupling intensity ``kappa``
+    (``phi_i = kappa*(y_i-c)``; 0.0 = members uncoupled) and the shared online
+    ``lr`` / ``weight_decay`` applied to every member's readout each training step.
+    Note ``lr`` starts at 0.0, so set ``ens.lr`` before training or the readouts
+    will not learn.
 
     Examples
     --------
@@ -926,8 +926,6 @@ class EnsembleESN:
         readout_conv_channels: int = 16,
         readout_activation: str = "tanh",
         readout_seed: int = 42,
-        lr: float = 0.01,
-        weight_decay: float = 0.0,
     ):
         if not (self._DIM_MIN <= reservoir_hypercube_dimension <= self._DIM_MAX):
             raise ValueError(
@@ -957,8 +955,6 @@ class EnsembleESN:
             "readout_conv_channels": readout_conv_channels,
             "readout_activation": readout_activation,
             "readout_seed": readout_seed,
-            "lr": lr,
-            "weight_decay": weight_decay,
         }
         self._impl = _EnsembleESN(
             reservoir_hypercube_dimension=reservoir_hypercube_dimension,
@@ -980,8 +976,6 @@ class EnsembleESN:
             readout_conv_channels=readout_conv_channels,
             readout_activation=readout_activation,
             readout_seed=readout_seed,
-            lr=lr,
-            weight_decay=weight_decay,
         )
 
     def step(
@@ -1045,8 +1039,8 @@ class EnsembleESN:
     def lr(self) -> float:
         """Shared online learning rate applied to every member's readout.
 
-        Seeded from the constructor; assign to it to anneal mid-run (the change
-        is not persisted — :meth:`save` restores the constructor value).
+        Caller-managed and starts at 0.0 — assign to it before training (and to
+        anneal mid-run). Not persisted: a reloaded ensemble starts back at 0.0.
         """
         return self._impl.lr
 
@@ -1058,8 +1052,8 @@ class EnsembleESN:
     def weight_decay(self) -> float:
         """Shared online L2 weight-decay applied to every member's readout.
 
-        Seeded from the constructor; assign to it to change mid-run (the change
-        is not persisted — :meth:`save` restores the constructor value).
+        Caller-managed and starts at 0.0 — assign to it to change (the value is
+        not persisted: a reloaded ensemble starts back at 0.0).
         """
         return self._impl.weight_decay
 

@@ -183,14 +183,14 @@ to the caller, who can implement any policy by calling `SetKappa` between `Step`
 
 **Readout learning rate (the members' online `lr` / `wd`).** Separate from κ: it governs
 how fast each member's *readout* adapts via `TrainStep`, not how hard the members couple.
-One **shared** `lr` / `weight_decay` seeds from constructor config (§7) and is passed
-verbatim to every member's online step — members share the base config (§5), so there is
-no reason to differ them. Like κ, both are caller-settable at runtime (`SetLr` /
-`SetWeightDecay`): if the caller ramps κ, that ramp should stay slow *relative to* readout
-adaptation (so the readouts track the rising coupling rather than being shocked), which
-means not annealing `lr` toward zero while κ is still moving — the caller owns that
-coordination, and now has the handles for it. (Unlike κ, a runtime `lr`/`wd` override is
-*not* part of @ref State — a reload restores the constructor value.) Note this is the ESN
+Both are **caller-managed at runtime** (`SetLr` / `SetWeightDecay`), not constructor
+config — they start at 0 and are applied verbatim and identically to every member (members
+share the base config, §5, so there is no reason to differ them). If the caller ramps κ,
+that ramp should stay slow *relative to* readout adaptation (so the readouts track the
+rising coupling rather than being shocked), which means not annealing `lr` toward zero
+while κ is still moving — the caller owns that coordination and has the handles for it.
+Unlike κ, `lr`/`wd` are *not* part of @ref State: a reload starts them back at 0. Note
+this is the ESN
 *online* `lr` passed per step, not `ReadoutConfig`'s batch cosine fields, which the online
 path ignores.
 
@@ -313,8 +313,8 @@ class EnsembleESN {
     size_t M_, D_;
     Combine combine_;                                // Mean (default) | Median (§6)
     float   kappa_ = 0.0f;                           // coupling intensity — caller-managed (§4.2)
-    float   lr_, wd_;                                // shared readout online lr / weight-decay (§4.2);
-                                                     // ctor-seeded, caller-settable at runtime
+    float   lr_ = 0.0f, wd_ = 0.0f;                  // shared readout online lr / weight-decay (§4.2);
+                                                     // runtime-only, caller-set (start at 0)
     std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback),
                                                      // readout born ready (built in ctor, §7.1)
     std::vector<float> y_flat_, phi_;                // pre-allocated per-tick scratch: M*D and D (decision #5)

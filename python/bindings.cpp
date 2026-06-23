@@ -341,8 +341,7 @@ PYBIND11_MODULE(_core, m)
                          size_t num_outputs, float feedback_scaling, float bias_scaling,
                          float lorentz_gamma, float lorentz_inv_sigma2,
                          int readout_num_layers, int readout_conv_channels,
-                         const char* readout_activation, unsigned readout_seed,
-                         float lr, float weight_decay) {
+                         const char* readout_activation, unsigned readout_seed) {
             EnsembleConfig cfg;
             ReservoirConfig& r = cfg.base.reservoir;
             r.dim                    = reservoir_hypercube_dimension;
@@ -380,8 +379,6 @@ PYBIND11_MODULE(_core, m)
             else if (std::strcmp(combine, "mean")   == 0) cfg.combine = Combine::Mean;
             else throw std::invalid_argument(
                 std::string("combine must be 'mean' or 'median' (got '") + combine + "')");
-            cfg.lr                 = lr;
-            cfg.weight_decay       = weight_decay;
             return std::make_unique<EnsembleESN>(cfg);
         }),
             py::arg("reservoir_hypercube_dimension"),
@@ -402,9 +399,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_num_layers")   = 0,
             py::arg("readout_conv_channels")= 16,
             py::arg("readout_activation")   = "tanh",
-            py::arg("readout_seed")         = 42u,
-            py::arg("lr")                   = 0.01f,
-            py::arg("weight_decay")         = 0.0f)
+            py::arg("readout_seed")         = 42u)
 
         // ── Lockstep online step ──
         .def("step", [](EnsembleESN& self,
