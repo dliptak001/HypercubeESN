@@ -1,34 +1,30 @@
-/// @file LorenzOnline.cpp
-/// @brief Closed-loop (generative) free-run of Lorenz-63, with the readout
-/// trained ONLINE (streaming, one pass) instead of in batch.
+/// @file Lorenz.cpp
+/// @brief Closed-loop (generative) free-run of the Lorenz-63 attractor — the
+/// discriminating A(x)-vs-tanh test that open-loop tasks cannot resolve.
 ///
-/// This is the online-trained sibling of Lorenz.cpp (which batch-trains the
-/// readout over many epochs). It exists for two reasons:
-///   1. It is the SINGLE-MEMBER analog of the forthcoming ensemble free-run
-///      harness — EnsembleESN is online-only, so the honest baseline for "does
-///      consensus coupling help?" must itself be online, not batch.
-///   2. It measures the online-vs-batch training gap directly: identical
-///      reservoir (same seed/config) and identical free-run scoring, so any VPT
-///      difference vs Lorenz.cpp isolates training quality alone (one streaming
-///      pass with a fixed lr vs many batch epochs).
-///
-/// Only the TRAINING stage differs from Lorenz.cpp. The reservoir trajectory
-/// through warmup -> train -> test is identical (online training updates only
-/// the readout, never the reservoir), so the held-out one-step parity number is
-/// a clean apples-to-apples comparison.
+/// Open-loop tasks (NARMA, sine, MC) re-inject ground truth every step, which
+/// continuously corrects internal drift and collapses A-vs-tanh to an
+/// operating-point offset (parity). Free-run removes that correction: the
+/// reservoir iterates on its OWN output, error compounds through the
+/// recurrence, and the activation's return map governs how long the generated
+/// trajectory tracks the true one. This is where A's region-selective central
+/// gain (a genuinely different map than tanh) could finally cash out — or fail.
 ///
 /// Pipeline:
 ///   1. Integrate Lorenz-63 (RK4), discard transient, standardize each coord.
-///   2. TEACHER-FORCED ONLINE training (open loop): drive the reservoir with the
-///      true state on 4 channels [x, y, z, x*y*z]; at each step train the readout
-///      on the live state toward the next-step increment (3 outputs), one pass.
+///   2. TEACHER-FORCED training (open loop): drive the reservoir with the true
+///      state on 4 input channels [x, y, z, x*y*z], train the readout to
+///      predict the next-step increment (3 outputs). The 4th channel is a
+///      nonlinear cross-feature; 4 divides N = 2^DIM cleanly (3 does not).
 ///   3. One-step open-loop R2/NRMSE on a held-out tail — the PARITY baseline.
 ///   4. FREE-RUN (closed loop): resync on true data, then feed each predicted
-///      state back as the next input. Measure Valid Prediction Time (VPT): steps
-///      until the normalized error exceeds VPT_THRESH, in Lyapunov times.
+///      state back as the next input (rebuilding the x*y*z channel from the
+///      prediction). Measure Valid Prediction Time (VPT): steps until the
+///      normalized error exceeds VPT_THRESH, reported in Lyapunov times.
 ///
 /// The activation (A_lorentz vs tanh) is the LORENTZ_GAMMA knob in the config
 /// block below (0 => tanh, 1.1 => A) — runtime, no recompile of Reservoir.cpp.
+/// Switch the arm there and compare the headline median VPT.
 ///
 /// This example takes NO command-line arguments. To change the run, edit the
 /// CONFIGURATION block below and rebuild.
@@ -51,8 +47,8 @@ namespace config
     // ---- (A) Reservoir / model ----
     constexpr size_t   DIM             = 8;            // hypercube dimension
     constexpr size_t   N               = 1ULL << DIM;  // neuron count = 2^DIM = 256
-    constexpr uint64_t SEED            = 673895;       // reservoir realization (match Lorenz.cpp
-                                                       // to compare online vs batch at one seed).
+    constexpr uint64_t SEED            = 673895;        // reservoir realization.
+                                                       // Locked A-vs-tanh seeds: 23, 42, 73895.
     constexpr float    SPECTRAL_RADIUS = 0.90f;        // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float    INPUT_SCALING   = 0.10f;        // shared across all input channels
     constexpr float    LEAK_RATE       = 1.0f;         // 1.0 = continuous flow; <1.0 (leaky) worth a sweep
@@ -65,23 +61,20 @@ namespace config
     constexpr float    LORENTZ_GAMMA      = 1.1f;      // set 0.0f for the tanh baseline arm
     constexpr float    LORENTZ_INV_SIGMA2 = 250.0f;    // 1/sigma^2 of the envelope
 
-    // ---- (B) Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float    ONLINE_LR           = 0.0015f;  // per-step online learning rate (Adam)
-    constexpr float    ONLINE_WEIGHT_DECAY = 0.0f;     // L2 on readout weights
-    constexpr size_t   ONLINE_EPOCHS       = 600;      // single-sample passes over the train window.
-                                                       // ONLINE_EPOCHS * train_size = total sample-gradients;
-                                                       // 600 * 32000 = 19.2M, matching the batch budget.
+    // ---- (B) Readout (HCNN) ----
+    constexpr int      READOUT_EPOCHS     = 600;
+    constexpr int      READOUT_BATCH_SIZE = 64;
 
     // ---- (C) Free-run experiment (all in integration steps; dt is fixed below) ----
     constexpr size_t   DISCARD        = 5000;   // Lorenz transient onto the attractor
     constexpr size_t   WARMUP         = 1000;   // reservoir washout (teacher-forced)
-    constexpr size_t   COLLECT        = 40000;  // teacher-forced states (train stream + test tail)
+    constexpr size_t   COLLECT        = 40000;  // teacher-forced training states
     constexpr size_t   GAP            = 2000;   // separation before the free-run region
     constexpr size_t   RESYNC         = 500;    // teacher-forced re-sync before each launch
     constexpr size_t   HORIZON        = 2000;   // max free-run length scored per launch
     constexpr size_t   NUM_LAUNCH     = 30;     // independent free-run launches
     constexpr size_t   LAUNCH_STRIDE  = 800;    // spacing between launch points
-    constexpr double   TRAIN_FRACTION = 0.8;    // of COLLECT (the rest is the held-out one-step test)
+    constexpr double   TRAIN_FRACTION = 0.8;    // of COLLECT (the rest is the one-step test)
     constexpr double   VPT_THRESH     = 0.4;    // Pathak et al. normalized-error threshold
 
     // ---- structural (tied to the task's input/target encoding; changing one of
@@ -139,14 +132,11 @@ int main()
     const size_t last_launch   = first_launch + (NUM_LAUNCH - 1) * LAUNCH_STRIDE;
     const size_t TOTAL         = last_launch + HORIZON + 2;     // +1 for target lookahead
 
-    const size_t train_size = static_cast<size_t>(COLLECT * TRAIN_FRACTION);
-    const size_t test_size  = COLLECT - train_size;
-    const size_t train_end  = collect_start + train_size;       // first held-out test step
-
-    std::cout << "=== HypercubeESN: Lorenz-63 Free-Run (closed-loop, ONLINE-trained) ===\n\n";
-    std::cout << "Task: teacher-force the readout (ONLINE, one streaming pass) to\n";
-    std::cout << "one-step-predict the Lorenz state, then cut the input and let the\n";
-    std::cout << "network generate its own trajectory by feeding predictions back.\n\n";
+    std::cout << "=== HypercubeESN: Lorenz-63 Free-Run (closed-loop) ===\n\n";
+    std::cout << "Task: teacher-force the readout to one-step-predict the Lorenz\n";
+    std::cout << "state, then cut the input and let the network generate its own\n";
+    std::cout << "trajectory by feeding predictions back. Closed-loop free-run is\n";
+    std::cout << "the test that separates the activation's return map from tanh's.\n\n";
 
     // ---- 1. integrate Lorenz-63 ----
     std::vector<Vec3> s(TOTAL);
@@ -176,7 +166,9 @@ int main()
 
     // Standardize the nonlinear cross-feature channel (x*y*z in normalized
     // space) to zero-mean / unit-std over the training window, so all four
-    // input channels share one meaningful input_scaling.
+    // input channels share one meaningful input_scaling. The raw triple product
+    // is wider and heavier-tailed than the linear channels, so without this it
+    // carries a different effective input gain.
     double mp = 0.0;
     for (size_t t = collect_start; t < collect_end; ++t)
         mp += double(nx[t]) * ny[t] * nz[t];
@@ -204,13 +196,6 @@ int main()
     {
         fill_input(nx[idx], ny[idx], nz[idx], out);
     };
-    // Per-step increment target delta = s(t+1) - s(t) (NUM_OUTPUTS components).
-    auto fill_target = [&](size_t idx, float* out)
-    {
-        out[0] = nx[idx + 1] - nx[idx];
-        out[1] = ny[idx + 1] - ny[idx];
-        out[2] = nz[idx + 1] - nz[idx];
-    };
 
     // ---- 3. configure the ESN (all knobs from the config block above) ----
     ESNConfig cfg;
@@ -225,9 +210,9 @@ int main()
     cfg.reservoir.lorentz_inv_sigma2 = LORENTZ_INV_SIGMA2;
     cfg.readout.task                 = ReadoutTask::Regression;
     cfg.readout.num_outputs          = NUM_OUTPUTS;   // predict per-step increment (dx, dy, dz)
+    cfg.readout.epochs               = READOUT_EPOCHS;
+    cfg.readout.batch_size           = READOUT_BATCH_SIZE;
     cfg.readout.activation           = ReadoutActivation::TANH;  // CNN readout activation (distinct from the reservoir A/tanh arm)
-    // Note: readout.epochs / batch_size are unused by the online path; training
-    // is driven by ONLINE_LR via TrainLiveStepRegression below.
     ESN esn(cfg);
 
     std::cout << "  Config: DIM=" << DIM << "  N=" << N
@@ -242,59 +227,42 @@ int main()
     std::cout << "  activation: A_lorentz  gamma=" << cfg.reservoir.lorentz_gamma
               << "  inv_sigma2=" << cfg.reservoir.lorentz_inv_sigma2
               << (cfg.reservoir.lorentz_gamma == 0.0f ? "  (== tanh)" : "")
-              << "\n";
-    std::cout << "  training: ONLINE single-sample  " << ONLINE_EPOCHS << " epochs  lr=" << ONLINE_LR
-              << "  weight_decay=" << ONLINE_WEIGHT_DECAY << "\n\n";
+              << "\n\n";
 
-    // ---- 4. teacher-forced ONLINE training (open loop, single-sample) ----
-    // Match the BATCH sample-gradient budget with pure single-sample updates:
-    // ONLINE_EPOCHS passes over the train window = ONLINE_EPOCHS * train_size
-    // single-sample gradient steps (batch reaches 19.2M via 600 minibatch
-    // epochs). Each epoch resets and re-warms the reservoir, so every pass sees
-    // the identical (state, target) pairs the batch readout trains on; only the
-    // readout (CNN) accumulates across passes.
-    std::vector<float> warmup_inputs(WARMUP * NUM_INPUTS);
-    for (size_t i = 0; i < WARMUP; ++i)
-        make_input(warm_start + i, &warmup_inputs[i * NUM_INPUTS]);
+    // ---- 4. teacher-forced training (open loop) ----
+    std::vector<float> inputs_wc((WARMUP + COLLECT) * NUM_INPUTS);
+    for (size_t i = 0; i < WARMUP + COLLECT; ++i)
+        make_input(warm_start + i, &inputs_wc[i * NUM_INPUTS]);
 
-    const size_t total_steps = ONLINE_EPOCHS * train_size;
-    std::cout << "  Online training (" << ONLINE_EPOCHS << " epochs x " << train_size
-              << " = " << total_steps << " sample-gradients, lr=" << ONLINE_LR << ")..." << std::flush;
-    auto t0 = std::chrono::steady_clock::now();
-    float in4[NUM_INPUTS];
-    float tgt[NUM_OUTPUTS];
-    for (size_t epoch = 0; epoch < ONLINE_EPOCHS; ++epoch)
+    // Target is the per-step INCREMENT delta = s(t+1) - s(t), not the next state
+    // directly: for an ODE flow the readout learns the small change with less
+    // systematic bias, and free-run reconstructs s(t+1) = s(t) + delta.
+    std::vector<float> targets(COLLECT * NUM_OUTPUTS);
+    for (size_t i = 0; i < COLLECT; ++i)
     {
-        esn.ResetReservoirOnly();                           // identical reservoir trajectory each pass
-        esn.Warmup(warmup_inputs.data(), WARMUP);
-        for (size_t t = collect_start; t < train_end; ++t)
-        {
-            make_input(t, in4);
-            esn.StepLive(in4);                              // live state now reflects input s[t]
-            fill_target(t, tgt);                            // increment s[t+1] - s[t]
-            esn.TrainLiveStepRegression(tgt, ONLINE_LR, ONLINE_WEIGHT_DECAY);
-        }
+        const size_t t0 = collect_start + i;      // just-input state
+        const size_t t1 = t0 + 1;                 // next state
+        targets[i * NUM_OUTPUTS + 0] = nx[t1] - nx[t0];
+        targets[i * NUM_OUTPUTS + 1] = ny[t1] - ny[t0];
+        targets[i * NUM_OUTPUTS + 2] = nz[t1] - nz[t0];
     }
+
+    const size_t train_size = static_cast<size_t>(COLLECT * TRAIN_FRACTION);
+    const size_t test_size  = COLLECT - train_size;
+
+    esn.ReservoirWarmup(inputs_wc.data(), WARMUP);
+    esn.ReservoirRun(inputs_wc.data() + WARMUP * NUM_INPUTS, COLLECT);
+
+    std::cout << "  Training readout (" << cfg.readout.epochs << " epochs)..." << std::flush;
+    auto t0 = std::chrono::steady_clock::now();
+    esn.Train(targets.data(), train_size);
     auto t1 = std::chrono::steady_clock::now();
     std::cout << " done (" << std::fixed << std::setprecision(1)
               << std::chrono::duration<double>(t1 - t0).count() << "s)\n\n";
 
-    // ---- 5. one-step open-loop parity baseline (held-out test tail) ----
-    // Continue the reservoir over the test window (no training), collecting
-    // states, then reuse the batch R2/NRMSE machinery for an apples-to-apples
-    // one-step parity number against Lorenz.cpp.
-    std::vector<float> test_inputs(test_size * NUM_INPUTS);
-    std::vector<float> test_targets(test_size * NUM_OUTPUTS);
-    for (size_t i = 0; i < test_size; ++i)
-    {
-        make_input(train_end + i, &test_inputs[i * NUM_INPUTS]);
-        fill_target(train_end + i, &test_targets[i * NUM_OUTPUTS]);
-    }
-    esn.Run(test_inputs.data(), test_size);                 // continues reservoir, collects states
-    const double r2    = esn.R2(test_targets.data(), 0, test_size);
-    const double nrmse = esn.NRMSE(test_targets.data(), 0, test_size);
-    esn.ClearStates();                                      // done with collected states
-
+    // ---- 5. one-step open-loop parity baseline ----
+    const double r2    = esn.R2(targets.data(), train_size, test_size);
+    const double nrmse = esn.NRMSE(targets.data(), train_size, test_size);
     std::cout << "  -- One-step open-loop increment (teacher-forced, parity baseline) --\n";
     std::cout << "     R2:    " << std::setprecision(6) << r2 << "\n";
     std::cout << "     NRMSE: " << std::setprecision(6) << nrmse
@@ -312,15 +280,15 @@ int main()
     const double err_denom = std::sqrt(denom_acc / denom_n);
 
     std::vector<double> vpt_steps(NUM_LAUNCH, 0);
-    float pred[NUM_OUTPUTS];
+    float in4[NUM_INPUTS];
 
     for (size_t k = 0; k < NUM_LAUNCH; ++k)
     {
         const size_t L = first_launch + k * LAUNCH_STRIDE;
 
         // re-sync the reservoir onto the true trajectory ending just before L
-        esn.ResetReservoirOnly();
-        for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
+        esn.ReservoirClear();
+        for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.ReservoirStep(in4); }
 
         // cut the cord: predict the increment, reconstruct the next state by
         // adding it to the current estimate, feed that back. Current estimate
@@ -329,7 +297,7 @@ int main()
         size_t reached = HORIZON;
         for (size_t h = 0; h < HORIZON; ++h)
         {
-            esn.PredictLiveRaw(pred);             // pred = predicted increment delta
+            const std::vector<float> pred = esn.Predict();  // predicted increment delta
             const double px = cx + pred[0];       // reconstructed normalized s[L+h]
             const double py = cy + pred[1];
             const double pz = cz + pred[2];
@@ -341,7 +309,7 @@ int main()
             if (e > VPT_THRESH) { reached = h; break; }
 
             fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
-            esn.StepLive(in4);
+            esn.ReservoirStep(in4);
             cx = px; cy = py; cz = pz;
         }
         vpt_steps[k] = static_cast<double>(reached);
@@ -352,12 +320,12 @@ int main()
             std::cout << "  -- Free-run sample (launch 0), denormalized Lorenz units --\n";
             std::cout << "    step |    x_true   x_pred  |    z_true   z_pred  |  norm.err\n";
             std::cout << "    -----+---------------------+---------------------+----------\n";
-            esn.ResetReservoirOnly();
-            for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.StepLive(in4); }
+            esn.ReservoirClear();
+            for (size_t t = L - RESYNC; t < L; ++t) { make_input(t, in4); esn.ReservoirStep(in4); }
             double dx = nx[L - 1], dy = ny[L - 1], dz = nz[L - 1];
             for (size_t h = 0; h < 20; ++h)
             {
-                esn.PredictLiveRaw(pred);
+                const std::vector<float> pred = esn.Predict();
                 const double px = dx + pred[0], py = dy + pred[1], pz = dz + pred[2];
                 const size_t tt = L + h;
                 const double ex = px - nx[tt], ey = py - ny[tt], ez = pz - nz[tt];
@@ -371,7 +339,7 @@ int main()
                           << " " << std::setw(8) << zp
                           << "  | " << std::setw(8) << std::setprecision(4) << e << "\n";
                 fill_input(static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz), in4);
-                esn.StepLive(in4);
+                esn.ReservoirStep(in4);
                 dx = px; dy = py; dz = pz;
             }
             std::cout << "\n";
@@ -401,12 +369,11 @@ int main()
     std::cout << "\n\n";
 
     std::cout << "Median VPT in Lyapunov times is the headline closed-loop number.\n";
-    std::cout << "This is the ONLINE-trained baseline; compare with Lorenz.cpp (batch)\n";
-    std::cout << "at the same seed to read the online-vs-batch training gap.\n\n";
+    std::cout << "Compare A(x) vs tanh by flipping LORENTZ_GAMMA in the config block\n";
+    std::cout << "(0 = tanh, 1.1 = A) at MATCHED one-step NRMSE, then rebuild.\n\n";
 
     // Compact one-line summary (one-step NRMSE + the headline VPT numbers).
-    std::cout << "RESULT online lr=" << std::setprecision(4) << ONLINE_LR
-              << " sr=" << cfg.reservoir.spectral_radius
+    std::cout << "RESULT sr=" << std::setprecision(4) << cfg.reservoir.spectral_radius
               << " is=" << cfg.reservoir.input_scaling
               << " one_step_nrmse=" << std::setprecision(6) << nrmse
               << " vpt_med_steps=" << std::setprecision(4) << median

@@ -82,10 +82,3 @@ void LorenzAttractorPong::print()
     attractor_b_.state.print();
     std::cout << std::endl;
 }
-
-
-int main()
-{
-    std::cout << "=== HypercubeESN: LorenzAttractorPong ===\n";
-    return 0;
-}

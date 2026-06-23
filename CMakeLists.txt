@@ -60,12 +60,10 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     add_executable(MemoryCapacity examples/MemoryCapacity/MemoryCapacity.cpp)
     add_executable(NARMA examples/NARMA/NARMA.cpp)
     add_executable(Lorenz examples/Lorenz/Lorenz.cpp)
-    add_executable(LorenzOnline examples/Lorenz/LorenzOnline.cpp)
-    add_executable(LorenzAttractorPong examples/Lorenz/LorenzAttractorPong.cpp)
     file(GLOB STREAMING_TEXT_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/examples/StreamingText/*.cpp)
     add_executable(StreamingText ${STREAMING_TEXT_SOURCES})
 
-    set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA Lorenz LorenzOnline LorenzAttractorPong StreamingText)
+    set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA Lorenz StreamingText)
     set(EXE_TARGETS HypercubeESN ${EXAMPLE_TARGETS})
 
     foreach(tgt IN LISTS EXE_TARGETS)
