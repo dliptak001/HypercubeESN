@@ -1011,9 +1011,8 @@ class EnsembleESN:
     def reset_reservoir_states(self) -> None:
         """Clear every member's reservoir to cold (``x = 0``).
 
-        Use to start a fresh, independent sequence. Trained readouts, ``kappa``,
-        and the step counter are all preserved — only the live reservoir dynamics
-        are reset.
+        Use to start a fresh, independent sequence. Trained readouts and ``kappa``
+        are preserved — only the live reservoir dynamics are reset.
         """
         self._impl.reset_reservoir_states()
 
@@ -1043,9 +1042,30 @@ class EnsembleESN:
         self._impl.kappa = float(value)
 
     @property
-    def current_step(self) -> int:
-        """Monotone step counter t."""
-        return self._impl.current_step
+    def lr(self) -> float:
+        """Shared online learning rate applied to every member's readout.
+
+        Seeded from the constructor; assign to it to anneal mid-run (the change
+        is not persisted — :meth:`save` restores the constructor value).
+        """
+        return self._impl.lr
+
+    @lr.setter
+    def lr(self, value: float) -> None:
+        self._impl.lr = float(value)
+
+    @property
+    def weight_decay(self) -> float:
+        """Shared online L2 weight-decay applied to every member's readout.
+
+        Seeded from the constructor; assign to it to change mid-run (the change
+        is not persisted — :meth:`save` restores the constructor value).
+        """
+        return self._impl.weight_decay
+
+    @weight_decay.setter
+    def weight_decay(self, value: float) -> None:
+        self._impl.weight_decay = float(value)
 
     @property
     def num_members(self) -> int:
@@ -1065,25 +1085,25 @@ class EnsembleESN:
     def __repr__(self) -> str:
         return (
             f"EnsembleESN(M={self.num_members}, D={self.num_outputs}, "
-            f"step={self.current_step}, kappa={self.kappa:.4g})"
+            f"kappa={self.kappa:.4g})"
         )
 
     # ── Persistence ──
 
     # v1: initial EnsembleESN persistence — constructor config + per-member
-    # readout weights + coupling intensity and step counter (kappa, step).
-    # Reservoir live state is NOT saved (a restored ensemble has cold reservoirs
-    # and re-washes out), matching ESN's persistence contract.
+    # readout weights + coupling intensity (kappa). Reservoir live state is NOT
+    # saved (a restored ensemble has cold reservoirs), matching ESN's persistence
+    # contract.
     _PERSISTENCE_VERSION = 1
 
     def __getstate__(self) -> dict:
         """Serialize the trained ensemble for pickling.
 
         Persists the constructor config and the trained state (every member's
-        readout weights plus the coupling intensity and step counter). The
-        reservoirs' live dynamical state is NOT saved — a restored ensemble has
-        cold reservoirs (drive it through a warmup, or call
-        :meth:`reset_reservoir_states`, before trusting outputs).
+        readout weights plus the coupling intensity). The reservoirs' live
+        dynamical state is NOT saved — a restored ensemble has cold reservoirs
+        (drive it through a warmup, or call :meth:`reset_reservoir_states`,
+        before trusting outputs).
         """
         return {
             "_version": self._PERSISTENCE_VERSION,
@@ -1107,8 +1127,8 @@ class EnsembleESN:
         """Save the trained ensemble to a file (a standard Python pickle).
 
         Saves the configuration, every member's trained readout weights, and the
-        coupling intensity + step counter. Reservoir live state is NOT saved, so
-        the file is compact. Restore with :meth:`load`.
+        coupling intensity. Reservoir live state is NOT saved, so the file is
+        compact. Restore with :meth:`load`.
         """
         with open(pathlib.Path(path), "wb") as f:
             pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)

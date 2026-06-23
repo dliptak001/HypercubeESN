@@ -110,12 +110,10 @@ void EnsembleESN::Consensus(float* c_out) const
 
 void EnsembleESN::Step(const float* input, const float* target, float* c_out)
 {
-    // 1. read every member's output y_i at its current state x_i(t).
+    // 1. read every member's output y_i at its current state x_i(t), straight
+    //    into the pre-allocated y_flat_ slice — no per-tick allocation (decision #5).
     for (size_t i = 0; i < M_; ++i)
-    {
-        const std::vector<float> yi = esn_[i]->Predict();
-        std::copy(yi.begin(), yi.end(), y_flat_.data() + i * D_);
-    }
+        esn_[i]->Predict(y_flat_.data() + i * D_);
 
     // 2. consensus c(t) = combine_i y_i  (also the ensemble's output).
     Consensus(c_out);

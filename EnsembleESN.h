@@ -96,9 +96,18 @@ public:
     /// holds kappa fixed between calls. Takes effect on the next @ref Step.
     void SetKappa(float kappa) { kappa_ = kappa; }
 
+    /// @brief Set the shared online learning rate / L2 weight-decay applied to
+    /// every member's readout on each subsequent training @ref Step. Seeded from
+    /// the construction-time config; caller-managed like @ref SetKappa thereafter
+    /// (e.g. to anneal lr once the coupling has settled). Takes effect on the
+    /// next @ref Step. (Not part of @ref State — a reload restores the config
+    /// value, not a mid-run override.)
+    void SetLr(float lr) { lr_ = lr; }
+    void SetWeightDecay(float weight_decay) { wd_ = weight_decay; }
+
     /// @brief Clear every member's reservoir state to cold (x = 0) — e.g. to
-    /// start a fresh, independent sequence. Trained readout weights, kappa, and
-    /// the step counter are all preserved.
+    /// start a fresh, independent sequence. Trained readout weights and kappa
+    /// are preserved.
     void ResetReservoirStates();
 
     // ---------------------------------------------------------------
@@ -116,6 +125,10 @@ public:
     /// Current feedback coupling intensity kappa (set via @ref SetKappa).
     [[nodiscard]] float Kappa() const { return kappa_; }
 
+    /// Current shared online learning rate / L2 (set via @ref SetLr / @ref SetWeightDecay).
+    [[nodiscard]] float Lr() const { return lr_; }
+    [[nodiscard]] float WeightDecay() const { return wd_; }
+
     // ---------------------------------------------------------------
     //  Accessors
     // ---------------------------------------------------------------
@@ -129,20 +142,19 @@ public:
     // ---------------------------------------------------------------
 
     /// The persistable state of a trained ensemble: every member's readout
-    /// weights plus the coupling intensity and step counter. The EnsembleConfig
-    /// is NOT held here — the caller reconstructs an identically configured
-    /// EnsembleESN (which re-derives each member's reservoir seed, §5) and then
-    /// restores this. Like the single ESN, the reservoirs' live dynamical state
-    /// is NOT captured: a restored ensemble has cold reservoirs (drive them
-    /// through a warmup before trusting outputs).
+    /// weights plus the coupling intensity. The EnsembleConfig is NOT held here —
+    /// the caller reconstructs an identically configured EnsembleESN (which
+    /// re-derives each member's reservoir seed, §5) and then restores this. Like
+    /// the single ESN, the reservoirs' live dynamical state is NOT captured: a
+    /// restored ensemble has cold reservoirs (drive them through a warmup before
+    /// trusting outputs).
     struct State
     {
         std::vector<std::vector<double>> member_weights; ///< M readout-weight blobs, member order
         float kappa = 0.0f; ///< coupling intensity at capture
-        size_t step = 0; ///< monotone step counter t_ (diagnostic)
     };
 
-    /// Capture the trained state (all member readout weights + kappa + step).
+    /// Capture the trained state (all member readout weights + kappa).
     [[nodiscard]] State GetState() const;
 
     /// Restore a previously captured state into this (identically configured)

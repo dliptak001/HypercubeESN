@@ -108,10 +108,15 @@ void ESN::TrainStepBatch(const float* states, const float* targets,
 
 std::vector<float> ESN::Predict() const
 {
-    CopyReservoirState(scratch_state_.data());
     std::vector<float> out(readout_.NumOutputs());
-    readout_.PredictRaw(scratch_state_.data(), out.data());
+    Predict(out.data());
     return out;
+}
+
+void ESN::Predict(float* out) const
+{
+    CopyReservoirState(scratch_state_.data());
+    readout_.PredictRaw(scratch_state_.data(), out);
 }
 
 std::vector<float> ESN::PredictFromRecorded(size_t timestep) const

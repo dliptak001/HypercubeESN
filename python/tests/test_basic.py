@@ -304,7 +304,6 @@ class TestEnsembleConstruction:
         assert ens.num_members == 3
         assert ens.num_outputs == 1
         assert ens.num_inputs == 1
-        assert ens.current_step == 0
         assert ens.kappa == pytest.approx(0.0)
 
     def test_invalid_dim(self):
@@ -338,13 +337,12 @@ class TestEnsembleStep:
             out = ens.step(sig[k:k + 1], tgt)
         return out, sig
 
-    def test_step_shape_and_advances(self):
+    def test_step_shape_and_finite(self):
         ens = EnsembleESN(reservoir_hypercube_dimension=5)
         c, _ = self._run(ens, 50)
         assert c.shape == (1,)
         assert c.dtype == np.float32
         assert np.all(np.isfinite(c))
-        assert ens.current_step == 50
 
     def test_kappa_defaults_to_zero(self):
         ens = EnsembleESN(reservoir_hypercube_dimension=5)
@@ -362,13 +360,31 @@ class TestEnsembleStep:
         ens.step(np.zeros(1, np.float32), None)  # inference
         assert ens.kappa == pytest.approx(0.25)
 
-    def test_reset_reservoir_states(self):
+    def test_lr_and_weight_decay_settable(self):
+        # Shared online lr / L2 are construction config but caller-settable at
+        # runtime (e.g. to anneal); the value sticks.
+        ens = EnsembleESN(reservoir_hypercube_dimension=5, lr=0.01, weight_decay=0.0)
+        assert ens.lr == pytest.approx(0.01)
+        assert ens.weight_decay == pytest.approx(0.0)
+        ens.lr = 0.0003
+        ens.weight_decay = 1e-5
+        assert ens.lr == pytest.approx(0.0003)
+        assert ens.weight_decay == pytest.approx(1e-5)
+        self._run(ens, 10)  # still steps cleanly with the new values
+        assert ens.lr == pytest.approx(0.0003)
+
+    def test_reset_clears_reservoir_state(self):
+        # Reset returns members to cold (x=0): the same input drives a different
+        # consensus before vs after a reset, while the call itself stays finite
+        # and preserves the trained readouts.
         ens = EnsembleESN(reservoir_hypercube_dimension=5)
+        x = np.zeros(1, np.float32)
         self._run(ens, 40)
-        before = ens.current_step
+        warm = ens.step(x, None).copy()
         ens.reset_reservoir_states()
-        ens.step(np.zeros(1, np.float32), np.zeros(1, np.float32))
-        assert ens.current_step == before + 1  # counter not rewound
+        cold = ens.step(x, None)
+        assert np.all(np.isfinite(cold))
+        assert not np.allclose(warm, cold)  # state was actually cleared
 
     def test_scalar_input_accepted(self):
         ens = EnsembleESN(reservoir_hypercube_dimension=5)
@@ -429,7 +445,6 @@ class TestEnsemblePersistence:
         ens, _ = self._trained()
         loaded = pickle.loads(pickle.dumps(ens))
         assert loaded.kappa == pytest.approx(ens.kappa)
-        assert loaded.current_step == ens.current_step
         assert loaded.num_members == ens.num_members
         assert loaded.num_outputs == ens.num_outputs
 

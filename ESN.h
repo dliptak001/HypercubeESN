@@ -200,6 +200,12 @@ public:
     /// prediction (NumOutputs() floats) — typically called right after a @ref ReservoirStep.
     [[nodiscard]] std::vector<float> Predict() const;
 
+    /// @brief Like @ref Predict, but writes the NumOutputs() prediction values
+    /// into caller-provided @p out instead of allocating a vector. For hot loops
+    /// that reuse a buffer (e.g. an ensemble reading each member every tick).
+    /// @p out must have room for NumOutputs() floats.
+    void Predict(float* out) const;
+
     /// @brief Predict from a **recorded** state instead of the live one: runs the
     /// readout on the state saved at @p timestep during @ref ReservoirRun. Returns
     /// NumOutputs() floats.

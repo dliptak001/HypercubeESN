@@ -183,12 +183,14 @@ to the caller, who can implement any policy by calling `SetKappa` between `Step`
 
 **Readout learning rate (the members' online `lr` / `wd`).** Separate from κ: it governs
 how fast each member's *readout* adapts via `TrainStep`, not how hard the members couple.
-One **shared** `lr` / `weight_decay` is constructor config (§7) and is passed verbatim to
-every member's online step — members share the base config (§5), so there is no reason to
-differ them. If the caller ramps κ, that ramp should stay slow *relative to* readout
+One **shared** `lr` / `weight_decay` seeds from constructor config (§7) and is passed
+verbatim to every member's online step — members share the base config (§5), so there is
+no reason to differ them. Like κ, both are caller-settable at runtime (`SetLr` /
+`SetWeightDecay`): if the caller ramps κ, that ramp should stay slow *relative to* readout
 adaptation (so the readouts track the rising coupling rather than being shocked), which
-means not annealing `lr` toward zero while κ is still moving — but that coordination is
-now the caller's to manage, since the class owns neither schedule. Note this is the ESN
+means not annealing `lr` toward zero while κ is still moving — the caller owns that
+coordination, and now has the handles for it. (Unlike κ, a runtime `lr`/`wd` override is
+*not* part of @ref State — a reload restores the constructor value.) Note this is the ESN
 *online* `lr` passed per step, not `ReadoutConfig`'s batch cosine fields, which the online
 path ignores.
 
@@ -296,8 +298,8 @@ an internal schedule:
 
 - **Sequence boundaries / reset.** When a fresh, independent sequence begins, the caller
   calls `ResetReservoirStates()`: every member's reservoir state is cleared
-  (`ReservoirClear()`), while trained readout weights, κ, and the step counter are all
-  **preserved** — competence already achieved is not un-learned. The reservoirs are cold
+  (`ReservoirClear()`), while trained readout weights and κ are **preserved** —
+  competence already achieved is not un-learned. The reservoirs are cold
   afterward, so the caller re-warms (step with `target = nullptr`) before trusting outputs
   if the sequence break warrants it.
 
@@ -309,35 +311,37 @@ entire state machine.
 ```cpp
 class EnsembleESN {
     size_t M_, D_;
-    size_t t_ = 0;                                   // monotone step counter
     Combine combine_;                                // Mean (default) | Median (§6)
     float   kappa_ = 0.0f;                           // coupling intensity — caller-managed (§4.2)
-    float   lr_, wd_;                                // shared readout online lr / weight-decay (ctor config)
+    float   lr_, wd_;                                // shared readout online lr / weight-decay (§4.2);
+                                                     // ctor-seeded, caller-settable at runtime
     std::vector<std::unique_ptr<ESN>> esn_;          // each: num_feedback_channels = D (external feedback),
                                                      // readout born ready (built in ctor, §7.1)
+    std::vector<float> y_flat_, phi_;                // pre-allocated per-tick scratch: M*D and D (decision #5)
 
-    void SetKappa(float k) { kappa_ = k; }           // the caller's only handle on intensity (§4.2)
+    void SetKappa(float k)        { kappa_ = k; }    // caller's handle on coupling intensity (§4.2)
+    void SetLr(float lr)          { lr_ = lr; }      // caller's handle on readout lr / wd (§4.2)
+    void SetWeightDecay(float wd) { wd_ = wd; }
 
     // one lockstep online step; writes consensus c(t). target == nullptr at inference.
     void Step(const float* input, const float* target, float* c_out) {
-        std::vector<std::vector<float>> y(M_, std::vector<float>(D_));
-        for (size_t i = 0; i < M_; ++i) y[i] = esn_[i]->Predict();
-        combine(y, c_out, combine_);                 // consensus (= ensemble output)
-        const bool train = (target != nullptr);      // fit iff a target is supplied (§7.1)
-        std::vector<float> phi(D_);
+        for (size_t i = 0; i < M_; ++i)
+            esn_[i]->Predict(y_flat_.data() + i*D_);  // zero-alloc read into pre-sized scratch
+        combine(y_flat_, c_out, combine_);            // consensus (= ensemble output)
+        const bool train = (target != nullptr);       // fit iff a target is supplied (§7.1)
         for (size_t i = 0; i < M_; ++i) {
-            if (train) esn_[i]->TrainStep(target, lr_, wd_);     // shared online lr/wd
-            for (size_t c = 0; c < D_; ++c) phi[c] = kappa_ * (y[i][c] - c_out[c]);
-            esn_[i]->ReservoirStep(input, phi.data());            // the ReservoirStep feedback seam
+            if (train) esn_[i]->TrainStep(target, lr_, wd_);      // shared online lr/wd
+            const float* y_i = y_flat_.data() + i*D_;
+            for (size_t c = 0; c < D_; ++c) phi_[c] = kappa_ * (y_i[c] - c_out[c]);
+            esn_[i]->ReservoirStep(input, phi_.data());            // the ReservoirStep feedback seam
         }
-        ++t_;
     }
 };
 ```
 
 The class is intentionally tiny: it forms the consensus, injects the scaled deviation,
-and advances the step counter. It never moves κ and owns no washout — both are decided
-by the caller (§4.2, §7.1).
+and steps the members. It never moves κ (or `lr`/`wd`) on its own and owns no washout —
+all are decided by the caller (§4.2, §7.1).
 
 ### 7.3 Diagnostic surface (read-only)
 
@@ -354,7 +358,8 @@ void   MemberOutput(size_t i, float* out) const;   // member i: D floats (y_i)
 void   AllMemberOutputs(float* out_MxD)  const;     // all members: M×D, row-major
 
 float  Kappa()       const;   // current intensity (whatever the caller last set, §4.2)
-size_t CurrentStep() const;   // t_ — total Step calls; useful for aligning traces
+float  Lr()          const;   // current shared readout lr / weight-decay (§4.2)
+float  WeightDecay() const;
 ```
 
 Deliberately **not** exposed:

@@ -439,7 +439,7 @@ PYBIND11_MODULE(_core, m)
 
         .def("reset_reservoir_states", &EnsembleESN::ResetReservoirStates,
              "Clear every member's reservoir to cold (x=0), e.g. to start a fresh\n"
-             "sequence. Trained readouts, kappa, and the step counter are preserved.")
+             "sequence. Trained readouts and kappa are preserved.")
 
         // ── Diagnostic surface (read-only) ──
         .def("member_output", [](const EnsembleESN& self, size_t i) {
@@ -457,12 +457,17 @@ PYBIND11_MODULE(_core, m)
         }, "All members' last outputs as an (num_members, num_outputs) array.")
 
         // ── Properties ──
-        // kappa is caller-managed: read the current intensity or set it (the
-        // class holds it fixed between steps).
+        // kappa / lr / weight_decay are caller-managed: read the current value or
+        // set it (the class holds each fixed between steps).
         .def_property("kappa",
             [](const EnsembleESN& self) { return self.Kappa(); },
             [](EnsembleESN& self, float k) { self.SetKappa(k); })
-        .def_property_readonly("current_step", &EnsembleESN::CurrentStep)
+        .def_property("lr",
+            [](const EnsembleESN& self) { return self.Lr(); },
+            [](EnsembleESN& self, float v) { self.SetLr(v); })
+        .def_property("weight_decay",
+            [](const EnsembleESN& self) { return self.WeightDecay(); },
+            [](EnsembleESN& self, float v) { self.SetWeightDecay(v); })
         .def_property_readonly("num_members", &EnsembleESN::NumMembers)
         .def_property_readonly("num_outputs", &EnsembleESN::NumOutputs)
         .def_property_readonly("num_inputs", &EnsembleESN::NumInputs)
@@ -477,7 +482,6 @@ PYBIND11_MODULE(_core, m)
             py::dict d;
             d["member_weights"] = member_weights;
             d["kappa"]          = s.kappa;
-            d["step"]           = s.step;
             return d;
         })
         .def("_set_state", [](EnsembleESN& self, py::dict d) {
@@ -487,7 +491,6 @@ PYBIND11_MODULE(_core, m)
                 s.member_weights.emplace_back(w.data(), w.data() + w.size());
             }
             s.kappa = d["kappa"].cast<float>();
-            s.step  = d["step"].cast<size_t>();
             self.SetState(s);
         })
         ;
