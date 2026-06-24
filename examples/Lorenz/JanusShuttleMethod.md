@@ -19,8 +19,8 @@
 
 ## 0. One-paragraph statement
 
-We drive an ensemble ESN with **two cursors** that ride a single positive-time Lorenz
-trajectory, moving in opposite directions from a shared **center**. Each cursor emits a
+We drive an ensemble ESN with **two cursors** that index a single **precomputed** positive-time
+Lorenz trajectory `S[·]`, moving in opposite directions from a shared **center** index. Each cursor emits a
 4-vector `(x, y, z, x*y*z)`, so the input is **8-D**. In training the cursors stay inside a
 **reflecting window** (bounded shuttle). In free-run they break out of the window and run
 away from center: the **forward** cursor walks into the *unknown future* and becomes
@@ -28,26 +28,28 @@ away from center: the **forward** cursor walks into the *unknown future* and bec
 the *known past* and stays **ground-truth** — a real signal that anchors half the input
 space and keeps the generative half from drifting off the attractor.
 
-Everything is positive time. No `step(-dt)`, no backward integration anywhere.
+Everything is positive time. The orbit is integrated **once** from the seed into an array;
+the cursors only ever **read indices** — no `step(-dt)`, no backward integration, no recompute.
 
 ## 1. The axis: three regions, one center
 
 ```
- T=0                                  center                              T = known_max
-  |              KNOWN HISTORY           |          (future)                   |
-  •──────────────────────────────[  lb ··· 0 ··· ub  ]─────────────────────────•───────►  t
-  |        anchor lives here →           |  training    |        ← generative lives here
-  |                                      |   window     |          (beyond known_max)
-                                         └── reflecting bounce region ──┘
+ array index n:   0 ··········· lb ········ center ········ ub
+ S[n]:           [S₀ ·········· Sₗ ········· S_c ·········· Sᵤ ]   ← integrated ONCE from seed
+                  │             │            │              │
+                 seed       train edge    anchor pt     train edge
+                 T=0           (lb)        (center)        (ub)
 
- cursor index i (displacement from center, in steps):   t(i) = t_center + i·dt
-   forward cursor sample  →  state at  t_center + i·dt
-   reverse cursor sample  →  state at  t_center − i·dt
-   center / seam  = i = 0      window = i ∈ [lb, ub] = [−span/2, +span/2]
+ center = N_c (an INDEX, not a state)     window = [lb, ub] = [N_c−H, N_c+H],  H = span/2
+   forward  cursor sample → S[N_c + i]
+   backward cursor sample → S[N_c − i]              (i = shared shuttle displacement)
+   region [0, lb)  = backward free-run runway (real history left of the window)
+   region (ub, ∞)  = forward generative — NOT stored in S (ensemble output)
 ```
 
-Key invariant for "positive time only": the center must sit far enough into the run that the
-reverse cursor never reaches `T=0`:  `t_center ≥ (reverse travel)·dt`.
+Key invariant for "positive time only": the array starts at the seed (index 0), so the
+backward cursor's floor is `T=0`. Array length = `N_c + H + 1`; the margin `N_c − H` between
+the seed and `lb` is the free-run anchor runway.
 
 ## 2. Two phases = the two existing cursor moves
 
@@ -96,17 +98,15 @@ move apart:
  forward_  (upper 4)   Lorenz(pos)                        ENSEMBLE out  ← SWITCH (generative)
 ```
 
-- **backward_ never switches.** Past `lb_` it keeps emitting `(x,y,z,x*y*z)` evaluated at
-  its position — real Lorenz, the **anchor**. Half the input is always ground truth.
-- **forward_ switches once,** the instant it passes `ub_`: it stops reading Lorenz and feeds
-  the upper 4 channels from the **ensemble's own output**. **Generative** from there on.
+- **backward_ never switches.** Past `lb_` it keeps reading `S[N_c − i]` — real history, the
+  **anchor**. Half the input is always ground truth, all the way down to the seed (index 0).
+- **forward_ switches once,** the instant it passes `ub_` (`i > H`): it stops reading `S` and
+  feeds the upper 4 channels from the **ensemble's own output**. **Generative** from there on.
 
-"Lorenz(pos)" = the known positive-time orbit evaluated at that cursor position. For now
-(functional mode, **no buffer**) backward_ gets an earlier true point by **re-integrating
-FORWARD from the `{1,1,1}` seed** to that position — NOT `step(-dt)` (the exploding /
-negative-time direction). A replay buffer is the *later* optimization (= stream mode). This
-is the one place the current `JanusShuttle::advance_()` (`backward_.step(-dt)`) disagrees
-with the concept.
+"Lorenz(pos)" is just an **array lookup**: `forward_ = S[N_c + i]`, `backward_ = S[N_c − i]`,
+where `S` is the orbit precomputed once from the seed (§5). No `step(-dt)`, no recompute —
+both cursors only read indices. (The current `JanusShuttle::advance_()` still integrates with
+`step(±dt)`; that is the code replaced by index lookups.)
 
 ## 4. The 8-input vector (fixed split)
 
@@ -122,24 +122,24 @@ same 4-tuple built from real Lorenz. Same shape, only the source of the first th
 
 ## 5. What this forces on the implementation
 
-1. **On-the-fly anchor (no buffer, for now).** The anchor's earlier points are produced by
-   re-integrating FORWARD from the `{1,1,1}` seed to the cursor position. This forces a
-   **pre-roll**: center sits `N_c` steps downstream of the seed (so there's real history to
-   its left), and **center ≠ seed** — the constructor's `{1,1,1}` is the *seed*, and
-   `WarmupReservoir()` is the pre-roll that produces the center. Pre-roll depth trades against
-   anchor longevity in free-run (and against per-sample recompute cost). Buffer/
-   `trajectory()` is the later optimization = stream mode.
-2. **`advance_()` is rebuilt (two coupled changes).**
-   - *Seam branch* — `reset(center_)` becomes correct once `center_` is the **pre-rolled**
-     state (`integrate_forward(seed, N_c)`), not raw `{1,1,1}`.
-   - *Else branch* — the `step(±dt)` is the bug: every leg, one copy runs `-dt` (the exploding
-     direction, and not the true past). Replace with forward-from-seed:
-     `forward_ = integrate_forward(seed, N_c + i)`, `backward_ = integrate_forward(seed, N_c − i)`.
-     No copy ever steps `-dt`; the seam reset is just the `i = 0` case of the same formula.
-3. **A source switch on the forward cursor** at the right-limit crossing: stored/live Lorenz
-   → ESN feedback. The reverse cursor needs no switch.
-4. `BoundedStep` (train) vs `UnBoundedStep` (free-run) already model the two phases — keep
-   both, drop the backward integration inside `advance_()`.
+1. **Precompute the orbit once.** At setup, integrate forward from the `{1,1,1}` seed (T=0)
+   up to `t@ub`, storing `S[0 .. N_c+H]`. `LorenzAttractor::trajectory()` already returns
+   exactly this array. One fixed `dt`, one array — both cursors index it, so they ride the
+   identical orbit by construction (no drift; the "all cursors share one `dt`" worry vanishes).
+2. **Cursors read indices, not integrators.** `forward_ = S[N_c + i]`,
+   `backward_ = S[N_c − i]`. The old `advance_()` `step(±dt)` — which forced one copy to run
+   `-dt` and blow up — is **retired**. `center_` is no longer a stored state to reset to; it's
+   the index `N_c`, and the seam case is just `S[N_c]`.
+3. **Array bounds = the runtime envelope.** Right end = `ub`: forward goes generative past it,
+   and generated values are **not** written back into `S`. Left end = index 0 = seed = the
+   backward cursor's floor. Margin `N_c − H` (seed → `lb`) = the free-run anchor runway.
+4. **`WarmupReservoir()` decouples from "find the center"** (now trivial — it's an index). It
+   becomes purely: run the reservoir over the leading array region to settle its internal
+   state before training/scoring.
+5. **Forward source switch** at the right-limit crossing: `S[…]` → ensemble output. The
+   backward cursor never switches.
+6. `BoundedStep` (train) / `UnBoundedStep` (free-run) still model the two phases — they now
+   advance an **index**, not an integrator.
 
 ## 5b. Data source: functional now, streams later (scope)
 
@@ -153,10 +153,10 @@ The cursor's contract is just **`value(position)`**. Two ways to satisfy it — 
 
 Two reasons this split is clean rather than a retrofit:
 
-1. **The anchor half is already a stream, conceptually.** `backward_` reads the *known orbit
-   at an earlier position* (not `step(-dt)`; see §3/§5) — i.e. it indexes a stored series.
-   That's the stream abstraction, present from day one. Only the `forward_`/generative half
-   differs between modes.
+1. **Functional and stream are the *same code*.** Both modes produce an array `S[·]` that the
+   cursors index; functional **computes** `S` from `f` (Lorenz RK4), stream is **handed** `S`
+   (a real series). The cursor/index logic downstream is identical — stream mode is a
+   different array *source*, not a different mechanism. Nothing to retrofit.
 2. **Functional-first gives us a yardstick.** In stream mode the future past the known horizon
    has *no* ground truth, so generative free-run is the only option (and unscoreable against
    truth). In functional mode the true future *does* exist (evaluate `f` past `ub_`), which is
@@ -176,15 +176,14 @@ ground truth we happen to already know — we spend it as a stabilizer.
 
 - **Q1 — RESOLVED.** Mirror offsets `±i` off a shared index. Training: both shuttle inside
   `[lb_, ub_]`. Free-run: both start at center, diverge symmetrically (forward +i, backward −i).
-- **Q2 — reverse cursor hitting T=0.** If free-run runs long enough the reverse cursor
-  reaches the start of known history. Stop? Clamp? Reflect? How long do we expect free-run
-  to last vs. how much history we pre-roll?
+- **Q2 — anchor runway / floor behavior.** The backward cursor floors at array index 0 (the
+  seed). Runway = `N_c − H` (seed-to-`lb` margin); deeper pre-roll = longer runway vs. a bigger
+  array (negligible for Lorenz). Open: behavior at the floor — stop / clamp / end the run?
 - **Q3 — `x*y*z` rationale.** Why the triple product as the 4th channel (vs. `x*y` which
   appears in `ż`, or nothing)? Input feature only, or also predicted? (ties to Q4)
 - **Q4 — RESOLVED.** 3 outputs (forward x,y,z); xyz derived; anchor half never a target.
-- **Q5 — center placement.** Is `t_center` fixed, or does the seam re-anchor `{1,1,1}`
-  during training (current `at_seam()` resets to center)? With a stored buffer, "center" is
-  just an index — does the re-anchor still mean anything?
+- **Q5 — RESOLVED.** Center is just the array index `N_c`. The seam "re-anchor" is simply the
+  `i = 0` case → `S[N_c]`; there is no center *state* to recompute or reset.
 - **Q6 — ensemble coupling.** Where does κ-consensus feedback sit relative to the forward
   generative channel — does consensus replace/blend the forward 4 inputs, or ride the
   separate feedback weight block alongside them?
