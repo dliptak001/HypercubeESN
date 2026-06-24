@@ -1,7 +1,8 @@
-# The Janus Shuttle — concept scratch
+# The Janus Shuttle Method
 
-> Working doc. Goal: pin down the **Janus Shuttle** method before touching `JanusShuttle` /
-> `Lorenz`. Nothing here is committed design yet — `?` marks things still inferred.
+> Design spec for the **Janus Shuttle**: a dual-cursor, half-anchored generative free-run for
+> reservoir/ensemble prediction. The mechanism below is settled; open design points are
+> tracked in §7 and `?` marks anything still inferred rather than decided.
 
 ## Name & rationale
 
