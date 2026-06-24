@@ -373,19 +373,6 @@ class TestEnsembleStep:
         self._run(ens, 10)  # still steps cleanly with the new values
         assert ens.lr == pytest.approx(0.0003)
 
-    def test_reset_clears_reservoir_state(self):
-        # Reset returns members to cold (x=0): the same input drives a different
-        # consensus before vs after a reset, while the call itself stays finite
-        # and preserves the trained readouts.
-        ens = EnsembleESN(reservoir_hypercube_dimension=5)
-        x = np.zeros(1, np.float32)
-        self._run(ens, 40)
-        warm = ens.step(x, None).copy()
-        ens.reset_reservoir_states()
-        cold = ens.step(x, None)
-        assert np.all(np.isfinite(cold))
-        assert not np.allclose(warm, cold)  # state was actually cleared
-
     def test_scalar_input_accepted(self):
         ens = EnsembleESN(reservoir_hypercube_dimension=5)
         c = ens.step(0.5, 0.6)  # plain floats
@@ -458,18 +445,25 @@ class TestEnsemblePersistence:
         assert loaded._config["ensemble_seed"] == 99
 
     def test_save_load_behavioral_equivalence(self, tmp_path):
-        # Trained readouts + seed-derived reservoirs must restore exactly: driving
-        # a cold-started original and the loaded copy with identical inputs
-        # (inference, kappa held) must produce identical consensus trajectories.
-        ens, sig = self._trained(seed=11)
+        # Trained readouts + seed-derived reservoirs must restore exactly. The
+        # reservoir's live state is not persisted, so the original (warm) and the
+        # loaded copy (cold) start from different states. A shared warm-up washes
+        # that difference out (echo state property); thereafter identical inputs
+        # (inference, kappa held) must drive identical consensus trajectories.
+        # Lower spectral radius so the echo state property washes the state
+        # difference out quickly (the 0.99 default converges glacially).
+        ens, _ = self._trained(seed=11, spectral_radius=0.5)
         path = tmp_path / "ens.pkl"
         ens.save(path)
         loaded = EnsembleESN.load(path)
 
-        ens.reset_reservoir_states()  # reset original's reservoirs to cold (loaded is cold)
-        for k in range(25):
-            c_orig = ens.step(sig[k:k + 1], None)
-            c_load = loaded.step(sig[k:k + 1], None)
+        drive = np.sin(0.1 * np.arange(150)).astype(np.float32)
+        for k in range(100):  # shared warm-up: converge the two reservoir states
+            ens.step(drive[k:k + 1], None)
+            loaded.step(drive[k:k + 1], None)
+        for k in range(100, 125):  # states converged — trajectories must coincide
+            c_orig = ens.step(drive[k:k + 1], None)
+            c_load = loaded.step(drive[k:k + 1], None)
             np.testing.assert_allclose(c_orig, c_load, atol=1e-5)
 
     def test_load_wrong_type_raises(self, tmp_path):

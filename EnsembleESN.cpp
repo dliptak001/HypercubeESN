@@ -133,12 +133,6 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     }
 }
 
-void EnsembleESN::ResetReservoirStates() const
-{
-    for (auto& e : esn_)
-        e->ReservoirClear();
-}
-
 void EnsembleESN::MemberOutput(size_t i, float* out) const
 {
     if (i >= M_)

@@ -104,11 +104,6 @@ public:
     void SetLr(float lr) { lr_ = lr; }
     void SetWeightDecay(float weight_decay) { wd_ = weight_decay; }
 
-    /// @brief Clear every member's reservoir state to cold (x = 0) — e.g. to
-    /// start a fresh, independent sequence. Trained readout weights and kappa
-    /// are preserved.
-    void ResetReservoirStates() const;
-
     // ---------------------------------------------------------------
     //  Diagnostic surface (read-only, §7.4)
     // ---------------------------------------------------------------

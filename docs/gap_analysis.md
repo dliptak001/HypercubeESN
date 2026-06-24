@@ -19,8 +19,10 @@
 > of G1/G2/G3 was later reversed.** The competence-gated κ ramp (EMA consensus-error
 > gate → linear ramp to `kappa_target`), the `AdvanceKappa` step, the ramp/gate
 > config fields, *and* the class-owned washout were all **removed** as premature —
-> κ is now a bare scalar the **caller** manages via `SetKappa` (starts at 0), and the
-> reset entry point is `ResetReservoirStates()` (cold reservoir clear, no washout).
+> κ is now a bare scalar the **caller** manages via `SetKappa` (starts at 0). There is
+> no reset entry point either: a fresh sequence is just a caller-driven warm-up (step
+> with `target = nullptr`), which washes out any leftover state by the echo state
+> property — so no explicit cold-clear is needed.
 > `GateOpen()` is gone from the diagnostic surface (now §7.3); `Kappa()`/`CurrentStep()`
 > remain. See
 > the current [ensemble_esn_feedback.md](ensemble_esn_feedback.md) §4.2/§7.1 for the

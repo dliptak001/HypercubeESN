@@ -1002,14 +1002,6 @@ class EnsembleESN:
         t = None if target is None else _to_float32(target)
         return self._impl.step(_to_float32(input), t)
 
-    def reset_reservoir_states(self) -> None:
-        """Clear every member's reservoir to cold (``x = 0``).
-
-        Use to start a fresh, independent sequence. Trained readouts and ``kappa``
-        are preserved — only the live reservoir dynamics are reset.
-        """
-        self._impl.reset_reservoir_states()
-
     def member_output(self, i: int) -> np.ndarray:
         """Member ``i``'s last output (shape ``(num_outputs,)``).
 
@@ -1096,8 +1088,7 @@ class EnsembleESN:
         Persists the constructor config and the trained state (every member's
         readout weights plus the coupling intensity). The reservoirs' live
         dynamical state is NOT saved — a restored ensemble has cold reservoirs
-        (drive it through a warmup, or call :meth:`reset_reservoir_states`,
-        before trusting outputs).
+        (drive it through a warmup before trusting outputs).
         """
         return {
             "_version": self._PERSISTENCE_VERSION,
@@ -1132,7 +1123,7 @@ class EnsembleESN:
         """Load a saved EnsembleESN from a file.
 
         The restored ensemble has cold reservoirs: drive it through a warmup
-        (or :meth:`reset_reservoir_states`) before trusting its outputs.
+        before trusting its outputs.
         """
         with open(pathlib.Path(path), "rb") as f:
             obj = pickle.load(f)

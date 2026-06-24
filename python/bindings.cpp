@@ -432,10 +432,6 @@ PYBIND11_MODULE(_core, m)
             "consensus deviation, and steps. Returns the consensus (num_outputs,).\n"
             "Pass target=None for inference (no readout update).")
 
-        .def("reset_reservoir_states", &EnsembleESN::ResetReservoirStates,
-             "Clear every member's reservoir to cold (x=0), e.g. to start a fresh\n"
-             "sequence. Trained readouts and kappa are preserved.")
-
         // ── Diagnostic surface (read-only) ──
         .def("member_output", [](const EnsembleESN& self, size_t i) {
             py::array_t<float> arr(self.NumOutputs());

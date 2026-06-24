@@ -5,10 +5,10 @@
 > deliberately a **thin lockstep stepper**: each step it computes the consensus
 > and injects each member's scaled deviation, but the **coupling-intensity
 > schedule is the caller's policy** — the class only stores the current κ and
-> applies it. An earlier design folded a competence-gated κ ramp and an initial
-> washout *into* the class; both were removed as premature for this stage of
-> development (see §4.2 and §7.1). Task-agnostic by intent: this specifies the
-> general `EnsembleESN` capability. Demonstration examples are deliberately **out
+> applies it. The competence-gated κ ramp and initial washout are the caller's
+> policy, not the class's (see §4.2 and §7.1). Task-agnostic by intent: this
+> specifies the general `EnsembleESN` capability. Demonstration examples are
+> deliberately **out
 > of scope** and will be built *after* the capability lands. No example drives
 > this design.
 >
@@ -280,28 +280,15 @@ an internal schedule:
    κ:     0 by default; whatever the caller last set via SetKappa
 ```
 
-- **Construction.** Each member is built with `num_feedback_channels = D` (§7); its
-  readout is ready immediately, so the ensemble simply runs its unified loop from step 0.
-  κ starts at 0.
-
 - **Warm-up is the caller's concern, not the class's.** A reservoir warm-up exists only
-  to wash the arbitrary initial state `x(0) = 0` out of the dynamics before the readout's
-  outputs are trusted. The class no longer owns one. A caller that wants a washout simply
-  drives the first few steps with `target = nullptr` (the reservoir is driven by the task
-  input; no readout update is taken) — exactly the transient-killing role of a single
-  `ESN`'s `warmup_count` — and only then starts passing targets. Leaving κ = 0 over those
-  steps keeps the warm-up input-only.
+  to wash an arbitrary initial state out of the dynamics before the readout's outputs are
+  trusted. The class does not own one. A caller that wants a washout simply drives the
+  first few steps with `target = nullptr`. Leaving κ = 0 over those steps
+  keeps the warm-up input-only.
 
 - **Training vs inference.** The same loop, the same seam. Whether a step trains is
   decided by one thing: was a `target` supplied? `target == nullptr` is an inference step
   (no readout update). There is no mode switch.
-
-- **Sequence boundaries / reset.** When a fresh, independent sequence begins, the caller
-  calls `ResetReservoirStates()`: every member's reservoir state is cleared
-  (`ReservoirClear()`), while trained readout weights and κ are **preserved** —
-  competence already achieved is not un-learned. The reservoirs are cold
-  afterward, so the caller re-warms (step with `target = nullptr`) before trusting outputs
-  if the sequence break warrants it.
 
 This collapses the lifecycle to **one run mode with two per-call inputs** — that is the
 entire state machine.
