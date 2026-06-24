@@ -12,14 +12,14 @@
 ///                          may leave [lb, ub] — pair with @ref out_of_bounds).
 /// Plus queries @ref at_seam (index == 0) and @ref out_of_bounds for callers that
 /// react to the position. Starts at index 0, direction +1.
-class ShuttleCursor
+class JanusShuttleCursor
 {
 public:
     /// @brief Scan a symmetric span: lb = -span/2, ub = +span/2.
-    explicit ShuttleCursor(const int32_t span) : lb_(-span / 2), ub_(span / 2) {}
+    explicit JanusShuttleCursor(const int32_t span) : lb_(-span / 2), ub_(span / 2) {}
 
     /// @brief Scan an explicit inclusive range [lb, ub].
-    ShuttleCursor(const int32_t lb, const int32_t ub) : lb_(lb), ub_(ub) {}
+    JanusShuttleCursor(const int32_t lb, const int32_t ub) : lb_(lb), ub_(ub) {}
 
     /// @brief Reset to index 0, direction +1.
     void reset()

@@ -26,8 +26,16 @@ EnsembleConfig Lorenz::MakeConfig()
     return cfg;
 }
 
-Lorenz::Lorenz() : esn_config_(MakeConfig()), esn(esn_config_)
+void Lorenz::WarmupReservoir()
 {
+}
+
+Lorenz::Lorenz()
+    : esn_config_(MakeConfig()),
+      esn(esn_config_),
+      data_feed_(LorenzAttractor::State{}, config::SCAN_SPAN, config::DT)
+{
+
 }
 
 int main()

@@ -1,13 +1,14 @@
 #pragma once
 
 #include "EnsembleESN.h"
-#include "LorenzAttractorPong.h"
+#include "LorenzAttractor.h"
+#include "JanusShuttle.h"
 #include <cstddef>
 #include <vector>
 #include <iostream>
 
 // ============================================================================
-//  CONFIGURATION — edit these, then rebuild. Everything else is mechanism.
+//  CONFIGURATION — edit these, then rebuild.
 // ============================================================================
 namespace config
 {
@@ -25,6 +26,10 @@ namespace config
     constexpr float LR = 0.0015f; // per-step online learning rate (Adam)
     constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
     constexpr size_t EPOCHS = 600;
+
+    // ---- (C) Data feed (Lorenz-63 integration + reflecting scan) ----
+    constexpr int32_t SCAN_SPAN = 2000; // reflecting-scan width: the cursor shuttles [-SPAN/2, +SPAN/2] steps either side of the center
+    constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 }
 
 class Lorenz
@@ -32,9 +37,16 @@ class Lorenz
 public:
     Lorenz();
 
+
+
 private:
+    using DataFeed = JanusShuttle<LorenzAttractor>;
+
     static EnsembleConfig MakeConfig();
 
     EnsembleConfig esn_config_;
     EnsembleESN esn;
+    DataFeed data_feed_;
+
+    void WarmupReservoir();
 };

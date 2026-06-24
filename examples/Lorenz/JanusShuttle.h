@@ -1,8 +1,8 @@
 #pragma once
-#include "ShuttleCursor.h"
+#include "JanusShuttleCursor.h"
 #include <cstdint>
 
-/// @brief A function a @ref ShuttledPair can traverse: a value type with a nested
+/// @brief A function a @ref JanusShuttle can traverse: a value type with a nested
 /// `State`, a public `state` member holding the current state, and the two
 /// stepping operations the policy needs — `reset(State)` and `step(double dt)`.
 template <class T>
@@ -17,18 +17,18 @@ concept Steppable = requires(T t, const typename T::State& s, double dt) {
 /// reflecting 1D scan: from a shared center, one copy runs forward in time and
 /// the other backward, re-anchoring together at the seam.
 ///
-/// All index/direction/reflection lives in @ref ShuttleCursor; this class
+/// All index/direction/reflection lives in @ref JanusShuttleCursor; this class
 /// applies only the traversal policy: re-anchor both copies at the center on the
 /// seam (index 0), otherwise step the forward copy by direction*dt and the
 /// backward copy by -direction*dt. The traversed function — its dynamics, its
 /// `State` — is fully decoupled: any @ref Steppable plugs in.
 template <Steppable Fn>
-class ShuttledPair
+class JanusShuttle
 {
 public:
     using State = typename Fn::State;
 
-    ShuttledPair(const State& center, int32_t span, double dt)
+    JanusShuttle(const State& center, int32_t span, double dt)
         : center_(center), cursor_(span), dt_(dt)
     {
     }
@@ -69,7 +69,7 @@ public:
 private:
     Fn forward_, backward_;
     State center_;
-    ShuttleCursor cursor_;
+    JanusShuttleCursor cursor_;
     double dt_ = 0.0;
 
     /// @brief Apply the policy at the scanner's CURRENT position: re-anchor both
