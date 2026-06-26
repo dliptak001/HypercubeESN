@@ -10,9 +10,9 @@ LorenzDatastream::LorenzDatastream(const int32_t cursor_span,
                                    const size_t stream_length,
                                    const LorenzAttractor::State& initial_lorenz_state,
                                    const float lorenz_dt)
-    : JanusCursor(cursor_span, cursor_focus_index), stream_length_(stream_length)
+    : JanusCursor(cursor_span, cursor_focus_index)
 {
-    if (stream_length_ == 0)
+    if (stream_length == 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting stream_length > 0");
 
     if (lorenz_dt <= 0.0f)
@@ -22,20 +22,32 @@ LorenzDatastream::LorenzDatastream(const int32_t cursor_span,
     const int32_t window_ub = cursor_focus_index + cursor_span / 2;
     if (window_lb < 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window underruns the stream");
-    if (static_cast<size_t>(window_ub) >= stream_length_)
+    if (static_cast<size_t>(window_ub) > stream_length)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window overruns the stream");
 
-    Build(initial_lorenz_state, lorenz_dt);
+    Build(stream_length, initial_lorenz_state, lorenz_dt);
 
     Normalize();
 }
 
-void LorenzDatastream::Build(const LorenzAttractor::State& initial_lorenz_state, const float lorenz_dt)
+LorenzDatastreamResult LorenzDatastream::StepTraining()
+{
+    auto [past, future] = JanusCursor::StepBounded();
+    return {data_stream_[past], data_stream_[future]};
+}
+
+LorenzDatastreamResult LorenzDatastream::StepFreeRun()
+{
+    auto [past, future] = JanusCursor::StepUnbounded();
+    return {data_stream_[past], data_stream_[future]};
+}
+
+void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::State& initial_lorenz_state, const float lorenz_dt)
 {
     LorenzAttractor attractor(initial_lorenz_state);
-    data_stream_.reserve(stream_length_ + 1); // make room for start + one per step
+    data_stream_.reserve(stream_length + 1); // make room for start + one per step
     data_stream_.push_back(initial_lorenz_state);
-    for (std::size_t i = 0; i < stream_length_; ++i)
+    for (std::size_t i = 0; i < stream_length; ++i)
         data_stream_.push_back(attractor.step(lorenz_dt)); // drop a breadcrumb where it landed
 }
 
@@ -107,7 +119,7 @@ void LorenzDatastream::Evaluation()
     std::printf("  %4d  %8d  %7d\n", 0, cur.first, cur.second);
     for (int k = 1; k <= periods * period; ++k)
     {
-        cur = stream.StepBounded();
+        cur = stream.JanusCursor::StepBounded();
         std::printf("  %4d  %8d  %7d\n", k, cur.first, cur.second);
     }
 }

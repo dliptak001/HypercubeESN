@@ -7,6 +7,8 @@
 #include "LorenzAttractor.h"
 
 
+using LorenzDatastreamResult = std::pair<LorenzAttractor::State, LorenzAttractor::State>;
+
 class LorenzDatastream : public JanusCursor
 {
 public:
@@ -16,18 +18,21 @@ public:
                      const LorenzAttractor::State& initial_lorenz_state,
                      float lorenz_dt);
 
-    [[nodiscard]] double GetXScale() const { return x_scale_; };
-    [[nodiscard]] double GetYScale() const { return y_scale_; };
-    [[nodiscard]] double GetZScale() const { return z_scale_; };
-    [[nodiscard]] double GetZOffset() const { return z_offset_; };
+    // TODO - caller needs to get the LorenzDatastreamResults always for StepBounded, so that looks fine
+    // however... StepUnbounded may not have a future result to provide (by design)
+    LorenzDatastreamResult StepTraining();
+    LorenzDatastreamResult StepFreeRun();
 
-    [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; };
+    [[nodiscard]] double GetXScale() const { return x_scale_; }
+    [[nodiscard]] double GetYScale() const { return y_scale_; }
+    [[nodiscard]] double GetZScale() const { return z_scale_; }
+    [[nodiscard]] double GetZOffset() const { return z_offset_; }
+
+    [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; }
 
     static void Evaluation(); // dev harness
 
 private:
-    size_t stream_length_;
-
     std::vector<LorenzAttractor::State> data_stream_;
 
     double x_scale_ = 1.0;
@@ -35,7 +40,7 @@ private:
     double z_scale_ = 1.0;
     double z_offset_ = 0.0;
 
-    void Build(const LorenzAttractor::State& initial_lorenz_state, float lorenz_dt);
+    void Build(size_t stream_length, const LorenzAttractor::State& initial_lorenz_state, float lorenz_dt);
 
     void Normalize();
 };
