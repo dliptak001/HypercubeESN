@@ -23,7 +23,7 @@ public:
 
     [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; };
 
-    static void Evaluation(); // dev harness: dump the Janus shuttle's cursor indices over several periods (invoked from main.cpp)
+    static void Evaluation(); // dev harness
 
 private:
     size_t stream_length_;

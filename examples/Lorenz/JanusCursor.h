@@ -5,7 +5,6 @@
 
 using JanusCursorResult = std::pair<int32_t, int32_t>;
 
-// The Janus Cyclic Orbit ESN Datastream Traversal Cursor class
 class JanusCursor
 {
     class CyclicOrbitCursor
