@@ -2,7 +2,7 @@
 
 #include "EnsembleESN.h"
 #include "LorenzAttractor.h"
-#include "JanusShuttle.h"
+#include "JanusCursor.h"
 #include <cstddef>
 #include <vector>
 #include <iostream>
@@ -40,7 +40,7 @@ public:
 
 
 private:
-    using DataFeed = JanusShuttle<LorenzAttractor>;
+    using DataFeed = JanusCursor<LorenzAttractor>;
 
     static EnsembleConfig MakeConfig();
 

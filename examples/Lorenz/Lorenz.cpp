@@ -11,7 +11,7 @@ EnsembleConfig Lorenz::MakeConfig()
 
     // These are fixed by the design. One D, three roles: the feedback channel
     // count must equal num_outputs (= 3), or EnsembleESN's ctor rejects it.
-    cfg.base.reservoir.num_inputs = 8; // 2 * [x, y, z, x*y*z]
+    cfg.base.reservoir.num_inputs = 8; // 2 * [x, y, z, x*z]
     cfg.base.readout.num_outputs = 3; //[x, y, z]
     cfg.base.reservoir.num_feedback_channels = 3; // D = num_outputs
 
