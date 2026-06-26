@@ -85,9 +85,9 @@ void LorenzDatastream::Evaluation()
     // Dev harness for the Janus shuttle: drive the bounded reflecting scan over a few
     // periods and print the two cursor indices side by side. The backward (S[N_c - i])
     // and forward (S[N_c + i]) indices mirror about the focus and stay inside [lb, ub].
-    constexpr int32_t span   = 8;
-    constexpr int32_t focus  = 12;   // must exceed span (enforced by the JanusCursor base)
-    constexpr size_t  length = 25;   // must exceed focus + span/2 (the cursor window's top)
+    constexpr int32_t span   = 4;
+    constexpr int32_t focus  = 10;   // must exceed span (enforced by the JanusCursor base)
+    constexpr size_t  length = 14;   // must exceed focus + span/2 (the cursor window's top)
     constexpr float   dt     = 0.02f;
 
     LorenzDatastream stream(span, focus, length, LorenzAttractor::State{}, dt);
@@ -96,13 +96,18 @@ void LorenzDatastream::Evaluation()
     const int32_t lb     = focus - H;
     const int32_t ub     = focus + H;
     const int32_t period = 4 * H;    // one full triangle-wave period: ctr->ub->lb->ctr
-    constexpr int periods = 3;
+    constexpr int periods = 2;
 
     std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", span, focus, lb, ub);
     std::printf("  step  backward  forward\n");
-    for (int k = 0; k < periods * period; ++k)
+
+    // Step 0 is the initial state (both cursors at focus), reported before any move;
+    // each later row is the state after one StepBounded.
+    JanusCursorResult cur = stream.Indices();
+    std::printf("  %4d  %8d  %7d\n", 0, cur.first, cur.second);
+    for (int k = 1; k <= periods * period; ++k)
     {
-        const auto [backward, forward] = stream.StepBounded();
-        std::printf("  %4d  %8d  %7d\n", k, backward, forward);
+        cur = stream.StepBounded();
+        std::printf("  %4d  %8d  %7d\n", k, cur.first, cur.second);
     }
 }

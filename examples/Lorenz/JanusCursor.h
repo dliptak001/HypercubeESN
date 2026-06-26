@@ -89,6 +89,13 @@ public:
         return {past_idx, future_idx};
     }
 
+    /// @brief Current {backward, forward} indices WITHOUT advancing — the state a
+    ///        StepBounded/StepUnbounded would move away from (e.g. the pre-step row).
+    [[nodiscard]] JanusCursorResult Indices() const
+    {
+        return {past_cursor_.index(), future_cursor_.index()};
+    }
+
     [[nodiscard]] int32_t OOB() const { return future_cursor_.OOB(); }
 
     [[nodiscard]] bool AtFocus() const { return future_cursor_.AtFocus(); }
