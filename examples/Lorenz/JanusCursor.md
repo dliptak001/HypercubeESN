@@ -5,7 +5,7 @@
 > tracked in §7 and `?` marks anything still inferred rather than decided.
 
 **Method vs. instantiation.** The Janus Shuttle is **system-agnostic** — it works for any time
-series an array can hold (the cursor's only contract is `value(position)`; see §5b). This document
+series an array can hold (the cursor's only contract is `value(position)`). This document
 instantiates it on **Lorenz-63** throughout: `S[·]` is a Lorenz orbit, the channels are
 `(x, y, z, x·z)`, and the normalization figures are Lorenz's. Read the *mechanism* as generic and
 the *Lorenz specifics* as the worked example. (When this spec becomes the Lorenz module's README,
@@ -71,7 +71,7 @@ cursor itself.
                        here, so the upper-4 inputs are the ensemble's own output (NOT written
                        back into S). The TRUE orbit S[N_c+i] is still precomputed across this
                        band purely as a yardstick: it lets us score generated xyz against
-                       expected xyz to gauge training effectiveness. See §5b.
+                       expected xyz to gauge training effectiveness (when a true tail exists).
    region (ub+E, ∞)  = open-ended free-run — generative with NO reference past the horizon.
 ```
 
@@ -79,7 +79,7 @@ cursor itself.
 `n` — the bare 3-tuple `(xₙ, yₙ, zₙ)`. It is *not* the 8-D input vector and *not* a reservoir
 state; both of those are built downstream from it. The array is produced **once, at setup**, by
 fixed-step RK4 from the seed state at `T = 0`, marching forward with a single `dt` to the array's
-upper limit (`ub`, or `ub+E` in functional mode — §5):
+upper limit (`ub`, or `ub+E` when an eval tail is available offline — §5):
 
 ```
  seed s₀ (e.g. {1,1,1})  ──RK4(dt)──▶ s₁ ──▶ s₂ ──▶ … ──▶ s_{ub(+E)}
@@ -106,12 +106,15 @@ from those derives the normalization offset/scale `(c_v, h_v)` of §4b. So setup
 sweeps over `S`: **integrate** to fill it, **scan** to calibrate it — both completed before any
 warmup or training touches the reservoir, and both frozen for the rest of the run.
 
-The prediction/evaluation region is the whole point of the dual-cursor setup: it is where we
-read off whether training worked, by comparing the future cursor's *generated* `(x,y,z)`
-against the *expected* `(x,y,z)` from the precomputed true orbit, step for step. It exists
-**only when ground truth past `ub` is available** — i.e. functional mode, where we can keep
-integrating the reference. In a real-world free-run into the genuine future there is no `Sₑ`
-tail to compare against, so this region collapses straight into the open-ended free-run.
+The prediction/evaluation region `(ub, ub+E]` is where we read off whether training worked:
+compare the future cursor's *generated* `(x,y,z)` against the true `S[N_c + i]`, step for step.
+But scoring needs that true future to *exist*, and the `(ub, ub+E]` band is **not** guaranteed —
+it is there only when the orbit was precomputed past `ub` (an offline simulation, or recorded data
+with a held-out tail). On real-time data the future has not happened yet: there is no `Sₑ` tail, so
+the region collapses into open-ended generative free-run. Crucially, that costs only the *score*,
+not the *run* — the past cursor's anchor (`S[N_c − i]`, the lower 4 inputs) is real history and is
+**always** available, so the half-anchoring keeps the free-run tethered to ground truth whether or
+not the future eval tail exists.
 
 ## 2. Two phases = the two existing cursor moves
 
@@ -230,7 +233,7 @@ the window they come from scaling the real lookup — same symbol because it is 
 
 **Extremes are per-stream, scanned over the full `S`.** `c_v` and `h_v` are computed **once at
 setup by scanning the entire precomputed `S[·]`, including the eval band `(ub, ub+E]` when
-present** (functional mode); in stream/replay mode it is the whole provided series. They are
+present** (an offline tail); when there is none, it is the whole provided series. They are
 **never hardcoded** — the Appendix-A figures illustrate one `{1,1,1}` run, they are not
 constants. A different seed, or a real-world series, yields its own eight values
 `(c_x, h_x, c_y, h_y, c_z, h_z)`. Scanning the *full* `S` (eval band included) is deliberate: it
@@ -268,8 +271,8 @@ The readout predicts normalized `(x̂, ŷ, ẑ)`; the 4th input is rebuilt as a 
    peaks, `z` is mid-range — so the 4th channel under-fills `[−1, 1]`; harmless, `input_scaling`
    absorbs the slack.)
 
-**Denormalization.** To score a generated `x̂` against the true orbit in physical units (§5b
-yardstick), or to emit physical-space predictions, invert the map: `v = h_v · v̂ + c_v`. The 4th
+**Denormalization.** To score a generated `x̂` against the true orbit in physical units (the §1
+eval yardstick), or to emit physical-space predictions, invert the map: `v = h_v · v̂ + c_v`. The 4th
 channel is never denormalized — it is a derived feature, never a target (§4, Q4).
 
 ## 5. What this forces on the implementation
@@ -277,12 +280,12 @@ channel is never denormalized — it is a derived feature, never a target (§4, 
 1. **Precompute the orbit once.** At setup, integrate forward from the seed state (T=0; the
    `{1,1,1}` used elsewhere is just one example seed) to the array's upper limit, which is one
    of two:
-   - **`N_c+H` (= `ub`)** — when there is no reference tail to score against: stream/replay
-     mode, or an open-ended free-run into the genuine future. The array stops at the right edge
-     of the training window.
-   - **`N_c+H+E` (= `ub+E`, the eval horizon)** — functional mode, where we keep evaluating the
-     reference past `ub`. The extra band `(ub, ub+E]` is the precomputed true orbit we score the
-     generative rollout against (§1, §5b).
+   - **`N_c+H` (= `ub`)** — when there is no reference tail to score against: a real-time
+     free-run into the genuine future, or any run where no tail is held out. The array stops at
+     the right edge of the training window.
+   - **`N_c+H+E` (= `ub+E`, the eval horizon)** — when the future past `ub` is known offline (a
+     precomputed simulation, or recorded data with a held-out tail). The extra band `(ub, ub+E]`
+     is the true orbit we score the generative rollout against (§1).
 
    `LorenzAttractor::trajectory()` returns exactly such an array. One fixed `dt`, one array —
    both cursors index it, so they ride the identical orbit by construction.
@@ -300,29 +303,6 @@ channel is never denormalized — it is a derived feature, never a target (§4, 
    past cursor never switches.
 6. `StepBounded` (train) / `StepUnbounded` (free-run) still model the two phases — they now
    advance an **index**, not an integrator.
-
-## 5b. Data source: functional now, streams later (scope)
-
-The cursor's contract is just **`value(position)`**. Two ways to satisfy it — JS must support
-**both** eventually; we build only the first now:
-
-| mode | how a sample is produced | status |
-|------|--------------------------|--------|
-| **functional** | `f(position)` on the fly (Lorenz-63 RK4) — compact, swappable, has reference results | **focus now** |
-| **stream / replay** | index a provided real-world series (weather, sensors) — no closed form | future, required |
-
-Two reasons this split is clean rather than a retrofit:
-
-1. **Functional and stream are the *same code*.** Both modes produce an array `S[·]` that the
-   cursors index; functional **computes** `S` from `f` (Lorenz RK4), stream is **handed** `S`
-   (a real series). The cursor/index logic downstream is identical — stream mode is a
-   different array *source*, not a different mechanism. Nothing to retrofit.
-2. **Functional-first gives us a yardstick.** In stream mode the future past the known horizon
-   has *no* ground truth, so generative free-run is the only option (and unscoreable against
-   truth). In functional mode the true future *does* exist (evaluate `f` past `ub_`), which is
-   exactly what lets us **score** the generative rollout — the Lorenz reference comparison.
-   Calibration we can't get from raw real-world data. So functional-first is a measurement
-   decision, not just a simplicity one.
 
 ## 6. Why it should work (intuition)
 
