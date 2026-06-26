@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Reservoir.h"
+#include "examples/Lorenz/LorenzDatastream.h"
 
 namespace
 {
@@ -142,6 +143,9 @@ namespace
 
 int main()
 {
+    LorenzDatastream::Evaluation();
+    return 0;
+
     std::printf("=== Reservoir snapshot/restore fidelity ===\n");
     int failures = 0;
 

@@ -89,8 +89,6 @@ public:
         return {past_idx, future_idx};
     }
 
-    // The forward cursor crossing the upper bound (+1) is the documented free-run trigger
-    // (JanusCursor.md §2); report from it so the OOB sign matches the spec.
     [[nodiscard]] int32_t OOB() const { return future_cursor_.OOB(); }
 
     [[nodiscard]] bool AtFocus() const { return future_cursor_.AtFocus(); }

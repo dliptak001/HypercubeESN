@@ -87,7 +87,7 @@ void LorenzDatastream::Evaluation()
     // and forward (S[N_c + i]) indices mirror about the focus and stay inside [lb, ub].
     constexpr int32_t span   = 8;
     constexpr int32_t focus  = 12;   // must exceed span (enforced by the JanusCursor base)
-    constexpr size_t  length = 24;   // must exceed focus + span/2 (the cursor window's top)
+    constexpr size_t  length = 25;   // must exceed focus + span/2 (the cursor window's top)
     constexpr float   dt     = 0.02f;
 
     LorenzDatastream stream(span, focus, length, LorenzAttractor::State{}, dt);
