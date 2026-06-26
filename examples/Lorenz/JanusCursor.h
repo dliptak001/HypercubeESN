@@ -18,8 +18,10 @@ class JanusCursor
                 throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting span > 0");
             if (focus_index <= span)
                 throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting focus_index > span");
-            if (polarity != -1 || polarity_ != 1)
+            if (polarity != -1 && polarity != 1)
                 throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting polarity = +-1");
+
+            Reset(); // start at the center (idx_ = focus), facing this cursor's polarity direction
         }
 
         void Reset()
@@ -31,9 +33,9 @@ class JanusCursor
         int32_t StepBounded()
         {
             if (idx_ >= ub_)
-                dir_ = -polarity_;
+                dir_ = -1; // reflect off the upper bound: turn around and head down
             else if (idx_ <= lb_)
-                dir_ = polarity_;
+                dir_ = 1;  // reflect off the lower bound: turn around and head up
             idx_ += dir_;
             return idx_;
         }
@@ -87,9 +89,11 @@ public:
         return {past_idx, future_idx};
     }
 
-    [[nodiscard]] int32_t OOB() const { return past_cursor_.OOB(); }
+    // The forward cursor crossing the upper bound (+1) is the documented free-run trigger
+    // (JanusCursor.md §2); report from it so the OOB sign matches the spec.
+    [[nodiscard]] int32_t OOB() const { return future_cursor_.OOB(); }
 
-    [[nodiscard]] bool AtFocus() const { return past_cursor_.AtFocus(); }
+    [[nodiscard]] bool AtFocus() const { return future_cursor_.AtFocus(); }
 
 private:
     CyclicOrbitCursor past_cursor_, future_cursor_;
