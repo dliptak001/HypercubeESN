@@ -1,6 +1,7 @@
 #pragma once
 #include <tuple>
 #include <cstdint>
+#include <stdexcept>
 
 using JanusCursorResult = std::pair<int32_t, int32_t>;
 

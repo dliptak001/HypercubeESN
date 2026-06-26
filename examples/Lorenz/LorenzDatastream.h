@@ -1,7 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-#include <memory>
+#include <vector>
 #include "JanusCursor.h"
 #include "LorenzAttractor.h"
 
@@ -20,19 +21,12 @@ public:
     double GetZScale() const { return z_scale_; };
     double GetZOffset() const { return z_offset_; };
 
-    int32_t GetStreamLength() const { return stream_length_; };
-    const float* GetX() const { return x_.get(); };
-    const float* GetY() const { return y_.get(); };
-    const float* GetZ() const { return z_.get(); };
+    const std::vector<LorenzAttractor::State>* GetDataStream() const { return &data_stream_; };
 
 private:
     size_t stream_length_;
 
-    std::unique_ptr<float[], AlignedFree> x_;
-    std::unique_ptr<float[], AlignedFree> y_;
-    std::unique_ptr<float[], AlignedFree> z_;
-
-    std::vector<LorenzAttractor::State> points_;
+    std::vector<LorenzAttractor::State> data_stream_;
 
     double x_scale_;
     double y_scale_;
@@ -43,6 +37,3 @@ private:
 
     void Normalize();
 };
-
-
-#endif //HYPERCUBEESN_DATASTREAM_H
