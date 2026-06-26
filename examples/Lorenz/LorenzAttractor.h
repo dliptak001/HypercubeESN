@@ -28,7 +28,7 @@ public:
     void reset() { state = State{}; }
     void reset(const State& initial) { state = initial; }
 
-    void step(const double dt) { state = peek(state, dt); }
+    State step(const double dt) { return state = peek(state, dt); }
 
     [[nodiscard]] State peek(const State& s, const double dt) const { return rk4_step(s, dt); }
 

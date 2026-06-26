@@ -1,5 +1,5 @@
 # The Janus Shuttle Method
-# Name change -> The Janus Cyclic Orbit ESN Datastream Traversal Cursor (*Janus Cursor* for short)
+# Name change -> The Janus Cyclic Orbit ESN Datastream Traversal Cursor (*"Janus Cursor"* for short)
 
 > Design spec for the **Janus Shuttle**: a dual-cursor, half-anchored generative free-run for
 > reservoir/ensemble prediction. The mechanism below is settled; open design points are

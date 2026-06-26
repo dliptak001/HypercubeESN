@@ -1,20 +1,29 @@
 #pragma once
+#include <tuple>
 #include <cstdint>
 
-// The Janus Cyclic Orbit Temporal Datastream Traversal Cursor class
+using JanusCursorResult = std::pair<int32_t, int32_t>;
+
+// The Janus Cyclic Orbit ESN Datastream Traversal Cursor class
 class JanusCursor
 {
     class CyclicOrbitCursor
     {
     public:
-        explicit CyclicOrbitCursor(const int32_t focus, const int32_t span, const int32_t polarity)
-            : focus_(focus), polarity_(polarity), lb_(focus - span / 2), ub_(focus + span / 2)
+        explicit CyclicOrbitCursor(const int32_t span, const int32_t focus_index, const int32_t polarity)
+            : focus_index_(focus_index), polarity_(polarity), lb_(focus_index - span / 2), ub_(focus_index + span / 2)
         {
+            if (span <= 0)
+                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting span > 0");
+            if (focus_index <= span)
+                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting focus_index > span");
+            if (polarity != -1 || polarity_ != 1)
+                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting polarity = +-1");
         }
 
         void Reset()
         {
-            idx_ = focus_;
+            idx_ = focus_index_;
             dir_ = polarity_;
         }
 
@@ -38,13 +47,13 @@ class JanusCursor
         [[nodiscard]] int32_t OOB() const { return idx_ > ub_ ? 1 : (idx_ < lb_ ? -1 : 0); }
 
         /// @brief True at the focus
-        [[nodiscard]] bool AtFocus() const { return idx_ == focus_; }
+        [[nodiscard]] bool AtFocus() const { return idx_ == focus_index_; }
 
         [[nodiscard]] int32_t index() const { return idx_; }
         [[nodiscard]] int32_t direction() const { return dir_; }
 
     private:
-        int32_t focus_;
+        int32_t focus_index_;
         int32_t polarity_;
         int32_t lb_, ub_;
         int32_t idx_ = 0;
@@ -52,8 +61,8 @@ class JanusCursor
     };
 
 public:
-    JanusCursor(const int32_t focus, const int32_t span)
-        : past_cursor_(focus, span, -1), future_cursor_(focus, span, 1)
+    JanusCursor(const int32_t span, const int32_t focus_index)
+        : past_cursor_(span, focus_index, -1), future_cursor_(span, focus_index, 1)
     {
     }
 
@@ -63,16 +72,18 @@ public:
         future_cursor_.Reset();
     }
 
-    void StepBounded()  // TODO - return a tuple
+    JanusCursorResult StepBounded()
     {
         const int32_t past_idx = past_cursor_.StepBounded();
         const int32_t future_idx = future_cursor_.StepBounded();
+        return {past_idx, future_idx};
     }
 
-    int32_t StepUnbounded()  // TODO - return a tuple
+    JanusCursorResult StepUnbounded()
     {
         const int32_t past_idx = past_cursor_.StepUnbounded();
         const int32_t future_idx = future_cursor_.StepUnbounded();
+        return {past_idx, future_idx};
     }
 
     [[nodiscard]] int32_t OOB() const { return past_cursor_.OOB(); }
