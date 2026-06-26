@@ -16,12 +16,12 @@ public:
                      const LorenzAttractor::State& initial_lorenz_state,
                      float lorenz_dt);
 
-    double GetXScale() const { return x_scale_; };
-    double GetYScale() const { return y_scale_; };
-    double GetZScale() const { return z_scale_; };
-    double GetZOffset() const { return z_offset_; };
+    [[nodiscard]] double GetXScale() const { return x_scale_; };
+    [[nodiscard]] double GetYScale() const { return y_scale_; };
+    [[nodiscard]] double GetZScale() const { return z_scale_; };
+    [[nodiscard]] double GetZOffset() const { return z_offset_; };
 
-    const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; };
+    [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; };
 
     static void Evaluation(); // dev harness: dump the Janus shuttle's cursor indices over several periods (invoked from main.cpp)
 

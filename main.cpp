@@ -143,9 +143,6 @@ namespace
 
 int main()
 {
-    LorenzDatastream::Evaluation();
-    return 0;
-
     std::printf("=== Reservoir snapshot/restore fidelity ===\n");
     int failures = 0;
 
