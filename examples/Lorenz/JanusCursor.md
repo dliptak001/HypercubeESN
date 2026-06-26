@@ -30,7 +30,7 @@ file, `JanusCursor.md`. Two names, two scopes, deliberately kept distinct.
 
 We drive an ensemble ESN with **two cursors** that index a single **precomputed** positive-time
 Lorenz trajectory `S[·]`, moving in opposite directions from a shared **center** index. Each cursor emits a
-4-vector `(x, y, z, x*z)`, so the input is **8-D**. In training the cursors stay inside a
+4-vector `(x, y, z, x·z)`, so the input is **8-D**. In training the cursors stay inside a
 **reflecting window** (bounded shuttle). In free-run they break out of the window and run
 away from center: the **future** cursor walks into the *unknown future* and becomes
 **generative** (fed by the ESN's own prediction), while the **past** cursor walks into
@@ -69,7 +69,7 @@ cursor itself.
    region [lb, ub]   = training window (reflecting shuttle; both cursors live here)
    region (ub, ub+E] = PREDICTION / EVALUATION window — the future cursor goes GENERATIVE
                        here, so the upper-4 inputs are the ensemble's own output (NOT written
-                       back into S). The TRUE orbit S[N_c+i] is still precomputed across this
+                       back into S). The TRUE orbit S[N_c + i] is still precomputed across this
                        band purely as a yardstick: it lets us score generated xyz against
                        expected xyz to gauge training effectiveness (when a true tail exists).
    region (ub+E, ∞)  = open-ended free-run — generative with NO reference past the horizon.
@@ -123,7 +123,7 @@ not the future eval tail exists.
 | TRAINING  | reflecting shuttle | `StepBounded()`       | triangle wave inside [lb,ub]|
 | FREE-RUN  | one-way ramp       | `StepUnbounded()`     | grows monotonically past ub |
 
-`StepUnbounded()` already returns the out-of-bounds report (+1 past `ub`). That `+1` is
+After `StepUnbounded()`, `OOB()` reports `+1` once the future cursor passes `ub`. That `+1` is
 exactly the **"future cursor crossed the right reflection limit"** signal → the moment
 the future cursor flips from reading data to being generative.
 
@@ -185,12 +185,12 @@ exactly this — pure index arithmetic on `idx_`, with no `step(±dt)` anywhere.
 ## 4. The 8-input vector (fixed split)
 
 ```
- input[0..3] = LOWER  ← past_cursor_  : ( xb, yb, zb, xb*zb )   anchor   (always real)
- input[4..7] = UPPER  ← future_cursor_: ( xf, yf, zf, xf*zf )   generative past ub_
+ input[0..3] = LOWER  ← past_cursor_  : ( xb, yb, zb, xb·zb )   anchor   (always real)
+ input[4..7] = UPPER  ← future_cursor_: ( xf, yf, zf, xf·zf )   generative past ub_
 ```
 
 **Targets:** readout/ensemble predicts **3** outputs — the future cursor's `(x, y, z)` one
-step ahead. `x*z` is a **derived input feature only**, never a target. In generative mode
+step ahead. `x·z` is a **derived input feature only**, never a target. In generative mode
 the upper-4 = `(x̂, ŷ, ẑ, x̂·ẑ)` built from the ensemble's 3 predictions; in-window it's the
 same 4-tuple built from real Lorenz. Same shape, only the source of the first three differs.
 
@@ -207,20 +207,22 @@ raw `S` lookup never reaches the reservoir directly.
 generative mode the hatted values come from the readout (which predicts in normalized space); in
 the window they come from scaling the real lookup — same symbol because it is the same quantity.
 
-**The map.** For each channel `v ∈ {x, y, z}`, from that stream's measured extremes
-`[v_min, v_max]`:
+**The map.** Each channel is pulled into `[−1, 1]` by an affine map `v̂ = (v − c_v) / h_v`, with
+the offset/scale set by channel type from that stream's measured extremes `[v_min, v_max]`:
 
 ```
- c_v = (v_max + v_min) / 2      offset (center)
- h_v = (v_max − v_min) / 2      scale  (half-range)
- v̂   = (v − c_v) / h_v           ∈ [−1, 1]
+ x, y  (bipolar, ~symmetric):  c_v = 0                    h_v = |v|_max = max(|v_min|, |v_max|)
+ z     (positive, offset):     c_z = (z_max + z_min) / 2  h_z = (z_max − z_min) / 2
 ```
+
+x and y keep `c = 0` so `v = 0 ↦ 0` (sign symmetry preserved — scaled by the largest excursion,
+not the half-range); only z, sitting up at ~+24, carries a nonzero center.
 
 ```
  channel │ offset c_v │ scale h_v  │ normalized value
  ────────┼────────────┼────────────┼─────────────────────────────────────
- x       │   ≈ 0      │  |x|_max   │  x̂ = x / h_x          (already symmetric)
- y       │   ≈ 0      │  |y|_max   │  ŷ = y / h_y          (already symmetric)
+ x       │    0       │  |x|_max   │  x̂ = x / h_x          (already symmetric)
+ y       │    0       │  |y|_max   │  ŷ = y / h_y          (already symmetric)
  z       │   ≈ +24    │  half-rng  │  ẑ = (z − c_z) / h_z  (centered → straddles 0)
  x·z     │     —      │     —      │  x̂ · ẑ  ∈ [−1, 1]     (product of scaled; no own scale)
 ```
@@ -290,9 +292,9 @@ channel is never denormalized — it is a derived feature, never a target (§4, 
    `LorenzAttractor::trajectory()` returns exactly such an array. One fixed `dt`, one array —
    both cursors index it, so they ride the identical orbit by construction.
 2. **Cursors read indices, not integrators.** `future_cursor_ = S[N_c + i]`,
-   `past_cursor_ = S[N_c − i]`. The old `advance_()` `step(±dt)` — which forced one copy to run
-   `-dt` and blow up — is **retired**. `center_` is no longer a stored state to reset to; it's
-   the index `N_c`, and the seam case is just `S[N_c]`.
+   `past_cursor_ = S[N_c − i]` — pure lookups, with **no** `step(±dt)` path that would force one
+   cursor to integrate backwards and blow up. The center is not a stored state to reset to; it is
+   just the index `N_c`, and the seam case is `S[N_c]`.
 3. **Array bounds = the runtime envelope.** Right end = `ub`: the future cursor goes generative past it,
    and generated values are **not** written back into `S`. Left end = index 0 = seed = the
    past cursor's floor. Margin `N_c − H` (seed → `lb`) = the free-run anchor runway.
@@ -319,7 +321,7 @@ ground truth we happen to already know — we spend it as a stabilizer.
 - **Q2 — anchor runway / floor behavior.** The past cursor floors at array index 0 (the
   seed). Runway = `N_c − H` (seed-to-`lb` margin); deeper pre-roll = longer runway vs. a bigger
   array (negligible for Lorenz). Open: behavior at the floor — stop / clamp / end the run?
-- **Q3 — RESOLVED.** The 4th channel is `x*z`, not `x*y*z`. `x·z` is a *native* Lorenz
+- **Q3 — RESOLVED.** The 4th channel is `x·z`, not `x·y·z`. `x·z` is a *native* Lorenz
   nonlinearity — it is the bilinear term in `ẏ = ρx − x·z − y`. Under the wing-swap symmetry
   `(x,y,z) → (−x,−y,z)`, `x·z` is **odd**, matching the odd targets `x,y`; the triple product
   `x·y·z` is **even** (redundant parity with `x·y`) and appears nowhere in the field, so it was
