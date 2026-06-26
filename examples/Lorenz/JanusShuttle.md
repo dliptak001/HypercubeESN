@@ -14,8 +14,8 @@ that split must be stated explicitly, not just implied.)
 ## Name & rationale
 
 **Janus Shuttle** (use "the Janus Shuttle method" when context needs the noun). The **method** is
-"Janus Shuttle"; the **class** implementing only the cursor traversal is `JanusCursor` — hence this
-file, `JanusCursor.md`. Two names, two scopes, deliberately kept distinct.
+"Janus Shuttle" (this spec, `JanusShuttle.md`); the **class** implementing only the cursor traversal
+is `JanusCursor` (`JanusCursor.{h,cpp}`). Two names, two scopes, deliberately kept distinct.
 
 - **Janus** — the two-faced Roman god of thresholds, one face to the past, one to the future. The
   center seam is that threshold: `past_cursor_` faces the **known past** (anchor), `future_cursor_`

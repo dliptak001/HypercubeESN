@@ -41,7 +41,7 @@ void LorenzDatastream::Build(const LorenzAttractor::State& initial_lorenz_state,
 
 void LorenzDatastream::Normalize()
 {
-    // Per-channel affine map raw S -> [-1, 1] (JanusCursor.md §4b / Appendix A).
+    // Per-channel affine map raw S -> [-1, 1] (JanusShuttle.md §4b / Appendix A).
     // x, y straddle zero already, so they carry no offset (scale = largest |excursion|);
     // z sits up at ~+24, so it gets a midpoint offset that drops its DC level onto zero
     // plus a half-range scale. The eight numbers below are NOT hardcoded — they are
