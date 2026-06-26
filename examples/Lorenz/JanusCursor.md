@@ -1,13 +1,21 @@
-# The Janus Shuttle Method
-# Name change -> The Janus Cyclic Orbit ESN Datastream Traversal Cursor (*"Janus Cursor"* for short)
+# The Janus Shuttle Method for Half-Anchored Generative Free-Run
 
-> Design spec for the **Janus Shuttle**: a dual-cursor, half-anchored generative free-run for
-> reservoir/ensemble prediction. The mechanism below is settled; open design points are
+> Design spec for the **Janus Shuttle**: a dual-cursor scheme for reservoir/ensemble free-run
+> prediction. The mechanism below is settled; open design points are
 > tracked in §7 and `?` marks anything still inferred rather than decided.
+
+**Method vs. instantiation.** The Janus Shuttle is **system-agnostic** — it works for any time
+series an array can hold (the cursor's only contract is `value(position)`; see §5b). This document
+instantiates it on **Lorenz-63** throughout: `S[·]` is a Lorenz orbit, the channels are
+`(x, y, z, x·z)`, and the normalization figures are Lorenz's. Read the *mechanism* as generic and
+the *Lorenz specifics* as the worked example. (When this spec becomes the Lorenz module's README,
+that split must be stated explicitly, not just implied.)
 
 ## Name & rationale
 
-**Janus Shuttle** (use "the Janus Shuttle method" when context needs the noun).
+**Janus Shuttle** (use "the Janus Shuttle method" when context needs the noun). The **method** is
+"Janus Shuttle"; the **class** implementing only the cursor traversal is `JanusCursor` — hence this
+file, `JanusCursor.md`. Two names, two scopes, deliberately kept distinct.
 
 - **Janus** — the two-faced Roman god of thresholds, one face to the past, one to the future. The
   center seam is that threshold: `backward_` faces the **known past** (anchor), `forward_`
@@ -109,10 +117,10 @@ tail to compare against, so this region collapses straight into the open-ended f
 
 | phase     | cursor move        | code today            | i behavior                  |
 |-----------|--------------------|-----------------------|-----------------------------|
-| TRAINING  | reflecting shuttle | `BoundedStep()`       | triangle wave inside [lb,ub]|
-| FREE-RUN  | one-way ramp       | `UnBoundedStep()`     | grows monotonically past ub |
+| TRAINING  | reflecting shuttle | `StepBounded()`       | triangle wave inside [lb,ub]|
+| FREE-RUN  | one-way ramp       | `StepUnbounded()`     | grows monotonically past ub |
 
-`UnBoundedStep()` already returns the out-of-bounds report (+1 past `ub`). That `+1` is
+`StepUnbounded()` already returns the out-of-bounds report (+1 past `ub`). That `+1` is
 exactly the **"forward cursor crossed the right reflection limit"** signal → the moment
 forward flips from reading data to being generative.
 
@@ -120,8 +128,8 @@ forward flips from reading data to being generative.
 (`forward_=+i`, `backward_=−i`) and oscillate: `center → ub_ → lb_ → ub_ → …`, reflecting at
 *both* boundaries and crossing center every half-sweep, repeated a **specified number of
 times**. The whole window is swept back and forth repeatedly (the multi-epoch presentation).
-`JanusShuttleCursor::step()` already reflects forever — "N sweeps" is just how many
-`BoundedStep()` calls the training loop drives; the cursor itself is unchanged. The sweep
+`JanusCursor::StepBounded()` already reflects forever — "N sweeps" is just how many
+`StepBounded()` calls the training loop drives; the cursor itself is unchanged. The sweep
 count is **chosen so training terminates with both cursors back at center** (`i = 0`,
 `forward_` poised to step positive), handing the warm reservoir off seamlessly to free-run (§3).
 
@@ -168,8 +176,8 @@ right up to the generative switch — there is no transient to discard and nothi
 
 "Lorenz(pos)" is just an **array lookup**: `forward_ = S[N_c + i]`, `backward_ = S[N_c − i]`,
 where `S` is the orbit precomputed once from the seed (§5). No `step(-dt)`, no recompute —
-both cursors only read indices. (The current `JanusShuttle::advance_()` still integrates with
-`step(±dt)`; that is the code replaced by index lookups.)
+both cursors only read indices. (`JanusCursor::StepBounded()` / `StepUnbounded()` already do
+exactly this — pure index arithmetic on `idx_`, with no `step(±dt)` anywhere.)
 
 ## 4. The 8-input vector (fixed split)
 
@@ -290,7 +298,7 @@ channel is never denormalized — it is a derived feature, never a target (§4, 
    state before training/scoring.
 5. **Forward source switch** at the right-limit crossing: `S[…]` → ensemble output. The
    backward cursor never switches.
-6. `BoundedStep` (train) / `UnBoundedStep` (free-run) still model the two phases — they now
+6. `StepBounded` (train) / `StepUnbounded` (free-run) still model the two phases — they now
    advance an **index**, not an integrator.
 
 ## 5b. Data source: functional now, streams later (scope)
