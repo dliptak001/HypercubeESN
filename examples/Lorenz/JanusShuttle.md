@@ -64,7 +64,7 @@ cursor itself.
 
  center = N_c (an INDEX, not a state)     window = [lb, ub] = [N_c−H, N_c+H],  H = span/2
    future cursor sample → S[N_c + i]   (real lookup while inside the window)
-   past   cursor sample → S[N_c − i]              (i = shared shuttle displacement)
+   past   cursor sample → S[N_c − i]   (i = shared shuttle displacement)
    region [0, lb)    = past free-run runway (real history left of the window)
    region [lb, ub]   = training window (reflecting shuttle; both cursors live here)
    region (ub, ub+E] = PREDICTION / EVALUATION window — the future cursor goes GENERATIVE
@@ -72,14 +72,13 @@ cursor itself.
                        back into S). The TRUE orbit S[N_c + i] is still precomputed across this
                        band purely as a yardstick: it lets us score generated xyz against
                        expected xyz to gauge training effectiveness (when a true tail exists).
-   region (ub+E, ∞)  = open-ended free-run — generative with NO reference past the horizon.
 ```
 
 **What `S[n]` is, and how it is made.** `S[n]` is the **raw Lorenz state** at integration step
 `n` — the bare 3-tuple `(xₙ, yₙ, zₙ)`. It is *not* the 8-D input vector and *not* a reservoir
 state; both of those are built downstream from it. The array is produced **once, at setup**, by
 fixed-step RK4 from the seed state at `T = 0`, marching forward with a single `dt` to the array's
-upper limit (`ub`, or `ub+E` when an eval tail is available offline — §5):
+upper limit (`ub`, or `ub+E` when an eval tail is available offline):
 
 ```
  seed s₀ (e.g. {1,1,1})  ──RK4(dt)──▶ s₁ ──▶ s₂ ──▶ … ──▶ s_{ub(+E)}
@@ -94,9 +93,7 @@ to the *direction* it scans this one array (`S[N_c − i]`), never to a `step(�
 **Role — one array, two readers.** `S` is the single shared source of truth. Both cursors are
 pure **index readers** into it: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`. The 8-D input
 is simply two reads of the *same* array — lower 4 from the past read, upper 4 from the
-future read — each passed through the per-variable normalization of §4b. Because both cursors
-ride one array built with one `dt`, they sit on the identical orbit by construction: no drift, no
-per-cursor integrator to keep in sync, no chance of the two halves diverging numerically. `S`
+future read. `S`
 stores only the 3 raw coordinates; the 4th channel `x·z` is formed at lookup time from the
 (scaled) `x` and `z`, never stored.
 
@@ -166,21 +163,18 @@ right up to the generative switch — there is no transient to discard and nothi
 
 **Data source by cursor / region** — note only ONE thing ever switches:
 
-```
-                     in [lb_, ub_]  (train + washout)     past the boundary (free-run)
- past_cursor_   (lower 4)   Lorenz(pos)                        Lorenz(pos)   ← STILL REAL (anchor)
- future_cursor_ (upper 4)   Lorenz(pos)                        ENSEMBLE out  ← SWITCH (generative)
-```
+| inputs                     | in `[lb_, ub_]` (train + washout) | past the boundary (free-run) | behavior                           |
+|----------------------------|-----------------------------------|------------------------------|------------------------------------|
+| lower 4 — `past_cursor_`   | Lorenz lookup                     | Lorenz lookup                | **never switches** — anchor        |
+| upper 4 — `future_cursor_` | Lorenz lookup                     | **ensemble output**          | **switches** at `ub_` — generative |
 
 - **past_cursor_ never switches.** Past `lb_` it keeps reading `S[N_c − i]` — real history, the
   **anchor**. Half the input is always ground truth, all the way down to the seed (index 0).
-- **future_cursor_ switches once,** the instant it passes `ub_` (`i > H`): it stops reading `S` and
+- **future_cursor_ switches** the instant it passes `ub_` (`i > H`): it stops reading `S` and
   feeds the upper 4 channels from the **ensemble's own output**. **Generative** from there on.
 
-"Lorenz(pos)" is just an **array lookup**: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`,
-where `S` is the orbit precomputed once from the seed (§5). No `step(-dt)`, no recompute —
-both cursors only read indices. (`JanusCursor::StepBounded()` / `StepUnbounded()` already do
-exactly this — pure index arithmetic on `idx_`, with no `step(±dt)` anywhere.)
+Every "Lorenz lookup" above is a bare **array read**: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`.
+
 
 ## 4. The 8-input vector (fixed split)
 
