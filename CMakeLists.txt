@@ -53,7 +53,7 @@ endif()
 
 # ——— Executables: only when building standalone (not via FetchContent) ———
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    add_executable(HypercubeESN main.cpp)
+    add_executable(HypercubeESN main.cpp examples/Lorenz/LorenzDatastream.cpp)
     add_executable(BasicPrediction examples/BasicPrediction.cpp)
     add_executable(SignalClassification examples/SignalClassification.cpp)
     add_executable(StreamingAnomaly examples/StreamingAnomaly.cpp)

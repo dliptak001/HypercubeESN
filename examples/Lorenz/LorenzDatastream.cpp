@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 
 LorenzDatastream::LorenzDatastream(const int32_t cursor_span,
@@ -76,5 +77,32 @@ void LorenzDatastream::Normalize()
         s.x = s.x / x_scale_;
         s.y = s.y / y_scale_;
         s.z = (s.z - z_offset_) / z_scale_;
+    }
+}
+
+void LorenzDatastream::Evaluation()
+{
+    // Dev harness for the Janus shuttle: drive the bounded reflecting scan over a few
+    // periods and print the two cursor indices side by side. The backward (S[N_c - i])
+    // and forward (S[N_c + i]) indices mirror about the focus and stay inside [lb, ub].
+    constexpr int32_t span   = 8;
+    constexpr int32_t focus  = 12;   // must exceed span (enforced by the JanusCursor base)
+    constexpr size_t  length = 24;   // must exceed focus + span/2 (the cursor window's top)
+    constexpr float   dt     = 0.02f;
+
+    LorenzDatastream stream(span, focus, length, LorenzAttractor::State{}, dt);
+
+    const int32_t H      = span / 2;
+    const int32_t lb     = focus - H;
+    const int32_t ub     = focus + H;
+    const int32_t period = 4 * H;    // one full triangle-wave period: ctr->ub->lb->ctr
+    constexpr int periods = 3;
+
+    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", span, focus, lb, ub);
+    std::printf("  step  backward  forward\n");
+    for (int k = 0; k < periods * period; ++k)
+    {
+        const auto [backward, forward] = stream.StepBounded();
+        std::printf("  %4d  %8d  %7d\n", k, backward, forward);
     }
 }
