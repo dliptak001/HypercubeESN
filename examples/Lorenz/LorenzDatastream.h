@@ -7,7 +7,7 @@
 #include "LorenzAttractor.h"
 
 
-using LorenzDatastreamResult = std::pair<LorenzAttractor::State, LorenzAttractor::State>;
+using LorenzDatastreamResult = std::pair<LorenzAttractor::State, const LorenzAttractor::State*>;
 
 class LorenzDatastream : public JanusCursor
 {
@@ -18,8 +18,7 @@ public:
                      const LorenzAttractor::State& initial_lorenz_state,
                      float lorenz_dt);
 
-    // TODO - caller needs to get the LorenzDatastreamResults always for StepBounded, so that looks fine
-    // however... StepUnbounded may not have a future result to provide (by design)
+    [[nodiscard]] LorenzDatastreamResult GetInitialStates() const;
     LorenzDatastreamResult StepTraining();
     LorenzDatastreamResult StepFreeRun();
 
