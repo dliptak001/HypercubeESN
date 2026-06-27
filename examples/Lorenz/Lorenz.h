@@ -7,8 +7,10 @@
 #include <vector>
 #include <iostream>
 
+#include "LorenzDatastream.h"
+
 // ============================================================================
-//  CONFIGURATION — edit these, then rebuild.
+//  CONFIGURATION — consolidation point for primary variables of interest
 // ============================================================================
 namespace config
 {
@@ -27,8 +29,11 @@ namespace config
     constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
     constexpr size_t EPOCHS = 600;
 
-    // ---- (C) Data feed (Lorenz-63 integration + reflecting scan) ----
-    constexpr int32_t SCAN_SPAN = 2000; // reflecting-scan width: the cursor shuttles [-SPAN/2, +SPAN/2] steps either side of the center
+    // ---- (C) Data stream (Lorenz-63 integration + reflecting scan) ----
+    constexpr size_t STREAM_LENGTH = 10000;
+    constexpr int32_t CURSOR_SPAN = 5000;
+    constexpr int32_t CURSOR_FOCUS_INDEX = STREAM_LENGTH - CURSOR_SPAN - 1000;
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 }
 
@@ -37,16 +42,11 @@ class Lorenz
 public:
     Lorenz();
 
-
-
 private:
-    using DataFeed = JanusCursor<LorenzAttractor>;
-
-    static EnsembleConfig MakeConfig();
-
     EnsembleConfig esn_config_;
     EnsembleESN esn;
-    DataFeed data_feed_;
+    LorenzDatastream data_stream_;
 
-    void WarmupReservoir();
+    static EnsembleConfig MakeEnsembleConfig();
+    static LorenzDatastreamConfig MakeDatastreamConfig();
 };

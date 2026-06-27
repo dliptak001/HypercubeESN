@@ -5,27 +5,23 @@
 #include <cstdio>
 #include <stdexcept>
 
-LorenzDatastream::LorenzDatastream(const int32_t cursor_span,
-                                   const int32_t cursor_focus_index,
-                                   const size_t stream_length,
-                                   const LorenzAttractor::State& initial_lorenz_state,
-                                   const float lorenz_dt)
-    : JanusCursor(cursor_span, cursor_focus_index)
+LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
+    : JanusCursor(cfg.cursor_span, cfg.cursor_focus_index)
 {
-    if (stream_length == 0)
+    if (cfg.stream_length == 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting stream_length > 0");
 
-    if (lorenz_dt <= 0.0f)
+    if (cfg.lorenz_dt <= 0.0f)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting lorenz_dt > 0");
 
-    const int32_t window_lb = cursor_focus_index - cursor_span / 2;
-    const int32_t window_ub = cursor_focus_index + cursor_span / 2;
+    const int32_t window_lb = cfg.cursor_focus_index - cfg.cursor_span / 2;
+    const int32_t window_ub = cfg.cursor_focus_index + cfg.cursor_span / 2;
     if (window_lb < 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window underruns the stream");
-    if (static_cast<size_t>(window_ub) > stream_length)
+    if (static_cast<size_t>(window_ub) > cfg.stream_length)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window overruns the stream");
 
-    Build(stream_length, initial_lorenz_state, lorenz_dt);
+    Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt);
 
     Normalize();
 }
@@ -33,7 +29,8 @@ LorenzDatastream::LorenzDatastream(const int32_t cursor_span,
 LorenzDatastreamResult LorenzDatastream::GetInitialStates() const
 {
     if (!JanusCursor::AtFocus())
-        throw std::out_of_range("LorenzDatastream::GetInitialStates - only valid when the cursor is at the focus (center)");
+        throw std::out_of_range(
+            "LorenzDatastream::GetInitialStates - only valid when the cursor is at the focus (center)");
     auto [past, future] = JanusCursor::Indices();
     return {data_stream_[past], &data_stream_[future]};
 }
@@ -48,7 +45,8 @@ LorenzDatastreamResult LorenzDatastream::StepFreeRun()
 {
     auto [past, future] = JanusCursor::StepUnbounded();
     if (past < 0)
-        throw std::out_of_range("LorenzDatastream::StepFreeRun - free-run outran the anchor history (need focus >= run length)");
+        throw std::out_of_range(
+            "LorenzDatastream::StepFreeRun - free-run outran the anchor history (need focus >= run length)");
     return {data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
 }
 
@@ -111,20 +109,23 @@ void LorenzDatastream::Evaluation()
     // Dev harness for the Janus shuttle: drive the bounded reflecting scan over a few
     // periods and print the two cursor indices side by side. The backward (S[N_c - i])
     // and forward (S[N_c + i]) indices mirror about the focus and stay inside [lb, ub].
-    constexpr int32_t span = 4;
-    constexpr int32_t focus = 10; // must exceed span (enforced by the JanusCursor base)
-    constexpr size_t length = 14; // must exceed focus + span/2 (the cursor window's top)
-    constexpr float dt = 0.02f;
 
-    LorenzDatastream stream(span, focus, length, LorenzAttractor::State{}, dt);
+    LorenzDatastreamConfig cfg;
+    cfg.cursor_span = 4;
+    cfg.cursor_focus_index = 10;
+    cfg.stream_length = 14;
+    cfg.initial_lorenz_state = {0.5, 0.5, 0.5};
+    cfg.lorenz_dt = 0.02;
 
-    const int32_t H = span / 2;
-    const int32_t lb = focus - H;
-    const int32_t ub = focus + H;
+    LorenzDatastream stream(cfg);
+
+    const int32_t H = cfg.cursor_span / 2;
+    const int32_t lb = cfg.cursor_focus_index - H;
+    const int32_t ub = cfg.cursor_focus_index + H;
     const int32_t period = 4 * H; // one full triangle-wave period: ctr->ub->lb->ctr
     constexpr int periods = 2;
 
-    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", span, focus, lb, ub);
+    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_focus_index, lb, ub);
     std::printf("  step  backward  forward\n");
 
     // Step 0 is the initial state (both cursors at focus), reported before any move;

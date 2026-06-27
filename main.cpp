@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "Reservoir.h"
-#include "examples/Lorenz/LorenzDatastream.h"
 
 namespace
 {

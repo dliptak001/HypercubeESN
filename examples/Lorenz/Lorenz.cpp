@@ -1,9 +1,8 @@
 #include "Lorenz.h"
+#include "LorenzDatastream.h"
 
-// Build the populated config before any member is constructed: the member
-// init list runs before the ctor body, so esn must be fed a config that is
-// already filled in. A static factory keeps that ordering honest.
-EnsembleConfig Lorenz::MakeConfig()
+
+EnsembleConfig Lorenz::MakeEnsembleConfig()
 {
     EnsembleConfig cfg;
     cfg.SetDIM(config::DIM);
@@ -26,16 +25,19 @@ EnsembleConfig Lorenz::MakeConfig()
     return cfg;
 }
 
-void Lorenz::WarmupReservoir()
+LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
 {
+    LorenzDatastreamConfig cfg;
+    cfg.stream_length = config::STREAM_LENGTH;
+    cfg.cursor_span = config::CURSOR_SPAN;
+    cfg.cursor_focus_index = config::CURSOR_FOCUS_INDEX;
+    cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
+    cfg.lorenz_dt = config::DT;
+    return cfg;
 }
 
-Lorenz::Lorenz()
-    : esn_config_(MakeConfig()),
-      esn(esn_config_),
-      data_feed_(LorenzAttractor::State{}, config::SCAN_SPAN, config::DT)
+Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn(esn_config_), data_stream_(MakeDatastreamConfig())
 {
-
 }
 
 int main()

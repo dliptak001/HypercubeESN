@@ -53,13 +53,13 @@ endif()
 
 # ——— Executables: only when building standalone (not via FetchContent) ———
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    add_executable(HypercubeESN main.cpp examples/Lorenz/LorenzDatastream.cpp)
+    add_executable(HypercubeESN main.cpp)
     add_executable(BasicPrediction examples/BasicPrediction.cpp)
     add_executable(SignalClassification examples/SignalClassification.cpp)
     add_executable(StreamingAnomaly examples/StreamingAnomaly.cpp)
     add_executable(MemoryCapacity examples/MemoryCapacity/MemoryCapacity.cpp)
     add_executable(NARMA examples/NARMA/NARMA.cpp)
-    add_executable(Lorenz examples/Lorenz/Lorenz.cpp)
+    add_executable(Lorenz examples/Lorenz/Lorenz.cpp examples/Lorenz/LorenzDatastream.cpp)
     file(GLOB STREAMING_TEXT_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/examples/StreamingText/*.cpp)
     add_executable(StreamingText ${STREAMING_TEXT_SOURCES})
 
