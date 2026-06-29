@@ -42,6 +42,8 @@ class Lorenz
 public:
     Lorenz();
 
+    void Train();
+
 private:
     EnsembleConfig esn_config_; // we may not need to keep this around...
     EnsembleESN esn;

@@ -26,21 +26,19 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     Normalize();
 }
 
-LorenzDatastreamResult LorenzDatastream::GetInitialStates() const
+LorenzDatastreamResult LorenzDatastream::GetInitialStates()
 {
-    if (!AtStartPosition())
-        throw std::out_of_range(
-            "LorenzDatastream::GetInitialStates - only valid when the cursor is at the start position");
+    Reset();
     auto [past, future] = Indices();
-    return {data_stream_[past], &data_stream_[future]};
+    return {Distance(), data_stream_[past], &data_stream_[future]};
 }
 
 LorenzDatastreamResult LorenzDatastream::Step(const bool useGeneratedFuture)
 {
     auto [past, future] = JanusCursor::Step();
     if (useGeneratedFuture)
-        return {data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
-    return {data_stream_[past], &data_stream_[future]};
+        return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
+    return {Distance(), data_stream_[past], &data_stream_[future]};
 }
 
 void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::State& initial_lorenz_state,

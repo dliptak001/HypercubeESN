@@ -7,7 +7,7 @@
 #include "LorenzAttractor.h"
 
 
-using LorenzDatastreamResult = std::pair<LorenzAttractor::State, const LorenzAttractor::State*>;
+using LorenzDatastreamResult = std::tuple<int32_t, LorenzAttractor::State, const LorenzAttractor::State*>;
 
 struct LorenzDatastreamConfig
 {
@@ -23,7 +23,7 @@ class LorenzDatastream : public JanusCursor
 public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
-    [[nodiscard]] LorenzDatastreamResult GetInitialStates() const;
+    [[nodiscard]] LorenzDatastreamResult GetInitialStates();
     LorenzDatastreamResult Step(bool useGeneratedFuture);
 
     [[nodiscard]] double GetXScale() const { return x_scale_; }
@@ -31,7 +31,7 @@ public:
     [[nodiscard]] double GetZScale() const { return z_scale_; }
     [[nodiscard]] double GetZOffset() const { return z_offset_; }
 
-    // Leave this commented out for now...[[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; }
+    [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; }
 
     static void Evaluation(); // dev harness
 

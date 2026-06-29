@@ -40,6 +40,29 @@ Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn(esn_config_), data_str
 {
 }
 
+void Lorenz::Train()
+{
+    float inputs[8] = {};
+    float targets[8] = {};
+    const auto epochs = esn_config_.base.readout.epochs;
+    for (size_t i = 0; i < epochs; i++)
+    {
+        data_stream_.Reset();
+        LorenzDatastreamResult past_future_states = data_stream_.GetInitialStates();
+        inputs[0] = std::get<1>(past_future_states).x;  //past
+        inputs[1] = std::get<1>(past_future_states).y;  //past
+        inputs[2] = std::get<1>(past_future_states).z;  //past
+        inputs[3] = std::get<2>(past_future_states)->x; //future
+        inputs[4] = std::get<2>(past_future_states)->y; //future
+        inputs[5] = std::get<2>(past_future_states)->z; //future
+        inputs[6] = std::get<0>(past_future_states);
+        inputs[7] = inputs[0]*inputs[2];    //past xz product
+        //esn.Step(inputs, targets, );
+
+
+    }
+}
+
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
