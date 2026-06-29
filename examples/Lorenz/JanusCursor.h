@@ -26,10 +26,8 @@ class JanusCursor
             idx_ = ub_;
         }
 
-        int32_t Step(const bool unbounded = false)
+        int32_t Step()
         {
-            if (!unbounded && idx_ <= lb_)
-                throw std::out_of_range("PastCursor::Step - idx_ <= lb_");
             return idx_ -= 1;
         }
 
@@ -61,10 +59,8 @@ class JanusCursor
             idx_ = lb_;
         }
 
-        int32_t Step(const bool unbounded = false)
+        int32_t Step()
         {
-            if (!unbounded && idx_ >= ub_)
-                throw std::out_of_range("FutureCursor::Step - idx_ >= ub_");
             return idx_ += 1;
         }
 
@@ -89,9 +85,9 @@ public:
         future_cursor_.Reset();
     }
 
-    JanusCursorResult Step(const bool unbounded = false)
+    JanusCursorResult Step()
     {
-        return {past_cursor_.Step(unbounded), future_cursor_.Step(unbounded)};
+        return {past_cursor_.Step(), future_cursor_.Step()};
     }
 
     [[nodiscard]] JanusCursorResult Indices() const

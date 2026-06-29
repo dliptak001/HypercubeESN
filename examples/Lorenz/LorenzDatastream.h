@@ -24,8 +24,7 @@ public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
     [[nodiscard]] LorenzDatastreamResult GetInitialStates() const;
-    LorenzDatastreamResult StepTraining();
-    LorenzDatastreamResult StepFreeRun();
+    LorenzDatastreamResult Step(bool useGeneratedFuture);
 
     [[nodiscard]] double GetXScale() const { return x_scale_; }
     [[nodiscard]] double GetYScale() const { return y_scale_; }

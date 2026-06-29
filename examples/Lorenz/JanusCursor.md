@@ -1,10 +1,10 @@
-# The Janus Shuttle Method for Half-Anchored Generative Free-Run
+# The Janus Cursor Method for Half-Anchored Generative Free-Run
 
-> Design spec for the **Janus Shuttle**: a dual-cursor scheme for reservoir/ensemble free-run
+> Design spec for the **Janus Cursor**: a dual-cursor scheme for reservoir/ensemble free-run
 > prediction. The mechanism below is settled; open design points are
 > tracked in §7 and `?` marks anything still inferred rather than decided.
 
-**Method vs. instantiation.** The Janus Shuttle is **system-agnostic** — it works for any time
+**Method vs. instantiation.** The Janus Cursor method is **system-agnostic** — it works for any time
 series an array can hold (the cursor's only contract is `value(position)`). This document
 instantiates it on **Lorenz-63** throughout: `S[·]` is a Lorenz orbit, the channels are
 `(x, y, z, x·z)`, and the normalization figures are Lorenz's. Read the *mechanism* as generic and
@@ -13,47 +13,36 @@ that split must be stated explicitly, not just implied.)
 
 ## Name & rationale
 
-**Janus Shuttle** (use "the Janus Shuttle method" when context needs the noun). The **method** is
-"Janus Shuttle" (this spec, `JanusShuttle.md`); the **class** implementing only the cursor traversal
-is `JanusCursor` (`JanusCursor.{h,cpp}`). Two names, two scopes, deliberately kept distinct.
+**Janus Cursor** (use "the Janus Cursor method" when context needs the noun). The **method** is
+"Janus Cursor" (this spec, `JanusCursor.md`); the **class** implementing only the cursor traversal
+is `JanusCursor` (`JanusCursor.{h,cpp}`).
 
-- **Janus** — the two-faced Roman god of thresholds, one face to the past, one to the future. The
-  center seam is that threshold: `past_cursor_` faces the **known past** (anchor), `future_cursor_`
-  faces the **generated future**. Owns the *free-run* phase.
-- **Shuttle** — the reflecting back-and-forth scan that bounces off `[lb_, ub_]` (triangle
-  wave). Owns the *training* phase.
-- One name, both phases, both mechanisms; also nods to the two reflections in play —
-  boundary reflection (the shuttle) and center-mirror reflection (the `±i` symmetry of the
-  two cursors about "now").
+- **Janus** — the two-faced Roman god of thresholds, one face to the past, one to the future.
 
 ## 0. One-paragraph statement
 
 We drive an ensemble ESN with **two cursors** that index a single **precomputed** positive-time
-Lorenz trajectory `S[·]`, moving in opposite directions from a shared **center** index. Each cursor emits a
+Lorenz trajectory `S[·]`, moving symmetrically in opposite directions around a shared **center** index. Each cursor emits a
 4-vector `(x, y, z, x·z)`, so the input is **8-D**. In training the cursors stay inside a
-**reflecting window** (bounded shuttle). In free-run they break out of the window and run
+**window**. In free-run they break out of the window and run
 away from center: the **future** cursor walks into the *unknown future* and becomes
 **generative** (fed by the ESN's own prediction), while the **past** cursor walks into
 the *known past* and stays **ground-truth** — a real signal that anchors half the input
 space and keeps the generative half from drifting off the attractor.
 
-Everything is positive time. The orbit is integrated **once** from the seed into an array;
-the cursors only ever **read indices** — no `step(-dt)`, no backward integration, no recompute.
+Everything is positive-time. The data stream is integrated **once** from the seed into an array;
+the cursors only ever **read indices**.
 
 **Cursor names vs. roles.** The two cursors are named by the *temporal direction* they scan
-(invariant across both phases) and described by *role* (which only applies in free-run):
+and described by *role* (which only applies in free-run):
 
 ```
- future_cursor_ (= +i, samples S[N_c + i])  →  GENERATIVE half in free-run   (upper 4 inputs)
- past_cursor_   (= −i, samples S[N_c − i])  →  ANCHOR half, always real       (lower 4 inputs)
+ future_cursor_  →  GENERATIVE half in free-run
+ past_cursor_    →  ANCHOR half, always real
 ```
 
-Temporal direction is the **name** because it holds in every phase: in training *both* cursors read
-real Lorenz inside the window — neither generates. "Generative" and "anchor" name what each
-half *becomes* once free-run starts; use them for the half/role, never as a synonym for the
-cursor itself.
 
-## 1. The axis: four regions, one center
+## 1. Four regions, one center
 
 ```
  array index n:   0 ······· lb ····· center ····· ub ········· ub+E
@@ -63,53 +52,31 @@ cursor itself.
                  T=0       (lb)       (center)      (ub)        (ub+E)
 
  center = N_c (an INDEX, not a state)     window = [lb, ub] = [N_c−H, N_c+H],  H = span/2
-   future cursor sample → S[N_c + i]   (real lookup while inside the window)
-   past   cursor sample → S[N_c − i]   (i = shared shuttle displacement)
-   region [0, lb)    = past free-run runway (real history left of the window)
-   region [lb, ub]   = training window (reflecting shuttle; both cursors live here)
+   region [0, lb)    = past free-run runway
+   region [lb, ub]   = training window
    region (ub, ub+E] = PREDICTION / EVALUATION window — the future cursor goes GENERATIVE
-                       here, so the upper-4 inputs are the ensemble's own output (NOT written
-                       back into S). The TRUE orbit S[N_c + i] is still precomputed across this
-                       band purely as a yardstick: it lets us score generated xyz against
-                       expected xyz to gauge training effectiveness (when a true tail exists).
+                       here, so the upper-4 inputs are the ensemble's own output
 ```
 
 **What `S[n]` is, and how it is made.** `S[n]` is the **raw Lorenz state** at integration step
-`n` — the bare 3-tuple `(xₙ, yₙ, zₙ)`. It is *not* the 8-D input vector and *not* a reservoir
-state; both of those are built downstream from it. The array is produced **once, at setup**, by
+`n` — the bare 3-tuple `(xₙ, yₙ, zₙ)`. The array is produced **once, at setup**, by
 fixed-step RK4 from the seed state at `T = 0`, marching forward with a single `dt` to the array's
 upper limit (`ub`, or `ub+E` when an eval tail is available offline):
 
-```
- seed s₀ (e.g. {1,1,1})  ──RK4(dt)──▶ s₁ ──▶ s₂ ──▶ … ──▶ s_{ub(+E)}
- stored as:               S[0]        S[1]   S[2]         S[N_c+H(+E)]
- physical time:           t = n·dt    (the index n IS the clock — one dt for the whole array)
-```
-
 Everything is **positive time**: every index `n ≥ 0` is a real, forward-integrated state. There
 is no negative time and no backward integration anywhere — the **past** cursor's name refers only
-to the *direction* it scans this one array (`S[N_c − i]`), never to a `step(−dt)`.
+to the *direction* it scans this one array.
 
 **Role — one array, two readers.** `S` is the single shared source of truth. Both cursors are
-pure **index readers** into it: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`. The 8-D input
-is simply two reads of the *same* array — lower 4 from the past read, upper 4 from the
-future read. `S`
-stores only the 3 raw coordinates; the 4th channel `x·z` is formed at lookup time from the
-(scaled) `x` and `z`, never stored.
-
-**Setup scan for per-channel extremes.** The same one-time setup pass that fills `S` then
-**scans the full array** (eval band included, when present) for each channel's `min`/`max`, and
-from those derives the normalization offset/scale `(c_v, h_v)` of §4b. So setup is two cheap
-sweeps over `S`: **integrate** to fill it, **scan** to calibrate it — both completed before any
-warmup or training touches the reservoir, and both frozen for the rest of the run.
+pure **index readers** into it.
 
 The prediction/evaluation region `(ub, ub+E]` is where we read off whether training worked:
-compare the future cursor's *generated* `(x,y,z)` against the true `S[N_c + i]`, step for step.
+compare the future cursor's *generated* `(x,y,z)` against the true `S[future_cursor_index]`, step for step.
 But scoring needs that true future to *exist*, and the `(ub, ub+E]` band is **not** guaranteed —
 it is there only when the orbit was precomputed past `ub` (an offline simulation, or recorded data
 with a held-out tail). On real-time data the future has not happened yet: there is no `Sₑ` tail, so
 the region collapses into open-ended generative free-run. Crucially, that costs only the *score*,
-not the *run* — the past cursor's anchor (`S[N_c − i]`, the lower 4 inputs) is real history and is
+not the *run* — the past cursor's anchor (`S[past_cursor_index]`, the lower 4 inputs) is real history and is
 **always** available, so the half-anchoring keeps the free-run tethered to ground truth whether or
 not the future eval tail exists.
 
@@ -133,12 +100,7 @@ times**. The whole window is swept back and forth repeatedly (the multi-epoch pr
 count is **chosen so training terminates with both cursors back at center** (`i = 0`,
 `future_cursor_` poised to step positive), handing the warm reservoir off seamlessly to free-run (§3).
 
-```
-  ub_ ┤   ╱╲        ╱╲        ╱╲          future_cursor_ (= +i)
-  ctr ┼──╱──╲──────╱──╲──────╱──╲──────
-  lb_ ┤ ╱    ╲╱        ╲╱        ╲        past_cursor_ = mirror about ctr
-      └──────────────────────────► step   (× N sweeps)
-```
+
 
 ## 3. Free-run dynamics: diverge from center, then one switch
 

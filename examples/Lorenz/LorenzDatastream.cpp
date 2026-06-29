@@ -28,26 +28,19 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
 
 LorenzDatastreamResult LorenzDatastream::GetInitialStates() const
 {
-    if (!JanusCursor::AtStartPosition())
+    if (!AtStartPosition())
         throw std::out_of_range(
             "LorenzDatastream::GetInitialStates - only valid when the cursor is at the start position");
-    auto [past, future] = JanusCursor::Indices();
+    auto [past, future] = Indices();
     return {data_stream_[past], &data_stream_[future]};
 }
 
-LorenzDatastreamResult LorenzDatastream::StepTraining()
+LorenzDatastreamResult LorenzDatastream::Step(const bool useGeneratedFuture)
 {
     auto [past, future] = JanusCursor::Step();
+    if (useGeneratedFuture)
+        return {data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
     return {data_stream_[past], &data_stream_[future]};
-}
-
-LorenzDatastreamResult LorenzDatastream::StepFreeRun()
-{
-    auto [past, future] = JanusCursor::Step(true);
-    if (past < 0)
-        throw std::out_of_range(
-            "LorenzDatastream::StepFreeRun - free-run outran the anchor history (need focus >= run length)");
-    return {data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
 }
 
 void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::State& initial_lorenz_state,
@@ -62,7 +55,7 @@ void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::
 
 void LorenzDatastream::Normalize()
 {
-    // Per-channel affine map raw S -> [-1, 1] (JanusShuttle.md §4b / Appendix A).
+    // Per-channel affine map raw S -> [-1, 1] (JanusCursor.md §4b / Appendix A).
     // x, y straddle zero already, so they carry no offset (scale = largest |excursion|);
     // z sits up at ~+24, so it gets a midpoint offset that drops its DC level onto zero
     // plus a half-range scale. The scale/offset values below are measured from this stream,
@@ -125,7 +118,8 @@ void LorenzDatastream::Evaluation()
     const int32_t period = 4 * H; // one full triangle-wave period: ctr->ub->lb->ctr
     constexpr int periods = 2;
 
-    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_center_index, lb, ub);
+    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_center_index, lb,
+                ub);
     std::printf("  step  backward  forward\n");
 
     // Step 0 is the initial state (both cursors at focus), reported before any move;
