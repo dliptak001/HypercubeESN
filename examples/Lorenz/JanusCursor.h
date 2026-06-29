@@ -1,5 +1,5 @@
 #pragma once
-#include <tuple>
+#include <utility>
 #include <cstdint>
 #include <stdexcept>
 
@@ -7,64 +7,79 @@ using JanusCursorResult = std::pair<int32_t, int32_t>;
 
 class JanusCursor
 {
-    class CyclicOrbitCursor
+    class PastCursor
     {
     public:
-        explicit CyclicOrbitCursor(const int32_t span, const int32_t focus_index, const int32_t polarity)
-            : focus_index_(focus_index), polarity_(polarity), lb_(focus_index - span / 2), ub_(focus_index + span / 2)
+        explicit PastCursor(const int32_t span, const int32_t center_index)
+            : lb_(center_index - span / 2), ub_(center_index + span / 2)
         {
             if (span <= 0)
-                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting span > 0");
-            if (focus_index <= span)
-                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting focus_index > span");
-            if (polarity != -1 && polarity != 1)
-                throw std::out_of_range("CyclicOrbitCursor::CyclicOrbitCursor - expecting polarity = +-1");
+                throw std::out_of_range("PastCursor::PastCursor - expecting span > 0");
+            if (center_index <= span / 2)
+                throw std::out_of_range("PastCursor::PastCursor - expecting center_index > span/2");
 
-            Reset(); // start at the center (idx_ = focus), facing this cursor's polarity direction
+            Reset();
         }
 
         void Reset()
         {
-            idx_ = focus_index_;
-            dir_ = polarity_;
+            idx_ = ub_;
         }
 
-        int32_t StepBounded()
+        int32_t Step(const bool unbounded = false)
         {
-            if (idx_ >= ub_)
-                dir_ = -1; // reflect off the upper bound: turn around and head down
-            else if (idx_ <= lb_)
-                dir_ = 1;  // reflect off the lower bound: turn around and head up
-            idx_ += dir_;
-            return idx_;
+            if (!unbounded && idx_ <= lb_)
+                throw std::out_of_range("PastCursor::Step - idx_ <= lb_");
+            return idx_ -= 1;
         }
 
-        int32_t StepUnbounded()
-        {
-            idx_ += dir_;
-            return idx_;
-        }
-
-        /// @brief Out-of-bounds report: +1 past ub, -1 past lb, else 0.
-        [[nodiscard]] int32_t OOB() const { return idx_ > ub_ ? 1 : (idx_ < lb_ ? -1 : 0); }
-
-        /// @brief True at the focus
-        [[nodiscard]] bool AtFocus() const { return idx_ == focus_index_; }
-
+        [[nodiscard]] bool OOB() const { return idx_ < lb_; }
         [[nodiscard]] int32_t index() const { return idx_; }
-        [[nodiscard]] int32_t direction() const { return dir_; }
+        [[nodiscard]] bool AtStartPosition() const { return idx_ == ub_; }
 
     private:
-        int32_t focus_index_;
-        int32_t polarity_;
-        int32_t lb_, ub_;
         int32_t idx_ = 0;
-        int32_t dir_ = 1;
+        int32_t lb_, ub_;
+    };
+
+    class FutureCursor
+    {
+    public:
+        explicit FutureCursor(const int32_t span, const int32_t center_index)
+            : lb_(center_index - span / 2), ub_(center_index + span / 2)
+        {
+            if (span <= 0)
+                throw std::out_of_range("FutureCursor::FutureCursor - expecting span > 0");
+            if (center_index <= span / 2)
+                throw std::out_of_range("FutureCursor::FutureCursor - expecting center_index > span/2");
+
+            Reset();
+        }
+
+        void Reset()
+        {
+            idx_ = lb_;
+        }
+
+        int32_t Step(const bool unbounded = false)
+        {
+            if (!unbounded && idx_ >= ub_)
+                throw std::out_of_range("FutureCursor::Step - idx_ >= ub_");
+            return idx_ += 1;
+        }
+
+        [[nodiscard]] bool OOB() const { return idx_ > ub_; }
+        [[nodiscard]] int32_t index() const { return idx_; }
+        [[nodiscard]] bool AtStartPosition() const { return idx_ == lb_; }
+
+    private:
+        int32_t idx_ = 0;
+        int32_t lb_, ub_;
     };
 
 public:
-    JanusCursor(const int32_t span, const int32_t focus_index)
-        : past_cursor_(span, focus_index, -1), future_cursor_(span, focus_index, 1)
+    JanusCursor(const int32_t span, const int32_t center_index)
+        : span_(span), past_cursor_(span, center_index), future_cursor_(span, center_index)
     {
     }
 
@@ -74,18 +89,9 @@ public:
         future_cursor_.Reset();
     }
 
-    JanusCursorResult StepBounded()
+    JanusCursorResult Step(const bool unbounded = false)
     {
-        const int32_t past_idx = past_cursor_.StepBounded();
-        const int32_t future_idx = future_cursor_.StepBounded();
-        return {past_idx, future_idx};
-    }
-
-    JanusCursorResult StepUnbounded()
-    {
-        const int32_t past_idx = past_cursor_.StepUnbounded();
-        const int32_t future_idx = future_cursor_.StepUnbounded();
-        return {past_idx, future_idx};
+        return {past_cursor_.Step(unbounded), future_cursor_.Step(unbounded)};
     }
 
     [[nodiscard]] JanusCursorResult Indices() const
@@ -93,10 +99,20 @@ public:
         return {past_cursor_.index(), future_cursor_.index()};
     }
 
-    [[nodiscard]] int32_t OOB() const { return future_cursor_.OOB(); }
+    [[nodiscard]] bool OOB() const
+    {
+        return future_cursor_.OOB();
+    }
 
-    [[nodiscard]] bool AtFocus() const { return future_cursor_.AtFocus(); }
+    [[nodiscard]] float Distance() const
+    {
+        return 1.0f * (future_cursor_.index() - past_cursor_.index()) / span_;
+    }
+
+    [[nodiscard]] bool AtStartPosition() const { return past_cursor_.AtStartPosition(); }
 
 private:
-    CyclicOrbitCursor past_cursor_, future_cursor_;
+    int32_t span_;
+    PastCursor past_cursor_;
+    FutureCursor future_cursor_;
 };

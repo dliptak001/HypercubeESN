@@ -30,7 +30,7 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
     cfg.cursor_span = config::CURSOR_SPAN;
-    cfg.cursor_focus_index = config::CURSOR_FOCUS_INDEX;
+    cfg.cursor_center_index = config::CURSOR_FOCUS_INDEX;
     cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
     cfg.lorenz_dt = config::DT;
     return cfg;

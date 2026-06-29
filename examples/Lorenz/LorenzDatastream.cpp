@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
-    : JanusCursor(cfg.cursor_span, cfg.cursor_focus_index)
+    : JanusCursor(cfg.cursor_span, cfg.cursor_center_index)
 {
     if (cfg.stream_length == 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting stream_length > 0");
@@ -14,8 +14,8 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     if (cfg.lorenz_dt <= 0.0f)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting lorenz_dt > 0");
 
-    const int32_t window_lb = cfg.cursor_focus_index - cfg.cursor_span / 2;
-    const int32_t window_ub = cfg.cursor_focus_index + cfg.cursor_span / 2;
+    const int32_t window_lb = cfg.cursor_center_index - cfg.cursor_span / 2;
+    const int32_t window_ub = cfg.cursor_center_index + cfg.cursor_span / 2;
     if (window_lb < 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window underruns the stream");
     if (static_cast<size_t>(window_ub) > cfg.stream_length)
@@ -28,22 +28,22 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
 
 LorenzDatastreamResult LorenzDatastream::GetInitialStates() const
 {
-    if (!JanusCursor::AtFocus())
+    if (!JanusCursor::AtStartPosition())
         throw std::out_of_range(
-            "LorenzDatastream::GetInitialStates - only valid when the cursor is at the focus (center)");
+            "LorenzDatastream::GetInitialStates - only valid when the cursor is at the start position");
     auto [past, future] = JanusCursor::Indices();
     return {data_stream_[past], &data_stream_[future]};
 }
 
 LorenzDatastreamResult LorenzDatastream::StepTraining()
 {
-    auto [past, future] = JanusCursor::StepBounded();
+    auto [past, future] = JanusCursor::Step();
     return {data_stream_[past], &data_stream_[future]};
 }
 
 LorenzDatastreamResult LorenzDatastream::StepFreeRun()
 {
-    auto [past, future] = JanusCursor::StepUnbounded();
+    auto [past, future] = JanusCursor::Step(true);
     if (past < 0)
         throw std::out_of_range(
             "LorenzDatastream::StepFreeRun - free-run outran the anchor history (need focus >= run length)");
@@ -112,7 +112,7 @@ void LorenzDatastream::Evaluation()
 
     LorenzDatastreamConfig cfg;
     cfg.cursor_span = 4;
-    cfg.cursor_focus_index = 10;
+    cfg.cursor_center_index = 10;
     cfg.stream_length = 14;
     cfg.initial_lorenz_state = {0.5, 0.5, 0.5};
     cfg.lorenz_dt = 0.02;
@@ -120,12 +120,12 @@ void LorenzDatastream::Evaluation()
     LorenzDatastream stream(cfg);
 
     const int32_t H = cfg.cursor_span / 2;
-    const int32_t lb = cfg.cursor_focus_index - H;
-    const int32_t ub = cfg.cursor_focus_index + H;
+    const int32_t lb = cfg.cursor_center_index - H;
+    const int32_t ub = cfg.cursor_center_index + H;
     const int32_t period = 4 * H; // one full triangle-wave period: ctr->ub->lb->ctr
     constexpr int periods = 2;
 
-    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_focus_index, lb, ub);
+    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_center_index, lb, ub);
     std::printf("  step  backward  forward\n");
 
     // Step 0 is the initial state (both cursors at focus), reported before any move;
@@ -134,7 +134,7 @@ void LorenzDatastream::Evaluation()
     std::printf("  %4d  %8d  %7d\n", 0, cur.first, cur.second);
     for (int k = 1; k <= periods * period; ++k)
     {
-        cur = stream.JanusCursor::StepBounded();
+        cur = stream.JanusCursor::Step();
         std::printf("  %4d  %8d  %7d\n", k, cur.first, cur.second);
     }
 }

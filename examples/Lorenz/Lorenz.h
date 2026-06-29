@@ -43,7 +43,7 @@ public:
     Lorenz();
 
 private:
-    EnsembleConfig esn_config_;
+    EnsembleConfig esn_config_; // we may not need to keep this around...
     EnsembleESN esn;
     LorenzDatastream data_stream_;
 

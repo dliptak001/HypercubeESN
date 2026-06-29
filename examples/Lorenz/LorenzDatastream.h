@@ -12,7 +12,7 @@ using LorenzDatastreamResult = std::pair<LorenzAttractor::State, const LorenzAtt
 struct LorenzDatastreamConfig
 {
     int32_t cursor_span = 0;
-    int32_t cursor_focus_index = 0;
+    int32_t cursor_center_index = 0;
     size_t stream_length = 0;
     LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5};
     float lorenz_dt = 0.02;
