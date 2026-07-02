@@ -23,6 +23,7 @@ namespace config
     constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
     constexpr float LORENTZ_GAMMA = 1.1f; // set 0.0f for the tanh baseline arm
     constexpr float LORENTZ_INV_SIGMA2 = 250.0f; // 1/sigma^2 of the envelope
+    constexpr size_t RESERVOIR_WARMUP_STEPS = 100;
 
     // ---- (B) Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LR = 0.0015f; // per-step online learning rate (Adam)
@@ -35,6 +36,8 @@ namespace config
     constexpr int32_t CURSOR_FOCUS_INDEX = STREAM_LENGTH - CURSOR_SPAN - 1000;
     constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
+
+    constexpr double KAPPA = 0.2;
 }
 
 class Lorenz
@@ -49,6 +52,7 @@ private:
     EnsembleESN esn;
     LorenzDatastream data_stream_;
 
+    static void ExtractInputsFromPastFutureStates(float inputs[8], const LorenzDatastreamResult& past_future_states);
     static EnsembleConfig MakeEnsembleConfig();
     static LorenzDatastreamConfig MakeDatastreamConfig();
 };

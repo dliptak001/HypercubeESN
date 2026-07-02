@@ -26,11 +26,16 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     Normalize();
 }
 
-LorenzDatastreamResult LorenzDatastream::GetInitialStates()
+LorenzDatastreamResult LorenzDatastream::PeekStates()
 {
-    Reset();
     auto [past, future] = Indices();
     return {Distance(), data_stream_[past], &data_stream_[future]};
+}
+
+LorenzDatastreamResult LorenzDatastream::PeekNextStates()
+{
+    auto [past, future] = NextIndices();
+    return {0, data_stream_[past], &data_stream_[future]};
 }
 
 LorenzDatastreamResult LorenzDatastream::Step(const bool useGeneratedFuture)

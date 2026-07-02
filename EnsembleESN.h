@@ -41,6 +41,10 @@ struct EnsembleConfig
     /// Consensus statistic (§6). Default mean.
     Combine combine = Combine::Mean;
 
+    size_t reservoir_warm_up_steps = 0;
+
+    float kappa = 0.0f
+
     void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
 
     void SetSeed(const size_t seed)

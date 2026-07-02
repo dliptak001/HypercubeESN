@@ -7,7 +7,7 @@
 #include "LorenzAttractor.h"
 
 
-using LorenzDatastreamResult = std::tuple<int32_t, LorenzAttractor::State, const LorenzAttractor::State*>;
+using LorenzDatastreamResult = std::tuple<float, LorenzAttractor::State, const LorenzAttractor::State*>;
 
 struct LorenzDatastreamConfig
 {
@@ -23,7 +23,8 @@ class LorenzDatastream : public JanusCursor
 public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
-    [[nodiscard]] LorenzDatastreamResult GetInitialStates();
+    [[nodiscard]] LorenzDatastreamResult PeekStates();
+    [[nodiscard]] LorenzDatastreamResult PeekNextStates();
     LorenzDatastreamResult Step(bool useGeneratedFuture);
 
     [[nodiscard]] double GetXScale() const { return x_scale_; }

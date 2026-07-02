@@ -33,6 +33,7 @@ class JanusCursor
 
         [[nodiscard]] bool OOB() const { return idx_ < lb_; }
         [[nodiscard]] int32_t index() const { return idx_; }
+        [[nodiscard]] int32_t next_index() const { return idx_ - 1; }
         [[nodiscard]] bool AtStartPosition() const { return idx_ == ub_; }
 
     private:
@@ -66,6 +67,7 @@ class JanusCursor
 
         [[nodiscard]] bool OOB() const { return idx_ > ub_; }
         [[nodiscard]] int32_t index() const { return idx_; }
+        [[nodiscard]] int32_t next_index() const { return idx_ + 1; }
         [[nodiscard]] bool AtStartPosition() const { return idx_ == lb_; }
 
     private:
@@ -93,6 +95,11 @@ public:
     [[nodiscard]] JanusCursorResult Indices() const
     {
         return {past_cursor_.index(), future_cursor_.index()};
+    }
+
+    [[nodiscard]] JanusCursorResult NextIndices() const
+    {
+        return {past_cursor_.next_index(), future_cursor_.next_index()};
     }
 
     [[nodiscard]] bool OOB() const
