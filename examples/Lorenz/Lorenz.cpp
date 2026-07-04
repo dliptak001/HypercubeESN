@@ -52,9 +52,8 @@ Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn_(esn_config_), data_st
                 config::LORENTZ_GAMMA == 0.0f ? " (tanh arm)" : " (A(x) arm)");
     std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
                 esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
-    std::printf("[Lorenz config] readout:   lr %.6f -> %.6f (hold %zu)   epochs=%zu\n",
-                config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::LR_HOLD_EPOCHS,
-                config::EPOCHS);
+    std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
+                config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
     std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                 config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                 config::RESERVOIR_WARMUP_STEPS);
@@ -99,13 +98,11 @@ double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const siz
     return kappa_max*c/(1.0 + c);
 }
 
-float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t hold_epochs,
-                        const size_t epochs, const size_t current_epoch)
+float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epochs, const size_t current_epoch)
 {
-    if (current_epoch <= hold_epochs || epochs <= hold_epochs + 1)
+    if (epochs <= 1)
         return lr_max;
-    const float progress = static_cast<float>(current_epoch - hold_epochs) /
-                           static_cast<float>(epochs - 1 - hold_epochs);
+    const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
     return CosineLR(progress, lr_max, lr_min);
 }
 
@@ -124,8 +121,7 @@ void Lorenz::Train()
         // warmup loop on purpose: warmup runs with the coupling live.
         data_stream_.Reset();
         esn_.SetKappa(KappaProfile(config::KAPPA, 25.0, config::EPOCHS, i));
-        esn_.SetLr(LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN,
-                             config::LR_HOLD_EPOCHS, config::EPOCHS, i));
+        esn_.SetLr(LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i));
         LorenzDatastreamResult past_future_states = data_stream_.States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
