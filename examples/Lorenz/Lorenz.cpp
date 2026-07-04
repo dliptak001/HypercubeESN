@@ -35,7 +35,7 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
 {
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
-    cfg.cursor_span = config::CURSOR_SPAN;
+    cfg.cursor_span = config::TRAINING_WINDOW_SIZE;
     cfg.cursor_center_index = config::CURSOR_CENTER_INDEX;
     cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
     cfg.lorenz_dt = config::DT;
@@ -200,6 +200,81 @@ void Lorenz::Train()
 
 void Lorenz::FreeRun()
 {
+    float inputs[8] = {};
+    float targets[3] = {};
+    float consensus[3] = {};
+    float outputs[3] = {};
+
+    // Stage 1: anchored washout. Re-sweep the training window once, teacher-forced
+    // but inference-only (no readout updates), so the reservoirs cross into the
+    // generative region warm and in-distribution. Kappa holds at the ceiling.
+    data_stream_.Reset();
+    esn_.SetKappa(config::KAPPA);
+    LorenzDatastreamResult past_future_states = data_stream_.States();
+    while (!data_stream_.OOB())
+    {
+        ExtractInputs_Training(inputs, past_future_states);
+        esn_.Step(inputs, nullptr, outputs);
+        past_future_states = data_stream_.Step(false);
+    }
+
+    // Stage 2: generative rollout. The future cursor is now one step past the
+    // window edge: channels 3-5 switch to the ensemble's own consensus while the
+    // past cursor keeps reading real history. Predict() reads the fresh consensus
+    // BEFORE Step consumes it as input — the closed-loop ordering Step alone
+    // cannot express (its c_out arrives only after the inputs are already built).
+    const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
+    const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
+    std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  kappa %.4f  vpt_threshold %.2f\n",
+                config::FREE_RUN_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE / steps_per_lt,
+                esn_.Kappa(), config::VPT_THRESHOLD);
+
+    double sq_err_sum = 0.0;
+    size_t steps = 0;
+    size_t vpt_steps = 0; // first step whose error exceeded VPT_THRESHOLD (0 = never)
+    for (size_t j = 0; j < config::FREE_RUN_WINDOW_SIZE; j++)
+    {
+        const int32_t f = data_stream_.Indices().second; // this step's held-out truth index
+        if (f < 0 || static_cast<size_t>(f) >= S.size())
+        {
+            std::printf("[FreeRun] runway exhausted after %zu steps - stream ends\n", steps);
+            break;
+        }
+
+        esn_.Predict(consensus); // the prediction of S[f] at the current state
+        ExtractInputs_FreeRun(inputs, past_future_states, consensus);
+        esn_.Step(inputs, nullptr, outputs); // absorb the fed-back prediction
+
+        // Score against the true held-out orbit (normalized units).
+        ExtractTargets(targets, S[f]);
+        double step_sq = 0.0;
+        for (size_t c = 0; c < 3; c++)
+        {
+            const double e = static_cast<double>(consensus[c]) - targets[c];
+            step_sq += e * e;
+        }
+        sq_err_sum += step_sq;
+        ++steps;
+
+        const double step_err = std::sqrt(step_sq / 3.0);
+        if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
+            vpt_steps = steps;
+        if (steps % 25 == 0)
+            std::printf("free-run %4zu  (%5.2f lt)  err %.6f\n", steps, steps / steps_per_lt, step_err);
+
+        past_future_states = data_stream_.Step(true);
+    }
+
+    if (steps == 0)
+        return;
+    if (vpt_steps > 0)
+        std::printf("[FreeRun] VPT %zu steps (%.2f Lyapunov times) - error first exceeded %.2f there\n",
+                    vpt_steps, vpt_steps / steps_per_lt, config::VPT_THRESHOLD);
+    else
+        std::printf("[FreeRun] VPT >= %zu steps (%.2f Lyapunov times) - error never exceeded %.2f\n",
+                    steps, steps / steps_per_lt, config::VPT_THRESHOLD);
+    std::printf("[FreeRun] free-run RMSE %.6f over %zu steps (%.2f Lyapunov times)\n",
+                std::sqrt(sq_err_sum / (3.0 * steps)), steps, steps / steps_per_lt);
 }
 
 int main()
@@ -207,5 +282,6 @@ int main()
     std::cout << "=== HypercubeESN: Lorenz ===\n";
     Lorenz lorenz;
     lorenz.Train();
+    lorenz.FreeRun();
     return 0;
 }

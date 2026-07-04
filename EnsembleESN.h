@@ -100,6 +100,14 @@ public:
     ///                 ensemble's output for this step.
     void Step(const float* input, const float* target, float* c_out);
 
+    /// @brief Fresh consensus read at every member's CURRENT state — no readout
+    /// update, no reservoir step. The ensemble counterpart of ESN::Predict.
+    /// Closed-loop callers read this first, build the next input from it, then
+    /// drive @ref Step (whose own read at the unchanged state yields the same
+    /// values). Refreshes the member-output diagnostic buffer (§7.4).
+    /// @param c_out NumOutputs() floats — receives the consensus.
+    void Predict(float* c_out);
+
     /// @brief Set the feedback coupling intensity kappa applied on subsequent
     /// steps (phi_i = kappa*(y_i - c)). The caller owns the schedule; this class
     /// holds kappa fixed between calls. Takes effect on the next @ref Step.

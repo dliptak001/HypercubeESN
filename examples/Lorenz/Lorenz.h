@@ -31,13 +31,18 @@ namespace config
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
-    constexpr int32_t CURSOR_SPAN = 15000;
-    constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - CURSOR_SPAN / 2 - 1000;
+    constexpr int32_t TRAINING_WINDOW_SIZE = 15000;
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
+    constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - TRAINING_WINDOW_SIZE / 2 - FREE_RUN_WINDOW_SIZE;
     constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----
     constexpr size_t RESERVOIR_WARMUP_STEPS = 100;
+
+    // ---- Free-run scoring ----
+    constexpr float VPT_THRESHOLD = 0.3f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
+    constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
 }
 
 /// @brief Experiment driver: online Janus-cursor training of an EnsembleESN on
@@ -54,8 +59,10 @@ namespace config
 /// the saturating ramp KappaProfile, warms the reservoirs up (coupled — the
 /// epoch's kappa is live during warmup by design), then sweeps the cursor
 /// window once teacher-forced at horizon 1, reporting the prequential RMSE.
-/// The generative free-run stage (the consumer of ExtractInputs_FreeRun) is
-/// not built yet.
+/// FreeRun() then rides the same cursors past the window edge: the future
+/// channels switch to the ensemble's own consensus (ExtractInputs_FreeRun)
+/// while the past cursor stays anchored to real history, scored step-for-step
+/// against the held-out orbit tail.
 class Lorenz
 {
 public:
@@ -67,6 +74,13 @@ public:
     /// RMSE (normalized units, over all 3 channels x all steps of the sweep).
     void Train();
 
+    /// Generative rollout over the held-out tail. Self-contained: resets the
+    /// cursors, holds kappa at the config::KAPPA ceiling, re-sweeps the whole
+    /// training window teacher-forced but inference-only (anchored washout),
+    /// then goes generative for config::FREE_RUN_WINDOW_SIZE steps — each step
+    /// feeds the fresh consensus back on the future input channels and scores
+    /// it against the true orbit, printing an error trace, the VPT_THRESHOLD
+    /// crossing, and the free-run RMSE.
     void FreeRun();
 
 private:

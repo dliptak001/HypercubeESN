@@ -135,6 +135,13 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     }
 }
 
+void EnsembleESN::Predict(float* c_out)
+{
+    for (size_t i = 0; i < M_; ++i)
+        esn_[i]->Predict(y_flat_.data() + i * D_);
+    Consensus(c_out);
+}
+
 void EnsembleESN::MemberOutput(size_t i, float* out) const
 {
     if (i >= M_)
