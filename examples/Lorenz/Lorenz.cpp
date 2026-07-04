@@ -109,7 +109,7 @@ void Lorenz::Train()
         // Step 1: Warm up the reservoir. The epoch's kappa is set BEFORE the
         // warmup loop on purpose: warmup runs with the coupling live.
         data_stream_.Reset();
-        esn_.SetKappa(KappaProfile(config::KAPPA, 50.0, config::EPOCHS, i));
+        esn_.SetKappa(KappaProfile(config::KAPPA, 25.0, config::EPOCHS, i));
         esn_.SetLr(LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN,
                              config::LR_HOLD_EPOCHS, config::EPOCHS, i));
         LorenzDatastreamResult past_future_states = data_stream_.States();

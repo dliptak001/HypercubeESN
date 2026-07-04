@@ -21,7 +21,7 @@ namespace config
     constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 3.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0015f; // peak per-step online learning rate (Adam); annealed by LrProfile
