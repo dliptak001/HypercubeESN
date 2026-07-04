@@ -140,5 +140,7 @@ void Lorenz::Train()
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
+    Lorenz lorenz;
+    lorenz.Train();
     return 0;
 }

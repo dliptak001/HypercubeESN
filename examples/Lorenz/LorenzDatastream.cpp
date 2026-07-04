@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
+#include <string>
 
 LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     : JanusCursor(cfg.cursor_span, cfg.cursor_center_index)
@@ -21,6 +23,31 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window overruns the stream");
 
     Normalize(Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt));
+
+    // Construction banner: this run's stream/window geometry (JanusCursor.md §1).
+    // Fixed-width cells keep the columns aligned for any config values.
+    const int32_t H = cfg.cursor_span / 2;
+    const size_t N = cfg.stream_length;
+    const size_t E = N - static_cast<size_t>(window_ub); // generative/eval runway length
+    const auto dots = [](const long long v) {
+        char buf[16];
+        std::snprintf(buf, sizeof buf, "%lld", v);
+        std::string cell(buf);
+        return std::string(14 - cell.size(), '.') + cell;
+    };
+    std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  center=%d  H=%d  window=[%d, %d]\n",
+                N, cfg.lorenz_dt, cfg.cursor_center_index, H, window_lb, window_ub);
+    std::printf("  array index n:%14d%s%s%s%s\n", 0, dots(window_lb).c_str(),
+                dots(cfg.cursor_center_index).c_str(), dots(window_ub).c_str(),
+                dots(static_cast<long long>(N)).c_str());
+    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "|", "|", "|", "|", "|");
+    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "seed", "train edge", "anchor pt", "train edge", "stream end");
+    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "T=0", "(lb)", "(center)", "(ub)", "(ub+E)");
+    std::printf("  region [0, %d) = past free-run runway (anchor history for the past cursor)\n", window_lb);
+    std::printf("  region [%d, %d] = training window (span %d)\n", window_lb, window_ub, cfg.cursor_span);
+    std::printf("  region (%d, %zu] = prediction / evaluation runway (E = %zu) - the future cursor\n",
+                window_ub, N, E);
+    std::printf("%16s goes GENERATIVE here: future input channels come from the ensemble's own output\n", "");
 }
 
 LorenzDatastreamResult LorenzDatastream::States()
