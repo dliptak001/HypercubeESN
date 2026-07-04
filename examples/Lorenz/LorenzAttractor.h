@@ -32,22 +32,6 @@ public:
 
     [[nodiscard]] State peek(const State& s, const double dt) const { return rk4_step(s, dt); }
 
-    /*[[nodiscard]] std::vector<State> trajectory(const State& initial_state, const std::size_t steps, const double dt) const
-    {
-        std::vector<State> points;
-        points.reserve(steps + 1); // make room for start + one per step
-
-        State cur = initial_state;
-        points.push_back(cur); // drop the first breadcrumb (the start)
-
-        for (std::size_t i = 0; i < steps; ++i)
-        {
-            cur = peek(cur, dt); // move the copy one step
-            points.push_back(cur); // drop a breadcrumb where it landed
-        }
-        return points;
-    }*/
-
 private:
     [[nodiscard]] State derivatives(const State& s) const
     {

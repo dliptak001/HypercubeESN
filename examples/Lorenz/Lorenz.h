@@ -57,7 +57,7 @@ private:
     static void ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states);
     static void ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
                                       const float* consensus);
-    static void ExtractTargets(float targets[3], const LorenzAttractor::State& next_future_state);
+    static void ExtractTargets(float targets[3], const NormalizedState& next_future_state);
     static EnsembleConfig MakeEnsembleConfig();
     static LorenzDatastreamConfig MakeDatastreamConfig();
     static double KappaProfile(double kappa_max, double k, size_t epochs, size_t current_epoch);

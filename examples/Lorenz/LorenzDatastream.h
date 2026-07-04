@@ -7,7 +7,15 @@
 #include "LorenzAttractor.h"
 
 
-using LorenzDatastreamResult = std::tuple<float, LorenzAttractor::State, const LorenzAttractor::State*>;
+// A normalized [-1, 1] stream sample, stored as float: the reservoir consumes
+// floats, so the stream is narrowed once at Normalize() rather than per step
+// (and the hot window occupies half the cache of double storage).
+struct NormalizedState
+{
+    float x, y, z;
+};
+
+using LorenzDatastreamResult = std::tuple<float, NormalizedState, const NormalizedState*>;
 
 struct LorenzDatastreamConfig
 {
@@ -24,7 +32,7 @@ public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
     [[nodiscard]] LorenzDatastreamResult States();
-    [[nodiscard]] LorenzAttractor::State NextFutureState() const;
+    [[nodiscard]] NormalizedState NextFutureState() const;
     LorenzDatastreamResult Step(bool useGeneratedFuture);
 
     [[nodiscard]] double GetXScale() const { return x_scale_; }
@@ -32,17 +40,19 @@ public:
     [[nodiscard]] double GetZScale() const { return z_scale_; }
     [[nodiscard]] double GetZOffset() const { return z_offset_; }
 
-    [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; }
+    [[nodiscard]] const std::vector<NormalizedState>& GetDataStream() const { return data_stream_; }
 
 private:
-    std::vector<LorenzAttractor::State> data_stream_;
+    std::vector<NormalizedState> data_stream_;
 
     double x_scale_ = 1.0;
     double y_scale_ = 1.0;
     double z_scale_ = 1.0;
     double z_offset_ = 0.0;
 
-    void Build(size_t stream_length, const LorenzAttractor::State& initial_lorenz_state, float lorenz_dt);
+    [[nodiscard]] std::vector<LorenzAttractor::State> Build(size_t stream_length,
+                                                            const LorenzAttractor::State& initial_lorenz_state,
+                                                            float lorenz_dt) const;
 
-    void Normalize();
+    void Normalize(const std::vector<LorenzAttractor::State>& raw);
 };

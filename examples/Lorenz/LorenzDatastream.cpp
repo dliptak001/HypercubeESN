@@ -20,9 +20,7 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     if (static_cast<size_t>(window_ub) > cfg.stream_length)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window overruns the stream");
 
-    Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt);
-
-    Normalize();
+    Normalize(Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt));
 }
 
 LorenzDatastreamResult LorenzDatastream::States()
@@ -31,7 +29,7 @@ LorenzDatastreamResult LorenzDatastream::States()
     return {Distance(), data_stream_[past], &data_stream_[future]};
 }
 
-LorenzAttractor::State LorenzDatastream::NextFutureState() const
+NormalizedState LorenzDatastream::NextFutureState() const
 {
     auto [past, future] = NextIndices();
     return data_stream_[future];
@@ -45,17 +43,21 @@ LorenzDatastreamResult LorenzDatastream::Step([[maybe_unused]] const bool useGen
     return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
 }
 
-void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::State& initial_lorenz_state,
-                             const float lorenz_dt)
+std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_length,
+                                                            const LorenzAttractor::State& initial_lorenz_state,
+                                                            const float lorenz_dt) const
 {
+    // Integrate in full double precision; Normalize() narrows to float storage once.
     LorenzAttractor attractor(initial_lorenz_state);
-    data_stream_.reserve(stream_length + 1); // make room for start + one per step
-    data_stream_.push_back(initial_lorenz_state);
+    std::vector<LorenzAttractor::State> raw;
+    raw.reserve(stream_length + 1); // make room for start + one per step
+    raw.push_back(initial_lorenz_state);
     for (std::size_t i = 0; i < stream_length; ++i)
-        data_stream_.push_back(attractor.step(lorenz_dt)); // drop a breadcrumb where it landed
+        raw.push_back(attractor.step(lorenz_dt)); // drop a breadcrumb where it landed
+    return raw;
 }
 
-void LorenzDatastream::Normalize()
+void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw)
 {
     // Per-channel affine map raw S -> [-1, 1] (JanusCursor.md §4b / Appendix A).
     // x, y straddle zero already, so they carry no offset (scale = largest |excursion|);
@@ -63,11 +65,11 @@ void LorenzDatastream::Normalize()
     // plus a half-range scale. The scale/offset values below are measured from this stream,
     // so any seed / dt yields its own envelope.
 
-    // 1. Scan the stream for each channel's extremes.
-    double x_min = data_stream_.front().x, x_max = x_min;
-    double y_min = data_stream_.front().y, y_max = y_min;
-    double z_min = data_stream_.front().z, z_max = z_min;
-    for (const LorenzAttractor::State& s : data_stream_)
+    // 1. Scan the raw stream for each channel's extremes.
+    double x_min = raw.front().x, x_max = x_min;
+    double y_min = raw.front().y, y_max = y_min;
+    double z_min = raw.front().z, z_max = z_min;
+    for (const LorenzAttractor::State& s : raw)
     {
         x_min = std::min(x_min, s.x);
         x_max = std::max(x_max, s.x);
@@ -89,12 +91,14 @@ void LorenzDatastream::Normalize()
     if (y_scale_ == 0.0) y_scale_ = 1.0;
     if (z_scale_ == 0.0) z_scale_ = 1.0;
 
-    // 3. Rewrite the stream in place to its normalized [-1, 1] values. The scales/offset
-    //    stay on the object so consumers can invert the map: v = scale * v_hat + offset.
-    for (LorenzAttractor::State& s : data_stream_)
+    // 3. Write the normalized [-1, 1] stream once, narrowed to float storage. The
+    //    scales/offset stay on the object (as doubles) so consumers can invert the
+    //    map: v = scale * v_hat + offset.
+    data_stream_.reserve(raw.size());
+    for (const LorenzAttractor::State& s : raw)
     {
-        s.x = s.x / x_scale_;
-        s.y = s.y / y_scale_;
-        s.z = (s.z - z_offset_) / z_scale_;
+        data_stream_.push_back({static_cast<float>(s.x / x_scale_),
+                                static_cast<float>(s.y / y_scale_),
+                                static_cast<float>((s.z - z_offset_) / z_scale_)});
     }
 }

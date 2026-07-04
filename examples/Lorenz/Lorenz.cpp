@@ -65,7 +65,7 @@ void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult
     inputs[7] = inputs[0] * inputs[2]; //past xz product
 }
 
-void Lorenz::ExtractTargets(float targets[3], const LorenzAttractor::State& next_future_state)
+void Lorenz::ExtractTargets(float targets[3], const NormalizedState& next_future_state)
 {
     targets[0] = next_future_state.x;
     targets[1] = next_future_state.y;
