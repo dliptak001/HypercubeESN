@@ -41,9 +41,15 @@ struct EnsembleConfig
     /// Consensus statistic (§6). Default mean.
     Combine combine = Combine::Mean;
 
-    size_t reservoir_warm_up_steps = 0;
+    /// Per-step online learning rate seeding EnsembleESN's lr at construction;
+    /// caller-managed thereafter via SetLr. Note: `base.readout.lr_max` /
+    /// `base.readout.weight_decay` govern only the batch Readout::Train path
+    /// and are ignored by the ensemble's online stepping.
+    float learning_rate = 0.001f;
 
-    float kappa = 0.0f
+    /// L2 weight decay seeding EnsembleESN's wd at construction (0 = off);
+    /// caller-managed thereafter via SetWeightDecay.
+    float weight_decay = 0.0f;
 
     void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
 

@@ -32,7 +32,7 @@ public:
 
     [[nodiscard]] State peek(const State& s, const double dt) const { return rk4_step(s, dt); }
 
-    [[nodiscard]] std::vector<State> trajectory(const State& initial_state, const std::size_t steps, const double dt) const
+    /*[[nodiscard]] std::vector<State> trajectory(const State& initial_state, const std::size_t steps, const double dt) const
     {
         std::vector<State> points;
         points.reserve(steps + 1); // make room for start + one per step
@@ -46,7 +46,7 @@ public:
             points.push_back(cur); // drop a breadcrumb where it landed
         }
         return points;
-    }
+    }*/
 
 private:
     [[nodiscard]] State derivatives(const State& s) const

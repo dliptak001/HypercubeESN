@@ -8,25 +8,20 @@ EnsembleConfig Lorenz::MakeEnsembleConfig()
     cfg.SetDIM(config::DIM);
     cfg.SetSeed(config::SEED);
 
-    cfg.kappa = config::KAPPA;
+    cfg.learning_rate = config::LEARNING_RATE;
+    cfg.weight_decay = config::WEIGHT_DECAY;
 
-    cfg.reservoir_warm_up_steps = config::RESERVOIR_WARMUP_STEPS;
-
-    // These are fixed by the design. One D, three roles: the feedback channel
-    // count must equal num_outputs (= 3), or EnsembleESN's ctor rejects it.
-    cfg.base.reservoir.num_inputs = 8;
     // [x_past, y_past, z_past, x_future, y_future, z_future, distance, x_past*z_past]
-    cfg.base.readout.num_outputs = 3; //[x, y, z]
+    cfg.base.reservoir.num_inputs = 8;
     cfg.base.reservoir.num_feedback_channels = 3; // D = num_outputs
-
     cfg.base.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
     cfg.base.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.base.reservoir.leak_rate = config::LEAK_RATE;
     cfg.base.reservoir.history_depth = config::HISTORY_DEPTH;
     cfg.base.reservoir.lorentz_gamma = config::LORENTZ_GAMMA;
-    cfg.base.reservoir.lorentz_inv_sigma2 = config::LORENTZ_INV_SIGMA2;
 
-    cfg.base.readout.epochs = config::EPOCHS;
+    // The feedback channel count must equal num_outputs (= 3), or EnsembleESN's ctor rejects it.
+    cfg.base.readout.num_outputs = 3; //[x, y, z]
     return cfg;
 }
 
@@ -45,7 +40,7 @@ Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn(esn_config_), data_str
 {
 }
 
-void Lorenz::ExtractInputsFromPastFutureStates(float inputs[8], const LorenzDatastreamResult& past_future_states)
+void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states)
 {
     inputs[0] = std::get<1>(past_future_states).x; //past
     inputs[1] = std::get<1>(past_future_states).y; //past
@@ -57,33 +52,60 @@ void Lorenz::ExtractInputsFromPastFutureStates(float inputs[8], const LorenzData
     inputs[7] = inputs[0] * inputs[2]; //past xz product
 }
 
+void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
+                                   const float* consensus)
+{
+    inputs[0] = std::get<1>(past_future_states).x; //past
+    inputs[1] = std::get<1>(past_future_states).y; //past
+    inputs[2] = std::get<1>(past_future_states).z; //past
+    inputs[3] = consensus[0]; //future: the ensemble's last consensus output
+    inputs[4] = consensus[1]; //future
+    inputs[5] = consensus[2]; //future
+    inputs[6] = std::get<0>(past_future_states); //distance between past and future indices
+    inputs[7] = inputs[0] * inputs[2]; //past xz product
+}
+
+void Lorenz::ExtractTargets(float targets[3], const LorenzAttractor::State& next_future_state)
+{
+    targets[0] = next_future_state.x;
+    targets[1] = next_future_state.y;
+    targets[2] = next_future_state.z;
+}
+
+double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const size_t current_epoch)
+{
+    double x = static_cast<double>(current_epoch) / epochs;
+    double c = k*x*x;
+    return kappa_max*c/(1.0 + c);
+}
+
 void Lorenz::Train()
 {
     float inputs[8] = {};
-    float targets[8] = {};
+    float targets[3] = {};
     float outputs[3] = {};
-    const auto epochs = esn_config_.base.readout.epochs;
-    for (int i = 0; i < epochs; i++)
+    for (size_t i = 0; i < config::EPOCHS; i++)
     {
         // Step 1: Warm up the reservoir
         data_stream_.Reset();
-        esn.SetKappa(0.0);
-        LorenzDatastreamResult past_future_states = data_stream_.PeekStates();
-        for (size_t j = 0; j < esn_config_.reservoir_warm_up_steps; j++)
+        esn.SetKappa(KappaProfile(config::KAPPA, 50.0, config::EPOCHS, i));
+        LorenzDatastreamResult past_future_states = data_stream_.States();
+        for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
-            ExtractInputsFromPastFutureStates(inputs, past_future_states);
+            ExtractInputs_Training(inputs, past_future_states);
             esn.Step(inputs, nullptr, outputs);
             past_future_states = data_stream_.Step(false);
         }
 
-        // Step 2: Train
-        esn.SetKappa(std::min(esn_config_.kappa * i / (0.2f * epochs), 1.0f));
-        for (size_t j = 0; j < esn_config_.reservoir_warm_up_steps; j++)
+        // Step 2: Train - train towards future state targets
+        while (!data_stream_.OOB())
         {
-            // TODO build targets...
-            LorenzDatastreamResult target_past_future_states = data_stream_.PeekNextStates();
-
-            ExtractInputsFromPastFutureStates(inputs, past_future_states);
+            // Horizon-1 alignment: EnsembleESN::Step fits the readout on x(t) BEFORE
+            // injecting this call's inputs, so x(t) has seen the future channel only
+            // through S[f-1]. The aligned one-step target is S[f] — the sample this
+            // call is about to inject — not NextFutureState() = S[f+1].
+            ExtractTargets(targets, *std::get<2>(past_future_states));
+            ExtractInputs_Training(inputs, past_future_states);
             esn.Step(inputs, targets, outputs);
             past_future_states = data_stream_.Step(false);
         }

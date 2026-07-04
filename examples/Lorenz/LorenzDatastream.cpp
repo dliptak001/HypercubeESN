@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <stdexcept>
 
 LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
@@ -26,24 +25,24 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     Normalize();
 }
 
-LorenzDatastreamResult LorenzDatastream::PeekStates()
+LorenzDatastreamResult LorenzDatastream::States()
 {
     auto [past, future] = Indices();
     return {Distance(), data_stream_[past], &data_stream_[future]};
 }
 
-LorenzDatastreamResult LorenzDatastream::PeekNextStates()
+LorenzAttractor::State LorenzDatastream::NextFutureState() const
 {
     auto [past, future] = NextIndices();
-    return {0, data_stream_[past], &data_stream_[future]};
+    return data_stream_[future];
 }
 
-LorenzDatastreamResult LorenzDatastream::Step(const bool useGeneratedFuture)
+LorenzDatastreamResult LorenzDatastream::Step([[maybe_unused]] const bool useGeneratedFuture)
 {
     auto [past, future] = JanusCursor::Step();
-    if (useGeneratedFuture)
-        return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
-    return {Distance(), data_stream_[past], &data_stream_[future]};
+    if (past < 0)
+        throw std::out_of_range("LorenzDatastream::Step - free-run outran the anchor history");
+    return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
 }
 
 void LorenzDatastream::Build(const size_t stream_length, const LorenzAttractor::State& initial_lorenz_state,
@@ -97,41 +96,5 @@ void LorenzDatastream::Normalize()
         s.x = s.x / x_scale_;
         s.y = s.y / y_scale_;
         s.z = (s.z - z_offset_) / z_scale_;
-    }
-}
-
-void LorenzDatastream::Evaluation()
-{
-    // Dev harness for the Janus shuttle: drive the bounded reflecting scan over a few
-    // periods and print the two cursor indices side by side. The backward (S[N_c - i])
-    // and forward (S[N_c + i]) indices mirror about the focus and stay inside [lb, ub].
-
-    LorenzDatastreamConfig cfg;
-    cfg.cursor_span = 4;
-    cfg.cursor_center_index = 10;
-    cfg.stream_length = 14;
-    cfg.initial_lorenz_state = {0.5, 0.5, 0.5};
-    cfg.lorenz_dt = 0.02;
-
-    LorenzDatastream stream(cfg);
-
-    const int32_t H = cfg.cursor_span / 2;
-    const int32_t lb = cfg.cursor_center_index - H;
-    const int32_t ub = cfg.cursor_center_index + H;
-    const int32_t period = 4 * H; // one full triangle-wave period: ctr->ub->lb->ctr
-    constexpr int periods = 2;
-
-    std::printf("Janus shuttle  span=%d  focus=%d  window=[%d, %d]\n", cfg.cursor_span, cfg.cursor_center_index, lb,
-                ub);
-    std::printf("  step  backward  forward\n");
-
-    // Step 0 is the initial state (both cursors at focus), reported before any move;
-    // each later row is the state after one StepBounded.
-    JanusCursorResult cur = stream.Indices();
-    std::printf("  %4d  %8d  %7d\n", 0, cur.first, cur.second);
-    for (int k = 1; k <= periods * period; ++k)
-    {
-        cur = stream.JanusCursor::Step();
-        std::printf("  %4d  %8d  %7d\n", k, cur.first, cur.second);
     }
 }

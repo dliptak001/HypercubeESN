@@ -26,7 +26,9 @@ namespace
 EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
     : M_(cfg.num_members),
       num_inputs_(cfg.base.reservoir.num_inputs),
-      combine_(cfg.combine)
+      combine_(cfg.combine),
+      lr_(cfg.learning_rate),
+      wd_(cfg.weight_decay)
 {
     if (M_ < 1)
         throw std::invalid_argument("EnsembleESN: num_members must be >= 1");
@@ -115,7 +117,7 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
     // 2. consensus c(t) = combine_i y_i  (also the ensemble's output).
     Consensus(c_out);
 
-    // 3. train flag: fit only past the washout, and only when a target is given.
+    // 3. train flag: fit only when a target is given.
     const bool train = (target != nullptr);
 
     // 4. for each member: (train) update readout on x_i(t), then inject the

@@ -23,8 +23,8 @@ class LorenzDatastream : public JanusCursor
 public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
-    [[nodiscard]] LorenzDatastreamResult PeekStates();
-    [[nodiscard]] LorenzDatastreamResult PeekNextStates();
+    [[nodiscard]] LorenzDatastreamResult States();
+    [[nodiscard]] LorenzAttractor::State NextFutureState() const;
     LorenzDatastreamResult Step(bool useGeneratedFuture);
 
     [[nodiscard]] double GetXScale() const { return x_scale_; }
@@ -33,8 +33,6 @@ public:
     [[nodiscard]] double GetZOffset() const { return z_offset_; }
 
     [[nodiscard]] const std::vector<LorenzAttractor::State>& GetDataStream() const { return data_stream_; }
-
-    static void Evaluation(); // dev harness
 
 private:
     std::vector<LorenzAttractor::State> data_stream_;
