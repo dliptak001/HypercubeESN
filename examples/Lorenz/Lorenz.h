@@ -21,14 +21,14 @@ namespace config
     constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 3.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 1.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float LEARNING_RATE = 0.0015f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.0001f; // anneal floor reached at the final epoch
+    constexpr float LEARNING_RATE = 0.0001f;//0.0015f; // peak per-step online learning rate (Adam); annealed by LrProfile
+    constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
     constexpr size_t LR_HOLD_EPOCHS = 25; // hold at peak through the fast-improvement phase, then cosine-decay
     constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
-    constexpr size_t EPOCHS = 600;
+    constexpr size_t EPOCHS = 1200;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 10000;
