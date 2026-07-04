@@ -24,7 +24,9 @@ namespace config
     constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float LEARNING_RATE = 0.0015f; // per-step online learning rate (Adam)
+    constexpr float LEARNING_RATE = 0.0015f; // peak per-step online learning rate (Adam); annealed by LrProfile
+    constexpr float LEARNING_RATE_MIN = 0.0001f; // anneal floor reached at the final epoch
+    constexpr size_t LR_HOLD_EPOCHS = 25; // hold at peak through the fast-improvement phase, then cosine-decay
     constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
     constexpr size_t EPOCHS = 600;
 
@@ -86,4 +88,8 @@ private:
     /// Saturating coupling ramp kappa_max*k*x^2/(1 + k*x^2), x = current_epoch/epochs:
     /// rises steeply, asymptotes strictly below kappa_max.
     static double KappaProfile(double kappa_max, double k, size_t epochs, size_t current_epoch);
+    /// Per-epoch learning-rate schedule: hold lr_max through hold_epochs (the
+    /// fast-improvement phase), then cosine-anneal (CosineLR) to lr_min at the
+    /// final epoch — lowers the single-sample gradient-noise floor late in training.
+    static float LrProfile(float lr_max, float lr_min, size_t hold_epochs, size_t epochs, size_t current_epoch);
 };

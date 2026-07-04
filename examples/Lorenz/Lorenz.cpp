@@ -1,9 +1,11 @@
 #include "Lorenz.h"
 #include "LorenzDatastream.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <vector>
 
 
 EnsembleConfig Lorenz::MakeEnsembleConfig()
@@ -83,17 +85,33 @@ double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const siz
     return kappa_max*c/(1.0 + c);
 }
 
+float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t hold_epochs,
+                        const size_t epochs, const size_t current_epoch)
+{
+    if (current_epoch <= hold_epochs || epochs <= hold_epochs + 1)
+        return lr_max;
+    const float progress = static_cast<float>(current_epoch - hold_epochs) /
+                           static_cast<float>(epochs - 1 - hold_epochs);
+    return CosineLR(progress, lr_max, lr_min);
+}
+
 void Lorenz::Train()
 {
     float inputs[8] = {};
     float targets[3] = {};
     float outputs[3] = {};
+    const size_t M = esn_.NumMembers();
+    const size_t D = esn_.NumOutputs();
+    std::vector<float> member_y(M * D); // per-step member outputs (diagnostic read)
+    std::vector<double> dev_sq(M); // per-member sum of squared consensus deviations
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
         // Step 1: Warm up the reservoir. The epoch's kappa is set BEFORE the
         // warmup loop on purpose: warmup runs with the coupling live.
         data_stream_.Reset();
         esn_.SetKappa(KappaProfile(config::KAPPA, 50.0, config::EPOCHS, i));
+        esn_.SetLr(LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN,
+                             config::LR_HOLD_EPOCHS, config::EPOCHS, i));
         LorenzDatastreamResult past_future_states = data_stream_.States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
@@ -104,6 +122,7 @@ void Lorenz::Train()
 
         // Step 2: Train - train towards future state targets
         double sq_err_sum = 0.0; // double accumulator: ~15K float-sized terms/epoch
+        std::fill(dev_sq.begin(), dev_sq.end(), 0.0);
         size_t train_steps = 0;
         while (!data_stream_.OOB())
         {
@@ -123,17 +142,49 @@ void Lorenz::Train()
                 const double e = static_cast<double>(outputs[c]) - targets[c];
                 sq_err_sum += e * e;
             }
+            // Raw consensus deviations y_i - c: AllMemberOutputs returns the y_i
+            // this Step used to form the consensus, so this is exactly the
+            // pre-kappa error the Step fed back as phi_i = kappa*(y_i - c).
+            esn_.AllMemberOutputs(member_y.data());
+            for (size_t m = 0; m < M; m++)
+            {
+                for (size_t c = 0; c < D; c++)
+                {
+                    const double d = static_cast<double>(member_y[m * D + c]) - outputs[c];
+                    dev_sq[m] += d * d;
+                }
+            }
             ++train_steps;
 
             past_future_states = data_stream_.Step(false);
         }
 
         if (train_steps > 0)
-            std::printf("epoch %3zu  kappa %.4f  train RMSE %.6f  (%zu steps)\n",
-                        i, esn_.Kappa(), std::sqrt(sq_err_sum / (3.0 * train_steps)), train_steps);
+        {
+            // Per-member epoch RMS of the raw (pre-kappa) consensus deviation,
+            // and the spread (population std) of those M values.
+            double dev_mean = 0.0;
+            std::vector<double> dev_rms(M);
+            for (size_t m = 0; m < M; m++)
+            {
+                dev_rms[m] = std::sqrt(dev_sq[m] / (static_cast<double>(D) * train_steps));
+                dev_mean += dev_rms[m];
+            }
+            dev_mean /= static_cast<double>(M);
+            double dev_var = 0.0;
+            for (size_t m = 0; m < M; m++)
+                dev_var += (dev_rms[m] - dev_mean) * (dev_rms[m] - dev_mean);
+            dev_var /= static_cast<double>(M);
+
+            std::printf("epoch %3zu  kappa %.4f  lr %.5f  train RMSE %.6f  dev[",
+                        i, esn_.Kappa(), esn_.Lr(), std::sqrt(sq_err_sum / (3.0 * train_steps)));
+            for (size_t m = 0; m < M; m++)
+                std::printf(" %.6f", dev_rms[m]);
+            std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);
+        }
         else
-            std::printf("epoch %3zu  kappa %.4f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
-                        i, esn_.Kappa());
+            std::printf("epoch %3zu  kappa %.4f  lr %.5f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
+                        i, esn_.Kappa(), esn_.Lr());
     }
 }
 
