@@ -198,6 +198,10 @@ void Lorenz::Train()
     }
 }
 
+void Lorenz::FreeRun()
+{
+}
+
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";

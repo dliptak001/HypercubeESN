@@ -6,11 +6,6 @@ per run, each recording the config delta, the headline numbers, and the finding 
 run established. Free-run (generative) evaluation does not exist yet; every metric
 here is train-side.
 
-The first campaign (6 runs on the old 10000-sample / span-5000 geometry) is retired;
-see git history for its record. Its durable conclusions: online single-sample Adam
-training is stable and its error floor tracks lr roughly linearly; annealing from a
-high lr buys nothing over starting at the floor; and in a controlled kappa-0 A/B at
-low lr, the uncoupled ensemble had the lower train RMSE.
 
 ## Findings at a glance
 
@@ -73,5 +68,3 @@ Findings:
 2. **Does kappa pay for itself in free-run?** Train-side the kappa-0 arm won the
    retired campaign's A/B; the coupled arm must beat this kappa=0 baseline's
    VPT to justify itself.
-3. **Lr floor still unreached** at 2e-5; lower floor / longer decay has visible
-   headroom if free-run demands a lower one-step error.

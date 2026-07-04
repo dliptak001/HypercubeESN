@@ -26,7 +26,7 @@ namespace config
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
+    constexpr float LEARNING_RATE_MIN = 0.00002f; // anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 200;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
@@ -66,6 +66,8 @@ public:
     /// window, printing one line per epoch: kappa and the prequential train
     /// RMSE (normalized units, over all 3 channels x all steps of the sweep).
     void Train();
+
+    void FreeRun();
 
 private:
     EnsembleConfig esn_config_;
