@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 
 
 EnsembleConfig Lorenz::MakeEnsembleConfig()
@@ -33,13 +34,13 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
     cfg.cursor_span = config::CURSOR_SPAN;
-    cfg.cursor_center_index = config::CURSOR_FOCUS_INDEX;
+    cfg.cursor_center_index = config::CURSOR_CENTER_INDEX;
     cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
     cfg.lorenz_dt = config::DT;
     return cfg;
 }
 
-Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn(esn_config_), data_stream_(MakeDatastreamConfig())
+Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn_(esn_config_), data_stream_(MakeDatastreamConfig())
 {
 }
 
@@ -68,11 +69,11 @@ void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult
     inputs[7] = inputs[0] * inputs[2]; //past xz product
 }
 
-void Lorenz::ExtractTargets(float targets[3], const NormalizedState& next_future_state)
+void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_state)
 {
-    targets[0] = next_future_state.x;
-    targets[1] = next_future_state.y;
-    targets[2] = next_future_state.z;
+    targets[0] = future_state.x;
+    targets[1] = future_state.y;
+    targets[2] = future_state.z;
 }
 
 double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const size_t current_epoch)
@@ -89,14 +90,15 @@ void Lorenz::Train()
     float outputs[3] = {};
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
-        // Step 1: Warm up the reservoir
+        // Step 1: Warm up the reservoir. The epoch's kappa is set BEFORE the
+        // warmup loop on purpose: warmup runs with the coupling live.
         data_stream_.Reset();
-        esn.SetKappa(KappaProfile(config::KAPPA, 50.0, config::EPOCHS, i));
+        esn_.SetKappa(KappaProfile(config::KAPPA, 50.0, config::EPOCHS, i));
         LorenzDatastreamResult past_future_states = data_stream_.States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
             ExtractInputs_Training(inputs, past_future_states);
-            esn.Step(inputs, nullptr, outputs);
+            esn_.Step(inputs, nullptr, outputs);
             past_future_states = data_stream_.Step(false);
         }
 
@@ -111,7 +113,7 @@ void Lorenz::Train()
             // call is about to inject — not NextFutureState() = S[f+1].
             ExtractTargets(targets, *std::get<2>(past_future_states));
             ExtractInputs_Training(inputs, past_future_states);
-            esn.Step(inputs, targets, outputs);
+            esn_.Step(inputs, targets, outputs);
 
             // Prequential (test-then-train) error: outputs is the consensus read at
             // x(t) before this call's TrainStep, i.e. the pre-update prediction of
@@ -128,10 +130,10 @@ void Lorenz::Train()
 
         if (train_steps > 0)
             std::printf("epoch %3zu  kappa %.4f  train RMSE %.6f  (%zu steps)\n",
-                        i, esn.Kappa(), std::sqrt(sq_err_sum / (3.0 * train_steps)), train_steps);
+                        i, esn_.Kappa(), std::sqrt(sq_err_sum / (3.0 * train_steps)), train_steps);
         else
             std::printf("epoch %3zu  kappa %.4f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
-                        i, esn.Kappa());
+                        i, esn_.Kappa());
     }
 }
 
