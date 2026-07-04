@@ -1,6 +1,9 @@
 #include "Lorenz.h"
 #include "LorenzDatastream.h"
 
+#include <cmath>
+#include <cstdio>
+
 
 EnsembleConfig Lorenz::MakeEnsembleConfig()
 {
@@ -98,6 +101,8 @@ void Lorenz::Train()
         }
 
         // Step 2: Train - train towards future state targets
+        double sq_err_sum = 0.0; // double accumulator: ~15K float-sized terms/epoch
+        size_t train_steps = 0;
         while (!data_stream_.OOB())
         {
             // Horizon-1 alignment: EnsembleESN::Step fits the readout on x(t) BEFORE
@@ -107,8 +112,26 @@ void Lorenz::Train()
             ExtractTargets(targets, *std::get<2>(past_future_states));
             ExtractInputs_Training(inputs, past_future_states);
             esn.Step(inputs, targets, outputs);
+
+            // Prequential (test-then-train) error: outputs is the consensus read at
+            // x(t) before this call's TrainStep, i.e. the pre-update prediction of
+            // this call's own target — the pairing is exact within one Step.
+            for (size_t c = 0; c < 3; c++)
+            {
+                const double e = static_cast<double>(outputs[c]) - targets[c];
+                sq_err_sum += e * e;
+            }
+            ++train_steps;
+
             past_future_states = data_stream_.Step(false);
         }
+
+        if (train_steps > 0)
+            std::printf("epoch %3zu  kappa %.4f  train RMSE %.6f  (%zu steps)\n",
+                        i, esn.Kappa(), std::sqrt(sq_err_sum / (3.0 * train_steps)), train_steps);
+        else
+            std::printf("epoch %3zu  kappa %.4f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
+                        i, esn.Kappa());
     }
 }
 
