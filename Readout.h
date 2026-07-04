@@ -31,6 +31,19 @@ inline float CosineLR(float progress, float lr_max, float lr_min)
     return lr_min + 0.5f * (lr_max - lr_min) * (1.0f + std::cos(pi * progress));
 }
 
+/// Exponential-decay learning-rate schedule: geometric interpolation
+/// lr_max * (lr_min/lr_max)^progress, from @p lr_max (at @p progress = 0) down
+/// to exactly @p lr_min (at @p progress = 1). Where cosine holds the rate high
+/// early and dives late, this drops by a constant *ratio* per unit progress —
+/// linear in log-space. Drop-in alternative to @ref CosineLR (same signature
+/// and clamping); requires @p lr_max and @p lr_min > 0.
+inline float ExponentialDecayLR(float progress, float lr_max, float lr_min)
+{
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+    return lr_max * std::pow(lr_min / lr_max, progress);
+}
+
 /// @brief Architecture and training settings for the @ref Readout CNN.
 ///
 /// The defaults are sensible for a first run; you mainly set @c dim,

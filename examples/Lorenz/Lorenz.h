@@ -21,7 +21,7 @@ namespace config
     constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 0.01; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
     constexpr Combine COMBINE = Combine::Mean; // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
@@ -31,8 +31,8 @@ namespace config
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
-    constexpr int32_t TRAINING_WINDOW_SIZE = 15000;
-    constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
+    constexpr int32_t TRAINING_WINDOW_SIZE = STREAM_LENGTH - 2*FREE_RUN_WINDOW_SIZE;
     constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - TRAINING_WINDOW_SIZE / 2 - FREE_RUN_WINDOW_SIZE;
     constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)

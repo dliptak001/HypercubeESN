@@ -67,8 +67,8 @@ void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResul
     inputs[3] = std::get<2>(past_future_states)->x; //future
     inputs[4] = std::get<2>(past_future_states)->y; //future
     inputs[5] = std::get<2>(past_future_states)->z; //future
-    inputs[6] = std::get<0>(past_future_states); //distance between past and future indices
-    inputs[7] = inputs[0] * inputs[2]; //past xz product
+    inputs[6] = inputs[0] * inputs[2]; //past xz product
+    inputs[7] = inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
@@ -80,8 +80,8 @@ void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult
     inputs[3] = consensus[0]; //future: the ensemble's last consensus output
     inputs[4] = consensus[1]; //future
     inputs[5] = consensus[2]; //future
-    inputs[6] = std::get<0>(past_future_states); //distance between past and future indices
-    inputs[7] = inputs[0] * inputs[2]; //past xz product
+    inputs[6] = inputs[0] * inputs[2]; //past xz product
+    inputs[7] = inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_state)
@@ -103,7 +103,8 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
     if (epochs <= 1)
         return lr_max;
     const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
-    return CosineLR(progress, lr_max, lr_min);
+    //return CosineLR(progress, lr_max, lr_min); // swap in ExponentialDecayLR (Readout.h) to compare schedules
+    return ExponentialDecayLR(progress, lr_max, lr_min);
 }
 
 void Lorenz::Train()
@@ -186,14 +187,14 @@ void Lorenz::Train()
                 dev_var += (dev_rms[m] - dev_mean) * (dev_rms[m] - dev_mean);
             dev_var /= static_cast<double>(M);
 
-            std::printf("epoch %3zu  kappa %.4f  lr %.5f  train RMSE %.6f  dev[",
+            std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE %.6f  dev[",
                         i, esn_.Kappa(), esn_.Lr(), std::sqrt(sq_err_sum / (3.0 * train_steps)));
             for (size_t m = 0; m < M; m++)
                 std::printf(" %.6f", dev_rms[m]);
             std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);
         }
         else
-            std::printf("epoch %3zu  kappa %.4f  lr %.5f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
+            std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
                         i, esn_.Kappa(), esn_.Lr());
     }
 }
@@ -223,6 +224,7 @@ void Lorenz::FreeRun()
     // past cursor keeps reading real history. Predict() reads the fresh consensus
     // BEFORE Step consumes it as input — the closed-loop ordering Step alone
     // cannot express (its c_out arrives only after the inputs are already built).
+
     const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
     std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  kappa %.4f  vpt_threshold %.2f\n",
@@ -262,6 +264,13 @@ void Lorenz::FreeRun()
         if (steps % 25 == 0)
             std::printf("free-run %4zu  (%5.2f lt)  err %.6f\n", steps, steps / steps_per_lt, step_err);
 
+        if (steps == config::FREE_RUN_WINDOW_SIZE)
+            break; // done - don't step the cursors past the last scored index
+        if (data_stream_.Indices().first <= 0)
+        {
+            std::printf("[FreeRun] anchor runway exhausted after %zu steps - past cursor at the seed\n", steps);
+            break;
+        }
         past_future_states = data_stream_.Step(true);
     }
 
