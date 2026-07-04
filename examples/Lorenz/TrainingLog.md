@@ -6,152 +6,72 @@ per run, each recording the config delta, the headline numbers, and the finding 
 run established. Free-run (generative) evaluation does not exist yet; every metric
 here is train-side.
 
+The first campaign (6 runs on the old 10000-sample / span-5000 geometry) is retired;
+see git history for its record. Its durable conclusions: online single-sample Adam
+training is stable and its error floor tracks lr roughly linearly; annealing from a
+high lr buys nothing over starting at the floor; and in a controlled kappa-0 A/B at
+low lr, the uncoupled ensemble had the lower train RMSE.
+
 ## Findings at a glance
 
-| # | run | config delta | final RMSE | finding |
-|---|-----|--------------|-----------|---------|
-| 1 | constant lr | lr 0.0015 flat | ~0.045 (plateau) | stable (no divergence); lr-noise floor; barely beats persistence |
-| 2 | lr anneal | cosine 0.0015 → 1e-4, hold 100 | 0.00388 | RMSE tracks lr ~linearly; 13.8x below persistence |
-| 3 | early anneal + dev metrics | hold 100 → 25 | 0.00415 | hold length immaterial; dev/RMSE ≈ 0.80 constant |
-| 4 | strong coupling | kappa ceiling 0.2 → 3.0 (k 50 → 25) | **0.00354** | dev/RMSE invariant under 15x kappa; kappa *symmetrizes* members; κ·lr stability boundary |
+| # | run | config | final RMSE | finding |
+|---|-----|--------|-----------|---------|
+| 1 | new baseline | see shared setup | **0.001412** | best one-step error to date; noise-free late curve |
 
 ## Shared setup
 
-All runs: `DIM=8` (N=256), `SEED=673895`, `SPECTRAL_RADIUS=0.90`, `INPUT_SCALING=0.10`,
-`LEAK_RATE=1.0`, `HISTORY_DEPTH=16`, tanh arm (`LORENTZ_GAMMA=0`), M=3 members,
-`Combine::Mean`, Adam readout updates, `WEIGHT_DECAY=0`.
+`DIM=8` (N=256), `SEED=7673895`, `SPECTRAL_RADIUS=0.90`, `INPUT_SCALING=0.05`,
+`LEAK_RATE=1.0`, `HISTORY_DEPTH=8`, tanh arm (`LORENTZ_GAMMA=0`), M=3 members,
+`Combine::Mean`, Adam readout updates, kappa 0 (coupling off).
 
-Stream: 10000+1 samples at dt=0.02, normalized per channel to [-1, 1]
-(window channel std ≈ 0.40 / 0.33 / 0.36). Cursor window [1500, 6500]
-(center 4000, span 5000), 100 warmup steps per epoch, 600 epochs,
-4901 training steps per epoch (targets S[1600..6500]).
+Lr schedule: 1e-4 → 2e-5, hold 1 (cosine from epoch 2), 200 epochs.
 
-Kappa schedule (caller-managed, set per epoch before warmup — coupled warmup is
-deliberate): `kappa(x) = kappa_max * k*x^2 / (1 + k*x^2)`, x = epoch/epochs.
-Saturating ramp, strictly below `kappa_max`.
+Stream: 20000+1 samples at dt=0.02, normalized per channel to [-1, 1].
+Cursor window [4000, 19000] (center 11500, span 15000), 100 warmup steps per
+epoch, 14901 training steps per epoch (targets S[4100..19000]). Evaluation
+runway E = 1000 steps past the window — 20 time units ≈ 18 Lyapunov times of
+Lorenz-63, the hard cap on any future free-run VPT measurement.
 
 ### Metrics
 
 - **train RMSE** — *prequential* (test-then-train): `outputs` from `EnsembleESN::Step`
   is the consensus read at x(t) *before* that call's readout update, i.e. the honest
-  pre-update prediction of that same call's target. RMS over 3 channels x 4901 steps,
+  pre-update prediction of that same call's target. RMS over 3 channels x 14901 steps,
   normalized units.
 - **dev[i]** — member i's epoch-RMS of its raw consensus deviation `y_i - c`
-  (pre-kappa; exactly the signal the coupling scales into feedback).
+  (pre-kappa; exactly the signal the coupling would scale into feedback).
 - **sd** — population std of the three dev values: the *asymmetry between members*.
-
-These partition each member's error exactly (mean consensus ⇒ deviations sum to 0):
-
-```
-avg member MSE   =   consensus MSE   +   avg deviation MSE
-  (vs truth)          (RMSE^2)             (dev^2)
-
- shared error: what all members get wrong together — averaging can't remove it
- deviation:    idiosyncratic disagreement — cancels in the consensus mean
-```
-
-### Baseline
-
-**Persistence** (predict S[f] by copying S[f-1], which sits on input channels 3-5):
-RMSE **0.053406** over the same 4900 targets. Any model result must be judged
-against this — it is what "just echo the input" scores.
 
 ---
 
-## Run 1 — constant lr 0.0015
+## Run 1 — new baseline (fell out of parameter-space exploration)
 
-Config: lr flat 0.0015, kappa ceiling 0.2 (k=50).
+Config: the shared setup above — arrived at by exploration, not a controlled
+delta from the retired campaign (seed, input scaling, history depth, window
+geometry, lr floor, and epoch count all changed at once).
 
-Result: RMSE 0.103 → ~0.045 by epoch ~90, then **flat for 500 epochs**
-(jitter ±0.006, best 0.032). No kappa inflection anywhere on the 0 → 0.196 ramp.
-
-Findings:
-- **No divergence.** The prior harness diverged at this exact lr under single-sample
-  online updates; the rebuilt pipeline (Adam + per-epoch reset/warmup + horizon-1
-  target alignment) is stable. Retired the "single-sample online is structurally
-  inadequate" hypothesis.
-- **The plateau is barely above copying**: 0.045 vs persistence 0.0534 — only ~16%
-  better. Relative error ~12% of channel std. ~10x short of the ~0.004 one-step
-  level that closed-loop generation is expected to need.
-- Diagnosis: **lr-noise floor** — weights orbit the optimum with variance set by the
-  (constant) learning rate. Budget was not the limit; 500 flat epochs prove it.
-
-## Run 2 — cosine lr anneal (hold 100)
-
-Config delta: `LrProfile` added — hold lr 0.0015 through epoch 100, then
-`CosineLR` down to 1e-4 at the final epoch.
-
-Result: RMSE *tracked the lr curve* nearly monotonically:
-0.045 (plateau) → 0.027 @300 → 0.0124 @400 → 0.0065 @500 → **0.00388 @599**.
-Epoch-to-epoch jitter collapsed alongside lr.
+Result: final RMSE **0.001412 at epoch 199 — best one-step error to date**
+(the retired campaign's best was 0.00284, on 1/3 the window). Trajectory:
+0.116 @0 → 0.0136 @1 → 0.0047 @20 → 0.0034 @50 → 0.0022 @100 → 0.001412 @199.
+Still descending ~0.2%/epoch at the 2e-5 floor — the lr-noise floor remains
+unreached even here.
 
 Findings:
-- **Noise-floor diagnosis confirmed.** 15x lr reduction bought 11.6x error
-  reduction — the floor scales roughly linearly with lr.
-- Final error is 13.8x below persistence and matches the old batch pipeline's
-  one-step level (~0.0037): online single-sample training now equals batch.
-- Curve still descending at epoch 599 → headroom exists below 1e-4 if needed.
-
-## Run 3 — earlier decay + per-member deviation metrics
-
-Config delta: hold 100 → 25 (shallower cosine over epochs 26-599).
-Instrumentation delta: `dev[]`/`sd` columns added.
-
-Result: final RMSE 0.00415 (vs 0.00388) — hold length is immaterial; both runs
-bottom at the lr-floor.
-
-Findings:
-- **dev/RMSE ≈ 0.80, constant** across the entire two-orders-of-magnitude descent
-  (0.92 @0 → 0.81 @100 → 0.79 @300 → 0.85 @599). Diversity falls in lockstep with
-  accuracy: members never homogenize, never scatter. Each member individually errs
-  ~1.28x the consensus throughout — a sustained ~24% ensemble averaging gain.
-- **Persistent member hierarchy** at low kappa (ceiling 0.2): from ~epoch 450,
-  `dev[0] > dev[1] > dev[2]` every epoch (0.00383/0.00363/0.00316 at 599;
-  sd/mean ≈ 8%). Member 0 is the standing outlier — seed-driven, structural.
-
-## Run 4 — strong coupling (kappa ceiling 3.0, k=25)
-
-Config delta: kappa ceiling 0.2 → 3.0, ramp steepness k 50 → 25.
-Final kappa reached 2.884 — feedback magnitude ~15x run 3.
-
-Result: final RMSE **0.003535 — best of the campaign** (margin vs run 2 is modest;
-kappa is not credited with the improvement, but it demonstrably cost nothing).
-
-Findings:
-- **dev/RMSE ≈ 0.81, invariant again** — under 15x the homogenizing pressure.
-  Two-run conclusion: the diversity *magnitude* is set by seed differences and
-  gradient noise, not by kappa, at any strength tested.
-- **Kappa symmetrizes, it does not compress.** The across-member spread collapsed:
-  sd/mean(dev) 7.9% (run 3) → **2.6%** (run 4) at epoch 599 (0.000279 → 0.000074
-  absolute); run 3's member hierarchy is essentially erased. Mechanism: the
-  feedback `phi_i = kappa*(y_i - c)` is a restoring force proportional to each
-  member's *own* deviation — the biggest deviator gets the biggest corrective
-  kick, equalizing deviation magnitudes while their common level persists.
-  `sd/mean(dev)` is therefore the one train-side dial that visibly responds to
-  kappa — useful for future kappa sweeps without waiting on free-run results.
-- **A kappa x lr stability boundary, mapped for free.** Epochs ~119-262
-  (kappa 1.5 → 2.5 while lr 0.0014 → 0.001) show recurrent self-healing
-  instability events: RMSE spikes to 0.04-0.075 with one member's deviation
-  blowing out (e.g. ep131: member dev 0.097, sd 0.017), recovery within 1-2
-  epochs, and — curiously — each spike followed by an anomalously *good* epoch
-  (0.013-0.017). Quiet above and below the band. Rough boundary:
-  **kappa * lr ≲ 2.5e-3** during the high-lr phase. If the ceiling ever rises
-  further, co-schedule the ramp and the anneal to keep the product under the
-  boundary. The self-healing itself is evidence the consensus pull works as
-  designed. (Free-run involves no lr, so the band should not constrain
-  generation-time kappa.)
+- **The late curve is essentially noise-free.** From ~epoch 90 the descent is
+  monotone to the 6th decimal and the dev spread is frozen (sd ≈ 3.9e-5 for a
+  hundred straight epochs). Between the tiny lr and 3x more steps averaged per
+  epoch, the single-sample gradient noise that defined the first campaign's
+  curves is gone; what remains looks like clean deterministic convergence.
+- No instability of any kind across 200 epochs (kappa 0, so none expected).
 
 ---
 
 ## Open questions (all blocked on the free-run/eval stage)
 
-1. **Does kappa buy free-run stability?** Train-side, kappa 0.2 and 2.9 are
-   indistinguishable in accuracy and diversity magnitude; only the member symmetry
-   differs. Decisive experiment: free-run VPT at kappa 2.9 vs a kappa=0 control.
-2. **Is 0.004 one-step error enough?** The old batch heuristic says roughly yes;
-   only closed-loop compounding can confirm.
-3. **Lower lr floor?** Run 2/4 curves still descending at 1e-4; ~3e-5 with a longer
-   decay has visible headroom if free-run demands a lower one-step floor.
-4. **Warmup length** (100) is adequate at SR 0.90 / current error floor; revisit
-   (~200) together with any SR increase or sub-1e-3 error targets — washout need
-   scales like 1/(1-rho).
+1. **Free-run VPT** — the whole point. This baseline is what the generative
+   stage gets built against. Runway caps measurement at 18 Lyapunov times.
+2. **Does kappa pay for itself in free-run?** Train-side the kappa-0 arm won the
+   retired campaign's A/B; the coupled arm must beat this kappa=0 baseline's
+   VPT to justify itself.
+3. **Lr floor still unreached** at 2e-5; lower floor / longer decay has visible
+   headroom if free-run demands a lower one-step error.

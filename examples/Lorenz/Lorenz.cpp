@@ -14,8 +14,8 @@ EnsembleConfig Lorenz::MakeEnsembleConfig()
     cfg.SetDIM(config::DIM);
     cfg.SetSeed(config::SEED);
 
+    cfg.combine = config::COMBINE;
     cfg.learning_rate = config::LEARNING_RATE;
-    cfg.weight_decay = config::WEIGHT_DECAY;
 
     // [x_past, y_past, z_past, x_future, y_future, z_future, distance, x_past*z_past]
     cfg.base.reservoir.num_inputs = 8;
@@ -44,6 +44,20 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
 
 Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn_(esn_config_), data_stream_(MakeDatastreamConfig())
 {
+    std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
+                "  history_depth=%zu  lorentz_gamma=%.2f%s\n",
+                config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(config::SEED),
+                config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
+                config::HISTORY_DEPTH, config::LORENTZ_GAMMA,
+                config::LORENTZ_GAMMA == 0.0f ? " (tanh arm)" : " (A(x) arm)");
+    std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
+                esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
+    std::printf("[Lorenz config] readout:   lr %.6f -> %.6f (hold %zu)   epochs=%zu\n",
+                config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::LR_HOLD_EPOCHS,
+                config::EPOCHS);
+    std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
+                config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
+                config::RESERVOIR_WARMUP_STEPS);
 }
 
 void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states)

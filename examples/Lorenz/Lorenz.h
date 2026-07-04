@@ -13,27 +13,27 @@ namespace config
 {
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
-    constexpr uint64_t SEED = 673895; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.90f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
-    constexpr float INPUT_SCALING = 0.10f; // shared across all input channels
+    constexpr uint64_t SEED = 7673895; // reservoir seed
+    constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float INPUT_SCALING = 0.05;//0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
+    constexpr size_t HISTORY_DEPTH = 8; // delay-line depth
     constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 1.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 0.01; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr Combine COMBINE = Combine::Mean;  // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float LEARNING_RATE = 0.0001f;//0.0015f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
-    constexpr size_t LR_HOLD_EPOCHS = 25; // hold at peak through the fast-improvement phase, then cosine-decay
-    constexpr float WEIGHT_DECAY = 0.0f; // L2 on readout weights
-    constexpr size_t EPOCHS = 1200;
+    constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
+    constexpr float LEARNING_RATE_MIN = 0.00002f; // anneal floor reached at the final epoch
+    constexpr size_t LR_HOLD_EPOCHS = 1; // hold at peak through the fast-improvement phase, then cosine-decay
+    constexpr size_t EPOCHS = 200;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
-    constexpr size_t STREAM_LENGTH = 10000;
-    constexpr int32_t CURSOR_SPAN = 5000;
-    constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - CURSOR_SPAN - 1000;
+    constexpr size_t STREAM_LENGTH = 20000;
+    constexpr int32_t CURSOR_SPAN = 15000;
+    constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - CURSOR_SPAN/2 - 1000;
     constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
