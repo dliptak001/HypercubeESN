@@ -33,7 +33,7 @@ namespace config
     constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
     constexpr int32_t TRAINING_WINDOW_SIZE = STREAM_LENGTH - 2*FREE_RUN_WINDOW_SIZE;
     constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - TRAINING_WINDOW_SIZE / 2 - FREE_RUN_WINDOW_SIZE;
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.5, 0.5, 0.5};
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.15, 0.75, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----
@@ -56,7 +56,7 @@ namespace config
     //      fresh prediction on the future channels instead of the real sample,
     //      linearly ramped 0 -> ceiling across epochs. 0 disables.
     //      Recommended starting ceiling: ~0.25 .. 0.5.
-    constexpr float SCHEDULED_SAMPLING_CEILING = 0.0f;
+    constexpr float SCHEDULED_SAMPLING_CEILING = 0.4f;
     // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
     // from the reservoir SEED so toggling these never perturbs the reservoir.
     constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <random>
 #include <vector>
+#include <windows.h>
 
 
 EnsembleConfig Lorenz::MakeEnsembleConfig()
@@ -371,8 +372,8 @@ int main()
     std::cout << "=== HypercubeESN: Lorenz ===\n";
     Lorenz lorenz;
     lorenz.Train();
+    Beep(2500, 3000);
     lorenz.FreeRun();
 
-    
     return 0;
 }
