@@ -14,30 +14,30 @@ namespace config
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
     constexpr uint64_t SEED = 7673895; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float SPECTRAL_RADIUS = 0.80f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 8; // delay-line depth
+    constexpr size_t HISTORY_DEPTH = 4; // delay-line depth
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 0.5;//0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
     constexpr Combine COMBINE = Combine::Mean; // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.00002f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 100;
+    constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
+    constexpr size_t EPOCHS = 200;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
-    constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 500;
     constexpr int32_t TRAINING_WINDOW_SIZE = STREAM_LENGTH - 2*FREE_RUN_WINDOW_SIZE;
     constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - TRAINING_WINDOW_SIZE / 2 - FREE_RUN_WINDOW_SIZE;
     constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.15, 0.75, 0.5};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----
-    constexpr size_t RESERVOIR_WARMUP_STEPS = 100;
+    constexpr size_t RESERVOIR_WARMUP_STEPS = 200;
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.2f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
@@ -51,12 +51,12 @@ namespace config
     // campaign's single-delta discipline; both default to OFF (baseline).
     // 2a — noise injection: zero-mean Gaussian std added to the future channels.
     //      0 disables. Recommended starting bracket: 1e-3 .. a few 1e-2.
-    constexpr float TRAIN_FUTURE_NOISE = 0.005f;
+    constexpr float TRAIN_FUTURE_NOISE = 0.0f;
     // 2b — scheduled sampling: probability ceiling of feeding the ensemble's own
     //      fresh prediction on the future channels instead of the real sample,
     //      linearly ramped 0 -> ceiling across epochs. 0 disables.
     //      Recommended starting ceiling: ~0.25 .. 0.5.
-    constexpr float SCHEDULED_SAMPLING_CEILING = 0.4f;
+    constexpr float SCHEDULED_SAMPLING_CEILING = 0.5f;
     // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
     // from the reservoir SEED so toggling these never perturbs the reservoir.
     constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;
@@ -85,7 +85,7 @@ class Lorenz
 {
 public:
     /// Builds the ensemble and the datastream from the config:: constants.
-    Lorenz();
+    Lorenz(uint64_t seed);
 
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
     /// window, printing one line per epoch: kappa and the prequential train
@@ -107,6 +107,7 @@ public:
     void FreeRun();
 
 private:
+    uint64_t seed_;
     EnsembleConfig esn_config_;
     EnsembleESN esn_;
     LorenzDatastream data_stream_;
@@ -123,7 +124,7 @@ private:
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);
 
     /// Assembles the EnsembleESN config from the config:: constants.
-    static EnsembleConfig MakeEnsembleConfig();
+    static EnsembleConfig MakeEnsembleConfig(uint64_t seed);
 
     /// Assembles the LorenzDatastream config from the config:: constants.
     static LorenzDatastreamConfig MakeDatastreamConfig();

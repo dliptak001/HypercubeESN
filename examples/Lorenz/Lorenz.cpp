@@ -10,11 +10,11 @@
 #include <windows.h>
 
 
-EnsembleConfig Lorenz::MakeEnsembleConfig()
+EnsembleConfig Lorenz::MakeEnsembleConfig(uint64_t seed)
 {
     EnsembleConfig cfg;
     cfg.SetDIM(config::DIM);
-    cfg.SetSeed(config::SEED);
+    cfg.SetSeed(seed);
 
     cfg.combine = config::COMBINE;
     cfg.learning_rate = config::LEARNING_RATE;
@@ -43,7 +43,8 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
     return cfg;
 }
 
-Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn_(esn_config_), data_stream_(MakeDatastreamConfig())
+Lorenz::Lorenz(const uint64_t seed) : seed_(seed), esn_config_(MakeEnsembleConfig(seed_)), esn_(esn_config_),
+                                      data_stream_(MakeDatastreamConfig())
 {
     std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
                 "  history_depth=%zu\n",
@@ -70,7 +71,8 @@ void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResul
     inputs[4] = std::get<2>(past_future_states)->y; //future
     inputs[5] = std::get<2>(past_future_states)->z; //future
     inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[6];  //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    inputs[7] = inputs[6];
+    //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
@@ -83,7 +85,8 @@ void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult
     inputs[4] = consensus[1]; //future
     inputs[5] = consensus[2]; //future
     inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[6];  //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    inputs[7] = inputs[6];
+    //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_state)
@@ -96,8 +99,8 @@ void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_stat
 double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const size_t current_epoch)
 {
     double x = static_cast<double>(current_epoch) / epochs;
-    double c = k*x*x;
-    return kappa_max*c/(1.0 + c);
+    double c = k * x * x;
+    return kappa_max * c / (1.0 + c);
 }
 
 float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epochs, const size_t current_epoch)
@@ -239,16 +242,20 @@ void Lorenz::Train()
                 dev_var += (dev_rms[m] - dev_mean) * (dev_rms[m] - dev_mean);
             dev_var /= static_cast<double>(M);
 
-            std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE %.6f  dev[",
+            std::printf(".");
+
+            /*std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE %.6f  dev[",
                         i, esn_.Kappa(), esn_.Lr(), std::sqrt(sq_err_sum / (3.0 * train_steps)));
             for (size_t m = 0; m < M; m++)
                 std::printf(" %.6f", dev_rms[m]);
-            std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);
+            std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);*/
         }
-        else
-            std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
-                        i, esn_.Kappa(), esn_.Lr());
+        //else
+        //    std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
+        //                i, esn_.Kappa(), esn_.Lr());
     }
+
+    Beep(2500, 3000);
 }
 
 void Lorenz::FreeRun()
@@ -370,10 +377,14 @@ void Lorenz::FreeRun()
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
-    Lorenz lorenz;
-    lorenz.Train();
-    Beep(2500, 3000);
-    lorenz.FreeRun();
+    for (int i = 0; i < 10; i++)
+    {
+        std::printf("\n\nStep %d *******************************************************\n\n", i);
+        Lorenz lorenz(3648759 + 33*i);
+        lorenz.Train();
+        std::printf("\n");
+        lorenz.FreeRun();
+    }
 
     return 0;
 }
