@@ -58,6 +58,8 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
     {
         ESNConfig member = cfg.base;
         member.reservoir.verbose = false;
+        member.reservoir.spectral_radius += i*0.01;
+        member.reservoir.lorentz_gamma = i*0.01;
         member.reservoir.seed = mix64(cfg.ensemble_seed ^ (GOLDEN * (i + 1)));
         esn_.push_back(std::make_unique<ESN>(member));
     }
@@ -109,6 +111,17 @@ void EnsembleESN::Consensus(float* c_out) const
 
 void EnsembleESN::Step(const float* input, const float* target, float* c_out)
 {
+    StepImpl(input, 0, target, c_out); // stride 0: one shared input row
+}
+
+void EnsembleESN::StepPerMember(const float* inputs_MxI, const float* target, float* c_out)
+{
+    StepImpl(inputs_MxI, num_inputs_, target, c_out); // row i drives member i
+}
+
+void EnsembleESN::StepImpl(const float* inputs, const size_t input_stride,
+                           const float* target, float* c_out)
+{
     // 1. read every member's output y_i at its current state x_i(t), straight
     //    into the pre-allocated y_flat_ slice — no per-tick allocation (decision #5).
     for (size_t i = 0; i < M_; ++i)
@@ -131,7 +144,7 @@ void EnsembleESN::Step(const float* input, const float* target, float* c_out)
         for (size_t c = 0; c < D_; ++c)
             phi_[c] = kappa_ * (y_i[c] - c_out[c]);
 
-        esn_[i]->ReservoirStep(input, phi_.data());
+        esn_[i]->ReservoirStep(inputs + i * input_stride, phi_.data());
     }
 }
 

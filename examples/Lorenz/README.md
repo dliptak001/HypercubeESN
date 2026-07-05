@@ -127,6 +127,13 @@ localize the damage (all numbers program-printed, from the seed-sweep runs):
 - After the shock, growth drops to roughly Lyapunov-order or slower, punctuated by
   orbit events and re-locks.
 
+The step-25 pair above is from the seed-sweep run stdout (per-step traces not
+retained in `TrainingLog.md`, which records only the sweep summary table). The
+underlying claim — early error growth several times the Lyapunov rate — is
+independently on record: run 2 printed **0.046 by step 25** from a ~0.0014 floor
+(~8× Lyapunov), and the log names the teacher-forced→generative shift, not chaos,
+as what sets the horizon (TrainingLog run 2; open question 3).
+
 ```
 err
 0.3  ------------------------------------------ VPT threshold
@@ -142,29 +149,49 @@ err
 For scale (arithmetic on printed numbers, not a program metric): a rollout whose
 error grew at exactly the Lyapunov rate from a 9.3×10⁻⁴ floor would cross 0.3 at
 ln(0.3/0.000932) ≈ **5.8 λt**. The best observed run reached 4.56 λt; the median
-runs lose most of the gap in the first ~50 steps. The shock, not the asymptotic
-growth rate, is the binding constraint.
+runs lose most of the gap in the first ~50 steps. The shock is a dominant
+early-horizon deficit — though measured VPT is additionally gated by fixed
+decoherence events in the single shared eval orbit (see the evaluation caution
+below), so it is not the *sole* constraint.
+
+(All λt figures in this section — the 5.8 ceiling, the 4.56 best, the ~2.3
+sweep median — are at the **0.3** VPT threshold that was in effect for these
+runs. The current `VPT_THRESHOLD` constant is 0.2; re-running the code as-is
+yields shorter λt numbers that are not directly comparable to these.)
 
 ### Options for resolution
 
-All three are caller-level; the core needs no changes.
+All three are caller-level; the core needs no changes. **2a and 2b are implemented**
+in `Lorenz::Train`, each gated by a `config::` knob and both **off by default**
+(baseline behaviour unchanged); 2c is not yet built. Enable ONE at a time — the
+campaign runs single-delta experiments, and the config banner prints the active
+setting (`[Lorenz config] exposure: 2a future_noise=… 2b ss_ceiling=…`) so each run's
+stdout self-documents its delta.
 
-**2a. Noise injection during training (cheapest, do first).** Add small zero-mean
-noise to the future channels in `ExtractInputs_Training`. This is the classic ESN
-regularizer for closed-loop use: it trains the map to be insensitive to exactly the
-perturbation class that feedback introduces. Implementation is a few lines (one RNG,
-three channels — remember the derived product channel must be computed *from the
-noised values*, or the perturbation is inconsistent). The one hyperparameter is the
-noise scale; the natural starting bracket is the observed early-rollout error
-(≈10⁻³ to a few 10⁻²). Expect a modest one-step RMSE increase — that is the point,
-and the run-5 dissociation says one-step RMSE was not the target anyway.
+**2a. Noise injection during training (cheapest, do first)** — knob:
+`config::TRAIN_FUTURE_NOISE` (Gaussian stddev; `0` disables). Adds small zero-mean
+noise to the future channels (3–5) in the `Train` loop *after* `ExtractInputs_Training`
+(so the FreeRun washout stays clean). This is the classic ESN regularizer for
+closed-loop use: it trains the map to be insensitive to exactly the perturbation class
+that feedback introduces. Only channels 3–5 are noised — the only channels that differ
+between training and free-run. No recomputation is needed in the current layout: both
+product channels are past-derived (`inputs[6] = inputs[0]*inputs[2]`,
+`inputs[7] = inputs[6]`), so noising 3–5 leaves them untouched — as it should, since
+they carry identical values in free-run. **If** the future product channel is ever
+re-enabled (`inputs[7] = inputs[3]*inputs[5]`, currently commented out), it must be
+recomputed *from the noised values* or the perturbation is inconsistent. The one
+hyperparameter is the noise scale; the natural starting bracket is the observed
+early-rollout error (≈10⁻³ to a few 10⁻²). Expect a modest one-step RMSE increase —
+that is the point, and the run-5 dissociation says one-step RMSE was not the target
+anyway.
 
-**2b. Scheduled sampling.** With probability p(epoch), replace the real future sample
+**2b. Scheduled sampling** — knob: `config::SCHEDULED_SAMPLING_CEILING` (probability
+ceiling; `0` disables). With probability `p(epoch)`, replace the real future sample
 with the ensemble's own fresh prediction (`EnsembleESN::Predict` before the training
-`Step` — the same closed-loop ordering `FreeRun` already uses). Ramp p from 0 toward
-some ceiling over the epochs. This trains on the *actual* generative input
-distribution rather than a noise model of it. Costs one extra forward per exposed
-step; the schedule (ramp shape, ceiling) is new tuning surface.
+`Step` — the same closed-loop ordering `FreeRun` already uses). `p` is a linear ramp
+`0 → ceiling` over the epochs (`ScheduledSamplingProfile`). This trains on the *actual*
+generative input distribution rather than a noise model of it. Costs one extra forward
+per exposed step; the schedule (ramp shape, ceiling) is new tuning surface.
 
 **2c. Closed-loop fine-tuning epochs.** After normal training, run a few epochs fully
 closed-loop (own predictions on the future channels, still teacher targets). Most
@@ -239,8 +266,8 @@ prove awkward for some future task shape.
 The three issues are independent and their fixes compose. Suggested order of attack,
 cheapest-per-expected-λt first:
 
-1. **2a (noise injection)** — few lines, directly targets the binding constraint
-   (the handoff shock).
+1. **2a (noise injection)** — implemented (`config::TRAIN_FUTURE_NOISE`), ready to
+   run; directly targets the dominant early-horizon deficit (the handoff shock).
 2. **3a (increment targets)** — small caller change, removes the identity burden the
    loop amplifies.
 3. **1a (per-member closed loop)** — the substantive ensemble experiment; it is the

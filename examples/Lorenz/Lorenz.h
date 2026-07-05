@@ -12,16 +12,15 @@
 namespace config
 {
     // ---- Reservoir / model ----
-    constexpr size_t DIM = 9; // hypercube dimension
+    constexpr size_t DIM = 8; // hypercube dimension
     constexpr uint64_t SEED = 7673895; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
-    constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
+    constexpr size_t HISTORY_DEPTH = 8; // delay-line depth
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 1.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
     constexpr Combine COMBINE = Combine::Mean; // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
@@ -43,6 +42,24 @@ namespace config
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.2f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
     constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
+
+    // ---- Exposure-bias remedies (README Issue 2) ----
+    // Both act ONLY during Train(), ONLY on the future channels (3-5) — the sole
+    // train/free-run input mismatch; the teacher target stays the real S[f], and
+    // channels 6-7 are past-derived so they remain consistent under both. The
+    // FreeRun washout is left clean. Enable ONE at a time to preserve the
+    // campaign's single-delta discipline; both default to OFF (baseline).
+    // 2a — noise injection: zero-mean Gaussian std added to the future channels.
+    //      0 disables. Recommended starting bracket: 1e-3 .. a few 1e-2.
+    constexpr float TRAIN_FUTURE_NOISE = 0.005f;
+    // 2b — scheduled sampling: probability ceiling of feeding the ensemble's own
+    //      fresh prediction on the future channels instead of the real sample,
+    //      linearly ramped 0 -> ceiling across epochs. 0 disables.
+    //      Recommended starting ceiling: ~0.25 .. 0.5.
+    constexpr float SCHEDULED_SAMPLING_CEILING = 0.0f;
+    // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
+    // from the reservoir SEED so toggling these never perturbs the reservoir.
+    constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;
 }
 
 /// @brief Experiment driver: online Janus-cursor training of an EnsembleESN on
@@ -59,10 +76,11 @@ namespace config
 /// the saturating ramp KappaProfile, warms the reservoirs up (coupled — the
 /// epoch's kappa is live during warmup by design), then sweeps the cursor
 /// window once teacher-forced at horizon 1, reporting the prequential RMSE.
-/// FreeRun() then rides the same cursors past the window edge: the future
-/// channels switch to the ensemble's own consensus (ExtractInputs_FreeRun)
-/// while the past cursor stays anchored to real history, scored step-for-step
-/// against the held-out orbit tail.
+/// FreeRun() then rides the same cursors past the window edge: each member's
+/// future channels switch to that member's OWN prediction (per-member closed
+/// loop, ExtractInputs_FreeRun per member) while the past cursor stays anchored
+/// to real history; the consensus is reported and scored step-for-step against
+/// the held-out orbit tail.
 class Lorenz
 {
 public:
@@ -72,15 +90,20 @@ public:
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
     /// window, printing one line per epoch: kappa and the prequential train
     /// RMSE (normalized units, over all 3 channels x all steps of the sweep).
+    /// Optionally applies the Issue-2 exposure-bias remedies on the future
+    /// channels (config::TRAIN_FUTURE_NOISE for 2a, config::SCHEDULED_SAMPLING_CEILING
+    /// for 2b); both are off by default and the loop is teacher-forced when they are.
     void Train();
 
     /// Generative rollout over the held-out tail. Self-contained: resets the
     /// cursors, holds kappa at the config::KAPPA ceiling, re-sweeps the whole
     /// training window teacher-forced but inference-only (anchored washout),
-    /// then goes generative for config::FREE_RUN_WINDOW_SIZE steps — each step
-    /// feeds the fresh consensus back on the future input channels and scores
-    /// it against the true orbit, printing an error trace, the VPT_THRESHOLD
-    /// crossing, and the free-run RMSE.
+    /// then goes generative for config::FREE_RUN_WINDOW_SIZE steps in the
+    /// PER-MEMBER closed loop — each member is fed its own fresh prediction on
+    /// the future input channels (so the consensus coupling acts on genuinely
+    /// divergent trajectories) while the consensus is scored against the true
+    /// orbit, printing an error trace, the VPT_THRESHOLD crossing, and the
+    /// free-run RMSE.
     void FreeRun();
 
 private:
@@ -113,4 +136,9 @@ private:
     /// epoch 0 to lr_min at the final epoch — lowers the single-sample
     /// gradient-noise floor late in training.
     static float LrProfile(float lr_max, float lr_min, size_t epochs, size_t current_epoch);
+
+    /// Per-epoch scheduled-sampling probability (README Issue 2b): linear ramp
+    /// from 0 at epoch 0 to @p ceiling at the final epoch. Returns @p ceiling
+    /// when epochs <= 1. ceiling == 0 keeps the ramp flat at 0 (2b disabled).
+    static float ScheduledSamplingProfile(float ceiling, size_t epochs, size_t current_epoch);
 };

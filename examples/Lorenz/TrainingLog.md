@@ -16,6 +16,9 @@ established. Run 1 predates the free-run stage; runs 2+ include a rollout.
 | 4 | distance channel dropped | products replace distance; kappa 0.05 | 0.000932 | **4.56 λt** | goal-level VPT; the distance ramp was structurally OOD in free-run |
 | 5 | past-anchor ablation | past channels = future copy | 0.000521 | 2.35 λt | anchor buys ~2x VPT while *costing* 1.8x train RMSE — one-step error is not a free-run proxy |
 | 6 | seed sweep, 3 seeds x 2 arms | SEED ∈ {7673895, 43434334, 84368334} | see table | medians 2.34 / 2.30 λt | anchor's 2x VPT does NOT replicate (run 4 was an outlier); ablation VPT is seed-invariant — the eval orbit's own event structure gates VPT |
+| 7 | per-member closed loop, first light | StepPerMember drive; kappa 0.2; 100 ep; threshold 0.2 | 0.001209 | 2.26 λt @0.2 | mode is dynamically sound — no decoherence, no consensus collapse, climate matches; VPT at the familiar orbit gate; drive-isolation controls pending |
+| 8 | member diversification (1b), + spread diagnostic | run 7 + SR +0.01/member, gamma +0.01/member | 0.001242 | 2.21 λt @0.2 | 1b @ ±1%: clean null vs run 7; spread stays ~1e-3 for 36 λt while err → 0.5 — at the VPT crossing err/spread ≈ 125x: **the bundle fails together; consensus error is ≈ entirely shared** (Issue-1 blindness confirmed in-rollout) |
+| 9 | kappa=0 per-member control | run 8 with KAPPA=0 (training + rollout uncoupled) | 0.001186 | 1.70 λt @0.2 | **kappa was the synchronizer**: spread leaves the 1e-3 floor immediately (0.053 @25) and saturates ~0.2–0.4 — the shared anchor alone does NOT enslave members; RMSE 0.395 is consensus *contraction* (averaging decohered members), not better prediction |
 
 ## Shared setup (current — runs 3+)
 
@@ -154,6 +157,112 @@ Findings:
 - Caveat: single rollout per arm; the ablation arm's doubled future drive is
   entangled with the past-removal (but a confound that helps one-step and still
   loses free-run strengthens the anchor's case).
+
+## Run 7 — per-member closed loop, first light (Issue-1a implementation)
+
+Config delta vs run 4 (entangled, four changes): rollout drive consensus →
+**per-member** (`EnsembleESN::StepPerMember`: each member fed its OWN prediction
+on the future channels, consensus only reported/scored); kappa ceiling 0.05 →
+0.2 (rollout kappa 0.2); epochs 200 → 100; `VPT_THRESHOLD` 0.3 → 0.2 (new
+convention — VPT not directly comparable to runs 2–6).
+
+Result: train **0.001209** @99 (still descending; the 100-epoch schedule stops
+the anneal early — sweep runs reached ~0.0009 at 200). **VPT 125 steps =
+2.26 λt at threshold 0.2**; free-run RMSE 0.5194 over 2000 steps. Read against
+the old 0.3 threshold from the trace: err 0.221 @125 / 0.166 @150 / 1.062 @175,
+so the 0.3-crossing falls between steps 150 and 175 (~2.7–3.2 λt) — mid-pack
+against the sweep arms.
+
+Findings:
+- **The per-member mode is dynamically sound at kappa 0.2.** Three members each
+  riding their own generative loop, coupled only by phi, produced no runaway, no
+  member decoherence, and no consensus collapse: the climate band (free-run RMSE
+  0.52) matches every consensus-driven run, and the rollout shows the same deep
+  near-passes (err 0.095/0.070 @650–675, 0.105/0.086 @800–825, 0.142 @950,
+  0.136–0.137 @1025/1525). Had the members decohered, the consensus would have
+  contracted toward the attractor mean and the near-pass structure would vanish
+  — it didn't.
+- **VPT lands on the familiar orbit gate** (~125 steps; the fixed eval-orbit
+  events at ~175/~250 spike in this trace too: 1.06 @175, 1.06 @250). No
+  breakthrough at first light, but with four entangled deltas this run only
+  establishes viability, not the coupling's contribution.
+- Pending controls to isolate the drive delta (comment-toggle in FreeRun):
+  (a) consensus-driven arm at this exact config; (b) per-member at kappa 0 —
+  three fully independent rollouts, pure averaging. The triple separates
+  averaging, coupling, and drive effects.
+
+## Run 8 — member diversification (1b) + spread diagnostic first light
+
+Config delta vs run 7 (single, clean): per-member reservoir offsets in the
+EnsembleESN ctor — member i gets `spectral_radius + 0.01*i` (0.90/0.91/0.92)
+and `lorentz_gamma = 0.01*i` (0/0.01/0.02). Everything else identical (per-member
+drive, kappa 0.2, 100 epochs, threshold 0.2, seed 7673895). The rollout trace now
+prints **spread** = RMS of (y_m − c) over members x channels — the coupling's
+working signal, read at the same instant as err.
+
+Result: train 0.001242 @99 (run 7: 0.001209). **VPT 122 steps = 2.21 λt @0.2**
+(run 7: 125). Free-run RMSE 0.5286 (run 7: 0.5194).
+
+Findings:
+- **1b at ±1% is a measured null.** One-delta comparison against run 7: train,
+  VPT, and climate RMSE all within single-rollout noise. Training dev[] is also
+  indistinguishable (~0.00104 vs ~0.00105) — 1%-scale SR/gamma offsets add no
+  member diversity beyond what independent seeds already provide.
+- **The bundle fails together — Issue-1 blindness confirmed inside the rollout.**
+  Spread stays pinned at ~0.001–0.006 for the entire 2000 steps (36 λt, no
+  growth trend) while err climbs to ~0.5. At the VPT crossing (err 0.328 @125,
+  spread 0.0026) the ratio is ≈125x; post-VPT it runs 10²–10³. The consensus
+  error is essentially 100% shared error — the component phi cannot see. The
+  members stay a tight synchronized bundle riding one wrong trajectory.
+- **Attribution caveat — RESOLVED by run 9:** the tightness was the kappa=0.2
+  coupling, not the shared anchor (channels 0–2 and 6, common to all members in
+  per-member mode). See run 9.
+- Practical implication: at this operating point the ensemble is effectively a
+  single model; VPT gains must come from the shared-error channel (Issue 2
+  noise injection / Issue 3 increments), not from coupling topology.
+
+## Run 9 — kappa = 0 per-member control (who synchronizes the bundle?)
+
+Config delta vs run 8 (single, clean): `KAPPA = 0` — training and rollout both
+fully uncoupled. Members remain diversified (SR 0.90/0.91/0.92, gamma
+0/0.01/0.02) and each rides its own closed loop.
+
+Result: train **0.001186** @99 (best of the 100-epoch runs — the coupling costs
+nothing/nothing in one-step terms, consistent with the old "kappa invisible in
+train RMSE" finding). **VPT 94 steps = 1.70 λt @0.2.** Free-run RMSE **0.3951**
+— the lowest 2000-step figure of the campaign, but see finding 3. End-of-training
+dev ~0.00133 (coupled runs: ~0.00104 — training coupling compresses member
+disagreement ~20%).
+
+Findings:
+1. **Kappa was the synchronizer — attribution resolved.** Uncoupled, spread
+   leaves the 1e-3 floor immediately (0.053 by step 25, i.e. the handoff-shock
+   growth rate, not Lyapunov) and saturates at ~0.2–0.4 for the rest of the
+   rollout. The shared real anchor on half the input space does NOT enslave the
+   members on its own — though it plausibly explains why spread saturates below
+   full decorrelation (~0.5) and the occasional re-convergence dips (0.031
+   @975, 0.109 @1000).
+2. **The coupling is worth VPT: 94 uncoupled vs 122 coupled** (run 8, one knob
+   apart). Both land in the familiar orbit-gate cluster, and it's one rollout
+   per arm, so read it as "coupling helps, magnitude unconfirmed" rather than
+   +30%.
+3. **The RMSE 0.395 is contraction, not skill.** With members decohered, the
+   mean of three partially-independent on-attractor trajectories pulls toward
+   the attractor center, which deflates climate RMSE without predicting
+   anything — spread (~0.3) and err (~0.4) are the same order, and the trace
+   has averaging-luck moments (err 0.031 @1900 while spread is 0.34: members
+   bracketing the truth from opposite sides). Free-run RMSE is now established
+   as UNSAFE for cross-arm comparison whenever spread differs; VPT remains the
+   arbiter.
+4. Issue-1a/1b program conclusion: the per-member + coupling machinery works
+   exactly as designed — kappa genuinely synchronizes independent generative
+   trajectories — but the synchronized bundle then fails through the shared
+   channel, and the uncoupled ensemble decoheres into a mean-predictor. Neither
+   endpoint beats the single-model baseline on VPT. An intermediate-kappa sweep
+   (0.01–0.1, per-member) is the one unexplored dial left in this program;
+   expectation from the structural analysis is modest at best. The lever
+   hierarchy stays: Issue 2 (noise injection) > Issue 3 (increments) > ensemble
+   topology.
 
 ---
 

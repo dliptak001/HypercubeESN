@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <random>
 #include <vector>
 
 
@@ -24,7 +25,6 @@ EnsembleConfig Lorenz::MakeEnsembleConfig()
     cfg.base.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.base.reservoir.leak_rate = config::LEAK_RATE;
     cfg.base.reservoir.history_depth = config::HISTORY_DEPTH;
-    cfg.base.reservoir.lorentz_gamma = config::LORENTZ_GAMMA;
 
     // The feedback channel count must equal num_outputs (= 3), or EnsembleESN's ctor rejects it.
     cfg.base.readout.num_outputs = 3; //[x, y, z]
@@ -45,15 +45,16 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
 Lorenz::Lorenz() : esn_config_(MakeEnsembleConfig()), esn_(esn_config_), data_stream_(MakeDatastreamConfig())
 {
     std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
-                "  history_depth=%zu  lorentz_gamma=%.2f%s\n",
+                "  history_depth=%zu\n",
                 config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(config::SEED),
                 config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
-                config::HISTORY_DEPTH, config::LORENTZ_GAMMA,
-                config::LORENTZ_GAMMA == 0.0f ? " (tanh arm)" : " (A(x) arm)");
+                config::HISTORY_DEPTH);
     std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
                 esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
     std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                 config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
+    std::printf("[Lorenz config] exposure:  2a future_noise=%.4f  2b ss_ceiling=%.3f\n",
+                config::TRAIN_FUTURE_NOISE, config::SCHEDULED_SAMPLING_CEILING);
     std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                 config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                 config::RESERVOIR_WARMUP_STEPS);
@@ -107,15 +108,35 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
     //return ExponentialDecayLR(progress, lr_max, lr_min);
 }
 
+float Lorenz::ScheduledSamplingProfile(const float ceiling, const size_t epochs, const size_t current_epoch)
+{
+    if (epochs <= 1)
+        return ceiling;
+    const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
+    return ceiling * progress; // linear ramp 0 -> ceiling
+}
+
 void Lorenz::Train()
 {
     float inputs[8] = {};
     float targets[3] = {};
     float outputs[3] = {};
+    float consensus[3] = {}; // 2b: the ensemble's own prediction, when scheduled sampling fires
     const size_t M = esn_.NumMembers();
     const size_t D = esn_.NumOutputs();
     std::vector<float> member_y(M * D); // per-step member outputs (diagnostic read)
     std::vector<double> dev_sq(M); // per-member sum of squared consensus deviations
+
+    // Exposure-bias remedies (README Issue 2) share one RNG stream. The guards on
+    // the config scalars below keep the baseline path bit-identical (no draws) when
+    // both remedies are off, so toggling them is a clean single-delta change.
+    std::mt19937_64 exposure_rng(config::TRAIN_EXPOSURE_RNG_SEED);
+    // stddev must be > 0 for the distribution (libstdc++ asserts it); when 2a is
+    // off we pass a dummy 1.0 that is never sampled (the draw below is guarded).
+    std::normal_distribution<float> future_noise(
+        0.0f, config::TRAIN_FUTURE_NOISE > 0.0f ? config::TRAIN_FUTURE_NOISE : 1.0f);
+    std::uniform_real_distribution<float> unit_uniform(0.0f, 1.0f);
+
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
         // Step 1: Warm up the reservoir. The epoch's kappa is set BEFORE the
@@ -123,6 +144,9 @@ void Lorenz::Train()
         data_stream_.Reset();
         esn_.SetKappa(KappaProfile(config::KAPPA, 25.0, config::EPOCHS, i));
         esn_.SetLr(LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i));
+        // 2b: this epoch's probability of substituting the model's own prediction
+        // on the future channels (0 when the ceiling is 0, i.e. 2b disabled).
+        const float ss_p = ScheduledSamplingProfile(config::SCHEDULED_SAMPLING_CEILING, config::EPOCHS, i);
         LorenzDatastreamResult past_future_states = data_stream_.States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
@@ -143,6 +167,33 @@ void Lorenz::Train()
             // call is about to inject — not NextFutureState() = S[f+1].
             ExtractTargets(targets, *std::get<2>(past_future_states));
             ExtractInputs_Training(inputs, past_future_states);
+
+            // Exposure-bias remedies (README Issue 2), future channels 3-5 only;
+            // the teacher target above stays the real S[f], and channels 6-7 are
+            // past-derived so they remain consistent with free-run under both.
+            //
+            // 2b scheduled sampling: with probability ss_p, overwrite the future
+            // channels with the ensemble's own fresh prediction of S[f]. Predict
+            // reads x(t) WITHOUT advancing it (the closed-loop ordering FreeRun
+            // uses); Step's own read below sees the same unchanged state, so the
+            // prequential diagnostic still pairs outputs with this call's target.
+            if (config::SCHEDULED_SAMPLING_CEILING > 0.0f && unit_uniform(exposure_rng) < ss_p)
+            {
+                esn_.Predict(consensus);
+                inputs[3] = consensus[0];
+                inputs[4] = consensus[1];
+                inputs[5] = consensus[2];
+            }
+            // 2a noise injection: zero-mean Gaussian on the (possibly substituted)
+            // future channels — trains the map to tolerate the perturbation class
+            // the closed loop introduces.
+            if (config::TRAIN_FUTURE_NOISE > 0.0f)
+            {
+                inputs[3] += future_noise(exposure_rng);
+                inputs[4] += future_noise(exposure_rng);
+                inputs[5] += future_noise(exposure_rng);
+            }
+
             esn_.Step(inputs, targets, outputs);
 
             // Prequential (test-then-train) error: outputs is the consensus read at
@@ -205,6 +256,9 @@ void Lorenz::FreeRun()
     float targets[3] = {};
     float consensus[3] = {};
     float outputs[3] = {};
+    float y_m[3] = {};
+    std::vector<float> member_inputs(esn_.NumMembers() * 8); // one 8-channel row per member
+    std::vector<float> member_y(esn_.NumMembers() * 3); // fresh member outputs (spread diagnostic)
 
     // Stage 1: anchored washout. Re-sweep the training window once, teacher-forced
     // but inference-only (no readout updates), so the reservoirs cross into the
@@ -219,17 +273,20 @@ void Lorenz::FreeRun()
         past_future_states = data_stream_.Step(false);
     }
 
-    // Stage 2: generative rollout. The future cursor is now one step past the
-    // window edge: channels 3-5 switch to the ensemble's own consensus while the
-    // past cursor keeps reading real history. Predict() reads the fresh consensus
-    // BEFORE Step consumes it as input — the closed-loop ordering Step alone
-    // cannot express (its c_out arrives only after the inputs are already built).
+    // Stage 2: generative rollout, PER-MEMBER closed loop. The future cursor is
+    // now one step past the window edge: each member's channels 3-5 switch to
+    // that member's OWN prediction (the consensus is only reported and scored),
+    // so member trajectories genuinely diverge and the deviation coupling
+    // phi_i = kappa*(y_i - c) becomes a live consensus-attraction force.
+    // Predict() reads the fresh member outputs BEFORE StepPerMember consumes
+    // them as inputs — the closed-loop ordering Step alone cannot express.
 
     const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
     std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  kappa %.4f  vpt_threshold %.2f\n",
                 config::FREE_RUN_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE / steps_per_lt,
                 esn_.Kappa(), config::VPT_THRESHOLD);
+    std::printf("[FreeRun] drive: per-member (each member fed its own prediction on the future channels)\n");
 
     double sq_err_sum = 0.0;
     size_t steps = 0;
@@ -243,9 +300,31 @@ void Lorenz::FreeRun()
             break;
         }
 
-        esn_.Predict(consensus); // the prediction of S[f] at the current state
-        ExtractInputs_FreeRun(inputs, past_future_states, consensus);
-        esn_.Step(inputs, nullptr, outputs); // absorb the fed-back prediction
+        esn_.Predict(consensus); // the prediction of S[f]; also refreshes the member outputs
+        for (size_t m = 0; m < esn_.NumMembers(); m++)
+        {
+            esn_.MemberOutput(m, y_m); // member m's own prediction of S[f]
+            ExtractInputs_FreeRun(&member_inputs[m * 8], past_future_states, y_m);
+        }
+
+        // Member spread: RMS of (y_m - c) over members x channels — how far the
+        // independently-fed trajectories have drifted apart before phi pulls them
+        // back (the coupling's working signal; the consensus-error counterpart of
+        // Train's dev[] diagnostic).
+        esn_.AllMemberOutputs(member_y.data());
+        double spread_sq = 0.0;
+        for (size_t m = 0; m < esn_.NumMembers(); m++)
+        {
+            for (size_t c = 0; c < 3; c++)
+            {
+                const double d = static_cast<double>(member_y[m * 3 + c]) - consensus[c];
+                spread_sq += d * d;
+            }
+        }
+        const double spread = std::sqrt(spread_sq / (3.0 * esn_.NumMembers()));
+        esn_.StepPerMember(member_inputs.data(), nullptr, outputs); // absorb the fed-back predictions
+        //ExtractInputs_FreeRun(inputs, past_future_states, consensus); // consensus-driven arm
+        //esn_.Step(inputs, nullptr, outputs);
 
         // Score against the true held-out orbit (normalized units).
         ExtractTargets(targets, S[f]);
@@ -262,7 +341,8 @@ void Lorenz::FreeRun()
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
         if (steps % 25 == 0)
-            std::printf("free-run %4zu  (%5.2f lt)  err %.6f\n", steps, steps / steps_per_lt, step_err);
+            std::printf("free-run %4zu  (%5.2f lt)  err %.6f  spread %.6f\n",
+                        steps, steps / steps_per_lt, step_err, spread);
 
         if (steps == config::FREE_RUN_WINDOW_SIZE)
             break; // done - don't step the cursors past the last scored index
@@ -292,5 +372,7 @@ int main()
     Lorenz lorenz;
     lorenz.Train();
     lorenz.FreeRun();
+
+    
     return 0;
 }

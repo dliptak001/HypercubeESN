@@ -100,6 +100,25 @@ public:
     ///                 ensemble's output for this step.
     void Step(const float* input, const float* target, float* c_out);
 
+    /// @brief Like @ref Step, but with PER-MEMBER inputs: row i of
+    /// @p inputs_MxI drives member i. Identical lockstep semantics otherwise
+    /// (consensus read, optional training, deviation coupling).
+    ///
+    /// This is the coupling's load-bearing mode. Under the shared-input
+    /// @ref Step every member rides one common drive, so member outputs stay
+    /// nearly identical and phi_i = kappa*(y_i - c) has almost nothing to act
+    /// on. With per-member drive — typically each member fed back its OWN
+    /// output in a closed loop — the member trajectories genuinely diverge and
+    /// the coupling becomes a real consensus-attraction force between M
+    /// otherwise-independent trajectories. Note what it still cannot do: phi
+    /// sums to zero across members (mean combine), so an error component
+    /// SHARED by all members passes through the coupling untouched in either mode.
+    /// @param inputs_MxI NumMembers() x NumInputs() floats, row-major —
+    ///                   row i is member i's input u_i(t) for this step.
+    /// @param target     as @ref Step (one shared target; nullptr = inference).
+    /// @param c_out      as @ref Step — receives the consensus c(t).
+    void StepPerMember(const float* inputs_MxI, const float* target, float* c_out);
+
     /// @brief Fresh consensus read at every member's CURRENT state — no readout
     /// update, no reservoir step. The ensemble counterpart of ESN::Predict.
     /// Closed-loop callers read this first, build the next input from it, then
@@ -196,4 +215,8 @@ private:
 
     // write the consensus of y_flat_ (M x D) into c_out (D), per combine_.
     void Consensus(float* c_out) const;
+
+    // shared core of Step / StepPerMember: member i is driven by
+    // inputs + i*input_stride (stride 0 = one shared row for all members).
+    void StepImpl(const float* inputs, size_t input_stride, const float* target, float* c_out);
 };
