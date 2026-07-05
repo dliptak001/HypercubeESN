@@ -68,7 +68,7 @@ void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResul
     inputs[4] = std::get<2>(past_future_states)->y; //future
     inputs[5] = std::get<2>(past_future_states)->z; //future
     inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    inputs[7] = inputs[6];  //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
@@ -81,7 +81,7 @@ void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult
     inputs[4] = consensus[1]; //future
     inputs[5] = consensus[2]; //future
     inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    inputs[7] = inputs[6];  //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
 }
 
 void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_state)
@@ -103,8 +103,8 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
     if (epochs <= 1)
         return lr_max;
     const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
-    //return CosineLR(progress, lr_max, lr_min); // swap in ExponentialDecayLR (Readout.h) to compare schedules
-    return ExponentialDecayLR(progress, lr_max, lr_min);
+    return CosineLR(progress, lr_max, lr_min); // swap in ExponentialDecayLR (Readout.h) to compare schedules
+    //return ExponentialDecayLR(progress, lr_max, lr_min);
 }
 
 void Lorenz::Train()

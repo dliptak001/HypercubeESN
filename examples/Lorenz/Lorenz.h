@@ -12,22 +12,22 @@
 namespace config
 {
     // ---- Reservoir / model ----
-    constexpr size_t DIM = 8; // hypercube dimension
+    constexpr size_t DIM = 9; // hypercube dimension
     constexpr uint64_t SEED = 7673895; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 8; // delay-line depth
+    constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
     constexpr float LORENTZ_GAMMA = 0.0f; // set 0.0f for the tanh baseline arm
 
     // ---- Ensemble ESN ----
-    constexpr double KAPPA = 0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
+    constexpr double KAPPA = 1.0; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
     constexpr Combine COMBINE = Combine::Mean; // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
     constexpr float LEARNING_RATE_MIN = 0.00002f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 200;
+    constexpr size_t EPOCHS = 100;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
@@ -41,7 +41,7 @@ namespace config
     constexpr size_t RESERVOIR_WARMUP_STEPS = 100;
 
     // ---- Free-run scoring ----
-    constexpr float VPT_THRESHOLD = 0.3f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
+    constexpr float VPT_THRESHOLD = 0.2f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
     constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
 }
 

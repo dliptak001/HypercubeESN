@@ -56,8 +56,11 @@ generative for E steps — each step reads a fresh consensus (`EnsembleESN::Pred
 true held-out orbit.
 
 - **err** — per-step channel-RMS of (consensus − truth), normalized units.
-- **VPT** — first step with err > `VPT_THRESHOLD` = 0.3 (provisional), reported in
-  steps and Lyapunov times (λ_max = 0.9056, dt = 0.02 → 55.2 steps/λt).
+- **VPT** — first step with err > `VPT_THRESHOLD`, reported in steps and Lyapunov
+  times (λ_max = 0.9056, dt = 0.02 → 55.2 steps/λt). Threshold 0.2 as of after the
+  seed sweep (≈ the conventional 0.4 x climate-normalized error, climate ≈ 0.5
+  here); every run up to and including the sweep used 0.3, so their VPTs read
+  ~0.5 λt long vs the new convention.
 - **free-run RMSE** — RMS over the full runway. Post-VPT this settles ≈ 0.5 with
   errors oscillating ~0.05–1.0 and repeated near-passes: bounded on-attractor
   wandering (regime-3 "climate" behavior), not divergence or collapse.
@@ -215,5 +218,5 @@ kappa 0.05).
 3. **Teacher-forced → generative mismatch** is the dominant known deficit
    (run 2's 8x-Lyapunov error growth). Untried lever: closed-loop training
    exposure (late epochs fed the model's own predictions on the future channels).
-4. **VPT_THRESHOLD = 0.3 is provisional**; revisit once traces are routinely
-   compared across arms.
+4. ~~VPT_THRESHOLD = 0.3 is provisional~~ — RESOLVED: set to 0.2 to match the
+   conventional 0.4 x climate-normalized definition (see Metrics).
