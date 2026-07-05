@@ -188,8 +188,9 @@ intensity sweep "accuracy-vs-`κ`"); the §10.4 open question already wrote plai
 ### G9. Parallelism note (optional)
 **Status:** RESOLVED (§5, M paragraph). Noted that members interact only through the
 shared consensus (one reduction per tick), splitting each tick into two member-parallel
-regions (read all `y_i`; then train/inject/step), with OpenMP already linked. Not a design
-driver — one note, placed beside the per-step cost discussion.
+regions (read all `y_i`; then train/inject/step); the stepper is serial today and would
+parallelize with plain C++ standard threads. Not a design driver — one note, placed beside
+the per-step cost discussion.
 
 **Recommendation:** DONE.
 

@@ -5,12 +5,21 @@
 #include "LorenzDatastream.h"
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 // ============================================================================
 //  CONFIGURATION — consolidation point for primary variables of interest
 // ============================================================================
 namespace config
 {
+    // ---- Diagnostics ----
+    // Master gate for all live per-run diagnostic printf's (config banner, per-epoch
+    // train lines, free-run header / step trace / runway notes). Leave true for a
+    // normal single-seed run to watch progress; set false for a concurrent seed
+    // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
+    // collects it from FreeRun()'s return value, not from these gated prints.
+    inline bool ENABLE_PRINTF = false;
+
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
     constexpr uint64_t SEED = 7673895; // reservoir seed
@@ -104,7 +113,7 @@ public:
     /// divergent trajectories) while the consensus is scored against the true
     /// orbit, printing an error trace, the VPT_THRESHOLD crossing, and the
     /// free-run RMSE.
-    void FreeRun();
+    std::string FreeRun();
 
 private:
     uint64_t seed_;

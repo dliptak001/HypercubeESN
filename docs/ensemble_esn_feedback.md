@@ -236,7 +236,8 @@ M is the demonstration target. The per-step cost also **parallelizes** cleanly: 
 interact only through the shared consensus, a single reduction per tick. That splits each
 tick into two member-parallel regions — read all `y_i`, then (after the consensus reduce)
 train/inject/step each member — with no member-to-member dependence inside either. The
-project already links OpenMP.
+stepper is currently serial; should this ever be exploited, it would parallelize with
+plain C++ standard threads (`std::thread`/`std::jthread`).
 
 ---
 

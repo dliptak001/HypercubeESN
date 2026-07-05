@@ -2,10 +2,13 @@
 #include "LorenzDatastream.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <random>
+#include <string>
+#include <thread>
 #include <vector>
 #include <windows.h>
 
@@ -46,20 +49,23 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
 Lorenz::Lorenz(const uint64_t seed) : seed_(seed), esn_config_(MakeEnsembleConfig(seed_)), esn_(esn_config_),
                                       data_stream_(MakeDatastreamConfig())
 {
-    std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
-                "  history_depth=%zu\n",
-                config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(config::SEED),
-                config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
-                config::HISTORY_DEPTH);
-    std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
-                esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
-    std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
-                config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
-    std::printf("[Lorenz config] exposure:  2a future_noise=%.4f  2b ss_ceiling=%.3f\n",
-                config::TRAIN_FUTURE_NOISE, config::SCHEDULED_SAMPLING_CEILING);
-    std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
-                config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
-                config::RESERVOIR_WARMUP_STEPS);
+    if (config::ENABLE_PRINTF)
+    {
+        std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
+                    "  history_depth=%zu\n",
+                    config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(config::SEED),
+                    config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
+                    config::HISTORY_DEPTH);
+        std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
+                    esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
+        std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
+                    config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
+        std::printf("[Lorenz config] exposure:  2a future_noise=%.4f  2b ss_ceiling=%.3f\n",
+                    config::TRAIN_FUTURE_NOISE, config::SCHEDULED_SAMPLING_CEILING);
+        std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
+                    config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
+                    config::RESERVOIR_WARMUP_STEPS);
+    }
 }
 
 void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states)
@@ -241,24 +247,22 @@ void Lorenz::Train()
             for (size_t m = 0; m < M; m++)
                 dev_var += (dev_rms[m] - dev_mean) * (dev_rms[m] - dev_mean);
             dev_var /= static_cast<double>(M);
-
-            std::printf(".");
-
-            /*std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE %.6f  dev[",
-                        i, esn_.Kappa(), esn_.Lr(), std::sqrt(sq_err_sum / (3.0 * train_steps)));
-            for (size_t m = 0; m < M; m++)
-                std::printf(" %.6f", dev_rms[m]);
-            std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);*/
+            if (config::ENABLE_PRINTF)
+            {
+                std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE %.6f  dev[",
+                            i, esn_.Kappa(), esn_.Lr(), std::sqrt(sq_err_sum / (3.0 * train_steps)));
+                for (size_t m = 0; m < M; m++)
+                    std::printf(" %.6f", dev_rms[m]);
+                std::printf(" ]  sd %.6f  (%zu steps)\n", std::sqrt(dev_var), train_steps);
+            }
         }
-        //else
-        //    std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
-        //                i, esn_.Kappa(), esn_.Lr());
+        else if (config::ENABLE_PRINTF)
+            std::printf("epoch %3zu kappa %.4f lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
+                        i, esn_.Kappa(), esn_.Lr());
     }
-
-    Beep(2500, 3000);
 }
 
-void Lorenz::FreeRun()
+std::string Lorenz::FreeRun()
 {
     float inputs[8] = {};
     float targets[3] = {};
@@ -291,10 +295,13 @@ void Lorenz::FreeRun()
 
     const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
-    std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  kappa %.4f  vpt_threshold %.2f\n",
-                config::FREE_RUN_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE / steps_per_lt,
-                esn_.Kappa(), config::VPT_THRESHOLD);
-    std::printf("[FreeRun] drive: per-member (each member fed its own prediction on the future channels)\n");
+    if (config::ENABLE_PRINTF)
+    {
+        std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  kappa %.4f  vpt_threshold %.2f\n",
+                    config::FREE_RUN_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE / steps_per_lt,
+                    esn_.Kappa(), config::VPT_THRESHOLD);
+        std::printf("[FreeRun] drive: per-member (each member fed its own prediction on the future channels)\n");
+    }
 
     double sq_err_sum = 0.0;
     size_t steps = 0;
@@ -304,7 +311,8 @@ void Lorenz::FreeRun()
         const int32_t f = data_stream_.Indices().second; // this step's held-out truth index
         if (f < 0 || static_cast<size_t>(f) >= S.size())
         {
-            std::printf("[FreeRun] runway exhausted after %zu steps - stream ends\n", steps);
+            if (config::ENABLE_PRINTF)
+                std::printf("[FreeRun] runway exhausted after %zu steps - stream ends\n", steps);
             break;
         }
 
@@ -348,7 +356,7 @@ void Lorenz::FreeRun()
         const double step_err = std::sqrt(step_sq / 3.0);
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
-        if (steps % 25 == 0)
+        if (config::ENABLE_PRINTF && steps % 25 == 0)
             std::printf("free-run %4zu  (%5.2f lt)  err %.6f  spread %.6f\n",
                         steps, steps / steps_per_lt, step_err, spread);
 
@@ -356,35 +364,72 @@ void Lorenz::FreeRun()
             break; // done - don't step the cursors past the last scored index
         if (data_stream_.Indices().first <= 0)
         {
-            std::printf("[FreeRun] anchor runway exhausted after %zu steps - past cursor at the seed\n", steps);
+            if (config::ENABLE_PRINTF)
+                std::printf("[FreeRun] anchor runway exhausted after %zu steps - past cursor at the seed\n", steps);
             break;
         }
         past_future_states = data_stream_.Step(true);
     }
 
     if (steps == 0)
-        return;
+        return "";
+
+    // Per-seed result row for the survey table (always built, independent of
+    // ENABLE_PRINTF). VPT is the headline metric: the step at which the channel-RMS
+    // error first crossed VPT_THRESHOLD, or ">= steps" if it never did.
+    const double rmse = std::sqrt(sq_err_sum / (3.0 * steps));
+    char buf[256];
     if (vpt_steps > 0)
-        std::printf("[FreeRun] VPT %zu steps (%.2f Lyapunov times) - error first exceeded %.2f there\n",
-                    vpt_steps, vpt_steps / steps_per_lt, config::VPT_THRESHOLD);
+        std::snprintf(buf, sizeof buf,
+                      "seed %-10llu  VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f  (%zu steps)\n",
+                      static_cast<unsigned long long>(seed_), vpt_steps, vpt_steps / steps_per_lt,
+                      rmse, steps);
     else
-        std::printf("[FreeRun] VPT >= %zu steps (%.2f Lyapunov times) - error never exceeded %.2f\n",
-                    steps, steps / steps_per_lt, config::VPT_THRESHOLD);
-    std::printf("[FreeRun] free-run RMSE %.6f over %zu steps (%.2f Lyapunov times)\n",
-                std::sqrt(sq_err_sum / (3.0 * steps)), steps, steps / steps_per_lt);
+        std::snprintf(buf, sizeof buf,
+                      "seed %-10llu  VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
+                      static_cast<unsigned long long>(seed_), steps, steps / steps_per_lt,
+                      rmse, config::VPT_THRESHOLD);
+    return buf;
 }
 
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
-    for (int i = 0; i < 10; i++)
+
+    constexpr size_t NUM_SEEDS = 16;
+    std::vector<std::string> results(NUM_SEEDS); // one result row per seed, filled in place
+
+    // Each seed's run is fully independent (its own EnsembleESN + datastream, no
+    // shared mutable state), so the survey parallelizes cleanly one-instance-per-
+    // thread. Workers pull seed indices off a shared atomic counter; a bounded pool
+    // (<= hardware_concurrency) avoids oversubscribing the cores.
+    std::atomic<size_t> next_seed{0};
+    const unsigned hw = std::thread::hardware_concurrency();
+    const size_t num_threads = std::min<size_t>(NUM_SEEDS, hw ? hw : 1);
+
     {
-        std::printf("\n\nStep %d *******************************************************\n\n", i);
-        Lorenz lorenz(3648759 + 33*i);
-        lorenz.Train();
-        std::printf("\n");
-        lorenz.FreeRun();
-    }
+        std::vector<std::jthread> pool;
+        pool.reserve(num_threads);
+        for (size_t t = 0; t < num_threads; t++)
+            pool.emplace_back([&]
+            {
+                for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
+                {
+                    Lorenz lorenz(3648759 + 33 * i);
+                    lorenz.Train();
+                    results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
+                }
+            });
+    } // jthreads join on scope exit
+
+    // Print the per-seed result table in seed order (independent of completion order).
+    std::printf("\n=== Seed survey (%zu seeds) ===\n", NUM_SEEDS);
+    for (size_t i = 0; i < NUM_SEEDS; i++)
+        std::fputs(results[i].c_str(), stdout);
+
+    // TODO Claude - report min, max, std... here
+
+    Beep(2500, 3000); // single completion beep for the whole survey
 
     return 0;
 }
