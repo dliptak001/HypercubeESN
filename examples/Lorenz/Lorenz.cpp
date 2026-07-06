@@ -262,7 +262,7 @@ void Lorenz::Train()
     }
 }
 
-std::string Lorenz::FreeRun()
+FreeRunResult Lorenz::FreeRun()
 {
     float inputs[8] = {};
     float targets[3] = {};
@@ -372,32 +372,42 @@ std::string Lorenz::FreeRun()
     }
 
     if (steps == 0)
-        return "";
+        return {}; // valid == false — excluded from the survey stats
 
-    // Per-seed result row for the survey table (always built, independent of
-    // ENABLE_PRINTF). VPT is the headline metric: the step at which the channel-RMS
-    // error first crossed VPT_THRESHOLD, or ">= steps" if it never did.
+    // Per-seed outcome + display row (always built, independent of ENABLE_PRINTF).
+    // VPT is the headline metric: the step at which the channel-RMS error first
+    // crossed VPT_THRESHOLD, or ">= steps" (a lower bound) if it never did.
+    const bool crossed = vpt_steps > 0;
     const double rmse = std::sqrt(sq_err_sum / (3.0 * steps));
+    const double vpt_lt = (crossed ? vpt_steps : steps) / steps_per_lt;
     char buf[256];
-    if (vpt_steps > 0)
+    if (crossed)
         std::snprintf(buf, sizeof buf,
                       "seed %-10llu  VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f  (%zu steps)\n",
-                      static_cast<unsigned long long>(seed_), vpt_steps, vpt_steps / steps_per_lt,
-                      rmse, steps);
+                      static_cast<unsigned long long>(seed_), vpt_steps, vpt_lt, rmse, steps);
     else
         std::snprintf(buf, sizeof buf,
                       "seed %-10llu  VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
-                      static_cast<unsigned long long>(seed_), steps, steps / steps_per_lt,
-                      rmse, config::VPT_THRESHOLD);
-    return buf;
+                      static_cast<unsigned long long>(seed_), steps, vpt_lt, rmse, config::VPT_THRESHOLD);
+
+    FreeRunResult r;
+    r.valid = true;
+    r.seed = seed_;
+    r.vpt_steps = vpt_steps;
+    r.crossed = crossed;
+    r.vpt_lt = vpt_lt;
+    r.rmse = rmse;
+    r.steps = steps;
+    r.row = buf;
+    return r;
 }
 
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
-    constexpr size_t NUM_SEEDS = 16;
-    std::vector<std::string> results(NUM_SEEDS); // one result row per seed, filled in place
+    constexpr size_t NUM_SEEDS = 24;
+    std::vector<FreeRunResult> results(NUM_SEEDS); // one outcome per seed, filled in place
 
     // Each seed's run is fully independent (its own EnsembleESN + datastream, no
     // shared mutable state), so the survey parallelizes cleanly one-instance-per-
@@ -415,7 +425,7 @@ int main()
             {
                 for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
                 {
-                    Lorenz lorenz(3648759 + 33 * i);
+                    Lorenz lorenz(13648759 + 33 * i);
                     lorenz.Train();
                     results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
                 }
@@ -425,9 +435,47 @@ int main()
     // Print the per-seed result table in seed order (independent of completion order).
     std::printf("\n=== Seed survey (%zu seeds) ===\n", NUM_SEEDS);
     for (size_t i = 0; i < NUM_SEEDS; i++)
-        std::fputs(results[i].c_str(), stdout);
+        std::fputs(results[i].row.c_str(), stdout);
 
-    // TODO Claude - report min, max, std... here
+    // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
+    // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
+    // so the VPT stats are conservative when any run is censored (noted below).
+    std::vector<double> vpt_lts, rmses;
+    size_t censored = 0, invalid = 0;
+    for (const auto& r : results)
+    {
+        if (!r.valid) { ++invalid; continue; }
+        vpt_lts.push_back(r.vpt_lt);
+        rmses.push_back(r.rmse);
+        if (!r.crossed) ++censored;
+    }
+
+    auto report = [](const char* label, std::vector<double> v, int prec)
+    {
+        if (v.empty()) { std::printf("  %-16s (no valid runs)\n", label); return; }
+        std::sort(v.begin(), v.end());
+        const size_t n = v.size();
+        double sum = 0.0;
+        for (double x : v) sum += x;
+        const double mean = sum / static_cast<double>(n);
+        double var = 0.0;
+        for (double x : v) var += (x - mean) * (x - mean);
+        var = n > 1 ? var / static_cast<double>(n - 1) : 0.0; // sample variance
+        const double sd = std::sqrt(var);
+        const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+        std::printf("  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
+                    label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
+    };
+
+    std::printf("\n=== Survey stats ===\n");
+    report("VPT (lt)", vpt_lts, 2);
+    report("free-run RMSE", rmses, 6);
+    if (censored)
+        std::printf("  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
+                    "their VPT is counted at the window floor (a lower bound)\n",
+                    censored, vpt_lts.size(), config::VPT_THRESHOLD);
+    if (invalid)
+        std::printf("  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
 
     Beep(2500, 3000); // single completion beep for the whole survey
 

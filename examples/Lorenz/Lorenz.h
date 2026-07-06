@@ -22,7 +22,7 @@ namespace config
 
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
-    constexpr uint64_t SEED = 7673895; // reservoir seed
+    constexpr uint64_t SEED = 3649056; // reservoir seed {3649056:VPT 202 steps (3.66 lt),3648957: VPT 162 steps (2.93 lt),3649155:VPT 162 steps (2.93 lt)
     constexpr float SPECTRAL_RADIUS = 0.80f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
@@ -71,6 +71,21 @@ namespace config
     constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;
 }
 
+/// One seed's free-run outcome: the numeric metrics the survey aggregates, plus a
+/// pre-formatted display row. @ref Lorenz::FreeRun fills it; main() prints the rows
+/// and computes min/max/mean/median/std over the fields.
+struct FreeRunResult
+{
+    bool valid = false; ///< false if the rollout scored 0 steps (excluded from stats)
+    uint64_t seed = 0; ///< reservoir seed of this run
+    size_t vpt_steps = 0; ///< step of first VPT_THRESHOLD crossing; 0 = never crossed
+    bool crossed = false; ///< whether the error ever crossed VPT_THRESHOLD (vpt_steps > 0)
+    double vpt_lt = 0.0; ///< valid-prediction time in Lyapunov times (window floor if never crossed)
+    double rmse = 0.0; ///< free-run RMSE over the scored steps (normalized units)
+    size_t steps = 0; ///< number of generative steps actually scored
+    std::string row; ///< human-readable table line for this seed
+};
+
 /// @brief Experiment driver: online Janus-cursor training of an EnsembleESN on
 /// the Lorenz-63 attractor.
 ///
@@ -111,9 +126,10 @@ public:
     /// PER-MEMBER closed loop — each member is fed its own fresh prediction on
     /// the future input channels (so the consensus coupling acts on genuinely
     /// divergent trajectories) while the consensus is scored against the true
-    /// orbit, printing an error trace, the VPT_THRESHOLD crossing, and the
-    /// free-run RMSE.
-    std::string FreeRun();
+    /// orbit. The live error trace / VPT crossing / RMSE lines are gated on
+    /// config::ENABLE_PRINTF; the numeric outcome and its formatted table row are
+    /// always returned in a FreeRunResult (valid == false if 0 steps were scored).
+    FreeRunResult FreeRun();
 
 private:
     uint64_t seed_;
