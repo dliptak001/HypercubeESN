@@ -18,11 +18,11 @@ namespace config
     // normal single-seed run to watch progress; set false for a concurrent seed
     // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
     // collects it from FreeRun()'s return value, not from these gated prints.
-    inline bool ENABLE_PRINTF = false;
+    inline bool ENABLE_PRINTF = true;
 
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
-    constexpr uint64_t SEED = 3649056; // reservoir seed {3649056:VPT 202 steps (3.66 lt),3648957: VPT 162 steps (2.93 lt),3649155:VPT 162 steps (2.93 lt)
+    constexpr uint64_t SEED = 13649188; // reservoir seed {13649188:244/4.42 lt, 13649518:205/3.71 lt, 3649056:202/3.66 lt}
     constexpr float SPECTRAL_RADIUS = 0.80f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
@@ -35,7 +35,7 @@ namespace config
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
     constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 200;
+    constexpr size_t EPOCHS = 2;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;

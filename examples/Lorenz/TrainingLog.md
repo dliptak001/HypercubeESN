@@ -19,6 +19,7 @@ established. Run 1 predates the free-run stage; runs 2+ include a rollout.
 | 7 | per-member closed loop, first light | StepPerMember drive; kappa 0.2; 100 ep; threshold 0.2 | 0.001209 | 2.26 λt @0.2 | mode is dynamically sound — no decoherence, no consensus collapse, climate matches; VPT at the familiar orbit gate; drive-isolation controls pending |
 | 8 | member diversification (1b), + spread diagnostic | run 7 + SR +0.01/member, gamma +0.01/member | 0.001242 | 2.21 λt @0.2 | 1b @ ±1%: clean null vs run 7; spread stays ~1e-3 for 36 λt while err → 0.5 — at the VPT crossing err/spread ≈ 125x: **the bundle fails together; consensus error is ≈ entirely shared** (Issue-1 blindness confirmed in-rollout) |
 | 9 | kappa=0 per-member control | run 8 with KAPPA=0 (training + rollout uncoupled) | 0.001186 | 1.70 λt @0.2 | **kappa was the synchronizer**: spread leaves the 1e-3 floor immediately (0.053 @25) and saturates ~0.2–0.4 — the shared anchor alone does NOT enslave members; RMSE 0.395 is consensus *contraction* (averaging decohered members), not better prediction |
+| 10 | first multi-seed survey + 2b, concurrent harness | 2b ceiling 0.5; kappa 0.5; SR 0.80; HD 4; E=500; 16+24-seed `jthread` survey | n/a (survey) | median 1.6 / 1.9 λt | VPT distribution reproduces across seed bases *because it is the eval orbit's fixed event structure* — ~50% of seeds die at the ~85-step first event; 2b not isolated (entangled + orbit-gated); concurrent harness + aggregate stats established |
 
 ## Shared setup (current — runs 3+)
 
@@ -264,6 +265,53 @@ Findings:
    hierarchy stays: Issue 2 (noise injection) > Issue 3 (increments) > ensemble
    topology.
 
+## Run 10 — first multi-seed survey (concurrent harness) + 2b scheduled sampling
+
+Config delta vs run 9 — **many entangled changes; this is a configuration shift,
+not a controlled single-delta**: scheduled-sampling exposure **2b ON**
+(`SCHEDULED_SAMPLING_CEILING` 0 → 0.5 — future channels fed the ensemble's own
+prediction with probability ramping 0 → 0.5 across epochs, README Issue 2 /
+open-question 3); `KAPPA` 0 → 0.5; base `SPECTRAL_RADIUS` 0.90 → 0.80 (members
+0.80/0.81/0.82, `lorentz_gamma` 0/0.01/0.02 — the run-8 per-member offsets are
+still live); `HISTORY_DEPTH` 8 → 4; `FREE_RUN_WINDOW_SIZE` (E) 2000 → **500**
+(9.06 λt — a hard VPT ceiling); `EPOCHS` 100 → 200; warmup 100 → 200. M=3 Mean,
+per-member drive, lr cosine 1e-4 → 1e-5, threshold 0.2, 2a noise off.
+
+Harness: the serial seed loop became a bounded `std::jthread` pool
+(≤ hardware_concurrency, one seed per worker, each with its own EnsembleESN +
+datastream — no shared state); `FreeRun` returns a `FreeRunResult` and main prints
+per-seed rows in seed order plus aggregate min/max/mean/median/std. Two surveys at
+identical config, differing only in the seed BASE and count, test whether the VPT
+distribution reproduces:
+
+| survey | seeds | base | VPT λt: min / median / mean / max / std | RMSE mean | ~85-step floor |
+|--------|-------|------|-----------------------------------------|-----------|----------------|
+| A | 16 | 3648759  | 0.94 / 1.60 / 2.00 / 3.66 / 0.71 | 0.428 | 8/16 (50%) |
+| B | 24 | 13648759 | 1.50 / 1.90 / 2.21 / 4.42 / 0.85 | 0.413 | 12/24 (50%) |
+
+Findings:
+- **The VPT distribution reproduces across independent seed bases — because it is
+  the eval ORBIT's fixed event structure, not the model's (open-question 1
+  confirmed at scale).** Both surveys vary only the reservoir seed; every seed is
+  scored against the SAME held-out orbit (same x0, same window). VPT is visibly
+  **quantized** — values pile at discrete depths (~85 steps ≈ 1.5 λt, ~125 ≈
+  2.2–2.4, ~160–205 ≈ 2.9–3.7, ~245 ≈ 4.4) with empty gaps (no run-B seed in
+  3.0–3.5 λt). These are this orbit's lobe-transition events. **~50% of seeds die
+  at the first event (~85 steps) in both surveys** (8/16, 12/24); the tail is
+  seeds that survive event #1 to reach #2/#3. A 24-seed survey against one orbit
+  is 24 model-noise samples of ONE event structure — not a VPT distribution. Per
+  run 6, a real distribution requires varying x0 / window, which this does not do.
+- **This survey does NOT isolate 2b.** With ≥5 entangled deltas from run 9 plus
+  the orbit-gate confound, the 2b-on medians (1.6 / 1.9 λt) cannot be read as the
+  scheduled-sampling lever's effect. What it establishes: the concurrent survey
+  harness + aggregate-stats plumbing, and a reproducible snapshot. The controlled
+  2b test (single delta, varied-orbit eval) is still owed.
+- **Free-run RMSE is again a non-discriminator** — 0.41–0.43 mean, std ~0.06,
+  uncorrelated with VPT (best-VPT seed 13649188 @4.42 λt has RMSE 0.323, but
+  13649155 matches that RMSE at 2.37 λt). Consistent with run 9; rank on VPT.
+- **The A→B mean shift (2.00 → 2.21 λt) is within sampling noise** — identical
+  floor+tail structure, overlapping spreads, different n. Not a real change.
+
 ---
 
 ## Seed comparison — control vs past-ablation
@@ -321,11 +369,17 @@ kappa 0.05).
    not survive; arms are at VPT parity. Successor question: **vary the eval
    orbit**, not the seed — VPT is currently gated by one orbit's fixed event
    structure, so every arm comparison rides the same few hard transitions.
+   Run 10 (16- + 24-seed surveys) re-confirmed this at scale: VPT quantizes at one
+   orbit's event depths and ~50% of seeds die at its first event — scaling seed
+   count does not substitute for varying x0 / window.
 2. **Kappa in free-run, isolated.** Rollout kappa has never been swept alone
    (0.01 / 0.1 / 0.05 runs all changed other things too). Cheap: sweep
    `SetKappa` in FreeRun on a fixed trained ensemble.
 3. **Teacher-forced → generative mismatch** is the dominant known deficit
-   (run 2's 8x-Lyapunov error growth). Untried lever: closed-loop training
-   exposure (late epochs fed the model's own predictions on the future channels).
+   (run 2's 8x-Lyapunov error growth). Lever: closed-loop training exposure
+   (2b scheduled sampling — late epochs fed the model's own predictions on the
+   future channels). Engaged in run 10 (ceiling 0.5) but entangled with 5+ other
+   deltas and orbit-gated, so its effect is not yet isolated; the controlled test
+   (single delta, varied-orbit eval) remains open.
 4. ~~VPT_THRESHOLD = 0.3 is provisional~~ — RESOLVED: set to 0.2 to match the
    conventional 0.4 x climate-normalized definition (see Metrics).

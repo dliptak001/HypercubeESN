@@ -53,7 +53,7 @@ Lorenz::Lorenz(const uint64_t seed) : seed_(seed), esn_config_(MakeEnsembleConfi
     {
         std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
                     "  history_depth=%zu\n",
-                    config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(config::SEED),
+                    config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(seed_),
                     config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
                     config::HISTORY_DEPTH);
         std::printf("[Lorenz config] ensemble:  M=%zu  kappa_max=%.3f  combine=%s\n",
@@ -405,6 +405,12 @@ FreeRunResult Lorenz::FreeRun()
 int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
+
+    Lorenz lorenz(13649188);
+    lorenz.Train();
+    lorenz.FreeRun();
+
+    return 0;
 
     constexpr size_t NUM_SEEDS = 24;
     std::vector<FreeRunResult> results(NUM_SEEDS); // one outcome per seed, filled in place
