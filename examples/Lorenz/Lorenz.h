@@ -43,7 +43,7 @@ namespace config
     // k = 1 ignores the aux (pure reservoir state, pre-feature behavior); lower k
     // folds in more of the current past xyz. This is the primary sweep axis here.
     // The stream is already normalized to [-1,1], so u_raw is passed as-is.
-    constexpr float AUX_MIX = 0.8f;
+    constexpr float AUX_MIX = 1.0f;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
@@ -69,11 +69,13 @@ namespace config
     // 2a — noise injection: zero-mean Gaussian std added to the future channels.
     //      0 disables. Recommended starting bracket: 1e-3 .. a few 1e-2.
     constexpr float TRAIN_FUTURE_NOISE = 0.0f;
+
     // 2b — scheduled sampling: probability ceiling of feeding the ensemble's own
     //      fresh prediction on the future channels instead of the real sample,
     //      linearly ramped 0 -> ceiling across epochs. 0 disables.
     //      Recommended starting ceiling: ~0.25 .. 0.5.
-    constexpr float SCHEDULED_SAMPLING_CEILING = 0.5f;
+    constexpr float SCHEDULED_SAMPLING_CEILING = 0.1f;
+
     // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
     // from the reservoir SEED so toggling these never perturbs the reservoir.
     constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;
