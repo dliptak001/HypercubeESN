@@ -37,6 +37,14 @@ namespace config
     constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 200;
 
+    // ---- Auxiliary readout input (u_raw = normalized past x,y,z) ----
+    // A fresh snapshot fed straight to the readout (not the reservoir): each member
+    // sees F_i = k*x_i + (1-k)*(W_u_i . u_raw). k is the blend below, held via SetMix.
+    // k = 1 ignores the aux (pure reservoir state, pre-feature behavior); lower k
+    // folds in more of the current past xyz. This is the primary sweep axis here.
+    // The stream is already normalized to [-1,1], so u_raw is passed as-is.
+    constexpr float AUX_MIX = 0.8f;
+
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
     constexpr size_t FREE_RUN_WINDOW_SIZE = 500;
@@ -149,6 +157,10 @@ private:
 
     /// Copies the current future sample — the horizon-1 target — into targets.
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);
+
+    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — the
+    /// fresh snapshot blended into each member's readout input (see config::AUX_MIX).
+    static void ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states);
 
     /// Assembles the EnsembleESN config from the config:: constants.
     static EnsembleConfig MakeEnsembleConfig(uint64_t seed);

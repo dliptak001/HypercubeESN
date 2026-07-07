@@ -32,6 +32,11 @@ EnsembleConfig Lorenz::MakeEnsembleConfig(uint64_t seed)
 
     // The feedback channel count must equal num_outputs (= 3), or EnsembleESN's ctor rejects it.
     cfg.base.readout.num_outputs = 3; //[x, y, z]
+
+    // Auxiliary readout input: u_raw = normalized past (x,y,z), 3 wide. Fed only to
+    // the readout (via each member's fixed W_u), not the reservoir. aux_scaling is
+    // left at its default — the stream is already [-1,1], matching the state scale.
+    cfg.aux_input_dim = 3;
     return cfg;
 }
 
@@ -65,6 +70,8 @@ Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed)
                     esn_.NumMembers(), config::KAPPA, config::COMBINE == Combine::Mean ? "mean" : "median");
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
+        std::printf("[Lorenz config] aux:       u_raw=past_xyz (d=3)  mix k=%.3f%s\n",
+                    config::AUX_MIX, config::AUX_MIX >= 1.0f ? "  (k>=1: aux inert)" : "");
         std::printf("[Lorenz config] exposure:  2a future_noise=%.4f  2b ss_ceiling=%.3f\n",
                     config::TRAIN_FUTURE_NOISE, config::SCHEDULED_SAMPLING_CEILING);
         std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
@@ -107,6 +114,13 @@ void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_stat
     targets[2] = future_state.z;
 }
 
+void Lorenz::ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states)
+{
+    u_raw[0] = std::get<1>(past_future_states).x; // normalized past x
+    u_raw[1] = std::get<1>(past_future_states).y; // normalized past y
+    u_raw[2] = std::get<1>(past_future_states).z; // normalized past z
+}
+
 double Lorenz::KappaProfile(double kappa_max, double k, size_t epochs, const size_t current_epoch)
 {
     double x = static_cast<double>(current_epoch) / epochs;
@@ -137,6 +151,7 @@ void Lorenz::Train()
     float targets[3] = {};
     float outputs[3] = {};
     float consensus[3] = {}; // 2b: the ensemble's own prediction, when scheduled sampling fires
+    float u_past[3] = {};    // auxiliary readout input: normalized past (x,y,z)
     const size_t M = esn_.NumMembers();
     const size_t D = esn_.NumOutputs();
     std::vector<float> member_y(M * D); // per-step member outputs (diagnostic read)
@@ -152,6 +167,10 @@ void Lorenz::Train()
         0.0f, config::TRAIN_FUTURE_NOISE > 0.0f ? config::TRAIN_FUTURE_NOISE : 1.0f);
     std::uniform_real_distribution<float> unit_uniform(0.0f, 1.0f);
 
+    // Blend coefficient k for the auxiliary readout input; constant across the run
+    // (the class holds it, like kappa). k = 1 leaves the readout on the raw state.
+    esn_.SetMix(config::AUX_MIX);
+
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
         // Step 1: Warm up the reservoir. The epoch's kappa is set BEFORE the
@@ -166,7 +185,8 @@ void Lorenz::Train()
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
             ExtractInputs_Training(inputs, past_future_states);
-            esn_.Step(inputs, nullptr, outputs);
+            ExtractAuxPast(u_past, past_future_states);
+            esn_.Step(inputs, nullptr, outputs, u_past);
             past_future_states = data_stream_.Step(false);
         }
 
@@ -182,6 +202,7 @@ void Lorenz::Train()
             // call is about to inject — not NextFutureState() = S[f+1].
             ExtractTargets(targets, *std::get<2>(past_future_states));
             ExtractInputs_Training(inputs, past_future_states);
+            ExtractAuxPast(u_past, past_future_states); // same u_raw for the Predict below and this Step
 
             // Exposure-bias remedies (README Issue 2), future channels 3-5 only;
             // the teacher target above stays the real S[f], and channels 6-7 are
@@ -194,7 +215,7 @@ void Lorenz::Train()
             // prequential diagnostic still pairs outputs with this call's target.
             if (config::SCHEDULED_SAMPLING_CEILING > 0.0f && unit_uniform(exposure_rng) < ss_p)
             {
-                esn_.Predict(consensus);
+                esn_.Predict(consensus, u_past);
                 inputs[3] = consensus[0];
                 inputs[4] = consensus[1];
                 inputs[5] = consensus[2];
@@ -209,7 +230,7 @@ void Lorenz::Train()
                 inputs[5] += future_noise(exposure_rng);
             }
 
-            esn_.Step(inputs, targets, outputs);
+            esn_.Step(inputs, targets, outputs, u_past);
 
             // Prequential (test-then-train) error: outputs is the consensus read at
             // x(t) before this call's TrainStep, i.e. the pre-update prediction of
@@ -274,6 +295,7 @@ FreeRunResult Lorenz::FreeRun()
     float consensus[3] = {};
     float outputs[3] = {};
     float y_m[3] = {};
+    float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
     std::vector<float> member_inputs(esn_.NumMembers() * 8); // one 8-channel row per member
     std::vector<float> member_y(esn_.NumMembers() * 3); // fresh member outputs (spread diagnostic)
 
@@ -282,11 +304,13 @@ FreeRunResult Lorenz::FreeRun()
     // generative region warm and in-distribution. Kappa holds at the ceiling.
     data_stream_.Reset();
     esn_.SetKappa(config::KAPPA);
+    esn_.SetMix(config::AUX_MIX); // same readout-input blend as training
     LorenzDatastreamResult past_future_states = data_stream_.States();
     while (!data_stream_.OOB())
     {
         ExtractInputs_Training(inputs, past_future_states);
-        esn_.Step(inputs, nullptr, outputs);
+        ExtractAuxPast(u_past, past_future_states);
+        esn_.Step(inputs, nullptr, outputs, u_past);
         past_future_states = data_stream_.Step(false);
     }
 
@@ -321,7 +345,8 @@ FreeRunResult Lorenz::FreeRun()
             break;
         }
 
-        esn_.Predict(consensus); // the prediction of S[f]; also refreshes the member outputs
+        ExtractAuxPast(u_past, past_future_states); // same u_raw for this Predict and the StepPerMember below
+        esn_.Predict(consensus, u_past); // the prediction of S[f]; also refreshes the member outputs
         for (size_t m = 0; m < esn_.NumMembers(); m++)
         {
             esn_.MemberOutput(m, y_m); // member m's own prediction of S[f]
@@ -343,7 +368,7 @@ FreeRunResult Lorenz::FreeRun()
             }
         }
         const double spread = std::sqrt(spread_sq / (3.0 * esn_.NumMembers()));
-        esn_.StepPerMember(member_inputs.data(), nullptr, outputs); // absorb the fed-back predictions
+        esn_.StepPerMember(member_inputs.data(), nullptr, outputs, u_past); // absorb the fed-back predictions
         //ExtractInputs_FreeRun(inputs, past_future_states, consensus); // consensus-driven arm
         //esn_.Step(inputs, nullptr, outputs);
 
