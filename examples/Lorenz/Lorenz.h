@@ -35,7 +35,7 @@ namespace config
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
     constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 2;
+    constexpr size_t EPOCHS = 200;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
@@ -109,7 +109,7 @@ class Lorenz
 {
 public:
     /// Builds the ensemble and the datastream from the config:: constants.
-    Lorenz(uint64_t seed);
+    Lorenz(uint64_t seed, LorenzAttractor::State* orbit  = nullptr);
 
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
     /// window, printing one line per epoch: kappa and the prequential train
@@ -133,6 +133,8 @@ public:
 
 private:
     uint64_t seed_;
+    LorenzAttractor::State* orbit_;
+
     EnsembleConfig esn_config_;
     EnsembleESN esn_;
     LorenzDatastream data_stream_;
@@ -152,7 +154,7 @@ private:
     static EnsembleConfig MakeEnsembleConfig(uint64_t seed);
 
     /// Assembles the LorenzDatastream config from the config:: constants.
-    static LorenzDatastreamConfig MakeDatastreamConfig();
+    static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State* orbit);
 
     /// Saturating coupling ramp kappa_max*k*x^2/(1 + k*x^2), x = current_epoch/epochs:
     /// rises steeply, asymptotes strictly below kappa_max.

@@ -35,19 +35,24 @@ EnsembleConfig Lorenz::MakeEnsembleConfig(uint64_t seed)
     return cfg;
 }
 
-LorenzDatastreamConfig Lorenz::MakeDatastreamConfig()
+LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State* orbit)
 {
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
     cfg.cursor_span = config::TRAINING_WINDOW_SIZE;
     cfg.cursor_center_index = config::CURSOR_CENTER_INDEX;
-    cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
+    if (orbit == nullptr)
+        cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
+    else
+        cfg.initial_lorenz_state = *orbit;
     cfg.lorenz_dt = config::DT;
     return cfg;
 }
 
-Lorenz::Lorenz(const uint64_t seed) : seed_(seed), esn_config_(MakeEnsembleConfig(seed_)), esn_(esn_config_),
-                                      data_stream_(MakeDatastreamConfig())
+Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed), orbit_(orbit),
+                                                                     esn_config_(MakeEnsembleConfig(seed_)),
+                                                                     esn_(esn_config_),
+                                                                     data_stream_(MakeDatastreamConfig(orbit_))
 {
     if (config::ENABLE_PRINTF)
     {
@@ -406,9 +411,16 @@ int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
-    Lorenz lorenz(13649188);
+    LorenzAttractor::State ORBIT = {0.35, 0.26, 0.75};
+    Lorenz lorenz(13649188, &ORBIT);
     lorenz.Train();
-    lorenz.FreeRun();
+    const FreeRunResult r = lorenz.FreeRun();
+
+    std::printf("\n=== Single run ===\n");
+    if (r.valid)
+        std::fputs(r.row.c_str(), stdout); // seed / VPT steps / Lyapunov time / free-run RMSE
+    else
+        std::printf("[Single run] no steps scored\n");
 
     return 0;
 
@@ -450,7 +462,11 @@ int main()
     size_t censored = 0, invalid = 0;
     for (const auto& r : results)
     {
-        if (!r.valid) { ++invalid; continue; }
+        if (!r.valid)
+        {
+            ++invalid;
+            continue;
+        }
         vpt_lts.push_back(r.vpt_lt);
         rmses.push_back(r.rmse);
         if (!r.crossed) ++censored;
@@ -458,7 +474,11 @@ int main()
 
     auto report = [](const char* label, std::vector<double> v, int prec)
     {
-        if (v.empty()) { std::printf("  %-16s (no valid runs)\n", label); return; }
+        if (v.empty())
+        {
+            std::printf("  %-16s (no valid runs)\n", label);
+            return;
+        }
         std::sort(v.begin(), v.end());
         const size_t n = v.size();
         double sum = 0.0;
