@@ -94,6 +94,15 @@ void ESN::TrainStep(const float* target, float lr, float weight_decay)
     readout_.TrainStep(scratch_state_.data(), target, lr, weight_decay);
 }
 
+void ESN::TrainStepFromState(const float* state, const float* target,
+                            float lr, float weight_decay)
+{
+    // Same single-sample optimizer path as TrainStep — it just skips the live-state
+    // copy and trains on the caller's state instead, so TrainStep(target,...) and
+    // TrainStepFromState(current_state, target, ...) are equivalent.
+    readout_.TrainStep(state, target, lr, weight_decay);
+}
+
 void ESN::CopyReservoirState(float* out) const
 {
     const float* src = reservoir_->Outputs();
@@ -135,6 +144,11 @@ std::vector<float> ESN::PredictFromState(const float* state) const
     std::vector<float> out(readout_.NumOutputs());
     readout_.PredictRaw(state, out.data());
     return out;
+}
+
+void ESN::PredictFromState(const float* state, float* out) const
+{
+    readout_.PredictRaw(state, out);
 }
 
 double ESN::R2(const float* targets, size_t start, size_t count) const

@@ -175,6 +175,18 @@ public:
     /// @param weight_decay optional L2 regularization strength (0 = off).
     void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 
+    /// @brief Like @ref TrainStep, but trains from a state **you supply** instead of
+    /// the reservoir's live one — one online gradient step nudging the readout toward
+    /// @p target on @p state (ReservoirNeuronCount() floats).
+    ///
+    /// This is the training twin of @ref PredictFromState: it takes the exact same
+    /// single-sample optimizer path as @ref TrainStep, so passing the current
+    /// reservoir state reproduces @ref TrainStep bit-for-bit. Use it to train on a
+    /// modified state (e.g. one blended with an external signal) without disturbing
+    /// the reservoir. @p target has the same layout as @ref TrainStep.
+    void TrainStepFromState(const float* state, const float* target,
+                            float lr, float weight_decay = 0.0f);
+
     /// @brief Like @ref TrainStep, but takes one gradient step over a mini-batch
     /// of states you have collected yourself (each ReservoirNeuronCount() floats,
     /// e.g. saved with @ref CopyReservoirState).
@@ -221,6 +233,13 @@ public:
     /// readout sees it (e.g. overwriting the first few entries with an external
     /// signal). Unlike @ref Predict, it never touches the live reservoir.
     [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
+
+    /// @brief Like @ref PredictFromState, but writes the NumOutputs() prediction into
+    /// caller-provided @p out instead of allocating a vector — the no-heap form for
+    /// hot loops (e.g. an ensemble predicting each member from a blended state every
+    /// tick). @p state is ReservoirNeuronCount() floats; @p out has room for
+    /// NumOutputs() floats. Never touches the live reservoir.
+    void PredictFromState(const float* state, float* out) const;
 
     /// @brief Coefficient of determination (R²) over recorded timesteps
     /// [@p start, @p start + @p count) — a goodness-of-fit score where 1.0 is a
