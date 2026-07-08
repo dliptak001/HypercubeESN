@@ -8,10 +8,31 @@
 /// @brief Everything needed to build an @ref ESN: the settings for the fixed
 /// reservoir plus the settings for the trainable readout. The individual fields
 /// are documented on @ref ReservoirConfig and @ref ReadoutConfig.
+///
+/// The two fields below live here rather than on either sub-config because they
+/// describe the *seam* between the halves — how much of the reservoir's state the
+/// readout is shown. Together they set the readout's input shape: it consumes
+/// B = readout_slices + (aux_input_dim > 0) blocks of N, so @ref ESN derives
+/// `readout.dim = reservoir.dim + log2(B)`. Neither the reservoir nor the readout
+/// reads them on its own.
 struct ESNConfig
 {
     ReservoirConfig reservoir;
     ReadoutConfig readout;
+
+    /// How many reservoir delay-line slices the readout consumes, newest first (>= 1).
+    /// 1 (the default) shows it only the current state. Larger values hand it the
+    /// temporal memory the reservoir already computes for its recurrent gather and
+    /// otherwise discards; must not exceed `reservoir.history_depth`. Independent of
+    /// `history_depth` on purpose: widening the readout's view leaves the reservoir's
+    /// own dynamics untouched.
+    size_t readout_slices = 1;
+
+    /// Width of the auxiliary input block (0 = no aux block). When > 0 the readout
+    /// input carries one extra N-wide block holding the caller's raw aux vector,
+    /// broadcast onto subcubes, and every Predict/TrainStep must supply that vector.
+    /// The aux input feeds only the readout — it never drives the reservoir.
+    size_t aux_input_dim = 0;
 };
 
 

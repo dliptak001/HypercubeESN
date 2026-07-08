@@ -36,8 +36,8 @@ EnsembleConfig Lorenz::MakeEnsembleConfig(uint64_t seed)
     // Block-structured readout input: READOUT_SLICES delay-line slices plus an optional
     // aux block holding the normalized past (x,y,z). Both feed only the readout; the
     // reservoir is unchanged. The stream is already [-1,1], so u_raw needs no scaling.
-    cfg.base.readout.readout_slices = config::READOUT_SLICES;
-    cfg.base.readout.aux_input_dim = config::AUX_INPUT_DIM;
+    cfg.base.readout_slices = config::READOUT_SLICES;
+    cfg.base.aux_input_dim = config::AUX_INPUT_DIM;
     cfg.base.readout.use_pooling = config::USE_POOLING;
     return cfg;
 }

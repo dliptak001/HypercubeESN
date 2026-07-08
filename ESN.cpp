@@ -11,16 +11,16 @@ ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
 {
     ReadoutConfig rc = cfg.readout;
 
-    if (rc.readout_slices == 0)
-        throw std::invalid_argument("ESN: readout.readout_slices must be >= 1");
-    if (rc.readout_slices > cfg.reservoir.history_depth)
+    if (cfg.readout_slices == 0)
+        throw std::invalid_argument("ESN: readout_slices must be >= 1");
+    if (cfg.readout_slices > cfg.reservoir.history_depth)
         throw std::invalid_argument(
-            "ESN: readout.readout_slices (" + std::to_string(rc.readout_slices) +
+            "ESN: readout_slices (" + std::to_string(cfg.readout_slices) +
             ") exceeds reservoir.history_depth (" +
             std::to_string(cfg.reservoir.history_depth) +
             "); the delay line does not hold that many slices");
 
-    const size_t blocks = rc.readout_slices + (rc.aux_input_dim > 0 ? 1u : 0u);
+    const size_t blocks = cfg.readout_slices + (cfg.aux_input_dim > 0 ? 1u : 0u);
     if (!std::has_single_bit(blocks))
         throw std::invalid_argument(
             "ESN: readout_slices + (aux_input_dim > 0) must be a power of two (got " +
@@ -28,7 +28,7 @@ ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
             "); the readout input is a hypercube of B blocks of N");
 
     const size_t n = size_t{1} << cfg.reservoir.dim;
-    if (rc.aux_input_dim > 0 && std::bit_ceil(rc.aux_input_dim) > n)
+    if (cfg.aux_input_dim > 0 && std::bit_ceil(cfg.aux_input_dim) > n)
         throw std::invalid_argument(
             "ESN: aux_input_dim rounded up to a power of two exceeds N = 2^dim; the aux "
             "block cannot give each component its own subcube");
@@ -72,8 +72,8 @@ ESN::ESN(const ESNConfig& cfg)
 {
     n_              = reservoir_->Size();
     num_inputs_     = cfg.reservoir.num_inputs;
-    readout_slices_ = cfg.readout.readout_slices;
-    d_aux_          = cfg.readout.aux_input_dim;
+    readout_slices_ = cfg.readout_slices;
+    d_aux_          = cfg.aux_input_dim;
     readout_blocks_ = readout_slices_ + (d_aux_ > 0 ? 1u : 0u);
     readout_width_  = n_ * readout_blocks_;
     block_of_       = MakeBlockMap(readout_blocks_);
