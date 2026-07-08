@@ -37,13 +37,26 @@ namespace config
     constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 200;
 
-    // ---- Auxiliary readout input (u_raw = normalized past x,y,z) ----
-    // A fresh snapshot fed straight to the readout (not the reservoir): each member
-    // sees F_i = k*x_i + (1-k)*(W_u_i . u_raw). k is the blend below, held via SetMix.
-    // k = 1 ignores the aux (pure reservoir state, pre-feature behavior); lower k
-    // folds in more of the current past xyz. This is the primary sweep axis here.
-    // The stream is already normalized to [-1,1], so u_raw is passed as-is.
-    constexpr float AUX_MIX = 1.0f;
+    // ---- Readout input: block-structured (delay-line slices + optional aux block) ----
+    // The readout consumes B = READOUT_SLICES + (AUX_INPUT_DIM > 0) blocks of N, laid
+    // out on a (DIM + log2 B) hypercube: one block per reservoir delay-line slice
+    // (newest first), plus an optional block holding the auxiliary input. B must be a
+    // power of two, and READOUT_SLICES must not exceed HISTORY_DEPTH. The reservoir is
+    // untouched by all of this — the slices are the memory it already computes for its
+    // recurrent gather, and which the readout has never been shown.
+    //
+    // USE_POOLING appends HCNN's antipodal max-pool after each conv. That pool pairs
+    // every vertex with its bitwise complement, so it mixes block-index bits too — i.e.
+    // it scrambles the block structure. Turn it off to keep the blocks intact.
+    //
+    // Campaign arms (the reservoir is identical in every one of them):
+    //   A0   slices=1  aux=0  pooling=true    baseline (measured: VPT 215 steps / 3.89 lt)
+    //   A0'  slices=1  aux=0  pooling=false   is the antipodal pool worth anything?
+    //   A1   slices=4  aux=0                  value of the delay line
+    //   A2   slices=3  aux=3                  value of the aux, at equal compute to A1
+    constexpr size_t READOUT_SLICES = 1;
+    constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
+    constexpr bool USE_POOLING = true;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
@@ -160,8 +173,9 @@ private:
     /// Copies the current future sample — the horizon-1 target — into targets.
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);
 
-    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — the
-    /// fresh snapshot blended into each member's readout input (see config::AUX_MIX).
+    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — broadcast
+    /// onto each member's readout aux block (see config::AUX_INPUT_DIM). Unused when
+    /// the readout has no aux block.
     static void ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states);
 
     /// Assembles the EnsembleESN config from the config:: constants.

@@ -53,7 +53,9 @@ void Readout::build_architecture()
                      ? config_.num_layers
                      : std::min(d - 2, 2);
     layers = std::max(layers, 1);
-    assert(layers <= d - 2);
+    // Each pool drops one hypercube dimension, so the stack must leave >= 2 behind.
+    // With pooling off the dimension never shrinks and the bound is vacuous.
+    assert(!config_.use_pooling || layers <= d - 2);
 
     auto task_type = (config_.task == ReadoutTask::Classification)
                          ? hcnn::TaskType::Classification
@@ -66,7 +68,13 @@ void Readout::build_architecture()
     int ch = config_.conv_channels;
     for (int i = 0; i < layers; ++i) {
         net_->AddConv(ch, act, /*use_bias=*/true);
-        net_->AddPool(hcnn::PoolType::MAX);
+        // The antipodal pool halves the hypercube by pairing v with its complement,
+        // mixing every bit. A conv-only stack leaves the input's vertex structure
+        // intact all the way to the flatten readout (which sees each (channel, vertex)
+        // independently). HCNN sizes its readout from the final dimension, so a stack
+        // with no pool layers is well-formed.
+        if (config_.use_pooling)
+            net_->AddPool(hcnn::PoolType::MAX);
         ch *= 2;
     }
 

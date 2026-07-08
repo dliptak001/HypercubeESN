@@ -169,7 +169,9 @@ PYBIND11_MODULE(_core, m)
                                     float lr, float weight_decay) {
             auto sbuf = states.request();
             auto tbuf = targets.request();
-            const size_t M = self.ReservoirNeuronCount();
+            // Rows are full readout inputs, not bare reservoir states (they coincide
+            // only for a single-slice, no-aux readout). Validate the width actually read.
+            const size_t M = self.ReadoutInputWidth();
             const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
             const size_t K = self.NumOutputs();
             size_t count;
@@ -185,7 +187,7 @@ PYBIND11_MODULE(_core, m)
             if (static_cast<size_t>(sbuf.size) != count * M)
                 throw std::invalid_argument(
                     "states size (" + std::to_string(sbuf.size) +
-                    ") must equal count * reservoir_neuron_count (" + std::to_string(count) +
+                    ") must equal count * readout_input_width (" + std::to_string(count) +
                     " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
             self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
                                 static_cast<const float*>(tbuf.ptr),
@@ -202,8 +204,18 @@ PYBIND11_MODULE(_core, m)
             py::array_t<float> arr(M);
             self.CopyReservoirState(arr.mutable_data());
             return arr;
-        }, "Copy the current reservoir state for external accumulation.\n"
-           "Returns a (reservoir_neuron_count,) float array.")
+        }, "Copy the current reservoir state (the newest delay-line slice).\n"
+           "Returns a (reservoir_neuron_count,) float array. To accumulate rows for\n"
+           "train_step_batch, use copy_readout_input instead.")
+
+        .def("copy_readout_input", [](const ESN& self) {
+            size_t W = self.ReadoutInputWidth();
+            py::array_t<float> arr(W);
+            self.CopyReadoutInput(arr.mutable_data(), nullptr);
+            return arr;
+        }, "Copy the readout's current input — the block-structured vector it actually\n"
+           "consumes. Returns a (readout_input_width,) float array; this is the row\n"
+           "shape train_step_batch and predict_from_state expect.")
 
         // ── Prediction & evaluation ──
         .def("predict", [](const ESN& self) {
@@ -229,17 +241,20 @@ PYBIND11_MODULE(_core, m)
         .def("predict_from_state", [](const ESN& self,
                                       py::array_t<float, py::array::c_style | py::array::forcecast> state) {
             auto buf = state.request();
-            size_t M = self.ReservoirNeuronCount();
-            if (static_cast<size_t>(buf.size) != M)
+            // The readout consumes its full block-structured input, not just one
+            // reservoir state — these coincide only when the readout was built with a
+            // single slice and no aux block. Validate against the width actually read.
+            size_t W = self.ReadoutInputWidth();
+            if (static_cast<size_t>(buf.size) != W)
                 throw std::invalid_argument(
                     "state size (" + std::to_string(buf.size) +
-                    ") must equal reservoir_neuron_count (" + std::to_string(M) + ")");
+                    ") must equal readout_input_width (" + std::to_string(W) + ")");
             auto v = self.PredictFromState(static_cast<const float*>(buf.ptr));
             py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
             memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
             return arr;
         }, py::arg("state"),
-           "Run the readout on a caller-supplied (reservoir_neuron_count,) state.\n"
+           "Run the readout on a caller-supplied (readout_input_width,) input.\n"
            "Returns (num_outputs,) float array.")
 
         .def("r2", [](const ESN& self,
@@ -278,12 +293,15 @@ PYBIND11_MODULE(_core, m)
         // ── State access ──
         .def("collected_states", [](const ESN& self) {
             auto vec = self.CollectedStates();
-            size_t M = self.ReservoirNeuronCount();
+            // Rows are readout inputs (readout_input_width wide), which equals the
+            // neuron count only for a single-slice, no-aux readout. Sizing the array
+            // by the neuron count would overflow the memcpy below once they diverge.
+            size_t M = self.ReadoutInputWidth();
             size_t T = self.NumCollectedStates();
             py::array_t<float> arr({T, M});
             memcpy(arr.mutable_data(), vec.data(), vec.size() * sizeof(float));
             return arr;
-        }, "Return collected states as a (num_collected_states, reservoir_neuron_count) array.")
+        }, "Return collected readout inputs as a (num_collected_states, readout_input_width) array.")
 
         .def("predictions", [](const ESN& self) {
             size_t T = self.NumCollectedStates();
@@ -302,6 +320,8 @@ PYBIND11_MODULE(_core, m)
         .def_property_readonly("num_outputs", &ESN::NumOutputs)
         .def_property_readonly("reservoir_hypercube_dimension", &ESN::ReservoirHypercubeDimension)
         .def_property_readonly("reservoir_neuron_count", &ESN::ReservoirNeuronCount)
+        .def_property_readonly("readout_input_width", &ESN::ReadoutInputWidth)
+        .def_property_readonly("readout_block_count", &ESN::ReadoutBlockCount)
         .def_property_readonly("num_inputs", &ESN::NumInputs)
         .def_property_readonly("history_depth", [](const ESN& self) { return self.GetConfig().reservoir.history_depth; })
         .def_property_readonly("history_floor", [](const ESN& self) { return self.GetConfig().reservoir.history_floor; })

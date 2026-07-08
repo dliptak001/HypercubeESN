@@ -126,14 +126,18 @@ public:
     /// settle the reservoir before your first @ref TrainStep / @ref TrainStepBatch.
     void ReservoirWarmup(const float* inputs, size_t num_steps);
 
-    /// @brief Drive the reservoir for @p num_steps and **save the full state after
+    /// @brief Drive the reservoir for @p num_steps and **save the readout input after
     /// each step** into an internal buffer, ready for batch @ref Train and the
     /// scoring methods (@ref R2 / @ref NRMSE / @ref Accuracy).
     ///
-    /// This is the data-collection step: each recorded state becomes one training
-    /// row, to be paired with one target. @p inputs has the same row-major layout
-    /// as @ref ReservoirWarmup. Each step runs open-loop, so the recorded states
-    /// never carry feedback drive, regardless of NumFeedbackChannels().
+    /// This is the data-collection step: each recorded row (ReadoutInputWidth() floats)
+    /// becomes one training row, to be paired with one target. @p inputs has the same
+    /// row-major layout as @ref ReservoirWarmup. Each step runs open-loop, so the
+    /// recorded rows never carry feedback drive, regardless of NumFeedbackChannels().
+    ///
+    /// @throws std::logic_error if the readout has an auxiliary block
+    ///         (aux_input_dim > 0). The batch path has nowhere to take a per-step
+    ///         u_raw from — drive such a model online via @ref TrainStep / @ref Predict.
     ///
     /// By default, successive calls **accumulate** into one growing batch (so you
     /// can build it up from several sequences). Pass @p clear_recorded = true to
@@ -164,7 +168,7 @@ public:
     void Train(const float* targets, size_t train_size);
 
     /// @brief Take **one** online (streaming) gradient step, nudging the readout
-    /// toward @p target using the reservoir's *current* state.
+    /// toward @p target using the reservoir's *current* readout input.
     ///
     /// This is the streaming alternative to batch @ref Train: instead of
     /// collecting all states then fitting at once, you interleave drive-a-step
@@ -173,50 +177,57 @@ public:
     /// classification, a single float holding the class index.
     /// @param lr           learning rate (the step size of this update).
     /// @param weight_decay optional L2 regularization strength (0 = off).
-    void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
-
-    /// @brief Like @ref TrainStep, but trains from a state **you supply** instead of
-    /// the reservoir's live one — one online gradient step nudging the readout toward
-    /// @p target on @p state (ReservoirNeuronCount() floats).
-    ///
-    /// This is the training twin of @ref PredictFromState: it takes the exact same
-    /// single-sample optimizer path as @ref TrainStep, so passing the current
-    /// reservoir state reproduces @ref TrainStep bit-for-bit. Use it to train on a
-    /// modified state (e.g. one blended with an external signal) without disturbing
-    /// the reservoir. @p target has the same layout as @ref TrainStep.
-    void TrainStepFromState(const float* state, const float* target,
-                            float lr, float weight_decay = 0.0f);
+    /// @param u_raw        the auxiliary input for this step (aux_input_dim floats),
+    ///                     or nullptr when the readout has no aux block. See @ref Predict.
+    void TrainStep(const float* target, float lr, float weight_decay = 0.0f,
+                   const float* u_raw = nullptr);
 
     /// @brief Like @ref TrainStep, but takes one gradient step over a mini-batch
-    /// of states you have collected yourself (each ReservoirNeuronCount() floats,
-    /// e.g. saved with @ref CopyReservoirState).
+    /// of readout inputs you have collected yourself (each ReadoutInputWidth()
+    /// floats, e.g. saved with @ref CopyReadoutInput).
     ///
     /// For regression, @p targets is @p count * NumOutputs() floats; for
     /// classification, @p targets is @p count floats (class indices).
-    void TrainStepBatch(const float* states, const float* targets, size_t count,
+    void TrainStepBatch(const float* readout_inputs, const float* targets, size_t count,
                         float lr, float weight_decay = 0.0f);
 
     /// @brief Copy the reservoir's current state (ReservoirNeuronCount() floats —
-    /// all N neurons) into @p out.
-    ///
-    /// Use it to retain a state for later: to accumulate a mini-batch for
-    /// @ref TrainStepBatch, or to predict from a saved state via
-    /// @ref PredictFromState. @p out must have room for ReservoirNeuronCount() floats.
+    /// all N neurons) into @p out. This is the newest delay-line slice only; it is
+    /// **not** the readout's input unless the readout was configured with a single
+    /// slice and no aux block (see @ref CopyReadoutInput).
     void CopyReservoirState(float* out) const;
+
+    /// @brief Assemble and copy the readout's current input (ReadoutInputWidth()
+    /// floats) into @p out — the block-structured vector the readout actually sees.
+    ///
+    /// The readout input is B = ReadoutBlockCount() blocks of N, laid out on a
+    /// (dim + log2 B)-hypercube: one block per reservoir delay-line slice, plus an
+    /// optional auxiliary block. @ref ReadoutBlockOf says where each slot lands.
+    /// Use it to accumulate a mini-batch for @ref TrainStepBatch, or to inspect what
+    /// the readout consumes. @p u_raw follows the @ref Predict contract.
+    void CopyReadoutInput(float* out, const float* u_raw = nullptr) const;
 
     // ---------------------------------------------------------------
     //  Prediction & evaluation
     // ---------------------------------------------------------------
 
-    /// @brief Run the readout on the reservoir's **current** state and return the
-    /// prediction (NumOutputs() floats) — typically called right after a @ref ReservoirStep.
+    /// @brief Run the readout on the reservoir's **current** readout input and return
+    /// the prediction (NumOutputs() floats) — typically called right after a
+    /// @ref ReservoirStep. Only valid when the readout has no auxiliary block; with
+    /// one, use the @p u_raw overload.
+    /// @throws std::invalid_argument if the readout was built with aux_input_dim > 0.
     [[nodiscard]] std::vector<float> Predict() const;
 
     /// @brief Like @ref Predict, but writes the NumOutputs() prediction values
     /// into caller-provided @p out instead of allocating a vector. For hot loops
     /// that reuse a buffer (e.g. an ensemble reading each member every tick).
     /// @p out must have room for NumOutputs() floats.
-    void Predict(float* out) const;
+    ///
+    /// @param u_raw The auxiliary input for this step — aux_input_dim floats, broadcast
+    ///        onto the readout's aux block. Pass nullptr iff the readout has no aux
+    ///        block. Supplying one without the other throws, so an aux block is never
+    ///        silently zeroed and a stray u_raw is never silently ignored.
+    void Predict(float* out, const float* u_raw = nullptr) const;
 
     /// @brief Predict from a **recorded** state instead of the live one: runs the
     /// readout on the state saved at @p timestep during @ref ReservoirRun. Returns
@@ -224,22 +235,14 @@ public:
     /// @throws std::out_of_range if @p timestep >= NumCollectedStates().
     [[nodiscard]] std::vector<float> PredictFromRecorded(size_t timestep) const;
 
-    /// @brief Predict from a state **you supply**, rather than the reservoir's own.
+    /// @brief Predict from a readout input **you supply**, rather than the reservoir's
+    /// own.
     ///
-    /// @p state is a reservoir state of ReservoirNeuronCount() floats — usually one
-    /// you saved earlier with @ref CopyReservoirState. Returns NumOutputs() floats.
-    ///
-    /// Use it to predict from a stored state, or to modify a state before the
-    /// readout sees it (e.g. overwriting the first few entries with an external
-    /// signal). Unlike @ref Predict, it never touches the live reservoir.
-    [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
-
-    /// @brief Like @ref PredictFromState, but writes the NumOutputs() prediction into
-    /// caller-provided @p out instead of allocating a vector — the no-heap form for
-    /// hot loops (e.g. an ensemble predicting each member from a blended state every
-    /// tick). @p state is ReservoirNeuronCount() floats; @p out has room for
-    /// NumOutputs() floats. Never touches the live reservoir.
-    void PredictFromState(const float* state, float* out) const;
+    /// @p readout_input is ReadoutInputWidth() floats — usually one you saved earlier
+    /// with @ref CopyReadoutInput. Returns NumOutputs() floats. Use it to predict from
+    /// a stored input, or to modify one before the readout sees it. Unlike
+    /// @ref Predict, it never touches the live reservoir.
+    [[nodiscard]] std::vector<float> PredictFromState(const float* readout_input) const;
 
     /// @brief Coefficient of determination (R²) over recorded timesteps
     /// [@p start, @p start + @p count) — a goodness-of-fit score where 1.0 is a
@@ -281,10 +284,10 @@ public:
     //  State access
     // ---------------------------------------------------------------
 
-    /// @brief Return a copy of every recorded state, row-major:
-    /// NumCollectedStates() rows of ReservoirNeuronCount() floats each.
+    /// @brief Return a copy of every recorded readout input, row-major:
+    /// NumCollectedStates() rows of ReadoutInputWidth() floats each.
     ///
-    /// Mainly for inspection or for feeding states to other tools; training and
+    /// Mainly for inspection or for feeding rows to other tools; training and
     /// scoring read the internal buffer directly, so you rarely need this.
     [[nodiscard]] std::vector<float> CollectedStates() const;
 
@@ -307,9 +310,29 @@ public:
     /// count is N = 2^dim — see @ref ReservoirNeuronCount.
     [[nodiscard]] size_t ReservoirHypercubeDimension() const { return reservoir_->Dim(); }
     /// @brief Number of reservoir neurons, N = 2^ReservoirHypercubeDimension().
-    /// This is the length of every reservoir state vector (and the readout's input
-    /// width).
+    /// This is the length of every reservoir state vector, and of one readout-input
+    /// *block* (see @ref ReadoutInputWidth for the whole input).
     [[nodiscard]] size_t ReservoirNeuronCount() const { return n_; }
+
+    /// @brief Length of the readout's input vector: ReadoutBlockCount() * N. The
+    /// readout sees a (dim + log2 B)-hypercube built from B blocks of N.
+    [[nodiscard]] size_t ReadoutInputWidth() const { return readout_width_; }
+
+    /// @brief Number of N-wide blocks in the readout input, B = readout_slices +
+    /// (aux_input_dim > 0). Always a power of two.
+    [[nodiscard]] size_t ReadoutBlockCount() const { return readout_blocks_; }
+
+    /// @brief Which block a readout-input **slot** occupies. Slots `[0, readout_slices)`
+    /// are reservoir state ages (0 = newest); slot `readout_slices` is the auxiliary
+    /// block, when present.
+    ///
+    /// The mapping is a deliberate permutation, not the identity: an HCNN conv gathers
+    /// only single-bit-flip neighbours and has no self term, so a filter can combine
+    /// two blocks only when their indices differ in exactly **two** bits. The map pairs
+    /// consecutive slots onto such block pairs, putting `{age 0, age 1}` — the velocity
+    /// — within reach of one conv filter.
+    /// @throws std::out_of_range if @p slot >= ReadoutBlockCount().
+    [[nodiscard]] size_t ReadoutBlockOf(size_t slot) const;
 
     /// @brief Number of external feedback channels D (cfg.reservoir.num_feedback_channels).
     ///
@@ -348,16 +371,32 @@ private:
     Readout readout_;
     ESNConfig esn_config_;
 
-    size_t n_ = 0; // reservoir neuron count N = 2^dim
+    size_t n_ = 0; // reservoir neuron count N = 2^dim (one readout-input block)
     size_t num_inputs_ = 1;
 
-    std::vector<float> states_;
+    size_t readout_slices_ = 1; // reservoir delay-line slices fed to the readout
+    size_t d_aux_ = 0; // auxiliary-input width (0 = no aux block)
+    size_t readout_blocks_ = 1; // B = readout_slices_ + (d_aux_ > 0); a power of two
+    size_t readout_width_ = 0; // n_ * readout_blocks_
+    std::vector<size_t> block_of_; // slot -> block index (see ReadoutBlockOf)
+
+    std::vector<float> states_; // recorded readout inputs, rows of readout_width_
     size_t num_collected_ = 0;
 
+    // Validates the slice/aux/pooling config and derives readout.dim from the
+    // reservoir's dim plus log2(B). Throws on an inconsistent config.
     static ReadoutConfig MakeReadoutConfig(const ESNConfig& cfg);
+
+    // slot -> block permutation placing consecutive slots on blocks whose indices
+    // differ in two bits (the only pairs one HCNN conv filter can combine).
+    static std::vector<size_t> MakeBlockMap(size_t blocks);
+
+    // Gather the delay-line slices (by logical age) and the aux block into
+    // readout_input_, in block_of_ order. The one place the readout's view is built.
+    void AssembleReadoutInput(const float* u_raw) const;
 
     const float* ReadoutInput(size_t timestep) const;
     [[nodiscard]] std::vector<float> ReadoutStates(size_t start, size_t count) const;
 
-    mutable std::vector<float> scratch_state_;
+    mutable std::vector<float> readout_input_; // readout_width_ scratch
 };

@@ -58,7 +58,24 @@ struct ReadoutConfig
     size_t dim = 0; ///< Input feature dim: features per sample = 2^dim.
     int num_outputs = 1; ///< Classes (classification) or targets (regression).
     ReadoutTask task = ReadoutTask::Regression;
-    int num_layers = 1; ///< Conv+Pool pairs. 0 = auto: min(DIM-2, 2).
+    int num_layers = 1; ///< Conv(+Pool) layers. 0 = auto: min(DIM-2, 2).
+
+    /// How many reservoir state slices the readout consumes, newest first (>= 1).
+    /// 1 (default) = only the current state, as before. Larger values hand the readout
+    /// the delay line the reservoir already computes for its recurrent gather; must not
+    /// exceed the reservoir's `history_depth`. Set by @ref ESN, not by the readout.
+    size_t readout_slices = 1;
+
+    /// Width of the auxiliary input block (0 = no aux block). When > 0 the readout
+    /// input carries one extra N-wide block holding the caller's raw aux vector,
+    /// broadcast onto subcubes. Set by @ref ESN, not by the readout.
+    size_t aux_input_dim = 0;
+
+    /// Append an antipodal max-pool after each Conv (true = the historical behavior).
+    /// The pool pairs each vertex with its bitwise complement, so it mixes *every* bit —
+    /// including any block-index bits. Set false to keep a block-structured input intact
+    /// through the conv stack; the flatten readout then sees twice as many features.
+    bool use_pooling = true;
     int conv_channels = 16; ///< Base channels (doubles per layer).
     int epochs = 200;
     int batch_size = 32;

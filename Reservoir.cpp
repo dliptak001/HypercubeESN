@@ -9,6 +9,7 @@
 #include <cstring>
 #include <new>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 Reservoir::Reservoir(const ReservoirConfig& cfg)
@@ -61,7 +62,10 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     vtx_state_.reset(AllocAligned(n_));
     vtx_output_history_.reset(AllocAligned(n_ * history_depth_));
     vtx_weight_.reset(AllocAligned(num_weights_));
-    slice_ptrs_.reset(new float*[history_depth_]);
+    // Value-initialized (the trailing ()): the slices are homed in Clear(), called
+    // from Initialize() below. Null until then, so a premature read faults loudly
+    // instead of dereferencing indeterminate pointers.
+    slice_ptrs_.reset(new float*[history_depth_]());
 
     vtx_bias_.reset(AllocAligned(n_));
 
@@ -364,6 +368,17 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
     return cfg;
+}
+
+const float* Reservoir::SliceAt(const size_t age) const
+{
+    if (age >= history_depth_)
+        throw std::out_of_range(
+            "Reservoir::SliceAt: age (" + std::to_string(age) +
+            ") >= history_depth (" + std::to_string(history_depth_) + ")");
+    // slice_ptrs_ is kept in logical age order by Step()'s ring rotation, so this
+    // needs no translation from the history buffer's physical block order.
+    return slice_ptrs_[age];
 }
 
 void Reservoir::Clear()

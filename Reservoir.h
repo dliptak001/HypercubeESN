@@ -146,6 +146,23 @@ public:
     /// @return Pointer to N floats, valid until the next @ref Step or @ref Clear.
     [[nodiscard]] const float* Outputs() const { return slice_ptrs_[0]; }
 
+    /// @brief The state slice from @p age timesteps ago — a read-only view into the
+    /// delay line. `SliceAt(0)` is the current state (identical to @ref Outputs);
+    /// `SliceAt(1)` is the state one step back, and so on.
+    ///
+    /// Indexes by **logical age, not physical position**. @ref Step rotates the slice
+    /// ring, so the history buffer's block order changes every timestep and its raw
+    /// layout is meaningless to a consumer. Always read the delay line through this
+    /// (or @ref TakeSnapshot); never straight out of the underlying buffer.
+    ///
+    /// This exposes the temporal memory the reservoir already computes and stores for
+    /// its recurrent gather — a consumer that reads only @ref Outputs discards the
+    /// other `history_depth - 1` slices.
+    ///
+    /// @return Pointer to N floats, valid until the next @ref Step or @ref Clear.
+    /// @throws std::out_of_range if @p age >= history_depth.
+    [[nodiscard]] const float* SliceAt(size_t age) const;
+
     /// @brief The post-rescale spectral radius measured at construction (the secant
     /// root-find's final estimate), which approximates the configured target
     /// @c spectral_radius.

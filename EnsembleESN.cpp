@@ -1,8 +1,6 @@
 #include "EnsembleESN.h"
 
 #include <algorithm>
-#include <cmath>
-#include <random>
 #include <stdexcept>
 
 namespace
@@ -23,12 +21,6 @@ namespace
     // Golden-ratio odd constant — decorrelates the per-member offset before the
     // mix so adjacent member indices yield independent reservoir realizations.
     constexpr uint64_t GOLDEN = 0x9E3779B97F4A7C15ULL;
-
-    // Role tag for the auxiliary-projection (W_u) RNG stream. XOR'd into a member's
-    // derived seed before mixing so W_u is provably independent of the reservoir's
-    // own substreams (which label with 0x100000001B3 * role, see Reservoir.cpp) —
-    // a distinct large constant that is not one of those small multiples.
-    constexpr uint64_t AUX_STREAM_TAG = 0xD1B54A32D192ED03ULL;
 }
 
 EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
@@ -59,47 +51,23 @@ EnsembleESN::EnsembleESN(const EnsembleConfig& cfg)
             "base.reservoir.num_feedback_channels");
     D_ = d_feedback;
 
-    n_     = static_cast<size_t>(1) << cfg.base.reservoir.dim; // N = 2^dim, shared
-    d_aux_ = cfg.aux_input_dim;
-
     // Build the M members from the single shared base config (§5), overriding
-    // only the seed (derived) and verbose (silenced). When the aux channel is on,
-    // build each member's fixed W_u projection from an independent RNG stream.
+    // only the seed (derived) and verbose (silenced).
     esn_.reserve(M_);
-    Wu_.resize(M_);
     for (size_t i = 0; i < M_; ++i)
     {
-        const uint64_t member_seed = mix64(cfg.ensemble_seed ^ (GOLDEN * (i + 1)));
-
         ESNConfig member = cfg.base;
         member.reservoir.verbose = false;
         member.reservoir.spectral_radius += i*0.01;
         member.reservoir.lorentz_gamma = i*0.01;
-        member.reservoir.seed = member_seed;
+        member.reservoir.seed = mix64(cfg.ensemble_seed ^ (GOLDEN * (i + 1)));
         esn_.push_back(std::make_unique<ESN>(member));
-
-        if (d_aux_ > 0)
-        {
-            // U(-1,1) * aux_scaling with a 1/sqrt(d_aux) fan-in normalization (u_i is
-            // a direct sum over d_aux terms). Stream seeded off the member seed via a
-            // distinct aux tag, so W_u_i is independent of that member's reservoir
-            // weights yet reproducible from ensemble_seed.
-            std::mt19937_64 aux_rng(mix64(member_seed ^ AUX_STREAM_TAG));
-            std::uniform_real_distribution<double> dist(-1.0, 1.0);
-            const float scale = cfg.aux_scaling / std::sqrt(static_cast<float>(d_aux_));
-            auto& W = Wu_[i];
-            W.resize(n_ * d_aux_);
-            for (float& w : W)
-                w = static_cast<float>(dist(aux_rng)) * scale;
-        }
     }
 
     // Pre-allocated per-step scratch (decision #5 — no per-tick heap traffic).
     y_flat_.assign(M_ * D_, 0.0f);
     phi_.assign(D_, 0.0f);
     median_scratch_.assign(M_, 0.0f);
-    if (d_aux_ > 0)
-        f_.assign(n_, 0.0f); // blended readout input; only needed when aux is on
 }
 
 void EnsembleESN::Consensus(float* c_out) const
@@ -141,26 +109,6 @@ void EnsembleESN::Consensus(float* c_out) const
     }
 }
 
-void EnsembleESN::BlendedState(size_t i, const float* u_raw, float* out) const
-{
-    // out = x_i (the member's live reservoir state)...
-    esn_[i]->CopyReservoirState(out);
-
-    // ...then blend in the per-member projection u_i = W_u_i . u_raw, elementwise:
-    // out[v] = k*x_i[v] + (1-k)*u_i[v].
-    const float k = k_;
-    const float one_minus_k = 1.0f - k;
-    const float* W = Wu_[i].data();
-    for (size_t v = 0; v < n_; ++v)
-    {
-        const float* wv = W + v * d_aux_;
-        float u = 0.0f;
-        for (size_t j = 0; j < d_aux_; ++j)
-            u += wv[j] * u_raw[j];
-        out[v] = k * out[v] + one_minus_k * u;
-    }
-}
-
 void EnsembleESN::Step(const float* input, const float* target, float* c_out,
                        const float* u_raw)
 {
@@ -176,27 +124,10 @@ void EnsembleESN::StepPerMember(const float* inputs_MxI, const float* target,
 void EnsembleESN::StepImpl(const float* inputs, const size_t input_stride,
                            const float* target, float* c_out, const float* u_raw)
 {
-    if (u_raw != nullptr && d_aux_ == 0)
-        throw std::invalid_argument(
-            "EnsembleESN: u_raw supplied but aux input not configured "
-            "(aux_input_dim == 0); pass u_raw=nullptr or build with aux_input_dim > 0");
-    const bool aux = (u_raw != nullptr);
-
-    // 1. read every member's output y_i at its current readout input — the raw
-    //    state x_i(t), or the blended F_i when an aux vector is supplied — straight
-    //    into the pre-allocated y_flat_ slice (no per-tick allocation, decision #5).
+    // 1. read every member's output y_i at its current readout input, straight into
+    //    the pre-allocated y_flat_ slice — no per-tick allocation (decision #5).
     for (size_t i = 0; i < M_; ++i)
-    {
-        if (aux)
-        {
-            BlendedState(i, u_raw, f_.data());
-            esn_[i]->PredictFromState(f_.data(), y_flat_.data() + i * D_);
-        }
-        else
-        {
-            esn_[i]->Predict(y_flat_.data() + i * D_);
-        }
-    }
+        esn_[i]->Predict(y_flat_.data() + i * D_, u_raw);
 
     // 2. consensus c(t) = combine_i y_i  (also the ensemble's output).
     Consensus(c_out);
@@ -204,23 +135,13 @@ void EnsembleESN::StepImpl(const float* inputs, const size_t input_stride,
     // 3. train flag: fit only when a target is given.
     const bool train = (target != nullptr);
 
-    // 4. for each member: (train) update readout on the same readout input read in
-    //    step 1 (x_i(t) is unchanged — no step between the loops), then inject the
+    // 4. for each member: (train) update the readout on the same readout input read
+    //    in step 1 (x_i(t) is unchanged — no step between the loops), then inject the
     //    scaled deviation phi_i = kappa*(y_i - c) and step to x_i(t+1).
     for (size_t i = 0; i < M_; ++i)
     {
         if (train)
-        {
-            if (aux)
-            {
-                BlendedState(i, u_raw, f_.data());
-                esn_[i]->TrainStepFromState(f_.data(), target, lr_, wd_);
-            }
-            else
-            {
-                esn_[i]->TrainStep(target, lr_, wd_);
-            }
-        }
+            esn_[i]->TrainStep(target, lr_, wd_, u_raw);
 
         const float* y_i = y_flat_.data() + i * D_;
         for (size_t c = 0; c < D_; ++c)
@@ -232,23 +153,8 @@ void EnsembleESN::StepImpl(const float* inputs, const size_t input_stride,
 
 void EnsembleESN::Predict(float* c_out, const float* u_raw)
 {
-    if (u_raw != nullptr && d_aux_ == 0)
-        throw std::invalid_argument(
-            "EnsembleESN::Predict: u_raw supplied but aux input not configured "
-            "(aux_input_dim == 0); pass u_raw=nullptr or build with aux_input_dim > 0");
-
     for (size_t i = 0; i < M_; ++i)
-    {
-        if (u_raw != nullptr)
-        {
-            BlendedState(i, u_raw, f_.data());
-            esn_[i]->PredictFromState(f_.data(), y_flat_.data() + i * D_);
-        }
-        else
-        {
-            esn_[i]->Predict(y_flat_.data() + i * D_);
-        }
-    }
+        esn_[i]->Predict(y_flat_.data() + i * D_, u_raw);
     Consensus(c_out);
 }
 
@@ -271,7 +177,6 @@ EnsembleESN::State EnsembleESN::GetState() const
     for (const auto& e : esn_)
         s.member_weights.push_back(e->GetReadoutState().weights);
     s.kappa = kappa_;
-    s.mix = k_;
     return s;
 }
 
@@ -292,5 +197,4 @@ void EnsembleESN::SetState(const State& s)
     }
 
     kappa_ = s.kappa;
-    k_ = s.mix;
 }

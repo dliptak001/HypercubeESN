@@ -51,21 +51,6 @@ struct EnsembleConfig
     /// caller-managed thereafter via SetWeightDecay.
     float weight_decay = 0.0f;
 
-    /// Auxiliary-input width d_aux (0 = feature OFF). When > 0, each member gets a
-    /// fixed random projection W_u_i (d_aux -> N) and @ref EnsembleESN::Step /
-    /// @ref EnsembleESN::Predict accept an optional raw aux vector u_raw of this many
-    /// floats, blended into that member's readout input as
-    /// F_i = k*x_i + (1-k)*(W_u_i . u_raw). The aux vector is a *new* input type,
-    /// separate from the reservoir drive, and it feeds only the readout — it never
-    /// drives the reservoir dynamics. u_raw is shared across members; the projection
-    /// W_u_i is per-member.
-    size_t aux_input_dim = 0;
-
-    /// Draw scale for the per-member W_u weights, applied with a 1/sqrt(d_aux) fan-in
-    /// normalization (mirroring the reservoir's input_scaling). The caller should
-    /// normalize u_raw to ~O(1) so k*x and (1-k)*u sit on comparable scales.
-    float aux_scaling = 0.5f;
-
     void SetDIM(const size_t dim) { base.reservoir.dim = base.readout.dim = dim; };
 
     void SetSeed(const size_t seed)
@@ -113,12 +98,12 @@ public:
     ///                 inference (no readout update).
     /// @param c_out    NumOutputs() floats — receives the consensus c(t), the
     ///                 ensemble's output for this step.
-    /// @param u_raw    optional auxiliary input — cfg.aux_input_dim floats — blended
-    ///                 into every member's readout input as F_i = k*x_i +
-    ///                 (1-k)*(W_u_i . u_raw) for this step's read and (when training)
-    ///                 fit. nullptr leaves the readout on the raw reservoir state
-    ///                 (exact pre-feature behavior). @throws std::invalid_argument if
-    ///                 non-null while the ensemble was built with aux_input_dim == 0.
+    /// @param u_raw    the auxiliary input for this step — base.readout.aux_input_dim
+    ///                 floats — forwarded to every member and broadcast onto its
+    ///                 readout's aux block for this step's read and (when training)
+    ///                 fit. It feeds only the readouts; it never drives the reservoir
+    ///                 dynamics. Shared across members. Pass nullptr iff the readout
+    ///                 has no aux block; supplying one without the other throws.
     void Step(const float* input, const float* target, float* c_out,
               const float* u_raw = nullptr);
 
@@ -159,14 +144,6 @@ public:
     /// holds kappa fixed between calls. Takes effect on the next @ref Step.
     void SetKappa(float kappa) { kappa_ = kappa; }
 
-    /// @brief Set the readout-input blend coefficient k applied on subsequent steps
-    /// when an auxiliary input is supplied: F_i = k*x_i + (1-k)*(W_u_i . u_raw).
-    /// k = 1 (the default) is pure reservoir state — exact pre-feature behavior;
-    /// k = 0 drives the readout purely off the projected aux signal. Shared across
-    /// members and caller-managed like @ref SetKappa. No effect on steps where
-    /// u_raw is nullptr.
-    void SetMix(float k) { k_ = k; }
-
     /// @brief Set the shared online learning rate / L2 weight-decay applied to
     /// every member's readout on each subsequent training @ref Step. Seeded from
     /// the construction-time config; caller-managed like @ref SetKappa thereafter
@@ -190,9 +167,6 @@ public:
 
     /// Current feedback coupling intensity kappa (set via @ref SetKappa).
     [[nodiscard]] float Kappa() const { return kappa_; }
-
-    /// Current readout-input blend coefficient k (set via @ref SetMix).
-    [[nodiscard]] float Mix() const { return k_; }
 
     /// Current shared online learning rate / L2 (set via @ref SetLr / @ref SetWeightDecay).
     [[nodiscard]] float Lr() const { return lr_; }
@@ -221,7 +195,6 @@ public:
     {
         std::vector<std::vector<double>> member_weights; ///< M readout-weight blobs, member order
         float kappa = 0.0f; ///< coupling intensity at capture
-        float mix = 1.0f; ///< readout-input blend coefficient k at capture (1 = pure state)
     };
 
     /// Capture the trained state (all member readout weights + kappa).
@@ -237,8 +210,6 @@ private:
     size_t M_ = 0; // member count
     size_t D_ = 0; // output dim = num_feedback_channels (One D, three roles)
     size_t num_inputs_ = 0; // task input width
-    size_t n_ = 0; // reservoir neuron count N = 2^dim (shared across members)
-    size_t d_aux_ = 0; // auxiliary-input width (0 = aux feature off)
 
     Combine combine_ = Combine::Mean;
     float lr_ = 0.0f;
@@ -247,30 +218,19 @@ private:
     // feedback coupling intensity (caller-managed via SetKappa)
     float kappa_ = 0.0f;
 
-    // readout-input blend coefficient k (caller-managed via SetMix); 1 = pure state
-    float k_ = 1.0f;
-
     std::vector<std::unique_ptr<ESN>> esn_;
-
-    // per-member fixed aux projection W_u_i, row-major N x d_aux (empty when d_aux_ == 0)
-    std::vector<std::vector<float>> Wu_;
 
     // pre-allocated per-step scratch (no heap traffic per tick, decision #5)
     std::vector<float> y_flat_; // M*D — last member outputs (also the §7.4 source)
     std::vector<float> phi_; // D   — current member's coupling drive
-    std::vector<float> f_; // N   — blended readout input F_i for the current member
     mutable std::vector<float> median_scratch_; // M — per-channel gather for the median
 
     // write the consensus of y_flat_ (M x D) into c_out (D), per combine_.
     void Consensus(float* c_out) const;
 
-    // fill out (N floats) with member i's blended readout input
-    // F_i = k*x_i + (1-k)*(W_u_i . u_raw). Requires d_aux_ > 0.
-    void BlendedState(size_t i, const float* u_raw, float* out) const;
-
     // shared core of Step / StepPerMember: member i is driven by
-    // inputs + i*input_stride (stride 0 = one shared row for all members). When
-    // u_raw != nullptr the readout reads/trains on the blended state (see BlendedState).
+    // inputs + i*input_stride (stride 0 = one shared row for all members). u_raw, when
+    // present, is forwarded verbatim to every member's readout.
     void StepImpl(const float* inputs, size_t input_stride, const float* target,
                   float* c_out, const float* u_raw);
 };
