@@ -40,15 +40,23 @@ int main(int argc, char* argv[])
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
     //cfg.reservoir.seed = 84745874578;
+    cfg.reservoir.history_depth = 4;
+    cfg.readout_slices = 1;
     cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98
     cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 0.1
     cfg.readout.task          = ReadoutTask::Regression;
-    cfg.readout.epochs        = 1500;
-    cfg.readout.batch_size    = 64;
+    cfg.readout.epochs        = 3000;
+    cfg.readout.batch_size    = 16;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
+    cfg.readout.use_pooling = false;
     ESN esn(cfg);
 
-    std::cout << "  Config: N=" << N << "  raw state (all vertices)\n";
+    std::cout << "  Config: N=" << N << "  history_depth=" << cfg.reservoir.history_depth << "\n";
+    std::cout << "  Readout in: " << esn.ReadoutBlockCount() << " block(s) x " << N
+              << " = " << esn.ReadoutInputWidth() << " values"
+              << "  (slices=" << cfg.readout_slices
+              << ", aux=" << cfg.aux_input_dim
+              << ", pooling=" << (cfg.readout.use_pooling ? "on" : "off") << ")\n";
     std::cout << "  Training: " << cfg.readout.epochs << " epochs, batch=" << cfg.readout.batch_size
               << ", lr=" << cfg.readout.lr_max
               << " (cosine, floor=" << (cfg.readout.lr_max * cfg.readout.lr_min_frac) << ")\n";
