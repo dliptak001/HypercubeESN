@@ -45,16 +45,33 @@ namespace config
     // untouched by all of this — the slices are the memory it already computes for its
     // recurrent gather, and which the readout has never been shown.
     //
-    // USE_POOLING appends HCNN's antipodal max-pool after each conv. That pool pairs
-    // every vertex with its bitwise complement, so it mixes block-index bits too — i.e.
-    // it scrambles the block structure. Turn it off to keep the blocks intact.
+    // USE_POOLING appends HCNN's antipodal max-pool after each conv. The pool pairs
+    // every vertex with its bitwise complement, so at B > 1 it mixes the block-index
+    // bits too: block b merges with block ~b — here x(t) with x(t-1), at complemented
+    // vertices. Complementing flips every bit, so no block placement can avoid it.
     //
-    // Campaign arms (the reservoir is identical in every one of them):
-    //   A0   slices=1  aux=0  pooling=true    baseline (measured: VPT 215 steps / 3.89 lt)
-    //   A0'  slices=1  aux=0  pooling=false   is the antipodal pool worth anything?
-    //   A1   slices=4  aux=0                  value of the delay line
-    //   A2   slices=3  aux=3                  value of the aux, at equal compute to A1
-    constexpr size_t READOUT_SLICES = 1;
+    // Whether that HURTS is untested. Since max(a,b) = (a+b)/2 + |a-b|/2, the merge
+    // also manufactures a rectified temporal difference — close to the very feature the
+    // block layout exists to expose. Settle it empirically with A1 vs A1' (identical
+    // slices, pooling toggled). Do NOT extrapolate from a B = 1 run: at B = 1 there are
+    // no block bits to mix, and the sign of the pooling effect there flipped under a
+    // change of batch size alone (pooling converges faster but to a lower ceiling).
+    //
+    // Campaign arms. The reservoir is identical in all of them, and each is a SINGLE
+    // delta from a named reference:
+    //   A0   slices=1  aux=0  pool=on    ref     baseline (measured: VPT 215 steps / 3.89 lt)
+    //   A1   slices=4  aux=0  pool=on    vs A0   value of the delay line
+    //   A2   slices=3  aux=3  pool=on    vs A1   value of the aux, at equal compute to A1
+    //   A1'  slices=4  aux=0  pool=off   vs A1   value of the pool, at B = 4
+    //
+    // A1 vs A2 is equal COMPUTE, not equal information: A2 spends a whole N-wide block on
+    // 3 broadcast numbers where A1's fourth block is a real state slice. So "A1 beats A2"
+    // means "a state slice beats 3 broadcast numbers", NOT "the aux is worthless".
+    //
+    // Before reading VPT on a wide arm, check the tail of its per-epoch train RMSE: A1/A2
+    // carry ~4x the readout parameters at the same update count, so a still-descending
+    // trace means under-converged, not a ceiling — raise EPOCHS before concluding.
+    constexpr size_t READOUT_SLICES = 4;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
     constexpr bool USE_POOLING = true;
 

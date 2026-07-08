@@ -45,10 +45,10 @@ int main(int argc, char* argv[])
     cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98
     cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 0.1
     cfg.readout.task          = ReadoutTask::Regression;
-    cfg.readout.epochs        = 3000;
+    cfg.readout.epochs        = 1500;
     cfg.readout.batch_size    = 16;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
-    cfg.readout.use_pooling = false;
+    cfg.readout.use_pooling = true;
     ESN esn(cfg);
 
     std::cout << "  Config: N=" << N << "  history_depth=" << cfg.reservoir.history_depth << "\n";
