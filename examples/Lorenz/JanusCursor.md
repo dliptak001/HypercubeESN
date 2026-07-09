@@ -1,6 +1,6 @@
 # The Janus Cursor Method for Half-Anchored Generative Free-Run
 
-> Design spec for the **Janus Cursor**: a dual-cursor scheme for reservoir/ensemble free-run
+> Design spec for the **Janus Cursor**: a dual-cursor scheme for reservoir free-run
 > prediction. The mechanism below is settled; open design points are
 > tracked in §7 and `?` marks anything still inferred rather than decided.
 
@@ -21,7 +21,7 @@ is `JanusCursor` (`JanusCursor.{h,cpp}`).
 
 ## 0. One-paragraph statement
 
-We drive an ensemble ESN with **two cursors** that index a single **precomputed** positive-time
+We drive an ESN with **two cursors** that index a single **precomputed** positive-time
 Lorenz trajectory `S[·]`, moving symmetrically in opposite directions around a shared **center** index. Each cursor emits a
 4-vector `(x, y, z, x·z)`, so the input is **8-D**. In training the cursors stay inside a
 **window**. In free-run they break out of the window and run
@@ -55,7 +55,7 @@ and described by *role* (which only applies in free-run):
    region [0, lb)    = past free-run runway
    region [lb, ub]   = training window
    region (ub, ub+E] = PREDICTION / EVALUATION window — the future cursor goes GENERATIVE
-                       here, so the upper-4 inputs are the ensemble's own output
+                       here, so the upper-4 inputs are the model's own output
 ```
 
 **What `S[n]` is, and how it is made.** `S[n]` is the **raw Lorenz state** at integration step
@@ -128,12 +128,12 @@ right up to the generative switch — there is no transient to discard and nothi
 | inputs                     | in `[lb_, ub_]` (train + washout) | past the boundary (free-run) | behavior                           |
 |----------------------------|-----------------------------------|------------------------------|------------------------------------|
 | lower 4 — `past_cursor_`   | Lorenz lookup                     | Lorenz lookup                | **never switches** — anchor        |
-| upper 4 — `future_cursor_` | Lorenz lookup                     | **ensemble output**          | **switches** at `ub_` — generative |
+| upper 4 — `future_cursor_` | Lorenz lookup                     | **model output**             | **switches** at `ub_` — generative |
 
 - **past_cursor_ never switches.** Past `lb_` it keeps reading `S[N_c − i]` — real history, the
   **anchor**. Half the input is always ground truth, all the way down to the seed (index 0).
 - **future_cursor_ switches** the instant it passes `ub_` (`i > H`): it stops reading `S` and
-  feeds the upper 4 channels from the **ensemble's own output**. **Generative** from there on.
+  feeds the upper 4 channels from the **model's own output**. **Generative** from there on.
 
 Every "Lorenz lookup" above is a bare **array read**: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`.
 
@@ -145,9 +145,9 @@ Every "Lorenz lookup" above is a bare **array read**: `future_cursor_ = S[N_c + 
  input[4..7] = UPPER  ← future_cursor_: ( xf, yf, zf, xf·zf )   generative past ub_
 ```
 
-**Targets:** readout/ensemble predicts **3** outputs — the future cursor's `(x, y, z)` one
+**Targets:** the readout predicts **3** outputs — the future cursor's `(x, y, z)` one
 step ahead. `x·z` is a **derived input feature only**, never a target. In generative mode
-the upper-4 = `(x̂, ŷ, ẑ, x̂·ẑ)` built from the ensemble's 3 predictions; in-window it's the
+the upper-4 = `(x̂, ŷ, ẑ, x̂·ẑ)` built from the model's 3 predictions; in-window it's the
 same 4-tuple built from real Lorenz. Same shape, only the source of the first three differs.
 
 ## 4b. Per-variable normalization (raw `S` → `[−1, 1]`)
@@ -257,7 +257,7 @@ channel is never denormalized — it is a derived feature, never a target (§4, 
 4. **`WarmupReservoir()` decouples from "find the center"** (now trivial — it's an index). It
    becomes purely: run the reservoir over the leading array region to settle its internal
    state before training/scoring.
-5. **Future-cursor source switch** at the right-limit crossing: `S[…]` → ensemble output. The
+5. **Future-cursor source switch** at the right-limit crossing: `S[…]` → model output. The
    past cursor never switches.
 6. `StepBounded` (train) / `StepUnbounded` (free-run) still model the two phases — they now
    advance an **index**, not an integrator.
@@ -286,9 +286,6 @@ ground truth we happen to already know — we spend it as a stabilizer.
 - **Q4 — RESOLVED.** 3 outputs (future x,y,z); `x·z` derived; anchor half never a target.
 - **Q5 — RESOLVED.** Center is just the array index `N_c`. The seam "re-anchor" is simply the
   `i = 0` case → `S[N_c]`; there is no center *state* to recompute or reset.
-- **Q6 — ensemble coupling.** Where does κ-consensus feedback sit relative to the future
-  generative channel — does consensus replace/blend the future 4 inputs, or ride the
-  separate feedback weight block alongside them?
 
 ## Appendix A — channel scales
 

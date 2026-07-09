@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EnsembleESN.h"
+#include "ESN.h"
 #include "LorenzAttractor.h"
 #include "LorenzDatastream.h"
 #include <cstddef>
@@ -22,15 +22,11 @@ namespace config
 
     // ---- Reservoir / model ----
     constexpr size_t DIM = 8; // hypercube dimension
-    constexpr uint64_t SEED = 13649188; // reservoir seed {13649188:244/4.42 lt, 13649518:205/3.71 lt, 3649056:202/3.66 lt}
+    constexpr uint64_t SEED = 13649188; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.80f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
     constexpr size_t HISTORY_DEPTH = 4; // delay-line depth
-
-    // ---- Ensemble ESN ----
-    constexpr double KAPPA = 0.5;//0.2; // ramp ceiling (kappa_max); the per-epoch value comes from KappaProfile
-    constexpr Combine COMBINE = Combine::Mean; // Consensus statistic
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
@@ -73,7 +69,7 @@ namespace config
     // trace means under-converged, not a ceiling — raise EPOCHS before concluding.
     constexpr size_t READOUT_SLICES = 4;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
-    constexpr bool USE_POOLING = true;
+    constexpr bool USE_POOLING = false;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr size_t STREAM_LENGTH = 20000;
@@ -100,7 +96,7 @@ namespace config
     //      0 disables. Recommended starting bracket: 1e-3 .. a few 1e-2.
     constexpr float TRAIN_FUTURE_NOISE = 0.0f;
 
-    // 2b — scheduled sampling: probability ceiling of feeding the ensemble's own
+    // 2b — scheduled sampling: probability ceiling of feeding the model's own
     //      fresh prediction on the future channels instead of the real sample,
     //      linearly ramped 0 -> ceiling across epochs. 0 disables.
     //      Recommended starting ceiling: ~0.25 .. 0.5.
@@ -126,84 +122,77 @@ struct FreeRunResult
     std::string row; ///< human-readable table line for this seed
 };
 
-/// @brief Experiment driver: online Janus-cursor training of an EnsembleESN on
-/// the Lorenz-63 attractor.
+/// @brief Experiment driver: online Janus-cursor training of an ESN on the
+/// Lorenz-63 attractor.
 ///
 /// Owns the full pipeline and wires it from the config:: constants above:
 ///
 ///   LorenzDatastream (normalized float stream + dual Janus cursors)
 ///       |  8 channels: [past xyz, future xyz, distance, past x*z]
 ///       v
-///   EnsembleESN (M members, consensus feedback, online readout updates)
+///   ESN (fixed reservoir + online-trained CNN readout)
 ///
-/// Each Train() epoch resets the cursors, sets the epoch's coupling kappa from
-/// the saturating ramp KappaProfile, warms the reservoirs up (coupled — the
-/// epoch's kappa is live during warmup by design), then sweeps the cursor
-/// window once teacher-forced at horizon 1, reporting the prequential RMSE.
-/// FreeRun() then rides the same cursors past the window edge: each member's
-/// future channels switch to that member's OWN prediction (per-member closed
-/// loop, ExtractInputs_FreeRun per member) while the past cursor stays anchored
-/// to real history; the consensus is reported and scored step-for-step against
-/// the held-out orbit tail.
+/// Each Train() epoch resets the cursors, warms the reservoir up open-loop, then
+/// sweeps the cursor window once teacher-forced at horizon 1, reporting the
+/// prequential RMSE. FreeRun() then rides the same cursors past the window edge:
+/// the future input channels switch to the model's OWN prediction (single-ESN
+/// self-feedback closed loop, ExtractInputs_FreeRun) while the past cursor stays
+/// anchored to real history; the prediction is scored step-for-step against the
+/// held-out orbit tail.
 class Lorenz
 {
 public:
-    /// Builds the ensemble and the datastream from the config:: constants.
+    /// Builds the ESN and the datastream from the config:: constants.
     Lorenz(uint64_t seed, LorenzAttractor::State* orbit  = nullptr);
 
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
-    /// window, printing one line per epoch: kappa and the prequential train
-    /// RMSE (normalized units, over all 3 channels x all steps of the sweep).
+    /// window, printing one line per epoch: the learning rate and the prequential
+    /// train RMSE (normalized units, over all 3 channels x all steps of the sweep).
     /// Optionally applies the Issue-2 exposure-bias remedies on the future
     /// channels (config::TRAIN_FUTURE_NOISE for 2a, config::SCHEDULED_SAMPLING_CEILING
     /// for 2b); both are off by default and the loop is teacher-forced when they are.
     void Train();
 
     /// Generative rollout over the held-out tail. Self-contained: resets the
-    /// cursors, holds kappa at the config::KAPPA ceiling, re-sweeps the whole
-    /// training window teacher-forced but inference-only (anchored washout),
-    /// then goes generative for config::FREE_RUN_WINDOW_SIZE steps in the
-    /// PER-MEMBER closed loop — each member is fed its own fresh prediction on
-    /// the future input channels (so the consensus coupling acts on genuinely
-    /// divergent trajectories) while the consensus is scored against the true
-    /// orbit. The live error trace / VPT crossing / RMSE lines are gated on
-    /// config::ENABLE_PRINTF; the numeric outcome and its formatted table row are
-    /// always returned in a FreeRunResult (valid == false if 0 steps were scored).
+    /// cursors, re-sweeps the whole training window teacher-forced but
+    /// inference-only (anchored washout), then goes generative for
+    /// config::FREE_RUN_WINDOW_SIZE steps in the self-feedback closed loop — the
+    /// model's own prediction is fed on the future input channels while the past
+    /// cursor stays anchored to real history, and the prediction is scored against
+    /// the true orbit. The live error trace / VPT crossing / RMSE lines are gated
+    /// on config::ENABLE_PRINTF; the numeric outcome and its formatted table row
+    /// are always returned in a FreeRunResult (valid == false if 0 steps scored).
     FreeRunResult FreeRun();
 
 private:
     uint64_t seed_;
     LorenzAttractor::State* orbit_;
 
-    EnsembleConfig esn_config_;
-    EnsembleESN esn_;
+    ESNConfig esn_config_;
+    ESN esn_;
     LorenzDatastream data_stream_;
 
     /// Packs the 8 input channels from real (teacher-forced) data.
     static void ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states);
 
     /// Same channel layout, but the future half (channels 3-5) comes from the
-    /// ensemble's last consensus output instead of the datastream.
+    /// model's last prediction instead of the datastream.
     static void ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
-                                      const float* consensus);
+                                      const float* prediction);
 
     /// Copies the current future sample — the horizon-1 target — into targets.
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);
 
-    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — broadcast
-    /// onto each member's readout aux block (see config::AUX_INPUT_DIM). Unused when
-    /// the readout has no aux block.
+    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — fed onto
+    /// the readout's aux block (see config::AUX_INPUT_DIM). Unused when the readout
+    /// has no aux block.
     static void ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states);
 
-    /// Assembles the EnsembleESN config from the config:: constants.
-    static EnsembleConfig MakeEnsembleConfig(uint64_t seed);
+    /// Assembles the ESN config from the config:: constants.
+    static ESNConfig MakeESNConfig(uint64_t seed);
 
     /// Assembles the LorenzDatastream config from the config:: constants.
     static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State* orbit);
-
-    /// Saturating coupling ramp kappa_max*k*x^2/(1 + k*x^2), x = current_epoch/epochs:
-    /// rises steeply, asymptotes strictly below kappa_max.
-    static double KappaProfile(double kappa_max, double k, size_t epochs, size_t current_epoch);
 
     /// Per-epoch learning-rate schedule: cosine-anneal (CosineLR) from lr_max at
     /// epoch 0 to lr_min at the final epoch — lowers the single-sample

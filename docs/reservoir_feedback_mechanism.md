@@ -7,10 +7,9 @@
 > open-loop realization is unchanged. With `D > 0` channels the reservoir gains a
 > closed-loop hook the caller drives each step.
 
-This is the single-reservoir foundation the [ensemble design](ensemble_esn_feedback.md)
-builds its consensus coupling on. This document specifies the **port** (the reservoir
-mechanism); the *policy* — what to inject, when, and the loop that produces it — lives
-in the caller and is documented there.
+This document specifies the **port** (the reservoir mechanism); the *policy* — what to
+inject, when, and the loop that produces it — lives in the caller (e.g. a generative
+single-reservoir closed loop that feeds back the readout's own output).
 
 ## 1. Source-agnostic by design — external drive only
 
@@ -29,9 +28,8 @@ external; the ESN has no internal feedback policy.** An earlier exploration imag
 — with (a) computed *inside* the reservoir. That internal-metric path was never built and
 is explicitly excluded. From the port's view the distinction collapses: **both are just
 values the caller injects.** The caller may compute the drive however it likes — a readout
-output for a generative single-reservoir loop, an ensemble consensus deviation for coupled
-members, a homeostatic metric — and the port treats them identically. There is no
-internal-feedback mode anywhere in this codebase.
+output for a generative single-reservoir loop, a homeostatic metric — and the port treats
+them identically. There is no internal-feedback mode anywhere in this codebase.
 
 Keeping the source out of the reservoir preserves the existing `Reservoir`↔`Readout`
 decoupling: the reservoir stays ignorant of the readout, and the caller owns the loop —
@@ -107,7 +105,7 @@ since it has no benign-tail story.)
 ## 4. Timing / causality — port contract vs. caller policy
 
 The **port contract** is just: inject → `Step` → cleared. *What* to inject and *when* is
-**caller policy**, and the two natural loops differ only in where the drive comes from:
+**caller policy**:
 
 - **Generative single-reservoir loop.** A drive derived from the readout reads the
   *post-`Step`* state, which does not exist when `Step` needs it — so such a loop injects
@@ -117,12 +115,7 @@ The **port contract** is just: inject → `Step` → cleared. *What* to inject a
   Step → Outputs() → caller computes drive → InjectFeedback(drive) → next Step
   ```
 
-- **Ensemble consensus loop.** The ensemble reads each member's output at its **current**
-  state `x(t)`, forms the consensus, and injects the deviation *before* stepping to
-  `x(t+1)` — single-step causality, no separate delay buffer (those outputs already
-  exist). See [ensemble design §3](ensemble_esn_feedback.md).
-
-Either way the reservoir stays ignorant of the readout; the caller owns the loop.
+The reservoir stays ignorant of the readout; the caller owns the loop.
 
 ## 5. Where this sits in the stack
 
@@ -131,14 +124,10 @@ Either way the reservoir stays ignorant of the readout; the caller owns the loop
      ▲  InjectFeedback / Step / clear
      │
   ESN          ReservoirStep(inputs, φ)              ── the ONLY feedback entry point;
-     ▲                                                 ReservoirStep(inputs) is input-only
-     │
-  EnsembleESN  φ_i = κ·Δ_i across M members          ── the policy: consensus coupling
-                                                        (ensemble_esn_feedback.md)
+                                                        ReservoirStep(inputs) is input-only
 ```
 
 `ESN::ReservoirStep(inputs, φ)` stages `φ` (D floats) on the feedback channels
 and the task inputs on the input channels, then steps — the only way feedback enters at
-the ESN layer; `ESN::ReservoirStep(inputs)` (feedback omitted) is the input-only path. `EnsembleESN` drives its M
-members through that seam with `φ_i = κ·Δ_i` (each member's scaled deviation from the
-consensus). The substrate specified here is the foundation both sit on.
+the ESN layer; `ESN::ReservoirStep(inputs)` (feedback omitted) is the input-only path. The
+caller owns the closed loop that produces `φ`.
