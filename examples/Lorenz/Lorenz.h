@@ -18,20 +18,20 @@ namespace config
     // normal single-seed run to watch progress; set false for a concurrent seed
     // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
     // collects it from FreeRun()'s return value, not from these gated prints.
-    inline bool ENABLE_PRINTF = true;
+    inline bool ENABLE_PRINTF = false;
 
     // ---- Reservoir / model ----
-    constexpr size_t DIM = 8; // hypercube dimension
-    constexpr uint64_t SEED = 13649188; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.80f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr size_t DIM = 10; // hypercube dimension
+    constexpr uint64_t SEED = 13649320;//13649188; // reservoir seed
+    constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 4; // delay-line depth
+    constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float LEARNING_RATE = 0.0001f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.00001f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 200;
+    constexpr float LEARNING_RATE = 0.00002f; // peak per-step online learning rate (Adam); annealed by LrProfile
+    constexpr float LEARNING_RATE_MIN = 0.00002f;//0.000005f; // anneal floor reached at the final epoch
+    constexpr size_t EPOCHS = 100;
 
     // ---- Readout input: block-structured (delay-line slices + optional aux block) ----
     // The readout consumes B = READOUT_SLICES + (AUX_INPUT_DIM > 0) blocks of N, laid
@@ -67,20 +67,21 @@ namespace config
     // Before reading VPT on a wide arm, check the tail of its per-epoch train RMSE: A1/A2
     // carry ~4x the readout parameters at the same update count, so a still-descending
     // trace means under-converged, not a ceiling — raise EPOCHS before concluding.
-    constexpr size_t READOUT_SLICES = 4;
+    constexpr size_t READOUT_SLICES = 1;//HISTORY_DEPTH;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
-    constexpr bool USE_POOLING = false;
+    constexpr bool USE_POOLING = true;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
-    constexpr size_t STREAM_LENGTH = 20000;
+    constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
     constexpr size_t FREE_RUN_WINDOW_SIZE = 500;
-    constexpr int32_t TRAINING_WINDOW_SIZE = STREAM_LENGTH - 2*FREE_RUN_WINDOW_SIZE;
-    constexpr int32_t CURSOR_CENTER_INDEX = STREAM_LENGTH - TRAINING_WINDOW_SIZE / 2 - FREE_RUN_WINDOW_SIZE;
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.15, 0.75, 0.5};
+    constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
+    constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
+
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.65, 0.75, 0.1};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----
-    constexpr size_t RESERVOIR_WARMUP_STEPS = 200;
+    constexpr size_t RESERVOIR_WARMUP_STEPS = 500;
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.2f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
@@ -100,7 +101,7 @@ namespace config
     //      fresh prediction on the future channels instead of the real sample,
     //      linearly ramped 0 -> ceiling across epochs. 0 disables.
     //      Recommended starting ceiling: ~0.25 .. 0.5.
-    constexpr float SCHEDULED_SAMPLING_CEILING = 0.1f;
+    constexpr float SCHEDULED_SAMPLING_CEILING = 0.0f;
 
     // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
     // from the reservoir SEED so toggling these never perturbs the reservoir.

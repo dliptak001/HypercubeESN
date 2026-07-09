@@ -38,6 +38,9 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout_slices = config::READOUT_SLICES;
     cfg.aux_input_dim = config::AUX_INPUT_DIM;
     cfg.readout.use_pooling = config::USE_POOLING;
+    cfg.readout.num_layers = 1;
+    cfg.readout.momentum = 0.9;
+    cfg.readout.conv_channels = 4;
     return cfg;
 }
 
@@ -363,8 +366,10 @@ int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
-    LorenzAttractor::State ORBIT = {0.35, 0.26, 0.75};
-    Lorenz lorenz(13649188, &ORBIT);
+#if 0
+    //LorenzAttractor::State ORBIT = {0.15, 0.75, 0.5};
+    //Lorenz lorenz(13649320, &ORBIT);
+    Lorenz lorenz(13649716);
     lorenz.Train();
     const FreeRunResult r = lorenz.FreeRun();
 
@@ -375,6 +380,7 @@ int main()
         std::printf("[Single run] no steps scored\n");
 
     return 0;
+#else
 
     constexpr size_t NUM_SEEDS = 16;
     std::vector<FreeRunResult> results(NUM_SEEDS); // one outcome per seed, filled in place
@@ -395,7 +401,7 @@ int main()
             {
                 for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
                 {
-                    Lorenz lorenz(13649188 + 33 * i);
+                    Lorenz lorenz(13649320 + 33 * i);
                     lorenz.Train();
                     results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
                 }
@@ -458,4 +464,5 @@ int main()
     Beep(2500, 3000); // single completion beep for the whole survey
 
     return 0;
+#endif
 }
