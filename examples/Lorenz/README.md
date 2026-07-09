@@ -2,11 +2,25 @@
 
 This module trains a single `ESN` on the Lorenz-63 attractor with the Janus-cursor
 pipeline (`Lorenz::Train`) and then evaluates it as a generative model
-(`Lorenz::FreeRun`): past the training-window edge the future input channels switch
+(`Lorenz::FreeRun`): past the training-window edge the future feedback block switches
 from real data to the model's **own prediction** (single-ESN self-feedback closed
 loop), and the rollout is scored against the held-out orbit tail. The Janus-cursor
 method itself is system-agnostic — dual cursors over any precomputed stream (see
 `JanusCursor.md`); Lorenz-63 is simply the system it is instantiated on here.
+
+The drive is split across the reservoir's two ports, each carrying `[x, y, z, x·z]` of
+its cursor:
+
+```
+input port    (4 ch):  past block   — real history, always
+feedback port (4 ch):  future block — real in training, own prediction in free-run
+                       gain = config::FEEDBACK_SCALING
+                       (0 = observer floor: reservoir driven by the past block alone)
+```
+
+The two ports are mechanistically identical — same dim-neighbor gather, same
+`1/sqrt(DIM)` fan-in normalization, both outside the spectral-radius estimate. The split
+only gives the future its own gain and weight realization, decoupled from the past.
 
 Free-run quality on Lorenz is capped less by the one-step fit than by two *structural*
 properties of the closed loop: one-step error and free-run horizon **dissociate**, so
@@ -40,12 +54,13 @@ err
 
 **1a. Noise injection during training** — knob: `config::TRAIN_FUTURE_NOISE` (Gaussian
 stddev; `0` disables, **off by default**). Adds small zero-mean noise to the future
-channels (3–5) in `Train` *after* `ExtractInputs_Training` (the FreeRun washout stays
-clean). The classic ESN closed-loop regularizer: it trains the map to be insensitive to
-exactly the perturbation class feedback introduces. Only channels 3–5 are noised — the
-only channels that differ between training and free-run; the product channels 6–7 are
-past-derived and stay consistent. Expect a modest one-step RMSE increase — that is the
-point.
+feedback block's linear channels in `Train` *after* `ExtractFutureReal` (the FreeRun
+washout stays clean). The classic ESN closed-loop regularizer: it trains the map to be
+insensitive to exactly the perturbation class feedback introduces. Only the future
+linear channels are noised — the only ones that differ between training and free-run;
+the future `x·z` is re-derived from them afterward so the block stays consistent, and the
+past block on the input port is untouched. Expect a modest one-step RMSE increase — that
+is the point.
 
 **1b. Scheduled sampling** — knob: `config::SCHEDULED_SAMPLING_CEILING` (probability
 ceiling; `0` disables, **off by default**). With probability `p(epoch)`, substitute the
@@ -77,8 +92,9 @@ S[f] ≈ S[f-1] + dt * F(S[f-1])
 ```
 
 So the network's main job each step is *reproducing the previous sample* — which it can
-only recover from the reservoir state, where that sample arrived scaled by
-`input_scaling/sqrt(DIM)` and mixed through a tanh with everything else. Reconstruction
+only recover from the reservoir state, where that sample arrived — on the future feedback
+block — scaled by `feedback_scaling/sqrt(DIM)` and mixed through a tanh with everything
+else. Reconstruction
 works, but every bit of reconstruction error lands directly in the prediction, and the
 closed loop compounds precisely that error. Readout capacity is spent on copying, not on
 dynamics.

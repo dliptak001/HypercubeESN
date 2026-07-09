@@ -18,15 +18,16 @@ namespace config
     // normal single-seed run to watch progress; set false for a concurrent seed
     // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
     // collects it from FreeRun()'s return value, not from these gated prints.
-    inline bool ENABLE_PRINTF = false;
+    inline bool ENABLE_PRINTF = true;
 
     // ---- Reservoir / model ----
     constexpr size_t DIM = 10; // hypercube dimension
     constexpr uint64_t SEED = 13649320;//13649188; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.05; //0.10f; // shared across all input channels
+    constexpr float FEEDBACK_SCALING = 0.05f; // future-block gain on the dedicated feedback port (sweep axis). 0 = observer floor: the reservoir runs on the anchored past block alone (the prediction is scored but never re-enters the state)
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 16; // delay-line depth
+    constexpr size_t HISTORY_DEPTH = 32; // delay-line depth
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00002f; // peak per-step online learning rate (Adam); annealed by LrProfile
@@ -88,9 +89,10 @@ namespace config
     constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
 
     // ---- Exposure-bias remedies (README Issue 2) ----
-    // Both act ONLY during Train(), ONLY on the future channels (3-5) — the sole
-    // train/free-run input mismatch; the teacher target stays the real S[f], and
-    // channels 6-7 are past-derived so they remain consistent under both. The
+    // Both act ONLY during Train(), ONLY on the future block (feedback port) — the
+    // sole train/free-run drive mismatch; the teacher target stays the real S[f].
+    // They perturb the future LINEAR channels; the future x*z is then re-derived so
+    // the block stays consistent with free-run (where it is the predicted x*z). The
     // FreeRun washout is left clean. Enable ONE at a time to preserve the
     // campaign's single-delta discipline; both default to OFF (baseline).
     // 2a — noise injection: zero-mean Gaussian std added to the future channels.
@@ -129,17 +131,18 @@ struct FreeRunResult
 /// Owns the full pipeline and wires it from the config:: constants above:
 ///
 ///   LorenzDatastream (normalized float stream + dual Janus cursors)
-///       |  8 channels: [past xyz, future xyz, distance, past x*z]
+///       |  input port:    past block   [x, y, z, x*z]  (real history)
+///       |  feedback port: future block [x, y, z, x*z]  (real in train, prediction in free-run)
 ///       v
 ///   ESN (fixed reservoir + online-trained CNN readout)
 ///
-/// Each Train() epoch resets the cursors, warms the reservoir up open-loop, then
-/// sweeps the cursor window once teacher-forced at horizon 1, reporting the
+/// Each Train() epoch resets the cursors, warms the reservoir up teacher-forced,
+/// then sweeps the cursor window once teacher-forced at horizon 1, reporting the
 /// prequential RMSE. FreeRun() then rides the same cursors past the window edge:
-/// the future input channels switch to the model's OWN prediction (single-ESN
-/// self-feedback closed loop, ExtractInputs_FreeRun) while the past cursor stays
-/// anchored to real history; the prediction is scored step-for-step against the
-/// held-out orbit tail.
+/// the future block on the feedback port switches to the model's OWN prediction
+/// (single-ESN self-feedback closed loop, ExtractFuturePredicted) while the past
+/// cursor stays anchored to real history; the prediction is scored step-for-step
+/// against the held-out orbit tail.
 class Lorenz
 {
 public:
@@ -173,13 +176,16 @@ private:
     ESN esn_;
     LorenzDatastream data_stream_;
 
-    /// Packs the 8 input channels from real (teacher-forced) data.
-    static void ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states);
+    /// Packs the 4-wide past block [x, y, z, x*z] (input port) from real history.
+    static void ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states);
 
-    /// Same channel layout, but the future half (channels 3-5) comes from the
-    /// model's last prediction instead of the datastream.
-    static void ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
-                                      const float* prediction);
+    /// Packs the 4-wide future block [x, y, z, x*z] (feedback port) from the real
+    /// future sample — teacher-forced drive (warmups + training).
+    static void ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states);
+
+    /// Packs the 4-wide future block [x, y, z, x*z] (feedback port) from the model's
+    /// own prediction — the generative self-feedback drive.
+    static void ExtractFuturePredicted(float future[4], const float* prediction);
 
     /// Copies the current future sample — the horizon-1 target — into targets.
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);

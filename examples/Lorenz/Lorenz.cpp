@@ -19,11 +19,13 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.dim = config::DIM;
     cfg.reservoir.seed = seed;
 
-    // [x_past, y_past, z_past, x_future, y_future, z_future, distance, x_past*z_past]
-    cfg.reservoir.num_inputs = 8;
-    // The generative loop rides the future INPUT channels (3-5), not the reservoir
-    // feedback port, so this ESN needs no feedback port at all.
-    cfg.reservoir.num_feedback_channels = 0;
+    // Past block on the input port; future block on the dedicated feedback port —
+    // each [x, y, z, x*z] of its cursor (real past / real-or-predicted future). The
+    // feedback port carries its own gain + weight realization; at FEEDBACK_SCALING=0
+    // the future contributes nothing and the reservoir runs on the past block alone.
+    cfg.reservoir.num_inputs = 4;             // [x_past, y_past, z_past, x_past*z_past]
+    cfg.reservoir.num_feedback_channels = 4;  // [x_fut,  y_fut,  z_fut,  x_fut*z_fut ]
+    cfg.reservoir.feedback_scaling = config::FEEDBACK_SCALING;
     cfg.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
     cfg.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.reservoir.leak_rate = config::LEAK_RATE;
@@ -70,6 +72,10 @@ Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed)
                     config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(seed_),
                     config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
                     config::HISTORY_DEPTH);
+        std::printf("[Lorenz config] ports:     input=%zu [past x,y,z,xz]  feedback=%zu [future x,y,z,xz]"
+                    "  feedback_scaling=%.4f\n",
+                    esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_feedback_channels,
+                    config::FEEDBACK_SCALING);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  aux=%zu  blocks=%zu  pooling=%s\n",
@@ -84,31 +90,28 @@ Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed)
     }
 }
 
-void Lorenz::ExtractInputs_Training(float inputs[8], const LorenzDatastreamResult& past_future_states)
+void Lorenz::ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states)
 {
-    inputs[0] = std::get<1>(past_future_states).x; //past
-    inputs[1] = std::get<1>(past_future_states).y; //past
-    inputs[2] = std::get<1>(past_future_states).z; //past
-    inputs[3] = std::get<2>(past_future_states)->x; //future
-    inputs[4] = std::get<2>(past_future_states)->y; //future
-    inputs[5] = std::get<2>(past_future_states)->z; //future
-    inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[6];
-    //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    past[0] = std::get<1>(past_future_states).x; // past x
+    past[1] = std::get<1>(past_future_states).y; // past y
+    past[2] = std::get<1>(past_future_states).z; // past z
+    past[3] = past[0] * past[2];                 // past x*z (nonlinear term)
 }
 
-void Lorenz::ExtractInputs_FreeRun(float inputs[8], const LorenzDatastreamResult& past_future_states,
-                                   const float* prediction)
+void Lorenz::ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states)
 {
-    inputs[0] = std::get<1>(past_future_states).x; //past
-    inputs[1] = std::get<1>(past_future_states).y; //past
-    inputs[2] = std::get<1>(past_future_states).z; //past
-    inputs[3] = prediction[0]; //future: the model's last prediction
-    inputs[4] = prediction[1]; //future
-    inputs[5] = prediction[2]; //future
-    inputs[6] = inputs[0] * inputs[2]; //past xz product
-    inputs[7] = inputs[6];
-    //inputs[3] * inputs[5];//std::get<0>(past_future_states); //distance between past and future indices
+    future[0] = std::get<2>(past_future_states)->x; // future x (teacher-forced)
+    future[1] = std::get<2>(past_future_states)->y; // future y
+    future[2] = std::get<2>(past_future_states)->z; // future z
+    future[3] = future[0] * future[2];              // future x*z (nonlinear term)
+}
+
+void Lorenz::ExtractFuturePredicted(float future[4], const float* prediction)
+{
+    future[0] = prediction[0]; // future x = the model's own prediction
+    future[1] = prediction[1]; // future y
+    future[2] = prediction[2]; // future z
+    future[3] = future[0] * future[2]; // future x*z, from the predicted x,z
 }
 
 void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_state)
@@ -147,7 +150,8 @@ float Lorenz::ScheduledSamplingProfile(const float ceiling, const size_t epochs,
 
 void Lorenz::Train()
 {
-    float inputs[8] = {};
+    float past[4] = {};    // input-port drive: [past x, y, z, x*z]
+    float future[4] = {};  // feedback-port drive: [future x, y, z, x*z] (real; prediction under 2b)
     float targets[3] = {};
     float outputs[3] = {}; // the model's pre-update prediction (prequential read)
     float u_past[3] = {};  // auxiliary readout input: normalized past (x,y,z)
@@ -176,8 +180,9 @@ void Lorenz::Train()
         LorenzDatastreamResult past_future_states = data_stream_.States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
-            ExtractInputs_Training(inputs, past_future_states);
-            esn_.ReservoirStep(inputs);
+            ExtractPast(past, past_future_states);
+            ExtractFutureReal(future, past_future_states);
+            esn_.ReservoirStep(past, future); // teacher-forced: past->input, real future->feedback
             past_future_states = data_stream_.Step(false);
         }
 
@@ -191,38 +196,44 @@ void Lorenz::Train()
             // aligned one-step target is S[f] — the sample this call is about to
             // inject — not NextFutureState() = S[f+1].
             ExtractTargets(targets, *std::get<2>(past_future_states));
-            ExtractInputs_Training(inputs, past_future_states);
+            ExtractPast(past, past_future_states);
+            ExtractFutureReal(future, past_future_states);
             ExtractAuxPast(u_past, past_future_states);
 
             // Prequential (test-then-train) read: the pre-update prediction of this
             // call's own target, read at the unchanged state x(t) before TrainStep.
             esn_.Predict(outputs, aux);
 
-            // Exposure-bias remedies (README Issue 2), future channels 3-5 only;
-            // the teacher target above stays the real S[f], and channels 6-7 are
-            // past-derived so they remain consistent with free-run under both.
+            // Exposure-bias remedies (README Issue 2), future block only; the teacher
+            // target above stays the real S[f]. Both perturb the future LINEAR
+            // channels; the future x*z is re-derived afterward so the whole block
+            // stays consistent with free-run (where it is the predicted x*z).
             //
             // 2b scheduled sampling: with probability ss_p, overwrite the future
-            // channels with the model's own fresh prediction of S[f] — which is
-            // exactly `outputs`, read at the same unchanged state x(t).
+            // linear channels with the model's own fresh prediction of S[f] — which
+            // is exactly `outputs`, read at the same unchanged state x(t).
             if (config::SCHEDULED_SAMPLING_CEILING > 0.0f && unit_uniform(exposure_rng) < ss_p)
             {
-                inputs[3] = outputs[0];
-                inputs[4] = outputs[1];
-                inputs[5] = outputs[2];
+                future[0] = outputs[0];
+                future[1] = outputs[1];
+                future[2] = outputs[2];
             }
             // 2a noise injection: zero-mean Gaussian on the (possibly substituted)
-            // future channels — trains the map to tolerate the perturbation class
-            // the closed loop introduces.
+            // future linear channels — trains the map to tolerate the perturbation
+            // class the closed loop introduces.
             if (config::TRAIN_FUTURE_NOISE > 0.0f)
             {
-                inputs[3] += future_noise(exposure_rng);
-                inputs[4] += future_noise(exposure_rng);
-                inputs[5] += future_noise(exposure_rng);
+                future[0] += future_noise(exposure_rng);
+                future[1] += future_noise(exposure_rng);
+                future[2] += future_noise(exposure_rng);
             }
+            // Re-derive the future x*z from the (possibly perturbed) linear future,
+            // mirroring free-run where the fed-back x*z is the product of predicted
+            // x,z. A no-op in the teacher-forced baseline (both remedies off).
+            future[3] = future[0] * future[2];
 
             esn_.TrainStep(targets, lr, 0.0f, aux); // fit the readout on x(t)
-            esn_.ReservoirStep(inputs);             // step to x(t+1)
+            esn_.ReservoirStep(past, future);       // step to x(t+1)
 
             // Prequential (test-then-train) error: `outputs` is the pre-update
             // prediction of this call's own target — the pairing is exact.
@@ -250,7 +261,8 @@ void Lorenz::Train()
 
 FreeRunResult Lorenz::FreeRun()
 {
-    float inputs[8] = {};
+    float past[4] = {};    // input-port drive: [past x, y, z, x*z]
+    float future[4] = {};  // feedback-port drive: [x, y, z, x*z] of the model's prediction
     float targets[3] = {};
     float outputs[3] = {}; // the model's generative prediction each step
     float u_past[3] = {};  // auxiliary readout input: normalized past (x,y,z)
@@ -264,16 +276,17 @@ FreeRunResult Lorenz::FreeRun()
     LorenzDatastreamResult past_future_states = data_stream_.States();
     while (!data_stream_.OOB())
     {
-        ExtractInputs_Training(inputs, past_future_states);
-        esn_.ReservoirStep(inputs);
+        ExtractPast(past, past_future_states);
+        ExtractFutureReal(future, past_future_states);
+        esn_.ReservoirStep(past, future); // teacher-forced anchored washout
         past_future_states = data_stream_.Step(false);
     }
 
     // Stage 2: generative rollout, single-ESN self-feedback closed loop. The future
-    // cursor is now one step past the window edge: the future input channels (3-5)
-    // switch to the model's OWN prediction, so the reservoir free-runs while the
-    // past cursor stays anchored to real history. Predict() reads the prediction at
-    // the current state, ExtractInputs_FreeRun feeds it back on the future channels,
+    // cursor is now one step past the window edge: the future block on the feedback
+    // port switches to the model's OWN prediction, so the reservoir free-runs while
+    // the past cursor stays anchored to real history. Predict() reads the prediction
+    // at the current state, ExtractFuturePredicted feeds it onto the feedback port,
     // then ReservoirStep absorbs it; the prediction is scored against the true orbit.
     const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
@@ -298,10 +311,11 @@ FreeRunResult Lorenz::FreeRun()
             break;
         }
 
-        ExtractAuxPast(u_past, past_future_states);                  // u_raw for this Predict
-        esn_.Predict(outputs, aux);                                 // the prediction of S[f]
-        ExtractInputs_FreeRun(inputs, past_future_states, outputs);  // future channels = own prediction
-        esn_.ReservoirStep(inputs);                                 // absorb the fed-back prediction
+        ExtractAuxPast(u_past, past_future_states);       // u_raw for this Predict
+        esn_.Predict(outputs, aux);                       // the prediction of S[f]
+        ExtractPast(past, past_future_states);            // anchored past -> input port
+        ExtractFuturePredicted(future, outputs);          // own prediction -> feedback port
+        esn_.ReservoirStep(past, future);                 // absorb the fed-back prediction
 
         // Score against the true held-out orbit (normalized units).
         ExtractTargets(targets, S[f]);
@@ -366,7 +380,7 @@ int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
-#if 0
+#if 1
     //LorenzAttractor::State ORBIT = {0.15, 0.75, 0.5};
     //Lorenz lorenz(13649320, &ORBIT);
     Lorenz lorenz(13649716);
