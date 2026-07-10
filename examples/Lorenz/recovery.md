@@ -215,9 +215,11 @@ which is a different (train/test-mismatched) construction. **Consequence:** the 
 is a *stabilizer during free-run*, not the training signal; the feedback port is what
 makes the task learnable. Don't re-attempt the `FEEDBACK=0` observer floor.
 
-### (b) Re-sync-aware metric. VPT-to-first-crossing demonstrably undersells this
-harness (finding 1). Add a companion metric — fraction of steps under threshold, or a
-burst count — so the survey stats reflect the recovery behavior the anchor buys.
+### (b) Re-sync-aware metric
+
+VPT-to-first-crossing demonstrably undersells this harness (finding 1). Add a companion
+metric — fraction of steps under threshold, or a burst count — so the survey stats
+reflect the recovery behavior the anchor buys.
 
 ### (c) Does re-lock generalize across initial conditions?
 
@@ -229,3 +231,60 @@ different orbit and different eval tail, not just a different reservoir seed) an
 confirm the anchor-driven re-lock holds broadly rather than being an artifact of this
 one orbit. Watch whether spike *locations* and recovery *depth* track the orbit's lobe
 transitions.
+
+## Prior work (literature scan 2026-07-09 — DEEP RESEARCH planned 2026-07-10)
+
+A first web scan (6 targeted searches, NOT exhaustive — skewed heavily toward
+quantum-RC papers that were filtered out). The *mechanism* of our relock is
+well-established under other names; the *specific configuration* was not found. Do the
+proper deep-research pass tomorrow.
+
+**The mechanism is known — it's generalized synchronization (GS).** "Relock" =
+a real driving signal pulling the reservoir state onto the true manifold so the
+forecast re-syncs. Mainstream in RC forecasting:
+
+- **Reservoir observers** — Lu, Pathak, Hunt, Girvan, Brockett & Ott, "Reservoir
+  observers: Model-free inference of unmeasured variables in chaotic systems," Chaos
+  27, 041102 (2017). Drive the reservoir with measured variables, infer the rest; the
+  drive locks the state to the true system. Our "anchor on" regime is observer-like.
+  https://pubs.aip.org/aip/cha/article/27/4/041102/322542/ (PubMed 28456169)
+- **GS as the forecasting mechanism** — "Forecasting Using Reservoir Computing: The
+  Role of Generalized Synchronization," arXiv 2102.08930; and "Synchronization of
+  chaotic systems and their machine-learning models," Chaos (2019), PubMed 31108603.
+
+**The CONDITION for relock is also known — conditional Lyapunov exponents (CLEs).** A
+driven reservoir synchronizes iff its conditional / sub-Lyapunov exponents are negative
+(and significantly more negative than the target's). This is exactly the "is the state
+pulled back or not" question our dose-response probes.
+
+- "Attractor reconstruction with reservoir computers: The effect of the reservoir's
+  conditional Lyapunov exponents on faithful attractor reconstruction," Chaos 34,
+  043123 (2024), arXiv 2401.00885. Two snippets are directly on point for us: (1) it
+  discusses reservoirs that **collapse onto a wrong / non-chaotic attractor** (= our
+  no-anchor saturation failure); (2) it reports **smaller spectral radius helps**
+  synchronization/reconstruction — and our SR=0.99 is HIGH, so that's a concrete lever
+  to cross-check against the Goldilocks result. (from abstract/snippet — not yet read
+  in full.)
+
+**Applied cousin — data assimilation.** Periodically re-injecting real observations to
+correct a drifting ML forecast: Wikner, Pathak, Hunt, Szunyogh, Girvan & Ott, "Using
+data assimilation to train a hybrid forecast system...," Chaos 31, 053114 (2021). Same
+spirit (real data grounds the rollout), different plumbing.
+
+**NOT found (stated plainly; absence in a shallow scan is not proof of novelty):**
+1. Our **Janus / decorrelated-anchor** config — a generative free-run driven at once by
+   its own feedback AND a real anchor from a *phase-decorrelated* (~200 lt) segment of
+   the same attractor (manifold info, no target-phase info). The literature drives with
+   a temporally *aligned/informative* signal (observer measures the same system, same
+   time). Nothing found on a decorrelated / half-anchored drive.
+2. The **interior-optimum ("Goldilocks") drive strength** for relock, framed as such.
+   Consistent with the CLE synchronization threshold (too weak → no sync), but our
+   high-drive failure (decorrelated-distractor wrecking the trained map) is specific to
+   the Janus training geometry; no paper found reporting a non-monotonic input-scaling
+   optimum for re-lock.
+
+**Tomorrow (deep research):** start from the CLE / synchronization-threshold thread
+(closest theoretical match to the dose-response) — can our Goldilocks curve be recast
+as a conditional-Lyapunov-exponent crossing? Also chase whether any decorrelated-drive
+/ half-anchored generative scheme exists. Use the deep-research harness, verify every
+claim against sources, don't rely on this shallow scan.
