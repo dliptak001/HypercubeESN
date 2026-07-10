@@ -385,7 +385,7 @@ int main()
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
 
-#if 1
+#if 0
     Lorenz lorenz(13649419);
     lorenz.Train();
     const FreeRunResult r = lorenz.FreeRun();
@@ -418,7 +418,7 @@ int main()
             {
                 for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
                 {
-                    Lorenz lorenz(13649353 + 33 * i);
+                    Lorenz lorenz(13649419 + 33 * i);
                     lorenz.Train();
                     results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
                 }

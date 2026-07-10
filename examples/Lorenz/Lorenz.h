@@ -18,13 +18,14 @@ namespace config
     // normal single-seed run to watch progress; set false for a concurrent seed
     // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
     // collects it from FreeRun()'s return value, not from these gated prints.
-    inline bool ENABLE_PRINTF = true;
+    inline bool ENABLE_PRINTF = false;
 
+    // **** seed 13649419    VPT 347 steps ( 6.28 lt)  free-run RMSE 0.428023  (2000 steps)
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11; // hypercube dimension
-    constexpr uint64_t SEED = 13649353;//13649188; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
-    constexpr float INPUT_SCALING = 0.01; // shared across all input channels
+    constexpr uint64_t SEED = 13649419;//13649188; // reservoir seed
+    constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float INPUT_SCALING = 0.005; // shared across all input channels
     constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
@@ -41,33 +42,6 @@ namespace config
     // power of two, and READOUT_SLICES must not exceed HISTORY_DEPTH. The reservoir is
     // untouched by all of this — the slices are the memory it already computes for its
     // recurrent gather, and which the readout has never been shown.
-    //
-    // USE_POOLING appends HCNN's antipodal max-pool after each conv. The pool pairs
-    // every vertex with its bitwise complement, so at B > 1 it mixes the block-index
-    // bits too: block b merges with block ~b — here x(t) with x(t-1), at complemented
-    // vertices. Complementing flips every bit, so no block placement can avoid it.
-    //
-    // Whether that HURTS is untested. Since max(a,b) = (a+b)/2 + |a-b|/2, the merge
-    // also manufactures a rectified temporal difference — close to the very feature the
-    // block layout exists to expose. Settle it empirically with A1 vs A1' (identical
-    // slices, pooling toggled). Do NOT extrapolate from a B = 1 run: at B = 1 there are
-    // no block bits to mix, and the sign of the pooling effect there flipped under a
-    // change of batch size alone (pooling converges faster but to a lower ceiling).
-    //
-    // Campaign arms. The reservoir is identical in all of them, and each is a SINGLE
-    // delta from a named reference:
-    //   A0   slices=1  aux=0  pool=on    ref     baseline (measured: VPT 215 steps / 3.89 lt)
-    //   A1   slices=4  aux=0  pool=on    vs A0   value of the delay line
-    //   A2   slices=3  aux=3  pool=on    vs A1   value of the aux, at equal compute to A1
-    //   A1'  slices=4  aux=0  pool=off   vs A1   value of the pool, at B = 4
-    //
-    // A1 vs A2 is equal COMPUTE, not equal information: A2 spends a whole N-wide block on
-    // 3 broadcast numbers where A1's fourth block is a real state slice. So "A1 beats A2"
-    // means "a state slice beats 3 broadcast numbers", NOT "the aux is worthless".
-    //
-    // Before reading VPT on a wide arm, check the tail of its per-epoch train RMSE: A1/A2
-    // carry ~4x the readout parameters at the same update count, so a still-descending
-    // trace means under-converged, not a ceiling — raise EPOCHS before concluding.
     constexpr size_t READOUT_SLICES = 1;//HISTORY_DEPTH;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
     constexpr bool USE_POOLING = true;
@@ -78,7 +52,7 @@ namespace config
     constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
     constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
 
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.65, 0.75, 0.1};
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {0.91, 0.275, 0.19};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----

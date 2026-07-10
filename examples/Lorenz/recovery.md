@@ -176,6 +176,28 @@ One more finding, now explained by the above:
   0.04 VPT *does* move, but for the other reason — the base map is degraded, not
   because recovery changed.) Strong motivation for the re-sync-aware metric below.
 
+## New best free-run + long-horizon relock (2026-07-10)
+
+Best single-run VPT of the campaign so far — **VPT 347 steps = 6.28 λ** (seed 13649419,
+free-run RMSE 0.428 over 2000 steps / 36.2 λ). Roughly **2× the ~3 λ** of the recovery
+dose-response runs, and past the ~4.3 λ open-loop north-star figure (different method,
+not strictly comparable). Config: `SR=0.99`, `INPUT_SCALING=0.005`, `FEEDBACK_SCALING=0.04`,
+`leak=1.0`, x0=(0.91, 0.28, 0.19), `FREE_RUN_WINDOW_SIZE=2000`.
+
+**CONFOUNDED — do not read as a settled gain.** Three knobs moved at once vs the recovery
+baseline (`SR=0.99, in_scale=0.01`, x0=(0.65,0.75,0.1) → VPT 169 / 3.06 λ): SR restored to
+0.99, `in_scale` halved 0.01→0.005 (below the earlier Goldilocks optimum), and a NEW x0.
+Prime suspects: anchor strength and plain orbit luck. Disambiguate before trusting it —
+rerun this x0 at in_scale 0.005 vs 0.01 (isolate anchor), and a few x0's at in_scale=0.005
+(isolate orbit). This is exactly follow-up (c).
+
+**Long-horizon relock CONFIRMED (answers the Lorenz.h `FREE_RUN_WINDOW_SIZE` TODO).** Over
+the full 36 λ the anchored rollout keeps breaking AND re-locking — deep error dips recur
+late, not just early: 0.050 at 18 λ, 0.036 at 24 λ, **0.062 at 34.9 λ (step 1925)**,
+interleaved with 0.5–0.95 spikes. So it never permanently loses the orbit; it re-syncs
+repeatedly even after 30+ Lyapunov times. (Whole-run RMSE stays high, 0.428, because of the
+time spent diverged *between* relocks — VPT and RMSE describe different, both-true things.)
+
 ## Next step (resume here 2026-07-10)
 
 The central "is recovery real / what causes it" question is settled (anchor). Two
