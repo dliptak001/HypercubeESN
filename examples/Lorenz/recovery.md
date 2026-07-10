@@ -288,3 +288,55 @@ spirit (real data grounds the rollout), different plumbing.
 as a conditional-Lyapunov-exponent crossing? Also chase whether any decorrelated-drive
 / half-anchored generative scheme exists. Use the deep-research harness, verify every
 claim against sources, don't rely on this shallow scan.
+
+### Background: conditional Lyapunov exponents (CLEs) — why negative ⇒ relock
+
+Primer for the deep dive. An ordinary Lyapunov exponent is a property of a system left
+alone: the average exponential rate at which two nearby trajectories drift apart.
+Lorenz-63 has λ_max ≈ +0.906 (= our `LYAPUNOV_EXPONENT`) — positive, i.e. chaos.
+
+A **conditional** LE is a property of the reservoir *while it is being driven*. It asks
+a different question: holding the drive fixed and perturbing only the reservoir's OWN
+state, does that perturbation grow or shrink? Operational test = the **auxiliary-system
+approach**: run two identical reservoir copies on the SAME drive u(t) from DIFFERENT
+start states, and watch the gap.
+
+```
+              same drive u(t) ──────┬───────────────┐
+                                    ▼               ▼
+              reservoir A                     reservoir B
+              start x_A(0)                    start x_B(0) != x_A(0)
+                    └──── evolve under identical u(t) ────┘
+                    |x_A(t) - x_B(t)|  ~  |Δ(0)| · e^(Λc·t)
+                                                    ▲  Λc = largest conditional LE
+
+     Λc < 0 → gap DECAYS → both copies forget their start, collapse onto ONE
+              drive-determined trajectory x(t)=F(u(t),u(t-1),...) = generalized
+              synchronization = the echo state property
+     Λc ≥ 0 → gap persists → state not a function of the drive → no sync
+```
+
+**Why negative Λc ⇒ relock:** in free-run, a bad fed-back value / accumulated error is
+a perturbation of the reservoir state away from the drive-determined trajectory. With
+Λc < 0 the shared REAL anchor re-imposes the true-manifold state, so the perturbation
+heals as e^(Λc·t) — that decay IS the relock. With Λc ≥ 0 nothing pulls it back → the
+no-anchor saturation. No contradiction with chaos: λ_max>0 = "two nearby Lorenz orbits
+diverge"; Λc<0 = "the reservoir forgets its own initial state given the drive." Both
+hold at once; relock rides the second.
+
+**"More negative than the target's":** negative Λc gives a synchronization map
+x=F(system state) that's merely *continuous*. For it to be *smooth/differentiable*
+(not fractal) the reservoir must contract faster than the target's fastest-contracting
+direction — largest reservoir CLE below the target's MOST NEGATIVE LE. Lorenz's spectrum
+is ~(+0.906, 0, -14.6), so that bar is ~-14.6. Smoothness matters because our readout is
+smooth: it approximates a smooth F well, a fractal F badly. This differentiability
+criterion is what arXiv 2401.00885 is built on.
+
+**Two hooks into our results:** (1) that paper reports lower SR → more negative Λc →
+better sync; our `SR=0.99` is high, so Λc is likely only weakly negative — consistent
+with relock being fragile / needing a tuned anchor. (2) Naive CLE reasoning says "more
+drive → more contraction → more negative Λc → better sync," yet our dose-response shows
+too much anchor HURTS. Resolve tomorrow: is the high-drive failure the separate
+training-distractor effect (past decorrelated from target), or does Λc itself go
+non-monotonic with drive? Measuring Λc across the `input_scaling` sweep (auxiliary-system
+test — cheap to add) would settle it.
