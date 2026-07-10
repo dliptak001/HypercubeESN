@@ -54,7 +54,7 @@ We literally cannot tell which without building it and plotting past-err vs futu
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11; // hypercube dimension
     constexpr uint64_t SEED = 13649353;//13649188; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float SPECTRAL_RADIUS = 0.95f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.01; // shared across all input channels
     constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port (sweep axis). WARNING: 0 is UNTRAINABLE, not an "observer floor" — the feedback port carries the future's own S[f-1]->S[f] autoregressive step, the only channel predictive of the target. The past block is decorrelated from the target by the Janus cursor geometry (cursors sweep in from opposite window ends), so with feedback off the readout can only predict the mean and train RMSE pins at the climatological floor. See examples/Lorenz/recovery.md "Next step (a)".
     constexpr float LEAK_RATE = 1.0;

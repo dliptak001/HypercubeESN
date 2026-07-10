@@ -68,18 +68,30 @@ free-run**. Given the recovery findings (the anchor demonstrably re-syncs the sh
 state), the bet is *tracks*, at least during re-lock episodes — but that must be
 measured, not assumed.
 
-## 5. Minimal build
+## 5. Minimal build — a SEPARATE diagnostic readout (zero-delta)
 
-- `readout.num_outputs: 3 → 6` (future xyz + past xyz).
-- Extend `ExtractTargets` to fill `[future xyz, past xyz]`; the past target is
-  `std::get<1>(past_future_states)` (the pre-injection `S[p]`).
-- In `FreeRun`, score `outputs[3..5]` against the real `S[p]` and print it alongside the
-  future err (so the tracking question in §4 is answerable from the first run).
-- `ExtractFuturePredicted` still feeds back only `outputs[0..2]` — loop dynamics
-  unchanged.
+The reservoir is fixed and the past head never feeds back, so a past head that reads the
+**same** reservoir states with its **own** parameters leaves the future head and the
+entire free-run trajectory **bit-identical**. This is the whole point of a diagnostic:
+it measures without disturbing. So the past head is a **second `Readout`** (the class
+already exists — `TrainStep` / `PredictRaw` / etc.), not extra outputs on the existing one:
 
-**Caveat — not a single-delta change.** The readout now splits capacity across 6 outputs
-instead of 3, so future-head VPT/RMSE will shift slightly vs current runs. If the future
-head must stay bit-identical, the alternative is a **separate past-only readout** (more
-code, future head untouched). For a first experiment, start with the 6-output version
-and eat the small shift.
+- Instantiate a second `Readout` (`num_outputs = 3`, past xyz) fed the same reservoir
+  state each step — via an ESN state accessor, or by housing it inside `ESN` alongside
+  the existing readout.
+- Each training step: `TrainStep` it against the past target
+  `std::get<1>(past_future_states)` — the **pre-injection** `S[p]` (§3), read at the
+  same pre-`ReservoirStep` state as the future head.
+- In `FreeRun`: `PredictRaw` its past output, score vs the real `S[p]`, print alongside
+  the future err (so the §4 tracking question is answerable from the first run).
+
+Because none of this touches the future readout's weights or the fed-back
+`ExtractFuturePredicted(outputs[0..2])`, the future-head VPT/RMSE are **unchanged** — a
+true single-delta addition to the current results.
+
+**Do NOT just bump `num_outputs 3 → 6` on the existing readout.** The data path is
+`state → Embed → [Conv+Pool]×L → Flatten → Linear → output` (Readout.h): one shared conv
+trunk. Training all six outputs under one loss lets past-head gradients flow into that
+shared trunk and shift the future features — coupling your diagnostic to the very thing
+it's supposed to measure, for no benefit. Only choose the shared-trunk form if you
+actually want the two heads to share a representation (not the case for a health signal).
