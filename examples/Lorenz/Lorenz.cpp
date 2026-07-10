@@ -254,8 +254,8 @@ void Lorenz::Train()
         if (config::ENABLE_PRINTF)
         {
             if (train_steps > 0)
-                std::printf("epoch %3zu lr %.7f  train RMSE %.6f  (%zu steps)\n",
-                            i, lr, std::sqrt(sq_err_sum / (3.0 * train_steps)), train_steps);
+                std::printf("epoch %3zu lr %.7f  train RMSE %.6f\n",
+                            i, lr, std::sqrt(sq_err_sum / (3.0 * train_steps)));
             else
                 std::printf("epoch %3zu lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
                             i, lr);

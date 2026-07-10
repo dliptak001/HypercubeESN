@@ -1,10 +1,34 @@
 # Past-prediction head — a ground-truth-free error signal for free-run
 
-**Status:** proposed 2026-07-09, not yet built. A concrete code change (readout
-`num_outputs 3 → 6`), gated on the empirical question in §4.
+**Status:** BUILT, TESTED, then **REMOVED 2026-07-09** — §4 answered, verdict below.
+The design and reasoning are kept here as the record; the code is gone (it only slowed
+training while giving no usable signal).
 **Related:** [recovery.md](recovery.md) (the relock investigation this feeds),
 [JanusCursor.md](JanusCursor.md) (the dual-cursor geometry), the long-free-run TODO at
 `Lorenz.h` `FREE_RUN_WINDOW_SIZE`.
+
+## 0. Verdict (2026-07-09) — it DECOUPLES; removed
+
+Built as a standalone diagnostic `Readout` (zero-delta to the future path, per §5), run
+on seed 13649419. Result: **past-head error decouples from future-head error, decisively
+and over long horizons.** At SR=0.90 over a 2000-step / 36-Lyapunov-time free-run, past
+err stayed pinned at ~0.005 (≈ its training floor) for the ENTIRE rollout while future
+err bounced around the climatological floor (0.1–0.9); past RMSE 0.006 vs future RMSE
+0.44. Even the *derivative* of past err showed no response to future spikes (a ±0.0008
+band, nothing at the step-175 divergence).
+
+- **Not the hoped-for future-health proxy** (the "decouple" branch of §4 won). The past
+  head's *input* — the anchored real past on the input port — never diverges, so it
+  predicts `S[p]` at training accuracy regardless of what the future feedback does.
+- **What it *does* prove** (kept as a finding): the shared reservoir state stays on the
+  true manifold throughout free-run — it never collapses. So a future divergence here is
+  an *extrapolation* limit (decorrelated anchor carries no future phase), NOT reservoir-
+  state corruption. That distinguishes "reservoir healthy, future unpredictable" (what we
+  saw) from "reservoir collapsed" — a real but narrow diagnostic, not worth the training
+  cost of a second readout trained every step.
+- **Removed** from `Lorenz.{h,cpp}` and the `ESN::LastReadoutInput()` helper it used.
+
+Everything below is the original proposal, retained for context.
 
 ## 1. The problem it solves
 

@@ -12,37 +12,6 @@
 // ============================================================================
 namespace config
 {
-    /*
-     * maybe we should also be predicting xyz on the past side as well, then we can directly evaluate the RMSE from the past, even in free run.  This could give us a nice reference when in free run we don't have precalculated values in the prediction runway!
-
-Yes — I like this, and it dovetails with the TODO you just dropped at Lorenz.h:77 about pushing FREE_RUN_WINDOW_SIZE >> 500. Here's the value, the one trap to avoid, and the empirical question that decides whether it actually works.
-
-What it buys you
-The future truth runs out fast: the runway is only E = 500 samples, so future-scored free-run caps at ~9 lt. The past cursor has ~10,500 real samples ahead of it (center 10500 → 0). A past-prediction head gives you a scorable error signal for ~20× more steps than the future head — and, in a real deployment with no precomputed future at all, it's the only error you can compute. That's exactly the "reference when we don't have precalculated values" you're after, and it's what would let you answer your own line-77 question (do we keep breaking and re-locking, or only early on?) without having to grow the stream.
-
-        input port (ALWAYS real)                 feedback port (real → own pred in free-run)
-               S[p] ─┐                               ┌─ S[f-1] / own prediction
-                     ▼                               ▼
-             ┌──────────────── reservoir: shared state x(t) ────────────────┐
-             └─────────┬───────────────────────────────────────┬───────────┘
-                       ▼                                        ▼
-                 PAST head → Ŝ[p]                         FUTURE head → Ŝ[f]
-             score vs real S[p]  ← ALWAYS available     score vs S[f]  ← runway only (500)
-The one trap: alignment, or it's trivially zero
-The past sample S[p] gets injected into the input port every step. If the past head predicts S[p] from a state that has already absorbed S[p], it's input reconstruction — RMSE ≈ 0, no information. It has to be horizon-1 aligned exactly like the future head: predict S[p] at the pre-injection state (which has only seen the past through S[p+1]), before ReservoirStep injects it. Then it's a genuine one-step prediction of the backward-running past sequence — symmetric to S[f-1] → S[f]. The current loop already calls Predict() before ReservoirStep(), so the timing is free; you just add S[p] (= std::get<1>) to the target vector.
-
-Crucially, the past head never feeds back — the input port keeps getting the real S[p], so the anchor stays real. The head is pure diagnostic.
-
-The question that decides if it's useful (and it's a recovery question)
-Does past-head error track future-head error? Two competing mechanisms:
-
-Tracks (useful): the two heads share one reservoir state. When the future self-feedback drifts and injects a bad value, it corrupts the shared state → the past head's prediction of the real next past also degrades → both spike together, both heal on re-lock. If so, past-head RMSE is a deployable, ground-truth-free proxy for reservoir health.
-Decouples (less useful): the always-real anchor keeps the state "past-consistent" even while the future has diverged → past head stays green while future is red.
-We literally cannot tell which without building it and plotting past-err vs future-err across a free-run. Given the recovery findings (the anchor demonstrably re-syncs the shared state), I'd bet on tracks, at least during the re-lock episodes — but that's the thing to measure.
-     */
-
-
-
     // ---- Diagnostics ----
     // Master gate for all live per-run diagnostic printf's (config banner, per-epoch
     // train lines, free-run header / step trace / runway notes). Leave true for a
@@ -54,9 +23,9 @@ We literally cannot tell which without building it and plotting past-err vs futu
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11; // hypercube dimension
     constexpr uint64_t SEED = 13649353;//13649188; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.95f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float SPECTRAL_RADIUS = 0.9f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.01; // shared across all input channels
-    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port (sweep axis). WARNING: 0 is UNTRAINABLE, not an "observer floor" — the feedback port carries the future's own S[f-1]->S[f] autoregressive step, the only channel predictive of the target. The past block is decorrelated from the target by the Janus cursor geometry (cursors sweep in from opposite window ends), so with feedback off the readout can only predict the mean and train RMSE pins at the climatological floor. See examples/Lorenz/recovery.md "Next step (a)".
+    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
 
@@ -105,7 +74,7 @@ We literally cannot tell which without building it and plotting past-err vs futu
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
-    constexpr size_t FREE_RUN_WINDOW_SIZE = 500;    // TODO - evaluate relock for values >> 500.  Do we keep breaking and relocking over and over or only early on?
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
     constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
     constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
 
