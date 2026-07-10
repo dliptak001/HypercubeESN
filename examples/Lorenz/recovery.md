@@ -1,8 +1,10 @@
 # Free-run error *recovery* — is it real, and what does it mean?
 
-**Status:** central question **ANSWERED 2026-07-09** (anchor A/B below) — recovery is
-the anchor. Two follow-ups remain (re-sync metric, initial-condition generality); the
-observer-floor idea was killed as ill-posed (see "Next step (a)").
+**Status:** central question **ANSWERED 2026-07-09** (anchor dose-response below) —
+recovery is the anchor, but only in a tuned band (interior optimum near
+`INPUT_SCALING=0.01`; too little or too much → no relock). Two follow-ups remain
+(re-sync metric, initial-condition generality); the observer-floor idea was killed as
+ill-posed (see "Next step (a)").
 **Context:** single-run, seed 13649419, `in_scale=0.01`, `feedback_scaling=0.04`,
 `leak=1.0`, `EPOCHS=100`, shared-scale normalization, LR anneal knee at 75%.
 
@@ -116,37 +118,63 @@ steps against actual lobe-crossing events in the true orbit.)
    ours is anchor-driven. Different regime — don't benchmark our ~3 lt against
    textbook autonomous numbers.
 
-## RESULT — anchor A/B (2026-07-09)
+## RESULT — anchor dose-response (2026-07-09)
 
-Toggled the anchor directly via `INPUT_SCALING` (the past block's gain on the input
-port), everything else fixed, same seed 13649419, `feedback_scaling=0.04`:
+Swept the anchor via `INPUT_SCALING` (the past block's gain on the input port),
+everything else fixed, same seed 13649419, `feedback_scaling=0.04`. The relationship
+is **non-monotonic — a Goldilocks knob with an interior optimum**, NOT "more anchor =
+more recovery":
 
-| | anchor ON (`in_scale=0.01`) | anchor OFF (`in_scale=0`) |
-|---|---|---|
-| post-spike error (after 175) | recovers → 0.127, 0.130, 0.072, **0.044** | stays high → 0.377, 0.411, 0.595, 0.700 |
-| free-run RMSE | **0.258925** | 0.446120 |
-| VPT | 169 steps (3.06 lt) | 174 steps (3.15 lt) |
-| final train RMSE (epoch 99) | 0.001030 | 0.000606 |
+| `INPUT_SCALING` | final train RMSE (ep99) | VPT | free-run RMSE | relock? |
+|---|---|---|---|---|
+| 0.00 (none)   | **0.000606** | 3.15 lt | 0.446120 | no — textbook saturation |
+| 0.01 (gentle) | 0.001030 | 3.06 lt | **0.258925** | **YES** → 0.127, 0.072, 0.044 |
+| 0.04 (strong) | 0.001797 | **2.14 lt** | 0.456741 | no — diverges early (step 118) |
 
-Same seed, same spike at step ~175. With the anchor **off** the spike never recovers
-— textbook autonomous saturation at the climatological floor (0.38–0.80 for the rest
-of the run). With the anchor **on** it re-locks to 0.044. **The anchor causes the
-recovery. Confirmed.** Since the anchor is ~200 lt decorrelated from the scored
-future, it isn't leaking phase — it keeps the reservoir on the true dynamical
-manifold instead of letting the feedback loop settle onto its own wrong pseudo-
-attractor.
+Two clean trends:
+- **Train RMSE rises monotonically** with anchor strength (0.0006 → 0.0010 → 0.0018).
+- **Free-run RMSE is U-shaped**, minimum at 0.01. Both endpoints sit at the
+  climatological floor (~0.45); only the middle re-locks.
 
-Two further findings from the same A/B:
+```
+free-run RMSE
+ 0.45 ●________________________________●     0.00 and 0.04: no relock
+       \                              /
+        \                            /
+ 0.26   \__________●______________/          0.01: sweet spot
+         0.00     0.01           0.04   INPUT_SCALING
+```
 
-1. **VPT is blind to the benefit.** VPT is ~identical (3.06 vs 3.15 lt) — the anchor
-   does NOT delay the first divergence, it enables *recovery afterward*. VPT-to-first-
-   crossing cannot see that; RMSE can (0.259 vs 0.446, ~halved). Strong motivation
-   for the re-sync-aware metric below.
-2. **Train/free-run RMSE inversion.** Anchor-off trains to a *lower* floor
-   (0.000606 vs 0.001030) yet free-runs *worse*. Lower teacher-forced fit, worse
-   closed-loop generalization — a clean exposure-bias / regularization signature.
-   The anchor grounds the closed loop in real dynamics; the closed loop is what we
-   care about.
+**Why (follows directly from the FEEDBACK=0 finding).** During TRAINING the past
+block is *decorrelated* from the future target (cursors sweep in from opposite ends —
+see "Next step (a)"). So `INPUT_SCALING` injects a **decorrelated distractor** into the
+reservoir during training — which is exactly why train RMSE rises monotonically with
+it (stronger off-phase drive → harder to fit the one-step map). The anchor is thus
+double-edged:
+
+- **Too little (0.00):** no real-manifold drive → nothing re-syncs the state after a
+  divergence → textbook autonomous saturation at the climatological floor.
+- **Just right (0.01):** weak enough not to corrupt the learned map or dominate the
+  state, strong enough to nudge the state back onto the true manifold → relock. Since
+  the anchor is ~200 lt decorrelated from the scored future it isn't leaking phase —
+  it grounds the state on the true attractor instead of letting the feedback loop
+  settle onto its own wrong pseudo-attractor.
+- **Too much (0.04):** the decorrelated drive BOTH wrecks the base map (train RMSE up,
+  VPT collapses 3.1 → 2.1 lt, so free-run crosses threshold at step 118 vs 169) AND
+  pushes the state off the future's phase every step → no relock, worse everywhere.
+
+Relock lives in a narrow band where the anchor grounds the state without overwhelming
+it. **Caveat: n=1 orbit/seed so far** — the optimum near 0.01 could be partly
+seed-luck; confirm with a finer sweep (0.005 / 0.01 / 0.02) over several seeds / x0s
+(ties into follow-up (c)).
+
+One more finding, now explained by the above:
+
+- **VPT is blind to the recovery benefit.** At 0.00 vs 0.01, VPT is ~identical (3.15
+  vs 3.06 lt) — the anchor does NOT delay the first divergence, it enables *recovery
+  afterward*. VPT-to-first-crossing cannot see that; RMSE can (0.446 vs 0.259). (At
+  0.04 VPT *does* move, but for the other reason — the base map is degraded, not
+  because recovery changed.) Strong motivation for the re-sync-aware metric below.
 
 ## Next step (resume here 2026-07-10)
 
