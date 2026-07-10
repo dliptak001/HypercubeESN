@@ -30,6 +30,8 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.reservoir.leak_rate = config::LEAK_RATE;
     cfg.reservoir.history_depth = config::HISTORY_DEPTH;
+    cfg.reservoir.bias_scaling = 0.0;
+    cfg.reservoir.history_floor = 0.5;
 
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
