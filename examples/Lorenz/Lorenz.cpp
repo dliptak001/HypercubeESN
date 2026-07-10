@@ -136,8 +136,12 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
     if (epochs <= 1)
         return lr_max;
     const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
-    return CosineLR(progress, lr_max, lr_min); // swap in ExponentialDecayLR (Readout.h) to compare schedules
-    //return ExponentialDecayLR(progress, lr_max, lr_min);
+    // Reach lr_min at 75% of the run, then hold flat for the last 25%: stretch the
+    // [0, 0.75] progress window onto the full cosine [0, 1]. CosineLR clamps its
+    // argument at 1, so every epoch past the 75% mark stays pinned at lr_min.
+    constexpr float anneal_fraction = 0.75f;
+    return CosineLR(progress / anneal_fraction, lr_max, lr_min); // swap in ExponentialDecayLR (Readout.h) to compare
+    //return ExponentialDecayLR(progress / anneal_fraction, lr_max, lr_min);
 }
 
 float Lorenz::ScheduledSamplingProfile(const float ceiling, const size_t epochs, const size_t current_epoch)
@@ -183,7 +187,7 @@ void Lorenz::Train()
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
             esn_.ReservoirStep(past, future); // teacher-forced: past->input, real future->feedback
-            past_future_states = data_stream_.Step(false);
+            past_future_states = data_stream_.Step();
         }
 
         // Step 2: Train - train towards future state targets
@@ -194,7 +198,7 @@ void Lorenz::Train()
             // Horizon-1 alignment: predict at x(t) BEFORE injecting this call's
             // inputs, so x(t) has seen the future channel only through S[f-1]. The
             // aligned one-step target is S[f] — the sample this call is about to
-            // inject — not NextFutureState() = S[f+1].
+            // inject — not S[f+1], one sample further on.
             ExtractTargets(targets, *std::get<2>(past_future_states));
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
@@ -244,7 +248,7 @@ void Lorenz::Train()
             }
             ++train_steps;
 
-            past_future_states = data_stream_.Step(false);
+            past_future_states = data_stream_.Step();
         }
 
         if (config::ENABLE_PRINTF)
@@ -279,7 +283,7 @@ FreeRunResult Lorenz::FreeRun()
         ExtractPast(past, past_future_states);
         ExtractFutureReal(future, past_future_states);
         esn_.ReservoirStep(past, future); // teacher-forced anchored washout
-        past_future_states = data_stream_.Step(false);
+        past_future_states = data_stream_.Step();
     }
 
     // Stage 2: generative rollout, single-ESN self-feedback closed loop. The future
@@ -342,7 +346,7 @@ FreeRunResult Lorenz::FreeRun()
                 std::printf("[FreeRun] anchor runway exhausted after %zu steps - past cursor at the seed\n", steps);
             break;
         }
-        past_future_states = data_stream_.Step(true);
+        past_future_states = data_stream_.Step();
     }
 
     if (steps == 0)
@@ -380,10 +384,9 @@ int main()
 {
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
+
 #if 1
-    //LorenzAttractor::State ORBIT = {0.15, 0.75, 0.5};
-    //Lorenz lorenz(13649320, &ORBIT);
-    Lorenz lorenz(13649716);
+    Lorenz lorenz(13649419);
     lorenz.Train();
     const FreeRunResult r = lorenz.FreeRun();
 
@@ -415,7 +418,7 @@ int main()
             {
                 for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
                 {
-                    Lorenz lorenz(13649320 + 33 * i);
+                    Lorenz lorenz(13649353 + 33 * i);
                     lorenz.Train();
                     results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
                 }

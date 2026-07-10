@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <vector>
 #include "JanusCursor.h"
 #include "LorenzAttractor.h"
@@ -32,23 +33,12 @@ public:
     LorenzDatastream(const LorenzDatastreamConfig& cfg);
 
     [[nodiscard]] LorenzDatastreamResult States();
-    [[nodiscard]] NormalizedState NextFutureState() const;
-    LorenzDatastreamResult Step(bool useGeneratedFuture);
-
-    [[nodiscard]] double GetXScale() const { return x_scale_; }
-    [[nodiscard]] double GetYScale() const { return y_scale_; }
-    [[nodiscard]] double GetZScale() const { return z_scale_; }
-    [[nodiscard]] double GetZOffset() const { return z_offset_; }
+    LorenzDatastreamResult Step();
 
     [[nodiscard]] const std::vector<NormalizedState>& GetDataStream() const { return data_stream_; }
 
 private:
     std::vector<NormalizedState> data_stream_;
-
-    double x_scale_ = 1.0;
-    double y_scale_ = 1.0;
-    double z_scale_ = 1.0;
-    double z_offset_ = 0.0;
 
     [[nodiscard]] std::vector<LorenzAttractor::State> Build(size_t stream_length,
                                                             const LorenzAttractor::State& initial_lorenz_state,

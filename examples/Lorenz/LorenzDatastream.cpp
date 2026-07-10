@@ -56,13 +56,7 @@ LorenzDatastreamResult LorenzDatastream::States()
     return {Distance(), data_stream_[past], &data_stream_[future]};
 }
 
-NormalizedState LorenzDatastream::NextFutureState() const
-{
-    auto [past, future] = NextIndices();
-    return data_stream_[future];
-}
-
-LorenzDatastreamResult LorenzDatastream::Step([[maybe_unused]] const bool useGeneratedFuture)
+LorenzDatastreamResult LorenzDatastream::Step()
 {
     auto [past, future] = JanusCursor::Step();
     if (past < 0)
@@ -86,11 +80,14 @@ std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_
 
 void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw)
 {
-    // Per-channel affine map raw S -> [-1, 1] (JanusCursor.md §4b / Appendix A).
-    // x, y straddle zero already, so they carry no offset (scale = largest |excursion|);
-    // z sits up at ~+24, so it gets a midpoint offset that drops its DC level onto zero
-    // plus a half-range scale. The scale/offset values below are measured from this stream,
-    // so any seed / dt yields its own envelope.
+    // Affine map raw S -> [-1, 1] with a PER-CHANNEL offset but a SINGLE SHARED scale
+    // (JanusCursor.md §4b / Appendix A). Each channel is first centered on its own
+    // midpoint (x, y straddle zero already; z sits up at ~+24 and gets shifted down),
+    // then all three are divided by ONE scale = the widest channel's half-range. Sharing
+    // the scale preserves the attractor's true relative amplitudes: the reservoir sees x
+    // as genuinely narrower than y rather than every axis stretched to fill [-1, 1]. The
+    // widest channel just reaches +-1; the others use proportionally less of the range.
+    // The extremes are measured from this stream, so any seed / dt yields its own envelope.
 
     // 1. Scan the raw stream for each channel's extremes.
     double x_min = raw.front().x, x_max = x_min;
@@ -106,26 +103,25 @@ void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw)
         z_max = std::max(z_max, s.z);
     }
 
-    // 2. Derive the per-channel scale / offset.
-    x_scale_ = std::max(std::abs(x_min), std::abs(x_max)); // symmetric: offset 0
-    y_scale_ = std::max(std::abs(y_min), std::abs(y_max)); // symmetric: offset 0
-    z_offset_ = (z_max + z_min) / 2.0; // ~+24, the "make it bimodal" shift
-    z_scale_ = (z_max - z_min) / 2.0; // half-range
+    // 2. Per-channel midpoint offsets drop each channel's DC level onto zero...
+    const double x_offset = (x_max + x_min) / 2.0;
+    const double y_offset = (y_max + y_min) / 2.0;
+    const double z_offset = (z_max + z_min) / 2.0; // ~+24, the "make it bimodal" shift
 
-    // A constant channel would give a zero scale; fall back to 1.0 so the map below
-    // is a no-op rather than a division by zero (degenerate streams only).
-    if (x_scale_ == 0.0) x_scale_ = 1.0;
-    if (y_scale_ == 0.0) y_scale_ = 1.0;
-    if (z_scale_ == 0.0) z_scale_ = 1.0;
+    // ...and one shared scale = the widest half-range, so the same unit is applied to
+    // all three channels. A degenerate (constant) stream gives a zero scale; fall back
+    // to 1.0 so the map below is a no-op rather than a division by zero.
+    double scale = std::max({(x_max - x_min) / 2.0,
+                             (y_max - y_min) / 2.0,
+                             (z_max - z_min) / 2.0});
+    if (scale == 0.0) scale = 1.0;
 
-    // 3. Write the normalized [-1, 1] stream once, narrowed to float storage. The
-    //    scales/offset stay on the object (as doubles) so consumers can invert the
-    //    map: v = scale * v_hat + offset.
+    // 3. Write the normalized [-1, 1] stream once, narrowed to float storage.
     data_stream_.reserve(raw.size());
     for (const LorenzAttractor::State& s : raw)
     {
-        data_stream_.push_back({static_cast<float>(s.x / x_scale_),
-                                static_cast<float>(s.y / y_scale_),
-                                static_cast<float>((s.z - z_offset_) / z_scale_)});
+        data_stream_.push_back({static_cast<float>((s.x - x_offset) / scale),
+                                static_cast<float>((s.y - y_offset) / scale),
+                                static_cast<float>((s.z - z_offset) / scale)});
     }
 }
