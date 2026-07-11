@@ -31,7 +31,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.leak_rate = config::LEAK_RATE;
     cfg.reservoir.history_depth = config::HISTORY_DEPTH;
     cfg.reservoir.bias_scaling = 0.0;
-    cfg.reservoir.history_floor = 0.5;
+    cfg.reservoir.history_floor = 1.0;
 
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
@@ -44,7 +44,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.use_pooling = config::USE_POOLING;
     cfg.readout.num_layers = 1;
     cfg.readout.momentum = 0.9;
-    cfg.readout.conv_channels = 4;
+    cfg.readout.conv_channels = 8;
     return cfg;
 }
 
@@ -388,6 +388,7 @@ int main()
 
 
 #if 0
+    Beep(2500, 1000); // single completion beep for the whole survey
     Lorenz lorenz(13649419);
     lorenz.Train();
     const FreeRunResult r = lorenz.FreeRun();

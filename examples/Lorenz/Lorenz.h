@@ -24,7 +24,7 @@ namespace config
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11; // hypercube dimension
     constexpr uint64_t SEED = 13649419;//13649188; // reservoir seed
-    constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
+    constexpr float SPECTRAL_RADIUS = 0.98f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.005; // shared across all input channels
     constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port
     constexpr float LEAK_RATE = 1.0;
