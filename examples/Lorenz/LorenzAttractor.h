@@ -1,9 +1,29 @@
 #pragma once
 
-#include <cstddef>
-#include <vector>
 #include <iostream>
 
+/// @brief Fixed-step RK4 integrator for the Lorenz-63 system — the ground-truth
+/// orbit generator behind the Lorenz example.
+///
+/// The state (x, y, z) evolves under three coupled ODEs with the canonical
+/// chaotic parameters (sigma = 10, rho = 28, beta = 8/3):
+///
+///     dx/dt = sigma * (y - x)
+///     dy/dt = x * (rho - z) - y
+///     dz/dt = x * y - beta * z
+///
+/// Each advance is one classical 4th-order Runge-Kutta step of size @p dt
+/// (@ref step mutates and returns the new state; @ref peek is the same math but
+/// leaves @ref state untouched — handy for looking one step ahead). The
+/// parameters and @ref state are public knobs: set them directly, or use
+/// @ref reset to return to a chosen initial condition.
+///
+///     state ──derivatives──> k1 ─┐
+///        │                        ├─ weighted average ──> next state
+///        └──> k2 ──> k3 ──> k4 ──┘   (k1 + 2k2 + 2k3 + k4)/6 * dt
+///
+/// The reservoir never sees this class directly; LorenzDatastream integrates an
+/// instance to produce the normalized (x, y, z) stream the ESN trains on.
 class LorenzAttractor
 {
 public:

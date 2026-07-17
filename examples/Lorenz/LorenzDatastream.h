@@ -8,14 +8,25 @@
 #include "LorenzAttractor.h"
 
 
-// A normalized [-1, 1] stream sample, stored as float: the reservoir consumes
-// floats, so the stream is narrowed once at Normalize() rather than per step
-// (and the hot window occupies half the cache of double storage).
+/// @brief One normalized [-1, 1] Lorenz sample (x, y, z) in float storage.
+///
+/// The reservoir consumes floats, so the stream is narrowed once in
+/// @ref LorenzDatastream::Normalize rather than per step — and the hot cursor
+/// window then occupies half the cache it would as double storage.
 struct NormalizedState
 {
     float x, y, z;
 };
 
+/// @brief What @ref LorenzDatastream::States and @ref LorenzDatastream::Step hand
+/// back for the current cursor position, as a positional tuple:
+///   - `float`                  — @ref JanusCursor::Distance (normalized cursor
+///                                separation, -1 .. +1).
+///   - `NormalizedState`        — the PAST sample (by value; the past cursor always
+///                                addresses valid history).
+///   - `const NormalizedState*` — the FUTURE sample, or `nullptr` once the future
+///                                cursor has run out of in-window data (OOB). Callers
+///                                MUST null-check this before dereferencing.
 using LorenzDatastreamResult = std::tuple<float, NormalizedState, const NormalizedState*>;
 
 struct LorenzDatastreamConfig
@@ -27,6 +38,30 @@ struct LorenzDatastreamConfig
     float lorenz_dt = 0.02;
 };
 
+/// @brief The Lorenz example's data source: integrates one Lorenz-63 orbit,
+/// normalizes it to float [-1, 1], and serves it through a pair of Janus cursors.
+///
+/// Construction does all the heavy lifting once: @ref Build integrates
+/// `stream_length + 1` samples in full double precision (via @ref LorenzAttractor),
+/// then @ref Normalize maps them to [-1, 1] using a PER-CHANNEL offset but a SINGLE
+/// SHARED scale, so the attractor's true relative amplitudes are preserved (x really
+/// is narrower than y; z is shifted down off its ~+24 DC level). The result lives in
+/// @ref data_stream_ as compact float storage the reservoir can consume directly.
+///
+/// Read access is via the inherited JanusCursor — two cursors over the same stream:
+///
+///     index 0            lb          center           ub              N
+///        |---------------|===============================|-------------|
+///          past runway            training window          eval runway
+///        (anchor history)     (past & future cursors     (future cursor's
+///                              sweep this span)            generative tail)
+///
+///   @ref States  -> {Distance, stream[past], &stream[future]} at the current spot
+///   @ref Step    -> advances both cursors, then returns the same triple; the future
+///                   pointer is nullptr once the future cursor runs off the window
+///                   (OOB), and Step throws if the past cursor underruns its history.
+///
+/// One instance owns one orbit; the harness rebuilds it per epoch / free-run.
 class LorenzDatastream : public JanusCursor
 {
 public:

@@ -34,7 +34,8 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
         char buf[16];
         std::snprintf(buf, sizeof buf, "%lld", v);
         std::string cell(buf);
-        return std::string(14 - cell.size(), '.') + cell;
+        const size_t pad = cell.size() < 14 ? 14 - cell.size() : 0;
+        return std::string(pad, '.') + cell;
     };
 
     if (print_header)
@@ -51,7 +52,7 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
         std::printf("  region [%d, %d] = training window (span %d)\n", window_lb, window_ub, cfg.cursor_span);
         std::printf("  region (%d, %zu] = prediction / evaluation runway (E = %zu) - the future cursor\n",
                     window_ub, N, E);
-        std::printf("%16s goes GENERATIVE here: future input channels come from the ensemble's own output\n", "");
+        std::printf("%16s goes GENERATIVE here: future input channels come from the model's own output\n", "");
     }
 }
 
