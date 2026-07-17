@@ -207,7 +207,7 @@ void Lorenz::Train()
 
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
-        RebuildDatastream(true);
+        RebuildDatastream(config::ENABLE_PRINTF); // orbit print is a per-epoch diagnostic — silenced in the concurrent survey
 
         // Step 1: warm up the reservoir open-loop, teacher-forced, no readout update.
         data_stream_->Reset();
@@ -416,34 +416,33 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     return r;
 }
 
-int main()
+// One trial = train a single ESN on esn_seed, then free-run it num_runs times.
+// RebuildDatastream re-mixes orbit_seed_ on every FreeRun call, so two trials
+// started from the same orbit_seed are scored against the SAME sequence of
+// held-out orbits — the ESN seed is the only independent variable. The full report
+// (per-run rows, aggregate stats, top-10 leaderboards) is built into a string and
+// returned so trials running in parallel can be printed serially without their
+// output interleaving.
+static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
 {
-    uint64_t seed = 13649419;
-    uint64_t orbit_seed = 5859834983498;
-
-    std::cout << "=== HypercubeESN: Lorenz ===\n";
-
-
-#if 1
-    Beep(2500, 1000); // single completion beep for the whole survey
-    Lorenz lorenz(seed, orbit_seed);
+    Lorenz lorenz(esn_seed, orbit_seed);
     lorenz.Train();
 
-    constexpr int NUM_RUNS = 50;
     std::vector<FreeRunResult> results; // one outcome per free-run (RebuildDatastream re-mixes the orbit each call)
-    results.reserve(NUM_RUNS);
-    for (int i = 0; i < NUM_RUNS; i++)
-    {
-        FreeRunResult r = lorenz.FreeRun(false);
+    results.reserve(num_runs);
+    for (int i = 0; i < num_runs; i++)
+        results.push_back(lorenz.FreeRun(false));
 
-        //std::printf("\n=== Single run ===\n");
-        if (r.valid)
-            std::fputs(r.row.c_str(), stdout); // seed / VPT steps / Lyapunov time / free-run RMSE
-        else
-            std::printf("[Single run] no steps scored\n");
+    std::string out;
+    char buf[256];
+    auto emit = [&](const char* s) { out += s; };
 
-        results.push_back(std::move(r)); // keep every run (invalid ones are filtered out of the stats below)
-    }
+    /*std::snprintf(buf, sizeof buf, "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
+                  static_cast<unsigned long long>(esn_seed), num_runs,
+                  static_cast<unsigned long long>(orbit_seed));*/
+    emit(buf);
+    for (const auto& r : results)
+        emit(r.valid ? r.row.c_str() : "[Single run] no steps scored\n"); // seed / VPT steps / Lyapunov time / free-run RMSE
 
     // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
     // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
@@ -462,11 +461,12 @@ int main()
         if (!r.crossed) ++censored;
     }
 
-    auto report = [](const char* label, std::vector<double> v, int prec)
+    auto report = [&](const char* label, std::vector<double> v, int prec)
     {
         if (v.empty())
         {
-            std::printf("  %-16s (no valid runs)\n", label);
+            std::snprintf(buf, sizeof buf, "  %-16s (no valid runs)\n", label);
+            emit(buf);
             return;
         }
         std::sort(v.begin(), v.end());
@@ -479,19 +479,28 @@ int main()
         var = n > 1 ? var / static_cast<double>(n - 1) : 0.0; // sample variance
         const double sd = std::sqrt(var);
         const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::printf("  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
-                    label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
+        std::snprintf(buf, sizeof buf, "  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
+                      label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
+        emit(buf);
     };
 
-    std::printf("\n=== Free-run stats (%d runs) ===\n", NUM_RUNS);
+    std::snprintf(buf, sizeof buf, "\n=== Free-run stats (%d runs) ===\n", num_runs);
+    emit(buf);
     report("VPT (lt)", vpt_lts, 2);
     report("free-run RMSE", rmses, 6);
     if (censored)
-        std::printf("  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
-                    "their VPT is counted at the window floor (a lower bound)\n",
-                    censored, vpt_lts.size(), config::VPT_THRESHOLD);
+    {
+        std::snprintf(buf, sizeof buf,
+                      "  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
+                      "their VPT is counted at the window floor (a lower bound)\n",
+                      censored, vpt_lts.size(), config::VPT_THRESHOLD);
+        emit(buf);
+    }
     if (invalid)
-        std::printf("  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
+    {
+        std::snprintf(buf, sizeof buf, "  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
+        emit(buf);
+    }
 
     // Summary tables. Rank the valid runs and print the two leaderboards; each row
     // is the run's own display line (seed / orbit_seed / VPT / RMSE).
@@ -502,31 +511,48 @@ int main()
 
     const size_t top_n = std::min<size_t>(10, valid.size());
 
-    std::printf("\n=== Top %zu lowest free-run RMSE ===\n", top_n);
+    std::snprintf(buf, sizeof buf, "\n=== Top %zu lowest free-run RMSE ===\n", top_n);
+    emit(buf);
     std::sort(valid.begin(), valid.end(),
               [](const FreeRunResult* a, const FreeRunResult* b) { return a->rmse < b->rmse; });
     for (size_t i = 0; i < top_n; i++)
-        std::fputs(valid[i]->row.c_str(), stdout);
+        emit(valid[i]->row.c_str());
 
-    std::printf("\n=== Top %zu highest VPT (lt) ===\n", top_n);
+    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest VPT (lt) ===\n", top_n);
+    emit(buf);
     std::sort(valid.begin(), valid.end(),
               [](const FreeRunResult* a, const FreeRunResult* b) { return a->vpt_lt > b->vpt_lt; });
     for (size_t i = 0; i < top_n; i++)
-        std::fputs(valid[i]->row.c_str(), stdout);
+        emit(valid[i]->row.c_str());
 
-    return 0;
-#else
+    return out;
+}
 
-    constexpr size_t NUM_SEEDS = 16;
-    std::vector<FreeRunResult> results(NUM_SEEDS); // one outcome per seed, filled in place
+int main()
+{
+    uint64_t seed = 13649419;
+    uint64_t orbit_seed = 5859834983498;
 
-    // Each seed's run is fully independent (its own ESN + datastream, no shared
-    // mutable state), so the survey parallelizes cleanly one-instance-per-thread.
-    // Workers pull seed indices off a shared atomic counter; a bounded pool
+    std::cout << "=== HypercubeESN: Lorenz ===\n";
+
+    // Concurrent trials: each trains its own ESN on a distinct seed and free-runs it,
+    // but all share the same starting orbit_seed, so every trial is scored against an
+    // identical sequence of held-out orbits (the ESN seed is the only independent
+    // variable). Per-run diagnostics are silenced so the trial reports — collected as
+    // strings and printed serially below — don't interleave.
+    config::ENABLE_PRINTF = false;
+
+    constexpr size_t NUM_TRIALS = 16;
+    constexpr int NUM_RUNS = 50;
+
+    // Each trial is fully independent (its own ESN + datastream, no shared mutable
+    // state), so the survey parallelizes cleanly one-instance-per-thread. Workers
+    // pull trial indices off a shared atomic counter; a bounded pool
     // (<= hardware_concurrency) avoids oversubscribing the cores.
-    std::atomic<size_t> next_seed{0};
+    std::vector<std::string> reports(NUM_TRIALS); // one report per trial, filled in place
+    std::atomic<size_t> next_trial{0};
     const unsigned hw = std::thread::hardware_concurrency();
-    const size_t num_threads = std::min<size_t>(NUM_SEEDS, hw ? hw : 1);
+    const size_t num_threads = std::min<size_t>(NUM_TRIALS, hw ? hw : 1);
 
     {
         std::vector<std::jthread> pool;
@@ -534,70 +560,15 @@ int main()
         for (size_t t = 0; t < num_threads; t++)
             pool.emplace_back([&]
             {
-                for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
-                {
-                    Lorenz lorenz(seed * i, orbit_seed);
-                    lorenz.Train();
-                    results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
-                }
+                for (size_t i = next_trial.fetch_add(1); i < NUM_TRIALS; i = next_trial.fetch_add(1))
+                    reports[i] = RunTrial(seed + i, orbit_seed, NUM_RUNS); // distinct ESN seed, shared orbit seed
             });
     } // jthreads join on scope exit
 
-    // Print the per-seed result table in seed order (independent of completion order).
-    std::printf("\n=== Seed survey (%zu seeds) ===\n", NUM_SEEDS);
-    for (size_t i = 0; i < NUM_SEEDS; i++)
-        std::fputs(results[i].row.c_str(), stdout);
-
-    // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
-    // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
-    // so the VPT stats are conservative when any run is censored (noted below).
-    std::vector<double> vpt_lts, rmses;
-    size_t censored = 0, invalid = 0;
-    for (const auto& r : results)
-    {
-        if (!r.valid)
-        {
-            ++invalid;
-            continue;
-        }
-        vpt_lts.push_back(r.vpt_lt);
-        rmses.push_back(r.rmse);
-        if (!r.crossed) ++censored;
-    }
-
-    auto report = [](const char* label, std::vector<double> v, int prec)
-    {
-        if (v.empty())
-        {
-            std::printf("  %-16s (no valid runs)\n", label);
-            return;
-        }
-        std::sort(v.begin(), v.end());
-        const size_t n = v.size();
-        double sum = 0.0;
-        for (double x : v) sum += x;
-        const double mean = sum / static_cast<double>(n);
-        double var = 0.0;
-        for (double x : v) var += (x - mean) * (x - mean);
-        var = n > 1 ? var / static_cast<double>(n - 1) : 0.0; // sample variance
-        const double sd = std::sqrt(var);
-        const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::printf("  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
-                    label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
-    };
-
-    std::printf("\n=== Survey stats ===\n");
-    report("VPT (lt)", vpt_lts, 2);
-    report("free-run RMSE", rmses, 6);
-    if (censored)
-        std::printf("  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
-                    "their VPT is counted at the window floor (a lower bound)\n",
-                    censored, vpt_lts.size(), config::VPT_THRESHOLD);
-    if (invalid)
-        std::printf("  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
+    // Print the trial reports in seed order (independent of completion order).
+    for (const auto& rep : reports)
+        std::fputs(rep.c_str(), stdout);
 
     Beep(2500, 3000); // single completion beep for the whole survey
-
     return 0;
-#endif
 }
