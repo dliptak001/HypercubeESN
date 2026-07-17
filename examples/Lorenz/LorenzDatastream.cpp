@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 
-LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
+LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print_header)
     : JanusCursor(cfg.cursor_span, cfg.cursor_center_index)
 {
     if (cfg.stream_length == 0)
@@ -15,6 +15,7 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
     if (cfg.lorenz_dt <= 0.0f)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting lorenz_dt > 0");
 
+    cfg_ = cfg;
     const int32_t window_lb = cfg.cursor_center_index - cfg.cursor_span / 2;
     const int32_t window_ub = cfg.cursor_center_index + cfg.cursor_span / 2;
     if (window_lb < 0)
@@ -35,19 +36,23 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg)
         std::string cell(buf);
         return std::string(14 - cell.size(), '.') + cell;
     };
-    std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  center=%d  H=%d  window=[%d, %d]\n",
-                N, cfg.lorenz_dt, cfg.cursor_center_index, H, window_lb, window_ub);
-    std::printf("  array index n:%14d%s%s%s%s\n", 0, dots(window_lb).c_str(),
-                dots(cfg.cursor_center_index).c_str(), dots(window_ub).c_str(),
-                dots(static_cast<long long>(N)).c_str());
-    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "|", "|", "|", "|", "|");
-    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "seed", "train edge", "anchor pt", "train edge", "stream end");
-    std::printf("%16s%14s%14s%14s%14s%14s\n", "", "T=0", "(lb)", "(center)", "(ub)", "(ub+E)");
-    std::printf("  region [0, %d) = past free-run runway (anchor history for the past cursor)\n", window_lb);
-    std::printf("  region [%d, %d] = training window (span %d)\n", window_lb, window_ub, cfg.cursor_span);
-    std::printf("  region (%d, %zu] = prediction / evaluation runway (E = %zu) - the future cursor\n",
-                window_ub, N, E);
-    std::printf("%16s goes GENERATIVE here: future input channels come from the ensemble's own output\n", "");
+
+    if (print_header)
+    {
+        std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  center=%d  H=%d  window=[%d, %d]\n",
+                    N, cfg.lorenz_dt, cfg.cursor_center_index, H, window_lb, window_ub);
+        std::printf("  array index n:%14d%s%s%s%s\n", 0, dots(window_lb).c_str(),
+                    dots(cfg.cursor_center_index).c_str(), dots(window_ub).c_str(),
+                    dots(static_cast<long long>(N)).c_str());
+        std::printf("%16s%14s%14s%14s%14s%14s\n", "", "|", "|", "|", "|", "|");
+        std::printf("%16s%14s%14s%14s%14s%14s\n", "", "seed", "train edge", "anchor pt", "train edge", "stream end");
+        std::printf("%16s%14s%14s%14s%14s%14s\n", "", "T=0", "(lb)", "(center)", "(ub)", "(ub+E)");
+        std::printf("  region [0, %d) = past free-run runway (anchor history for the past cursor)\n", window_lb);
+        std::printf("  region [%d, %d] = training window (span %d)\n", window_lb, window_ub, cfg.cursor_span);
+        std::printf("  region (%d, %zu] = prediction / evaluation runway (E = %zu) - the future cursor\n",
+                    window_ub, N, E);
+        std::printf("%16s goes GENERATIVE here: future input channels come from the ensemble's own output\n", "");
+    }
 }
 
 LorenzDatastreamResult LorenzDatastream::States()
@@ -62,6 +67,11 @@ LorenzDatastreamResult LorenzDatastream::Step()
     if (past < 0)
         throw std::out_of_range("LorenzDatastream::Step - free-run outran the anchor history");
     return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
+}
+
+void LorenzDatastream::PrintOrbit()
+{
+    cfg_.initial_lorenz_state.print();
 }
 
 std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_length,

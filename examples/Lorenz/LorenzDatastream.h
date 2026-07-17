@@ -30,14 +30,18 @@ struct LorenzDatastreamConfig
 class LorenzDatastream : public JanusCursor
 {
 public:
-    LorenzDatastream(const LorenzDatastreamConfig& cfg);
+    LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print_header = false);
 
     [[nodiscard]] LorenzDatastreamResult States();
     LorenzDatastreamResult Step();
 
     [[nodiscard]] const std::vector<NormalizedState>& GetDataStream() const { return data_stream_; }
 
+    void PrintOrbit();
+
 private:
+    LorenzDatastreamConfig cfg_;
+
     std::vector<NormalizedState> data_stream_;
 
     [[nodiscard]] std::vector<LorenzAttractor::State> Build(size_t stream_length,

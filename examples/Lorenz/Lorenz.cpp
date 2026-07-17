@@ -23,8 +23,8 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     // each [x, y, z, x*z] of its cursor (real past / real-or-predicted future). The
     // feedback port carries its own gain + weight realization; at FEEDBACK_SCALING=0
     // the future contributes nothing and the reservoir runs on the past block alone.
-    cfg.reservoir.num_inputs = 4;             // [x_past, y_past, z_past, x_past*z_past]
-    cfg.reservoir.num_feedback_channels = 4;  // [x_fut,  y_fut,  z_fut,  x_fut*z_fut ]
+    cfg.reservoir.num_inputs = 4; // [x_past, y_past, z_past, x_past*z_past]
+    cfg.reservoir.num_feedback_channels = 4; // [x_fut,  y_fut,  z_fut,  x_fut*z_fut ]
     cfg.reservoir.feedback_scaling = config::FEEDBACK_SCALING;
     cfg.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
     cfg.reservoir.input_scaling = config::INPUT_SCALING;
@@ -62,10 +62,11 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State* orbi
     return cfg;
 }
 
-Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed), orbit_(orbit),
-                                                                     esn_config_(MakeESNConfig(seed_)),
-                                                                     esn_(esn_config_),
-                                                                     data_stream_(MakeDatastreamConfig(orbit_))
+Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed, LorenzAttractor::State* orbit) : seed_(seed),
+    orbit_seed_(orbit_seed),
+    orbit_(orbit),
+    esn_config_(MakeESNConfig(seed_)),
+    esn_(esn_config_)
 {
     if (config::ENABLE_PRINTF)
     {
@@ -89,7 +90,36 @@ Lorenz::Lorenz(const uint64_t seed, LorenzAttractor::State* orbit) : seed_(seed)
         std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                     config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                     config::RESERVOIR_WARMUP_STEPS);
+
+        data_stream_ = new LorenzDatastream(MakeDatastreamConfig(orbit_));
     }
+}
+
+// SplitMix64 finalizer. Avalanches a 64-bit value so that substreams labelled
+// off one master seed are statistically independent (one input bit flips ~half
+// the output bits). Replaces the old folklore of forking mt19937 by small
+// additive offsets (seed + 0x9E3779B9, seed + 12345), which gave no such
+// guarantee, and the separate bias_seed config field it papered over.
+static inline uint64_t mix64(uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+void Lorenz::RebuildDatastream(bool verbose)
+{
+    orbit_seed_ = mix64(orbit_seed_ ^ (0x100000001B3ULL));
+    std::mt19937_64 rng(orbit_seed_);
+    std::uniform_real_distribution<double> dist(-0.999, 0.999);
+    std::uniform_real_distribution<double> dist_uni(0.0, 0.999);
+    LorenzAttractor::State orbit{
+        static_cast<float>(dist(rng)), static_cast<float>(dist(rng)), static_cast<float>(dist_uni(rng))
+    };
+    data_stream_ = new LorenzDatastream(MakeDatastreamConfig(&orbit));
+    if (verbose)
+        data_stream_->PrintOrbit();
 }
 
 void Lorenz::ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states)
@@ -97,7 +127,7 @@ void Lorenz::ExtractPast(float past[4], const LorenzDatastreamResult& past_futur
     past[0] = std::get<1>(past_future_states).x; // past x
     past[1] = std::get<1>(past_future_states).y; // past y
     past[2] = std::get<1>(past_future_states).z; // past z
-    past[3] = past[0] * past[2];                 // past x*z (nonlinear term)
+    past[3] = past[0] * past[2]; // past x*z (nonlinear term)
 }
 
 void Lorenz::ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states)
@@ -105,7 +135,7 @@ void Lorenz::ExtractFutureReal(float future[4], const LorenzDatastreamResult& pa
     future[0] = std::get<2>(past_future_states)->x; // future x (teacher-forced)
     future[1] = std::get<2>(past_future_states)->y; // future y
     future[2] = std::get<2>(past_future_states)->z; // future z
-    future[3] = future[0] * future[2];              // future x*z (nonlinear term)
+    future[3] = future[0] * future[2]; // future x*z (nonlinear term)
 }
 
 void Lorenz::ExtractFuturePredicted(float future[4], const float* prediction)
@@ -156,11 +186,11 @@ float Lorenz::ScheduledSamplingProfile(const float ceiling, const size_t epochs,
 
 void Lorenz::Train()
 {
-    float past[4] = {};    // input-port drive: [past x, y, z, x*z]
-    float future[4] = {};  // feedback-port drive: [future x, y, z, x*z] (real; prediction under 2b)
+    float past[4] = {}; // input-port drive: [past x, y, z, x*z]
+    float future[4] = {}; // feedback-port drive: [future x, y, z, x*z] (real; prediction under 2b)
     float targets[3] = {};
     float outputs[3] = {}; // the model's pre-update prediction (prequential read)
-    float u_past[3] = {};  // auxiliary readout input: normalized past (x,y,z)
+    float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
     // nullptr when the readout has no aux block — ESN rejects a stray u_raw, and an aux
     // block is never silently zeroed. `aux` aliases u_past, so it tracks each refill.
     const float* const aux = (config::AUX_INPUT_DIM > 0) ? u_past : nullptr;
@@ -177,25 +207,27 @@ void Lorenz::Train()
 
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
+        RebuildDatastream(true);
+
         // Step 1: warm up the reservoir open-loop, teacher-forced, no readout update.
-        data_stream_.Reset();
+        data_stream_->Reset();
         const float lr = LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i);
         // 2b: this epoch's probability of substituting the model's own prediction
         // on the future channels (0 when the ceiling is 0, i.e. 2b disabled).
         const float ss_p = ScheduledSamplingProfile(config::SCHEDULED_SAMPLING_CEILING, config::EPOCHS, i);
-        LorenzDatastreamResult past_future_states = data_stream_.States();
+        LorenzDatastreamResult past_future_states = data_stream_->States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
             esn_.ReservoirStep(past, future); // teacher-forced: past->input, real future->feedback
-            past_future_states = data_stream_.Step();
+            past_future_states = data_stream_->Step();
         }
 
         // Step 2: Train - train towards future state targets
         double sq_err_sum = 0.0; // double accumulator: ~15K float-sized terms/epoch
         size_t train_steps = 0;
-        while (!data_stream_.OOB())
+        while (!data_stream_->OOB())
         {
             // Horizon-1 alignment: predict at x(t) BEFORE injecting this call's
             // inputs, so x(t) has seen the future channel only through S[f-1]. The
@@ -239,7 +271,7 @@ void Lorenz::Train()
             future[3] = future[0] * future[2];
 
             esn_.TrainStep(targets, lr, 0.0f, aux); // fit the readout on x(t)
-            esn_.ReservoirStep(past, future);       // step to x(t+1)
+            esn_.ReservoirStep(past, future); // step to x(t+1)
 
             // Prequential (test-then-train) error: `outputs` is the pre-update
             // prediction of this call's own target — the pairing is exact.
@@ -250,7 +282,7 @@ void Lorenz::Train()
             }
             ++train_steps;
 
-            past_future_states = data_stream_.Step();
+            past_future_states = data_stream_->Step();
         }
 
         if (config::ENABLE_PRINTF)
@@ -265,27 +297,29 @@ void Lorenz::Train()
     }
 }
 
-FreeRunResult Lorenz::FreeRun()
+FreeRunResult Lorenz::FreeRun(bool verbose)
 {
-    float past[4] = {};    // input-port drive: [past x, y, z, x*z]
-    float future[4] = {};  // feedback-port drive: [x, y, z, x*z] of the model's prediction
+    float past[4] = {}; // input-port drive: [past x, y, z, x*z]
+    float future[4] = {}; // feedback-port drive: [x, y, z, x*z] of the model's prediction
     float targets[3] = {};
     float outputs[3] = {}; // the model's generative prediction each step
-    float u_past[3] = {};  // auxiliary readout input: normalized past (x,y,z)
+    float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
     // nullptr when the readout has no aux block (see Train). Aliases u_past.
     const float* const aux = (config::AUX_INPUT_DIM > 0) ? u_past : nullptr;
+
+    RebuildDatastream(false);
 
     // Stage 1: anchored washout. Re-sweep the training window once, teacher-forced
     // but inference-only (no readout updates), so the reservoir crosses into the
     // generative region warm and in-distribution.
-    data_stream_.Reset();
-    LorenzDatastreamResult past_future_states = data_stream_.States();
-    while (!data_stream_.OOB())
+    data_stream_->Reset();
+    LorenzDatastreamResult past_future_states = data_stream_->States();
+    while (!data_stream_->OOB())
     {
         ExtractPast(past, past_future_states);
         ExtractFutureReal(future, past_future_states);
         esn_.ReservoirStep(past, future); // teacher-forced anchored washout
-        past_future_states = data_stream_.Step();
+        past_future_states = data_stream_->Step();
     }
 
     // Stage 2: generative rollout, single-ESN self-feedback closed loop. The future
@@ -294,34 +328,34 @@ FreeRunResult Lorenz::FreeRun()
     // the past cursor stays anchored to real history. Predict() reads the prediction
     // at the current state, ExtractFuturePredicted feeds it onto the feedback port,
     // then ReservoirStep absorbs it; the prediction is scored against the true orbit.
-    const std::vector<NormalizedState>& S = data_stream_.GetDataStream();
+    const std::vector<NormalizedState>& S = data_stream_->GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
-    if (config::ENABLE_PRINTF)
+    /*if (config::ENABLE_PRINTF)
     {
         std::printf("[FreeRun] generative: %zu steps (%.1f Lyapunov times)  vpt_threshold %.2f\n",
                     config::FREE_RUN_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE / steps_per_lt,
                     config::VPT_THRESHOLD);
         std::printf("[FreeRun] drive: self-feedback (own prediction fed on the future channels)\n");
-    }
+    }*/
 
     double sq_err_sum = 0.0;
     size_t steps = 0;
     size_t vpt_steps = 0; // first step whose error exceeded VPT_THRESHOLD (0 = never)
     for (size_t j = 0; j < config::FREE_RUN_WINDOW_SIZE; j++)
     {
-        const int32_t f = data_stream_.Indices().second; // this step's held-out truth index
+        const int32_t f = data_stream_->Indices().second; // this step's held-out truth index
         if (f < 0 || static_cast<size_t>(f) >= S.size())
         {
-            if (config::ENABLE_PRINTF)
+            if (config::ENABLE_PRINTF && verbose)
                 std::printf("[FreeRun] runway exhausted after %zu steps - stream ends\n", steps);
             break;
         }
 
-        ExtractAuxPast(u_past, past_future_states);       // u_raw for this Predict
-        esn_.Predict(outputs, aux);                       // the prediction of S[f]
-        ExtractPast(past, past_future_states);            // anchored past -> input port
-        ExtractFuturePredicted(future, outputs);          // own prediction -> feedback port
-        esn_.ReservoirStep(past, future);                 // absorb the fed-back prediction
+        ExtractAuxPast(u_past, past_future_states); // u_raw for this Predict
+        esn_.Predict(outputs, aux); // the prediction of S[f]
+        ExtractPast(past, past_future_states); // anchored past -> input port
+        ExtractFuturePredicted(future, outputs); // own prediction -> feedback port
+        esn_.ReservoirStep(past, future); // absorb the fed-back prediction
 
         // Score against the true held-out orbit (normalized units).
         ExtractTargets(targets, S[f]);
@@ -337,18 +371,18 @@ FreeRunResult Lorenz::FreeRun()
         const double step_err = std::sqrt(step_sq / 3.0);
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
-        if (config::ENABLE_PRINTF && steps % 25 == 0)
+        if (verbose && config::ENABLE_PRINTF && steps % 25 == 0)
             std::printf("free-run %4zu  (%5.2f lt)  err %.6f\n", steps, steps / steps_per_lt, step_err);
 
         if (steps == config::FREE_RUN_WINDOW_SIZE)
             break; // done - don't step the cursors past the last scored index
-        if (data_stream_.Indices().first <= 0)
+        if (data_stream_->Indices().first <= 0)
         {
-            if (config::ENABLE_PRINTF)
+            if (verbose && config::ENABLE_PRINTF)
                 std::printf("[FreeRun] anchor runway exhausted after %zu steps - past cursor at the seed\n", steps);
             break;
         }
-        past_future_states = data_stream_.Step();
+        past_future_states = data_stream_->Step();
     }
 
     if (steps == 0)
@@ -363,12 +397,12 @@ FreeRunResult Lorenz::FreeRun()
     char buf[256];
     if (crossed)
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu  VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f  (%zu steps)\n",
-                      static_cast<unsigned long long>(seed_), vpt_steps, vpt_lt, rmse, steps);
+                      "seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f\n",
+                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_), vpt_steps, vpt_lt, rmse);
     else
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu  VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
-                      static_cast<unsigned long long>(seed_), steps, vpt_lt, rmse, config::VPT_THRESHOLD);
+                      "seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
+                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_), steps, vpt_lt, rmse, config::VPT_THRESHOLD);
 
     FreeRunResult r;
     r.valid = true;
@@ -384,20 +418,101 @@ FreeRunResult Lorenz::FreeRun()
 
 int main()
 {
+    uint64_t seed = 13649419;
+    uint64_t orbit_seed = 5859834983498;
+
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
 
-#if 0
+#if 1
     Beep(2500, 1000); // single completion beep for the whole survey
-    Lorenz lorenz(13649419);
+    Lorenz lorenz(seed, orbit_seed);
     lorenz.Train();
-    const FreeRunResult r = lorenz.FreeRun();
 
-    std::printf("\n=== Single run ===\n");
-    if (r.valid)
-        std::fputs(r.row.c_str(), stdout); // seed / VPT steps / Lyapunov time / free-run RMSE
-    else
-        std::printf("[Single run] no steps scored\n");
+    constexpr int NUM_RUNS = 50;
+    std::vector<FreeRunResult> results; // one outcome per free-run (RebuildDatastream re-mixes the orbit each call)
+    results.reserve(NUM_RUNS);
+    for (int i = 0; i < NUM_RUNS; i++)
+    {
+        FreeRunResult r = lorenz.FreeRun(false);
+
+        //std::printf("\n=== Single run ===\n");
+        if (r.valid)
+            std::fputs(r.row.c_str(), stdout); // seed / VPT steps / Lyapunov time / free-run RMSE
+        else
+            std::printf("[Single run] no steps scored\n");
+
+        results.push_back(std::move(r)); // keep every run (invalid ones are filtered out of the stats below)
+    }
+
+    // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
+    // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
+    // so the VPT stats are conservative when any run is censored (noted below).
+    std::vector<double> vpt_lts, rmses;
+    size_t censored = 0, invalid = 0;
+    for (const auto& r : results)
+    {
+        if (!r.valid)
+        {
+            ++invalid;
+            continue;
+        }
+        vpt_lts.push_back(r.vpt_lt);
+        rmses.push_back(r.rmse);
+        if (!r.crossed) ++censored;
+    }
+
+    auto report = [](const char* label, std::vector<double> v, int prec)
+    {
+        if (v.empty())
+        {
+            std::printf("  %-16s (no valid runs)\n", label);
+            return;
+        }
+        std::sort(v.begin(), v.end());
+        const size_t n = v.size();
+        double sum = 0.0;
+        for (double x : v) sum += x;
+        const double mean = sum / static_cast<double>(n);
+        double var = 0.0;
+        for (double x : v) var += (x - mean) * (x - mean);
+        var = n > 1 ? var / static_cast<double>(n - 1) : 0.0; // sample variance
+        const double sd = std::sqrt(var);
+        const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+        std::printf("  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
+                    label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
+    };
+
+    std::printf("\n=== Free-run stats (%d runs) ===\n", NUM_RUNS);
+    report("VPT (lt)", vpt_lts, 2);
+    report("free-run RMSE", rmses, 6);
+    if (censored)
+        std::printf("  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
+                    "their VPT is counted at the window floor (a lower bound)\n",
+                    censored, vpt_lts.size(), config::VPT_THRESHOLD);
+    if (invalid)
+        std::printf("  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
+
+    // Summary tables. Rank the valid runs and print the two leaderboards; each row
+    // is the run's own display line (seed / orbit_seed / VPT / RMSE).
+    std::vector<const FreeRunResult*> valid;
+    valid.reserve(results.size());
+    for (const auto& r : results)
+        if (r.valid) valid.push_back(&r);
+
+    const size_t top_n = std::min<size_t>(10, valid.size());
+
+    std::printf("\n=== Top %zu lowest free-run RMSE ===\n", top_n);
+    std::sort(valid.begin(), valid.end(),
+              [](const FreeRunResult* a, const FreeRunResult* b) { return a->rmse < b->rmse; });
+    for (size_t i = 0; i < top_n; i++)
+        std::fputs(valid[i]->row.c_str(), stdout);
+
+    std::printf("\n=== Top %zu highest VPT (lt) ===\n", top_n);
+    std::sort(valid.begin(), valid.end(),
+              [](const FreeRunResult* a, const FreeRunResult* b) { return a->vpt_lt > b->vpt_lt; });
+    for (size_t i = 0; i < top_n; i++)
+        std::fputs(valid[i]->row.c_str(), stdout);
 
     return 0;
 #else
@@ -421,7 +536,7 @@ int main()
             {
                 for (size_t i = next_seed.fetch_add(1); i < NUM_SEEDS; i = next_seed.fetch_add(1))
                 {
-                    Lorenz lorenz(13649419 + 33 * i);
+                    Lorenz lorenz(seed * i, orbit_seed);
                     lorenz.Train();
                     results[i] = lorenz.FreeRun(); // disjoint slot — no lock needed
                 }
