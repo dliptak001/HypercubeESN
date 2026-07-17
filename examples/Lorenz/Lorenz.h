@@ -5,6 +5,7 @@
 #include "LorenzDatastream.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 // ============================================================================
@@ -148,7 +149,7 @@ private:
 
     ESNConfig esn_config_;
     ESN esn_;
-    LorenzDatastream* data_stream_;
+    std::unique_ptr<LorenzDatastream> data_stream_; // rebuilt each epoch / free-run; owns the current stream
 
     void RebuildDatastream(bool verbose);
 

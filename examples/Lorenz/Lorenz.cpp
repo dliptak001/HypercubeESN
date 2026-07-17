@@ -2,11 +2,11 @@
 #include "LorenzDatastream.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <string>
 #include <thread>
@@ -91,9 +91,9 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed, LorenzAttractor::State*
         std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                     config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                     config::RESERVOIR_WARMUP_STEPS);
-
-        data_stream_ = new LorenzDatastream(MakeDatastreamConfig(orbit_));
     }
+    // data_stream_ is left null here: Train() and FreeRun() each RebuildDatastream()
+    // (fresh orbit) before first use, so there is nothing to allocate at construction.
 }
 
 // SplitMix64 finalizer. Avalanches a 64-bit value so that substreams labelled
@@ -118,7 +118,7 @@ void Lorenz::RebuildDatastream(bool verbose)
     LorenzAttractor::State orbit{
         static_cast<float>(dist(rng)), static_cast<float>(dist(rng)), static_cast<float>(dist_uni(rng))
     };
-    data_stream_ = new LorenzDatastream(MakeDatastreamConfig(&orbit));
+    data_stream_ = std::make_unique<LorenzDatastream>(MakeDatastreamConfig(&orbit)); // frees the previous stream
     if (verbose)
         data_stream_->PrintOrbit();
 }
@@ -534,50 +534,39 @@ int main(int argc, char** argv)
 
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
-    // Concurrent trials: each trains its own ESN on a distinct seed and free-runs it,
-    // but all share the same starting orbit_seed, so every trial is scored against an
-    // identical sequence of held-out orbits (the ESN seed is the only independent
+    // One trial per thread: each trains its own ESN on a distinct seed and free-runs
+    // it, but all share the same starting orbit_seed, so every trial is scored against
+    // an identical sequence of held-out orbits (the ESN seed is the only independent
     // variable). Per-run diagnostics are silenced so the trial reports — collected as
     // strings and printed serially below — don't interleave.
     config::ENABLE_PRINTF = false;
 
-    constexpr size_t NUM_TRIALS = 16;
-
-    // Optional positional CLI overrides: argv[1] = worker thread count, argv[2] =
-    // free-runs per trial. Each is applied only when present and in range; anything
-    // absent, non-numeric, or out of range keeps the default.
-    const unsigned hw = std::thread::hardware_concurrency();
-    size_t num_threads = std::min<size_t>(NUM_TRIALS, hw ? hw : 1); // workers, capped at NUM_TRIALS
-    int num_runs = 50; // free-runs per trial
+    // Optional positional CLI overrides (applied only when present and in range):
+    //   argv[1] = NUM_THREADS — parallel trials, one ESN seed each (default = hardware_concurrency)
+    //   argv[2] = NUM_RUNS    — free-runs accumulated per trial      (default = 50)
+    const size_t hw = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1;
+    const size_t max_threads = 4 * hw; // guard against a fat-fingered arg spawning a thread stampede
+    size_t num_threads = hw;
+    int num_runs = 50;
     if (argc > 1)
     {
         const int arg = std::atoi(argv[1]);
-        if (arg > 0)
-            num_threads = std::min<size_t>(NUM_TRIALS, static_cast<size_t>(arg));
+        if (arg > 0) num_threads = std::min<size_t>(max_threads, static_cast<size_t>(arg));
     }
     if (argc > 2)
     {
         const int arg = std::atoi(argv[2]);
-        if (arg > 1)
-            num_runs = arg;
+        if (arg > 1) num_runs = arg;
     }
 
     // Each trial is fully independent (its own ESN + datastream, no shared mutable
-    // state), so the survey parallelizes cleanly one-instance-per-thread. Workers
-    // pull trial indices off a shared atomic counter; a bounded pool
-    // (<= NUM_TRIALS) avoids spawning idle threads.
-    std::vector<std::string> reports(NUM_TRIALS); // one report per trial, filled in place
-    std::atomic<size_t> next_trial{0};
-
+    // state), so no locking is needed — each thread writes its own report slot.
+    std::vector<std::string> reports(num_threads); // one report per trial (= per thread)
     {
         std::vector<std::jthread> pool;
         pool.reserve(num_threads);
         for (size_t t = 0; t < num_threads; t++)
-            pool.emplace_back([&]
-            {
-                for (size_t i = next_trial.fetch_add(1); i < NUM_TRIALS; i = next_trial.fetch_add(1))
-                    reports[i] = RunTrial(seed + i, orbit_seed, num_runs); // distinct ESN seed, shared orbit seed
-            });
+            pool.emplace_back([&, t] { reports[t] = RunTrial(seed + t, orbit_seed, num_runs); }); // distinct ESN seed, shared orbit seed
     } // jthreads join on scope exit
 
     // Print the trial reports in seed order (independent of completion order).
