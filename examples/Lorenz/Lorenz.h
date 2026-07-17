@@ -121,8 +121,9 @@ struct FreeRunResult
 class Lorenz
 {
 public:
-    /// Builds the ESN and the datastream from the config:: constants.
-    Lorenz(uint64_t seed, uint64_t orbit_seed, LorenzAttractor::State* orbit  = nullptr);
+    /// Builds the ESN from the config:: constants. The datastream is allocated later
+    /// by Train() / FreeRun() via RebuildDatastream (fresh orbit each call).
+    Lorenz(uint64_t seed, uint64_t orbit_seed);
 
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
     /// window, printing one line per epoch: the learning rate and the prequential
@@ -145,7 +146,6 @@ public:
 
 private:
     uint64_t seed_, orbit_seed_;
-    LorenzAttractor::State* orbit_;
 
     ESNConfig esn_config_;
     ESN esn_;
@@ -175,8 +175,9 @@ private:
     /// Assembles the ESN config from the config:: constants.
     static ESNConfig MakeESNConfig(uint64_t seed);
 
-    /// Assembles the LorenzDatastream config from the config:: constants.
-    static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State* orbit);
+    /// Assembles the LorenzDatastream config from the config:: constants and a
+    /// by-value orbit seed state (owned by the caller for this call only).
+    static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State orbit);
 
     /// Per-epoch learning-rate schedule: cosine-anneal (CosineLR) from lr_max at
     /// epoch 0 down to lr_min at 75% of the run, then held flat at lr_min for the

@@ -62,7 +62,9 @@ struct LorenzDatastreamConfig
 ///        (anchor history)     (past & future cursors     (future cursor's
 ///                              sweep this span)            generative tail)
 ///
-///   @ref States  -> {Distance, stream[past], &stream[future]} at the current spot
+///   @ref States  -> {Distance, stream[past], &stream[future]} at the current spot;
+///                   future is nullptr when OOB (same pointer contract as Step — never
+///                   forms an out-of-window address). Throws if past has underrun.
 ///   @ref Step    -> advances both cursors, then returns the same triple; the future
 ///                   pointer is nullptr once the future cursor runs off the window
 ///                   (OOB), and Step throws if the past cursor underruns its history.

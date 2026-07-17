@@ -49,23 +49,19 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     return cfg;
 }
 
-LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State* orbit)
+LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State orbit)
 {
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
     cfg.cursor_span = config::TRAINING_WINDOW_SIZE;
     cfg.cursor_center_index = config::CURSOR_CENTER_INDEX;
-    if (orbit == nullptr)
-        cfg.initial_lorenz_state = config::INITIAL_LORENZ_STATE;
-    else
-        cfg.initial_lorenz_state = *orbit;
+    cfg.initial_lorenz_state = orbit; // by value — no non-owning pointer into caller storage
     cfg.lorenz_dt = config::DT;
     return cfg;
 }
 
-Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed, LorenzAttractor::State* orbit) : seed_(seed),
+Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
     orbit_seed_(orbit_seed),
-    orbit_(orbit),
     esn_config_(MakeESNConfig(seed_)),
     esn_(esn_config_)
 {
@@ -116,9 +112,9 @@ void Lorenz::RebuildDatastream(bool verbose)
     std::uniform_real_distribution<double> dist(-0.999, 0.999);
     std::uniform_real_distribution<double> dist_uni(0.0, 0.999);
     LorenzAttractor::State orbit{
-        static_cast<float>(dist(rng)), static_cast<float>(dist(rng)), static_cast<float>(dist_uni(rng))
+        dist(rng), dist(rng), dist_uni(rng)
     };
-    data_stream_ = std::make_unique<LorenzDatastream>(MakeDatastreamConfig(&orbit)); // frees the previous stream
+    data_stream_ = std::make_unique<LorenzDatastream>(MakeDatastreamConfig(orbit)); // frees the previous stream
     if (verbose)
         data_stream_->PrintOrbit();
 }
@@ -219,6 +215,10 @@ void Lorenz::Train()
         LorenzDatastreamResult past_future_states = data_stream_->States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
+            // Stop if the future cursor has left the training window — ExtractFutureReal
+            // requires a non-null teacher sample. Happens only if warmup >= remaining span.
+            if (data_stream_->OOB())
+                break;
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
             esn_.ReservoirStep(past, future); // teacher-forced: past->input, real future->feedback

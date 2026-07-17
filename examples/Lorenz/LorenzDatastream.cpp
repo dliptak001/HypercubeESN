@@ -59,8 +59,13 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
 
 LorenzDatastreamResult LorenzDatastream::States()
 {
+    // Mirror Step()'s pointer contract: never form a future* outside the in-window
+    // range. After the future cursor goes OOB (generative region), future is nullptr
+    // so callers cannot dereference a dangling or out-of-bounds address.
     auto [past, future] = Indices();
-    return {Distance(), data_stream_[past], &data_stream_[future]};
+    if (past < 0)
+        throw std::out_of_range("LorenzDatastream::States - past cursor underran the stream");
+    return {Distance(), data_stream_[past], OOB() ? nullptr : &data_stream_[future]};
 }
 
 LorenzDatastreamResult LorenzDatastream::Step()

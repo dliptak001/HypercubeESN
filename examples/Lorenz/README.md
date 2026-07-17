@@ -288,11 +288,6 @@ epochs × many free-runs is heavy).
 **Is not:**
 
 - Unassisted Pathak-style free-run VPT without an anchor (do not claim that)
-- Center-mirror `±i` free-run from a shared present (older design; not this code)
-- Reflecting multi-sweep cursor physics
-- Seamless “end training at center → free-run without `Reset`”
-- The older single-stream harness recorded in `docs/LorenzFreeRun.md` (A-vs-tanh
-  campaign notes; geometry and I/O there do not match this Janus code)
 
 ---
 
