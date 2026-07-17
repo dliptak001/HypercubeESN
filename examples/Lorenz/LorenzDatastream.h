@@ -27,13 +27,21 @@ struct LorenzDatastreamResult
                                              ///< out of in-window data (OOB). Callers MUST null-check before deref.
 };
 
+/// @brief Construction parameters for @ref LorenzDatastream: how long an orbit to
+/// integrate and where the Janus cursor window sits on it.
+///
+/// The three geometry fields default to 0 as tripwires, not usable values — a
+/// default-constructed config is REQUIRED to be filled in, and passing one as-is
+/// throws from the LorenzDatastream / JanusCursor constructors (span > 0,
+/// stream_length > 0, window within [0, stream_length]). Only the orbit fields
+/// (initial state, dt) carry sensible defaults.
 struct LorenzDatastreamConfig
 {
-    int32_t cursor_span = 0;
-    int32_t cursor_center_index = 0;
-    size_t stream_length = 0;
-    LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5};
-    float lorenz_dt = 0.02;
+    int32_t cursor_span = 0;        ///< width of the Janus training window (must be > 0)
+    int32_t cursor_center_index = 0;///< stream index the window is centered on (must exceed span/2)
+    size_t stream_length = 0;       ///< number of RK4 steps to integrate (stream holds stream_length + 1 samples)
+    LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5}; ///< orbit initial condition
+    float lorenz_dt = 0.02;         ///< RK4 integration step (canonical Lorenz-63 dt)
 };
 
 /// @brief The Lorenz example's data source: integrates one Lorenz-63 orbit,

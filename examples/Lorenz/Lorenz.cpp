@@ -529,7 +529,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
 
 int main(int argc, char** argv)
 {
-    uint64_t seed = 13649419;
+    uint64_t seed = 5941978990;
     uint64_t orbit_seed = 5859834983498;
 
     std::cout << "=== HypercubeESN: Lorenz ===\n";
@@ -547,7 +547,7 @@ int main(int argc, char** argv)
     const size_t hw = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1;
     const size_t max_threads = 4 * hw; // guard against a fat-fingered arg spawning a thread stampede
     size_t num_threads = hw;
-    int num_runs = 50;
+    int num_runs = 2000;
     if (argc > 1)
     {
         const int arg = std::atoi(argv[1]);

@@ -1,311 +1,362 @@
-# The Janus Cursor Method for Half-Anchored Generative Free-Run
+# Janus Cursor — code-faithful reference
 
-> Design spec for the **Janus Cursor**: a dual-cursor scheme for reservoir free-run
-> prediction. The mechanism below is settled; open design points are
-> tracked in §7 and `?` marks anything still inferred rather than decided.
+ | Layer | Files |
+ |-------|--------|
+ | Index motion | `JanusCursor.h` |
+ | Orbit + normalization | `LorenzDatastream.{h,cpp}` |
+ | Ports, train, free-run, scoring | `Lorenz.{h,cpp}`, `config::` in `Lorenz.h` |
 
-**Method vs. instantiation.** The Janus Cursor method is **system-agnostic** — it works for any time
-series an array can hold (the cursor's only contract is `value(position)`). This document
-instantiates it on **Lorenz-63** throughout: `S[·]` is a Lorenz orbit, the channels are
-`(x, y, z, x·z)`, and the normalization figures are Lorenz's. Read the *mechanism* as generic and
-the *Lorenz specifics* as the worked example. (When this spec becomes the Lorenz module's README,
-that split must be stated explicitly, not just implied.)
+**Method vs. instantiation.** Cursor geometry is system-agnostic: any array that
+supports `value(index)` can sit under the dual indices. This module instantiates
+the method on **Lorenz-63**. Read the *geometry and protocol* as generic; read
+Lorenz channels, RK4, and Lyapunov scoring as the worked example.
 
-## Name & rationale
-
-**Janus Cursor** (use "the Janus Cursor method" when context needs the noun). The **method** is
-"Janus Cursor" (this spec, `JanusCursor.md`); the **class** implementing only the cursor traversal
-is `JanusCursor` (`JanusCursor.{h,cpp}`).
-
-- **Janus** — the two-faced Roman god of thresholds, one face to the past, one to the future.
+---
 
 ## 0. One-paragraph statement
 
-We drive an ESN with **two cursors** that index a single **precomputed** positive-time
-Lorenz trajectory `S[·]`, moving symmetrically in opposite directions around a shared **center** index. Each cursor emits a
-4-vector `(x, y, z, x·z)`, so the input is **8-D**. In training the cursors stay inside a
-**window**. In free-run they break out of the window and run
-away from center: the **future** cursor walks into the *unknown future* and becomes
-**generative** (fed by the ESN's own prediction), while the **past** cursor walks into
-the *known past* and stays **ground-truth** — a real signal that anchors half the input
-space and keeps the generative half from drifting off the attractor.
+We drive an ESN with **two cursors** over a single **precomputed, positive-time**
+trajectory `S[·]`. On each pass they start at **opposite ends** of a training
+window and walk toward (then past) each other: past decrements from the right
+edge, future increments from the left edge. Each cursor contributes a 4-vector
+`(x, y, z, x·z)`, so the drive is **8-D**, split across two reservoir ports:
 
-Everything is positive-time. The data stream is integrated **once** from the seed into an array;
-the cursors only ever **read indices**.
+- **input port** ← past block (always real history — the **anchor**)
+- **feedback port** ← future block (real in training; **model prediction** once
+  the future cursor leaves the window)
 
-**Cursor names vs. roles.** The two cursors are named by the *temporal direction* they scan
-and described by *role* (which only applies in free-run):
+Training is multi-epoch: each epoch `Reset()`s the cursors and sweeps the window
+once, teacher-forced, learning a horizon-1 map to the **future** sample. Free-run
+is self-contained: `Reset()`, re-sweep the window teacher-forced (washout), then
+close the loop on the feedback port while the past cursor keeps reading real
+history. Half-anchored free-run is **assisted** closed-loop prediction, not
+unassisted autonomous free-run.
+
+---
+
+## 1. Stream geometry (one array, three regions)
+
+Everything is positive time. At setup, Lorenz-63 is integrated **once** with
+fixed-step RK4 from a seed state; cursors only **read indices**.
+
+Default `config::` layout (`Lorenz.h`):
 
 ```
- future_cursor_  →  GENERATIVE half in free-run
- past_cursor_    →  ANCHOR half, always real
+ TRAINING_WINDOW_SIZE  = span = 20000
+ FREE_RUN_WINDOW_SIZE  = E    = 2000
+ CURSOR_CENTER_INDEX   = E + span/2 = 12000
+ STREAM_LENGTH         = 2E + span  = 24000
 ```
 
-
-## 1. Four regions, one center
-
 ```
- array index n:   0 ······· lb ····· center ····· ub ········· ub+E
- S[n]:           [S₀ ······ Sₗ ······· S_c ······· Sᵤ ········· Sₑ ]   ← integrated ONCE from seed
+ array index n:   0 ······· lb ····· center ····· ub ········· stream end
                   │         │           │           │            │
-                 seed   train edge   anchor pt   train edge   eval horizon
-                 T=0       (lb)       (center)      (ub)        (ub+E)
+                 seed   train edge   midpoint   train edge   eval / free-run
+                 T=0       (lb)       (center)      (ub)         tail
 
- center = N_c (an INDEX, not a state)     window = [lb, ub] = [N_c−H, N_c+H],  H = span/2
-   region [0, lb)    = past free-run runway
-   region [lb, ub]   = training window
-   region (ub, ub+E] = PREDICTION / EVALUATION window — the future cursor goes GENERATIVE
-                       here, so the upper-4 inputs are the model's own output
+ lb     = center − span/2
+ ub     = center + span/2
+ window = [lb, ub]     training / washout window (span samples wide, integer half-span)
 ```
 
-**What `S[n]` is, and how it is made.** `S[n]` is the **raw Lorenz state** at integration step
-`n` — the bare 3-tuple `(xₙ, yₙ, zₙ)`. The array is produced **once, at setup**, by
-fixed-step RK4 from the seed state at `T = 0`, marching forward with a single `dt` to the array's
-upper limit (`ub`, or `ub+E` when an eval tail is available offline):
+With the defaults: `lb = 2000`, `center = 12000`, `ub = 22000`.
 
-Everything is **positive time**: every index `n ≥ 0` is a real, forward-integrated state. There
-is no negative time and no backward integration anywhere — the **past** cursor's name refers only
-to the *direction* it scans this one array.
+| Region | Indices | Role |
+|--------|---------|------|
+| Past free-run runway | `[0, lb)` | Anchor history the past cursor walks into after leaving the window |
+| Training window | `[lb, ub]` | One epoch / washout sweep lives here |
+| Prediction / eval runway | `(ub, stream end]` | Future cursor is generative; held-out truth for scoring if precomputed |
 
-**Role — one array, two readers.** `S` is the single shared source of truth. Both cursors are
-pure **index readers** into it.
+`Build()` stores `stream_length + 1` samples (seed state plus one sample per
+integration step). `LorenzDatastream` rejects configs where the window underruns
+index 0 or overruns `stream_length`.
 
-The prediction/evaluation region `(ub, ub+E]` is where we read off whether training worked:
-compare the future cursor's *generated* `(x,y,z)` against the true `S[future_cursor_index]`, step for step.
-But scoring needs that true future to *exist*, and the `(ub, ub+E]` band is **not** guaranteed —
-it is there only when the orbit was precomputed past `ub` (an offline simulation, or recorded data
-with a held-out tail). On real-time data the future has not happened yet: there is no `Sₑ` tail, so
-the region collapses into open-ended generative free-run. Crucially, that costs only the *score*,
-not the *run* — the past cursor's anchor (`S[past_cursor_index]`, the lower 4 inputs) is real history and is
-**always** available, so the half-anchoring keeps the free-run tethered to ground truth whether or
-not the future eval tail exists.
+**Offline vs open-ended free-run.** Scoring needs true `S[f]` past `ub`. That
+tail exists only when the orbit was integrated past the window (this harness
+always does). On live data without a future, the run can still go generative;
+only the score is lost. The past anchor remains available down to the seed.
 
-## 2. Two phases = the two existing cursor moves
+---
 
-| phase     | cursor move        | code today            | i behavior                  |
-|-----------|--------------------|-----------------------|-----------------------------|
-| TRAINING  | reflecting shuttle | `StepBounded()`       | triangle wave inside [lb,ub]|
-| FREE-RUN  | one-way ramp       | `StepUnbounded()`     | grows monotonically past ub |
+## 2. Cursor motion (what `JanusCursor` actually does)
 
-After `StepUnbounded()`, `OOB()` reports `+1` once the future cursor passes `ub`. That `+1` is
-exactly the **"future cursor crossed the right reflection limit"** signal → the moment
-the future cursor flips from reading data to being generative.
+### Construction
 
-**Training is multi-sweep, NOT one pass.** Both cursors start at center as mirrors
-(`future_cursor_=+i`, `past_cursor_=−i`) and oscillate: `center → ub_ → lb_ → ub_ → …`, reflecting at
-*both* boundaries and crossing center every half-sweep, repeated a **specified number of
-times**. The whole window is swept back and forth repeatedly (the multi-epoch presentation).
-`JanusCursor::StepBounded()` already reflects forever — "N sweeps" is just how many
-`StepBounded()` calls the training loop drives; the cursor itself is unchanged. The sweep
-count is **chosen so training terminates with both cursors back at center** (`i = 0`,
-`future_cursor_` poised to step positive), handing the warm reservoir off seamlessly to free-run (§3).
-
-
-
-## 3. Free-run dynamics: diverge from center, then one switch
-
-Free-run does **not** start at the window edges — **both cursors start at the center** and
-move apart:
-
-```
- t=0 of free-run:   both at center (i=0)
- then every step:   future_cursor_ index += 1 (→ ub_ and beyond)
-                    past_cursor_   index -= 1 (→ lb_ and beyond)   [symmetric, mirror]
- center → boundary: "natural washout" — still inside [lb_, ub_], still real Lorenz,
-                    reservoir stays on in-distribution data before anything generative.
- they reach lb_/ub_ together (symmetric divergence).
+```text
+JanusCursor(span, center_index)
+  lb_ = center_index − span/2
+  ub_ = center_index + span/2
+  require span > 0 and center_index > span/2
+  Reset()
 ```
 
-**The reservoir state is NEVER reset between phases — it carries straight through.** Training
-is configured to *end* with both cursors back at center (`i = 0`, `future_cursor_` poised to step
-positive), so free-run resumes from exactly the warm, in-distribution state the last training
-step left behind. The "washout" above is therefore **continuity, not a cold start**: the
-center→boundary stretch is real Lorenz keeping an already-settled reservoir in-distribution
-right up to the generative switch — there is no transient to discard and nothing to re-warm.
+### Reset positions (opposite ends)
 
-**Data source by cursor / region** — note only ONE thing ever switches:
+| Cursor | `Reset()` sets index to | Step direction |
+|--------|-------------------------|----------------|
+| **Past** | `ub` | `idx −= 1` |
+| **Future** | `lb` | `idx += 1` |
 
-| inputs                     | in `[lb_, ub_]` (train + washout) | past the boundary (free-run) | behavior                           |
-|----------------------------|-----------------------------------|------------------------------|------------------------------------|
-| lower 4 — `past_cursor_`   | Lorenz lookup                     | Lorenz lookup                | **never switches** — anchor        |
-| upper 4 — `future_cursor_` | Lorenz lookup                     | **model output**             | **switches** at `ub_` — generative |
+They start at opposite edges of the window and walk toward each other, meet at
+center, then continue toward the opposite edges.
 
-- **past_cursor_ never switches.** Past `lb_` it keeps reading `S[N_c − i]` — real history, the
-  **anchor**. Half the input is always ground truth, all the way down to the seed (index 0).
-- **future_cursor_ switches** the instant it passes `ub_` (`i > H`): it stops reading `S` and
-  feeds the upper 4 channels from the **model's own output**. **Generative** from there on.
-
-Every "Lorenz lookup" above is a bare **array read**: `future_cursor_ = S[N_c + i]`, `past_cursor_ = S[N_c − i]`.
-
-
-## 4. The 8-input vector (fixed split)
-
-```
- input[0..3] = LOWER  ← past_cursor_  : ( xb, yb, zb, xb·zb )   anchor   (always real)
- input[4..7] = UPPER  ← future_cursor_: ( xf, yf, zf, xf·zf )   generative past ub_
+```text
+ k (steps after Reset)     0              ~span/2            ~span
+ past index              ub  ──────────►  center  ─────────►  lb
+ future index            lb  ──────────►  center  ─────────►  ub
+ |future − past|        span               ~0               span
+ Distance()              −1                 ~0               +1
 ```
 
-**Targets:** the readout predicts **3** outputs — the future cursor's `(x, y, z)` one
-step ahead. `x·z` is a **derived input feature only**, never a target. In generative mode
-the upper-4 = `(x̂, ŷ, ẑ, x̂·ẑ)` built from the model's 3 predictions; in-window it's the
-same 4-tuple built from real Lorenz. Same shape, only the source of the first three differs.
+`Distance()` is the continuous order parameter of this pass:
 
-## 4b. Per-variable normalization (raw `S` → `[−1, 1]`)
-
-The four channels span wildly different scales (Appendix A: `x, y, z` are O(tens), `x·z` is
-O(hundreds)), and the reservoir's input projection is a **fixed random matrix scaled by a
-single scalar** `input_scaling` — it has no per-channel knob and cannot rebalance the channels
-on its own. So **between the array lookup and the reservoir** we apply a per-variable affine map
-that pulls each channel into `[−1, 1]`. Every value shown in §4 is the *normalized* value; the
-raw `S` lookup never reaches the reservoir directly.
-
-**Notation:** a hat means *normalized*. `x` is raw Lorenz; `x̂ = (x − c_x)/h_x ∈ [−1, 1]`. In
-generative mode the hatted values come from the readout (which predicts in normalized space); in
-the window they come from scaling the real lookup — same symbol because it is the same quantity.
-
-**The map.** Each channel is pulled into `[−1, 1]` by an affine map `v̂ = (v − c_v) / h_v`, with
-the offset/scale set by channel type from that stream's measured extremes `[v_min, v_max]`:
-
-```
- x, y  (bipolar, ~symmetric):  c_v = 0                    h_v = |v|_max = max(|v_min|, |v_max|)
- z     (positive, offset):     c_z = (z_max + z_min) / 2  h_z = (z_max − z_min) / 2
+```text
+Distance = (future_index − past_index) / span
 ```
 
-x and y keep `c = 0` so `v = 0 ↦ 0` (sign symmetry preserved — scaled by the largest excursion,
-not the half-range); only z, sitting up at ~+24, carries a nonzero center.
+At start: `(lb − ub) / span = −1`. At the center crossing: `~0`. Near the end of
+a full window walk: approaches `+1`.
 
-```
- channel │ offset c_v │ scale h_v  │ normalized value
- ────────┼────────────┼────────────┼─────────────────────────────────────
- x       │    0       │  |x|_max   │  x̂ = x / h_x          (already symmetric)
- y       │    0       │  |y|_max   │  ŷ = y / h_y          (already symmetric)
- z       │   ≈ +24    │  half-rng  │  ẑ = (z − c_z) / h_z  (centered → straddles 0)
- x·z     │     —      │     —      │  x̂ · ẑ  ∈ [−1, 1]     (product of scaled; no own scale)
-```
+### Public API (`JanusCursor.h`)
 
-- The `z` **offset** `c_z` is the "make it bimodal" step: subtracting the DC center drops `z`
-  from sitting up at +24 to straddling zero like `x, y` already do.
-- The **4th channel needs no scaling of its own.** `|x̂·ẑ| ≤ |x̂|·|ẑ| ≤ 1`, so the product of two
-  already-scaled values is bounded by construction — define it as `x̂·ẑ` and it lands in `[−1, 1]`
-  for free.
+| Method | Behavior |
+|--------|----------|
+| `Reset()` | Past → `ub`, future → `lb` |
+| `Step()` | Advance both; return `{past_idx, future_idx}` |
+| `Indices()` | Current pair |
+| `NextIndices()` | Peek one step ahead (past−1, future+1) |
+| `OOB()` | **Future only:** `future_index > ub` |
+| `Distance()` | `(future − past) / span` as `float` |
+| `AtStartPosition()` | Past at `ub` (proxy for “just reset”) |
 
-**Extremes are per-stream, scanned over the full `S`.** `c_v` and `h_v` are computed **once at
-setup by scanning the entire precomputed `S[·]`, including the eval band `(ub, ub+E]` when
-present** (an offline tail); when there is none, it is the whole provided series. They are
-**never hardcoded** — the Appendix-A figures illustrate one `{1,1,1}` run, they are not
-constants. A different seed, or a real-world series, yields its own eight values
-`(c_x, h_x, c_y, h_y, c_z, h_z)`. Scanning the *full* `S` (eval band included) is deliberate: it
-guarantees the frozen `[−1, 1]` envelope covers exactly the orbit region the generative rollout
-is trying to match, so the true comparison orbit is always in range. Once scanned, the eight
-values are **frozen** and applied identically everywhere: anchor lookups, training inputs,
-generative reconstruction, and the denormalization used for scoring.
+Multi-epoch presentation is the caller’s job: `Reset()` + sweep until `OOB()`.
 
-**Pipeline placement:**
+### Out-of-window behavior (split across layers)
 
-```
- S[N_c ± i]  ──affine(c,h)──▶  (x̂, ŷ, ẑ)  ──┬─────────────▶  (x̂, ŷ, ẑ, x̂·ẑ)  ──▶ reservoir
-   raw lookup                                └──▶ x̂·ẑ  (4th channel)
-```
+- **Future past `ub`:** `JanusCursor::OOB() == true`. `LorenzDatastream::Step()`
+  still advances both indices but returns `future == nullptr` (no teacher sample).
+- **Past below 0:** `LorenzDatastream::Step()` throws
+  (`free-run outran the anchor history`). `FreeRun()` also stops proactively when
+  `past_index <= 0` before stepping further.
 
-The readout predicts normalized `(x̂, ŷ, ẑ)`; the 4th input is rebuilt as a bare multiply `x̂·ẑ`.
+Past-cursor “below `lb`” is tracked inside the nested class but is **not** what
+`JanusCursor::OOB()` reports; the public generative signal is **future overran
+`ub`**.
 
-**Two payoffs.**
+---
 
-1. **Generative reconstruction is trivially correct.** Because the 4th channel is *defined* as
-   the product of scaled values, free-run simply multiplies the two normalized predictions
-   `x̂·ẑ`. The `denorm → multiply → renorm` round-trip — the bug that would stay invisible until
-   free-run — **cannot occur**, because there is no renormalization step left to get wrong.
+## 3. Lag curriculum (why this geometry matters)
 
-2. **The `z`-centering is harmless.** Centered `z` means the product encodes `x·(z − c_z)`:
+Because the cursors start at opposite ends, for most of a training pass the past
+and future samples are **far apart on the attractor** — up to `span` samples
+(~`span · λ · dt` Lyapunov times; with defaults and `λ≈0.9056`, `dt=0.02`, on
+the order of hundreds of λt at the ends). They only share phase near the
+**center crossing**.
 
-   ```
-    x̂ · ẑ  =  (x·z  −  c_z·x) / (h_x · h_z)
-   ```
+Consequence, confirmed experimentally:
 
-   not raw `x·z`. But `x̂` is *also* an input, so raw `x·z` is a linear combination of features
-   the reservoir already holds (`x̂·ẑ` and `x̂`) — fully recoverable, **no information lost**. The
-   Q3 native-nonlinearity rationale survives; centering only shifts the product by a recoverable
-   multiple of `x`. (Mild cost: with `z` centered the product rarely reaches ±1 — when `|x|`
-   peaks, `z` is mid-range — so the 4th channel under-fills `[−1, 1]`; harmless, `input_scaling`
-   absorbs the slack.)
+- The **learnable one-step signal** during training lives primarily on the
+  **feedback port**: the reservoir sees the future stream’s own recent history
+  and must predict the next future sample (`S[f−1] → S[f]` style autoregression
+  under teacher forcing).
+- The past block is often a **decorrelated** attractor point. It is real, but not
+  a tight phase cue for `S[f]` except near center.
+- Setting `FEEDBACK_SCALING = 0` makes training ill-posed (climatological floor):
+  it is **not** a clean “observer floor.” The past is a **free-run stabilizer**,
+  not the main training teacher.
 
-**Denormalization.** To score a generated `x̂` against the true orbit in physical units (the §1
-eval yardstick), or to emit physical-space predictions, invert the map: `v = h_v · v̂ + c_v`. The 4th
-channel is never denormalized — it is a derived feature, never a target (§4, Q4).
+So the honest split of roles is:
 
-## 5. What this forces on the implementation
+| Role | Port / half | Training | Free-run (generative) |
+|------|-------------|----------|------------------------|
+| Teacher of the map | Feedback / future | Real `S[f]` history → target `S[f]` | Own prediction (closed loop) |
+| Stabilizer / tether | Input / past | Present, often long-lag | Always real history |
 
-1. **Precompute the orbit once.** At setup, integrate forward from the seed state (T=0; the
-   `{1,1,1}` used elsewhere is just one example seed) to the array's upper limit, which is one
-   of two:
-   - **`N_c+H` (= `ub`)** — when there is no reference tail to score against: a real-time
-     free-run into the genuine future, or any run where no tail is held out. The array stops at
-     the right edge of the training window.
-   - **`N_c+H+E` (= `ub+E`, the eval horizon)** — when the future past `ub` is known offline (a
-     precomputed simulation, or recorded data with a held-out tail). The extra band `(ub, ub+E]`
-     is the true orbit we score the generative rollout against (§1).
+---
 
-   `LorenzAttractor::trajectory()` returns exactly such an array. One fixed `dt`, one array —
-   both cursors index it, so they ride the identical orbit by construction.
-2. **Cursors read indices, not integrators.** `future_cursor_ = S[N_c + i]`,
-   `past_cursor_ = S[N_c − i]` — pure lookups, with **no** `step(±dt)` path that would force one
-   cursor to integrate backwards and blow up. The center is not a stored state to reset to; it is
-   just the index `N_c`, and the seam case is `S[N_c]`.
-3. **Array bounds = the runtime envelope.** Right end = `ub`: the future cursor goes generative past it,
-   and generated values are **not** written back into `S`. Left end = index 0 = seed = the
-   past cursor's floor. Margin `N_c − H` (seed → `lb`) = the free-run anchor runway.
-4. **`WarmupReservoir()` decouples from "find the center"** (now trivial — it's an index). It
-   becomes purely: run the reservoir over the leading array region to settle its internal
-   state before training/scoring.
-5. **Future-cursor source switch** at the right-limit crossing: `S[…]` → model output. The
-   past cursor never switches.
-6. `StepBounded` (train) / `StepUnbounded` (free-run) still model the two phases — they now
-   advance an **index**, not an integrator.
+## 4. Eight-channel drive and targets
 
-## 6. Why it should work (intuition)
+### Blocks
 
-A pure generative free-run feeds the model only its own output — errors compound and it
-slides off the attractor (the failure mode we keep hitting). Here, **4 of 8 inputs are
-always real**. The reservoir state is continuously re-tethered to a true Lorenz signal, so
-the generative half has far less room to run away. The past/anchor signal is a "free"
-ground truth we happen to already know — we spend it as a stabilizer.
-
-## 7. Open questions (let's resolve these)
-
-- **Q1 — RESOLVED.** Mirror offsets `±i` off a shared index. Training: both shuttle inside
-  `[lb_, ub_]`. Free-run: both start at center, diverge symmetrically (future +i, past −i).
-- **Q2 — anchor runway / floor behavior.** The past cursor floors at array index 0 (the
-  seed). Runway = `N_c − H` (seed-to-`lb` margin); deeper pre-roll = longer runway vs. a bigger
-  array (negligible for Lorenz). Open: behavior at the floor — stop / clamp / end the run?
-- **Q3 — RESOLVED.** The 4th channel is `x·z`, not `x·y·z`. `x·z` is a *native* Lorenz
-  nonlinearity — it is the bilinear term in `ẏ = ρx − x·z − y`. Under the wing-swap symmetry
-  `(x,y,z) → (−x,−y,z)`, `x·z` is **odd**, matching the odd targets `x,y`; the triple product
-  `x·y·z` is **even** (redundant parity with `x·y`) and appears nowhere in the field, so it was
-  rejected. Input feature only, never a target (see Q4). The 4-channel split `(x,y,z,x·z)` is
-  preserved (8-D total, hypercube-friendly).
-- **Q4 — RESOLVED.** 3 outputs (future x,y,z); `x·z` derived; anchor half never a target.
-- **Q5 — RESOLVED.** Center is just the array index `N_c`. The seam "re-anchor" is simply the
-  `i = 0` case → `S[N_c]`; there is no center *state* to recompute or reset.
-
-## Appendix A — channel scales
-
-With standard Lorenz params (σ=10, ρ=28, β=8/3), the four channels live on very different
-scales. This is why input normalization is load-bearing for the `x·z` channel (the fixed
-random input matrix + single scalar `input_scaling` cannot rebalance a channel that is ~10×
-the scale of the others and heavier-tailed). Two ranges matter: the **typical** band where the
-signal sits (≈±2σ) sets the input_scaling sweet spot; the **max** band (measured absolute
-extremes) is what must not saturate tanh on a worst-case excursion — and for `x·z` the max
-sits ~3.6σ out vs ~2.5–3σ for `x, y, z`, which is exactly the heavy tail biting.
-
-```
- channel │ typical (≈±2σ)  │ max (extremes)  │ mean   │ std    │ distribution
- ────────┼─────────────────┼─────────────────┼────────┼────────┼────────────────────────
- x       │ [ -16,   16]    │ [ -19.5,  19.6] │   ~0   │   7.9  │ bimodal, ~symmetric
- y       │ [ -18,   18]    │ [ -27.0,  27.2] │   ~0   │   9.0  │ bimodal, ~symmetric
- z       │ [   6,   41]    │ [   1.0,  47.8] │ +23.6  │   8.6  │ positive, offset (z > 0)
- x·z     │ [-490,  490]    │ [-882.0, 891.8] │   ~0   │ 245.8  │ heavy-tailed (~3.6σ extremes)
+```text
+ input port    (4):  past   [ x_p, y_p, z_p, x_p·z_p ]   ExtractPast
+ feedback port (4):  future [ x_f, y_f, z_f, x_f·z_f ]   ExtractFutureReal
+                                                         or ExtractFuturePredicted
 ```
 
-*Measured by RK4 integration (dt=0.005) over ~10⁴ time units from the `{1,1,1}` seed, transient
-included. The max envelope is stable run-to-run; the `x·z` extreme tracks the moments when `|x|`
-and `z` peak together (out on a wing).*
+- Linear channels come from the normalized stream (or from the 3-D prediction).
+- The 4th channel is **always** the product of that block’s current `x` and `z`
+  (derived feature, never a readout target).
+- Targets are **3-D**: future `(x, y, z)` only (`ExtractTargets`).
+
+Optional readout aux (`config::AUX_INPUT_DIM == 3`): normalized past `(x,y,z)`
+into the readout only; reservoir ports unchanged. Default aux is off (`0`).
+
+### Gains
+
+```text
+ input_scaling     → past block  (config::INPUT_SCALING)
+ feedback_scaling  → future block (config::FEEDBACK_SCALING)
+```
+
+Independent gains and independent weight realizations on the two ports. Anchor
+**dose** is largely `INPUT_SCALING` on the past; generative drive strength is
+`FEEDBACK_SCALING` on the future.
+
+---
+
+## 5. Normalization (`LorenzDatastream::Normalize`)
+
+Applied **once** after integration; stored stream is `float` in roughly
+`[-1, 1]`.
+
+1. Scan **this** raw orbit for per-channel min/max (full stream, including eval
+   tail).
+2. Per-channel **midpoint offset**:
+   `c_v = (v_max + v_min) / 2` for `x`, `y`, and `z`
+   (centers `z`’s DC ~+24 onto zero; also centers residual offset in `x,y`).
+3. **One shared scale** = max of the three half-ranges
+   `(v_max − v_min) / 2`. Degenerate zero scale → `1.0`.
+4. Store `(v − c_v) / scale` per channel.
+
+Shared scale preserves relative amplitudes across axes (widest channel reaches
+±1; others use less of the range). Extremes are stream-dependent, not hardcoded.
+`x·z` is formed **after** normalization as `x̂·ẑ`, so generative reconstruction
+is a multiply of predicted channels — no denorm/renorm product bug class.
+
+Scoring in `FreeRun` is in **these normalized units** (channel-RMS, VPT
+threshold, free-run RMSE).
+
+---
+
+## 6. Training protocol (`Lorenz::Train`)
+
+Per epoch `i = 0 .. EPOCHS−1`:
+
+1. **`data_stream_.Reset()`** — past@`ub`, future@`lb`.
+2. **Warmup** (`RESERVOIR_WARMUP_STEPS`): teacher-forced `ReservoirStep(past,
+   future_real)` only; no readout update; advance cursors each step.
+3. **Train sweep** while `!data_stream_.OOB()`:
+   - Horizon-1 alignment: `Predict` at state `x(t)` **before** injecting this
+     step’s inputs; target = current future sample `S[f]` (the sample about to
+     be injected), not `S[f+1]`.
+   - Prequential error: pre-update prediction vs that target.
+   - Optional exposure remedies (**future linear channels only**; teacher target
+     stays real `S[f]`):
+     - **2a** `TRAIN_FUTURE_NOISE` — Gaussian noise on future `x,y,z`
+     - **2b** `SCHEDULED_SAMPLING_CEILING` — with ramped probability, replace
+       future `x,y,z` with the model’s fresh prediction
+     - Then re-derive `future[3] = x·z` so the block matches free-run product
+       semantics
+   - `TrainStep` then `ReservoirStep(past, future)`; cursor `Step()`.
+4. Report prequential train RMSE (3 channels × train steps). LR from
+   `LrProfile` (cosine anneal to floor by 75% of epochs, then hold).
+
+Multi-epoch = outer loop + `Reset`. The cursor itself does one **one-way** pass
+per epoch, not a reflecting triangle wave.
+
+---
+
+## 7. Free-run protocol (`Lorenz::FreeRun`)
+
+Self-contained relative to training state of the **cursors** (reservoir weights
+are whatever `Train` left; cursor phase is rebuilt):
+
+### Stage 1 — anchored washout
+
+- `Reset()`
+- While `!OOB()`: teacher-forced `ReservoirStep(past, future_real)`; no readout
+  updates
+- Leaves the reservoir at the window edge, warm and in-distribution, ready to
+  go generative on the next conceptual step
+
+### Stage 2 — generative rollout
+
+For up to `FREE_RUN_WINDOW_SIZE` steps (or until eval/anchor runway ends):
+
+1. `f = Indices().second` — held-out truth index for this step’s score  
+2. `Predict(outputs)` — model’s estimate of `S[f]` at current reservoir state  
+3. `ExtractPast` → input port (real)  
+4. `ExtractFuturePredicted(outputs)` → feedback port (closed loop)  
+5. `ReservoirStep(past, future)`  
+6. Score `outputs` vs true `S[f]` (normalized); accumulate RMSE; VPT = first step
+   whose channel-RMS error exceeds `VPT_THRESHOLD`  
+7. Stop if past would leave the seed, stream ends, or step budget hit; else
+   `Step()` (future may already be past `ub`; past keeps walking left through
+   real history)
+
+**What free-run measures.** Phase-tracking skill under **continuous partial
+observation** (always-real past on the input port) and **self-feedback** on the
+future port. It is **not** classical unassisted free-run (no true drive at all).
+Report it as half-anchored / assisted free-run. Anchor ablation
+(`INPUT_SCALING` dose, or zeroing past channels) is the right way to isolate how
+much the tether contributes; do not treat `FEEDBACK_SCALING = 0` as that
+ablation during **training** (see §3).
+
+---
+
+## 8. Code map
+
+```text
+JanusCursor
+  PastCursor / FutureCursor   opposite-ends walk, shared [lb, ub]
+  Step / Reset / OOB / Distance
+
+LorenzDatastream : JanusCursor
+  Build()        RK4 integrate once
+  Normalize()    midpoint offsets + shared scale → float stream
+  States()       (Distance, S[past], &S[future])
+  Step()         advance cursors; nullptr future if OOB; throw if past < 0
+
+Lorenz
+  ExtractPast / ExtractFutureReal / ExtractFuturePredicted / ExtractTargets
+  Train()        Reset → warmup → teacher-forced epoch sweeps
+  FreeRun()      Reset → washout sweep → generative self-feedback + score
+```
+
+---
+
+## 9. Default numeric sketch (illustrative)
+
+With current `config::` defaults:
+
+| Quantity | Value |
+|----------|-------|
+| span / window | 20000 |
+| center | 12000 |
+| lb, ub | 2000, 22000 |
+| past runway `[0, lb)` | 2000 samples |
+| eval tail past ub | stream through index 24000 (`STREAM_LENGTH+1` samples in the vector) |
+| free-run budget | 2000 generative steps |
+| dt | 0.02 |
+| λ (scoring) | 0.9056 → ~55.2 steps / Lyapunov time |
+
+Exact envelopes for normalization depend on the integrated orbit for the chosen
+initial condition.
+
+---
+
+## 10. What this method is (and is not)
+
+**Is:**
+
+- Dual-cursor presentation of one forward stream
+- Opposite-ends lag curriculum during each pass
+- Asymmetric closed loop: past always teacher, future becomes student past `ub`
+- A harness for long rollouts with a restoring tether and re-lock behavior
+
+**Is not:**
+
+- Center-mirror `±i` free-run from a shared present (older doc; not this code)
+- Reflecting multi-sweep physics inside the cursor
+- Seamless “end training at center → continue free-run without Reset”
+- A claim of pure autonomous generative skill equal to Pathak-style free-run VPT
+  without stating the anchor
+
+---
+
+## 11. Related notes in-tree
+
+- `README.md` — exposure bias, identity burden, mitigation knobs  
+- `JanusCursor.md` — **historical / out of date**; prefer this file + the sources
+  in the header table
