@@ -5,9 +5,9 @@
 
 using JanusCursorResult = std::pair<int32_t, int32_t>;
 
-/// @brief A pair of counter-moving cursors over one stream — the "shuttle" that
-/// half-anchors the Janus free-run: a past cursor reading real history and a future
-/// cursor tracking the prediction horizon.
+/// @brief A pair of counter-moving cursors over one stream that half-anchor the
+/// Janus free-run: a past cursor reading real history and a future cursor tracking
+/// the prediction horizon.
 ///
 /// Both cursors share a window [lb, ub] centered at @p center_index with the given
 /// @p span (lb = center - span/2, ub = center + span/2). @ref Reset seats them at
