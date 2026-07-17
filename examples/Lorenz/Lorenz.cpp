@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 #include <string>
@@ -419,10 +420,10 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
 // One trial = train a single ESN on esn_seed, then free-run it num_runs times.
 // RebuildDatastream re-mixes orbit_seed_ on every FreeRun call, so two trials
 // started from the same orbit_seed are scored against the SAME sequence of
-// held-out orbits — the ESN seed is the only independent variable. The full report
-// (per-run rows, aggregate stats, top-10 leaderboards) is built into a string and
-// returned so trials running in parallel can be printed serially without their
-// output interleaving.
+// held-out orbits — the ESN seed is the only independent variable. The report
+// (aggregate stats + top-10 leaderboards; individual runs are not listed) is built
+// into a string and returned so trials running in parallel can be printed serially
+// without their output interleaving.
 static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
 {
     Lorenz lorenz(esn_seed, orbit_seed);
@@ -437,12 +438,10 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     char buf[256];
     auto emit = [&](const char* s) { out += s; };
 
-    /*std::snprintf(buf, sizeof buf, "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
+    std::snprintf(buf, sizeof buf, "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
                   static_cast<unsigned long long>(esn_seed), num_runs,
-                  static_cast<unsigned long long>(orbit_seed));*/
+                  static_cast<unsigned long long>(orbit_seed));
     emit(buf);
-    for (const auto& r : results)
-        emit(r.valid ? r.row.c_str() : "[Single run] no steps scored\n"); // seed / VPT steps / Lyapunov time / free-run RMSE
 
     // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
     // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
@@ -528,7 +527,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     return out;
 }
 
-int main()
+int main(int argc, char** argv)
 {
     uint64_t seed = 13649419;
     uint64_t orbit_seed = 5859834983498;
@@ -543,16 +542,32 @@ int main()
     config::ENABLE_PRINTF = false;
 
     constexpr size_t NUM_TRIALS = 16;
-    constexpr int NUM_RUNS = 50;
+
+    // Optional positional CLI overrides: argv[1] = worker thread count, argv[2] =
+    // free-runs per trial. Each is applied only when present and in range; anything
+    // absent, non-numeric, or out of range keeps the default.
+    const unsigned hw = std::thread::hardware_concurrency();
+    size_t num_threads = std::min<size_t>(NUM_TRIALS, hw ? hw : 1); // workers, capped at NUM_TRIALS
+    int num_runs = 50; // free-runs per trial
+    if (argc > 1)
+    {
+        const int arg = std::atoi(argv[1]);
+        if (arg > 0)
+            num_threads = std::min<size_t>(NUM_TRIALS, static_cast<size_t>(arg));
+    }
+    if (argc > 2)
+    {
+        const int arg = std::atoi(argv[2]);
+        if (arg > 1)
+            num_runs = arg;
+    }
 
     // Each trial is fully independent (its own ESN + datastream, no shared mutable
     // state), so the survey parallelizes cleanly one-instance-per-thread. Workers
     // pull trial indices off a shared atomic counter; a bounded pool
-    // (<= hardware_concurrency) avoids oversubscribing the cores.
+    // (<= NUM_TRIALS) avoids spawning idle threads.
     std::vector<std::string> reports(NUM_TRIALS); // one report per trial, filled in place
     std::atomic<size_t> next_trial{0};
-    const unsigned hw = std::thread::hardware_concurrency();
-    const size_t num_threads = std::min<size_t>(NUM_TRIALS, hw ? hw : 1);
 
     {
         std::vector<std::jthread> pool;
@@ -561,7 +576,7 @@ int main()
             pool.emplace_back([&]
             {
                 for (size_t i = next_trial.fetch_add(1); i < NUM_TRIALS; i = next_trial.fetch_add(1))
-                    reports[i] = RunTrial(seed + i, orbit_seed, NUM_RUNS); // distinct ESN seed, shared orbit seed
+                    reports[i] = RunTrial(seed + i, orbit_seed, num_runs); // distinct ESN seed, shared orbit seed
             });
     } // jthreads join on scope exit
 
