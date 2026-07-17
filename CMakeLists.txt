@@ -40,7 +40,9 @@ target_link_libraries(HypercubeESNCore PUBLIC $<BUILD_INTERFACE:HypercubeCNNCore
 # was built without LTO support (cc1plus: "LTO support has not been enabled
 # in this configuration").  Would need a different MinGW distribution.
 target_compile_options(HypercubeESNCore PRIVATE
-        $<$<CONFIG:Release>:-O3 -march=native -mtune=native -ffast-math>
+        # -march=x86-64-v2 (SSE4.2/POPCNT, ~2009+) keeps Release binaries portable to
+        # other machines; -march=native would bake in this CPU's ISA and SIGILL elsewhere.
+        $<$<CONFIG:Release>:-O3 -march=x86-64-v2 -ffast-math>
         $<$<CONFIG:Debug>:-O0 -g>
         -Wall -Wextra -Wno-unknown-pragmas
 )
@@ -70,12 +72,20 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
 
     foreach(tgt IN LISTS EXE_TARGETS)
         target_compile_options(${tgt} PRIVATE
-                $<$<CONFIG:Release>:-O3 -march=native -mtune=native -ffast-math>
+                # -march=x86-64-v2 (SSE4.2/POPCNT, ~2009+) keeps Release binaries portable to
+        # other machines; -march=native would bake in this CPU's ISA and SIGILL elsewhere.
+        $<$<CONFIG:Release>:-O3 -march=x86-64-v2 -ffast-math>
                 $<$<CONFIG:Debug>:-O0 -g>
                 -Wall -Wextra -Wno-unknown-pragmas
         )
 
         if(MINGW)
+            # libgcc/libstdc++ are linked statically, so only libwinpthread-1.dll must
+            # ride along at deploy time. Ship it FROM THE SAME toolchain that built the
+            # exe: a stale copy is missing newer symbols (e.g. nanosleep64) and fails
+            # with "entry point not found". Full/partial -static of winpthread is not an
+            # option here — this mingw-w64 15.2.0 static libwinpthread.a references an
+            # unresolvable __intrinsic_setjmpex.
             target_link_options(${tgt} PRIVATE -static-libgcc -static-libstdc++)
             # Workaround for a gcc 13.1 MinGW bug where
             # `std::type_info::operator==` in <typeinfo> is emitted out-of-line
