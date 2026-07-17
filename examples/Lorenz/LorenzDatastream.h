@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <tuple>
 #include <vector>
 #include "JanusCursor.h"
 #include "LorenzAttractor.h"
@@ -15,19 +14,18 @@
 /// window then occupies half the cache it would as double storage.
 struct NormalizedState
 {
-    float x, y, z;
+    float x = 0, y = 0, z = 0;
 };
 
 /// @brief What @ref LorenzDatastream::States and @ref LorenzDatastream::Step hand
-/// back for the current cursor position, as a positional tuple:
-///   - `float`                  — @ref JanusCursor::Distance (normalized cursor
-///                                separation, -1 .. +1).
-///   - `NormalizedState`        — the PAST sample (by value; the past cursor always
-///                                addresses valid history).
-///   - `const NormalizedState*` — the FUTURE sample, or `nullptr` once the future
-///                                cursor has run out of in-window data (OOB). Callers
-///                                MUST null-check this before dereferencing.
-using LorenzDatastreamResult = std::tuple<float, NormalizedState, const NormalizedState*>;
+/// back for the current cursor position.
+struct LorenzDatastreamResult
+{
+    float distance = 0;         ///< @ref JanusCursor::Distance (normalized cursor separation, -1 .. +1)
+    NormalizedState past;       ///< the PAST sample (by value; the past cursor always addresses valid history)
+    const NormalizedState* future = nullptr; ///< the FUTURE sample, or nullptr once the future cursor has run
+                                             ///< out of in-window data (OOB). Callers MUST null-check before deref.
+};
 
 struct LorenzDatastreamConfig
 {

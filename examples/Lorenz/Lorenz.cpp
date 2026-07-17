@@ -125,17 +125,17 @@ void Lorenz::RebuildDatastream(bool verbose)
 
 void Lorenz::ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states)
 {
-    past[0] = std::get<1>(past_future_states).x; // past x
-    past[1] = std::get<1>(past_future_states).y; // past y
-    past[2] = std::get<1>(past_future_states).z; // past z
+    past[0] = past_future_states.past.x; // past x
+    past[1] = past_future_states.past.y; // past y
+    past[2] = past_future_states.past.z; // past z
     past[3] = past[0] * past[2]; // past x*z (nonlinear term)
 }
 
 void Lorenz::ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states)
 {
-    future[0] = std::get<2>(past_future_states)->x; // future x (teacher-forced)
-    future[1] = std::get<2>(past_future_states)->y; // future y
-    future[2] = std::get<2>(past_future_states)->z; // future z
+    future[0] = past_future_states.future->x; // future x (teacher-forced)
+    future[1] = past_future_states.future->y; // future y
+    future[2] = past_future_states.future->z; // future z
     future[3] = future[0] * future[2]; // future x*z (nonlinear term)
 }
 
@@ -159,9 +159,9 @@ static_assert(config::AUX_INPUT_DIM == 0 || config::AUX_INPUT_DIM == 3,
 
 void Lorenz::ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states)
 {
-    u_raw[0] = std::get<1>(past_future_states).x; // normalized past x
-    u_raw[1] = std::get<1>(past_future_states).y; // normalized past y
-    u_raw[2] = std::get<1>(past_future_states).z; // normalized past z
+    u_raw[0] = past_future_states.past.x; // normalized past x
+    u_raw[1] = past_future_states.past.y; // normalized past y
+    u_raw[2] = past_future_states.past.z; // normalized past z
 }
 
 float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epochs, const size_t current_epoch)
@@ -234,7 +234,7 @@ void Lorenz::Train()
             // inputs, so x(t) has seen the future channel only through S[f-1]. The
             // aligned one-step target is S[f] — the sample this call is about to
             // inject — not S[f+1], one sample further on.
-            ExtractTargets(targets, *std::get<2>(past_future_states));
+            ExtractTargets(targets, *past_future_states.future);
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
             ExtractAuxPast(u_past, past_future_states);

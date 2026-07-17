@@ -73,7 +73,7 @@ information. It must be **horizon-1 aligned**, exactly like the future head: pre
 backward-running past sequence — symmetric to `S[f-1] → S[f]`.
 
 Timing is free: the training/free-run loops already call `Predict()` before
-`ReservoirStep()`. Add `S[p]` (= `std::get<1>(past_future_states)`) to the target vector.
+`ReservoirStep()`. Add `S[p]` (= `past_future_states.past`) to the target vector.
 
 ## 4. The question that decides if it's useful
 
@@ -104,7 +104,7 @@ already exists — `TrainStep` / `PredictRaw` / etc.), not extra outputs on the 
   state each step — via an ESN state accessor, or by housing it inside `ESN` alongside
   the existing readout.
 - Each training step: `TrainStep` it against the past target
-  `std::get<1>(past_future_states)` — the **pre-injection** `S[p]` (§3), read at the
+  `past_future_states.past` — the **pre-injection** `S[p]` (§3), read at the
   same pre-`ReservoirStep` state as the future head.
 - In `FreeRun`: `PredictRaw` its past output, score vs the real `S[p]`, print alongside
   the future err (so the §4 tracking question is answerable from the first run).
