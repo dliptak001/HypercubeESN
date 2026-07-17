@@ -34,7 +34,7 @@ namespace config
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile
     constexpr float LEARNING_RATE_MIN = 0.000002f;//0.000005f; // anneal floor reached at the final epoch
-    constexpr size_t EPOCHS = 20;
+    constexpr size_t EPOCHS = 10;
 
     // ---- Readout input: block-structured (delay-line slices + optional aux block) ----
     // The readout consumes B = READOUT_SLICES + (AUX_INPUT_DIM > 0) blocks of N, laid
