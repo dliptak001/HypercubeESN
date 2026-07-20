@@ -83,6 +83,8 @@ enum class LossType { Default, CrossEntropy, MSE };
  */
 class HCNNNetwork {
 public:
+    /// @param num_threads 0 = auto pool, 1 = single-threaded (no workers),
+    ///        N > 1 = N background workers. See HCNN constructor.
     HCNNNetwork(int start_dim, int num_outputs = 10,
                 int input_channels = 1,
                 TaskType task_type = TaskType::Classification,

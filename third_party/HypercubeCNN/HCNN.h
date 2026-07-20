@@ -83,6 +83,10 @@ namespace hcnn {
 /// `std::unique_ptr<HCNN>` if you need transfer-of-ownership semantics.
 class HCNN {
 public:
+    /// @param num_threads Internal worker-pool size for layer/batch parallelism.
+    ///        0 = auto (hardware_concurrency − 1 workers); 1 = single-threaded
+    ///        (no background workers — use when the host already parallelizes
+    ///        across HCNN instances); N > 1 = N background workers.
     explicit HCNN(int start_dim, int num_outputs = 10,
                   int input_channels = 1,
                   TaskType task_type = TaskType::Classification,

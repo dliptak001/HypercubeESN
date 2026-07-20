@@ -263,6 +263,10 @@ Lorenz.exe [NUM_THREADS] [NUM_RUNS]
 
 - Shared starting `orbit_seed` across trials → same sequence of held-out orbits;
   ESN seed is the only independent variable.
+- **One level of parallelism:** outer `jthread`s run trials; each trial’s HCNN is
+  forced single-threaded (`readout.num_threads = 1`) so the survey does not nest
+  a full worker pool inside every ESN.
+- Worker exceptions are caught and reported in that trial’s slot (no process abort).
 - Per-run live printf is silenced (`ENABLE_PRINTF = false`); each trial returns a
   report string (aggregate VPT / RMSE stats + top-10 leaderboards) printed in seed
   order after all threads join.

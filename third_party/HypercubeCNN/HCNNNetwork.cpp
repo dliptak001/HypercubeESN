@@ -19,7 +19,12 @@ HCNNNetwork::HCNNNetwork(int dim, int num_outputs, int input_channels,
       input_channels(input_channels),
       task_type_(task_type), loss_type_(loss_type),
       readout(num_outputs, 1),
-      thread_pool(std::make_unique<ThreadPool>(num_threads)) {
+      // num_threads: 0 = auto pool, 1 = no background workers (caller-only),
+      // N > 1 = N background workers. Single-threaded mode avoids nested
+      // oversubscription when the host already parallelizes across networks.
+      thread_pool(num_threads == 1
+                      ? std::unique_ptr<ThreadPool>{}
+                      : std::make_unique<ThreadPool>(num_threads)) {
     if (dim < 3 || dim > 32) {
         throw std::runtime_error("HCNNNetwork requires 3 <= start_dim <= 32");
     }

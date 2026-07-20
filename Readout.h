@@ -76,6 +76,12 @@ struct ReadoutConfig
     float momentum = 0.0f; ///< SGD momentum (heavy-ball). 0 = plain SGD. 0.9 typical for CNN.
     unsigned seed = 42; ///< CNN weight initialization seed.
     ReadoutActivation activation = ReadoutActivation::TANH; ///< Per-Conv-layer activation.
+
+    /// HCNN internal worker-pool size. Forwarded to `hcnn::HCNN`:
+    /// 0 = auto (default), 1 = single-threaded (no HCNN background workers),
+    /// N > 1 = N workers. Use 1 when the host already parallelizes across ESN
+    /// instances (e.g. a multi-seed survey) to avoid nested oversubscription.
+    size_t num_threads = 0;
 };
 
 /// @brief The **trainable half of an @ref ESN**: a small convolutional network

@@ -62,7 +62,7 @@ void Readout::build_architecture()
                          : hcnn::TaskType::Regression;
     net_ = std::make_unique<hcnn::HCNN>(
         d, config_.num_outputs, /*input_channels=*/1,
-        task_type);
+        task_type, hcnn::LossType::Default, config_.num_threads);
 
     const hcnn::Activation act = map_activation(config_.activation);
     int ch = config_.conv_channels;

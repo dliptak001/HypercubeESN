@@ -43,9 +43,12 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout_slices = config::READOUT_SLICES;
     cfg.aux_input_dim = config::AUX_INPUT_DIM;
     cfg.readout.use_pooling = config::USE_POOLING;
-    cfg.readout.num_layers = 1;
+    cfg.readout.num_layers = 1; // TODO num_layers = 2 with no pooling.
     cfg.readout.momentum = 0.9;
     cfg.readout.conv_channels = 8;
+    // One level of parallelism: the seed survey owns outer jthreads. Keep each
+    // HCNN single-threaded so we do not spawn (hw−1) idle workers per trial.
+    cfg.readout.num_threads = 1;
     return cfg;
 }
 
@@ -559,14 +562,40 @@ int main(int argc, char** argv)
         if (arg > 1) num_runs = arg;
     }
 
-    // Each trial is fully independent (its own ESN + datastream, no shared mutable
-    // state), so no locking is needed — each thread writes its own report slot.
+    // Each trial owns its own Lorenz/ESN/datastream (HCNN forced single-threaded
+    // in MakeESNConfig). No shared Lorenz mutable state — each thread writes only
+    // reports[t]. Catch exceptions so one failed trial does not std::terminate.
     std::vector<std::string> reports(num_threads); // one report per trial (= per thread)
     {
         std::vector<std::jthread> pool;
         pool.reserve(num_threads);
         for (size_t t = 0; t < num_threads; t++)
-            pool.emplace_back([&, t] { reports[t] = RunTrial(seed + t, orbit_seed, num_runs); }); // distinct ESN seed, shared orbit seed
+        {
+            pool.emplace_back([&, t]
+            {
+                const uint64_t esn_seed = seed + t;
+                try
+                {
+                    reports[t] = RunTrial(esn_seed, orbit_seed, num_runs);
+                }
+                catch (const std::exception& e)
+                {
+                    char buf[512];
+                    std::snprintf(buf, sizeof buf,
+                                  "\n=== ESN seed %llu FAILED ===\n  %s\n",
+                                  static_cast<unsigned long long>(esn_seed), e.what());
+                    reports[t] = buf;
+                }
+                catch (...)
+                {
+                    char buf[256];
+                    std::snprintf(buf, sizeof buf,
+                                  "\n=== ESN seed %llu FAILED ===\n  unknown exception\n",
+                                  static_cast<unsigned long long>(esn_seed));
+                    reports[t] = buf;
+                }
+            });
+        }
     } // jthreads join on scope exit
 
     // Print the trial reports in seed order (independent of completion order).
