@@ -25,8 +25,8 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     // feedback port carries its own gain + weight realization; at FEEDBACK_SCALING=0
     // the future contributes nothing and the reservoir runs on the past block alone.
     cfg.reservoir.num_inputs = 4; // [x_past, y_past, z_past, x_past*z_past]
-    cfg.reservoir.num_feedback_channels = 4; // [x_fut,  y_fut,  z_fut,  x_fut*z_fut ]
-    cfg.reservoir.feedback_scaling = config::FEEDBACK_SCALING;
+    cfg.reservoir.num_external_feedback_channels = 4; // [x_fut,  y_fut,  z_fut,  x_fut*z_fut ]
+    cfg.reservoir.external_feedback_scaling = config::FEEDBACK_SCALING;
     cfg.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
     cfg.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.reservoir.leak_rate = config::LEAK_RATE;
@@ -75,9 +75,9 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(seed_),
                     config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
                     config::HISTORY_DEPTH);
-        std::printf("[Lorenz config] ports:     input=%zu [past x,y,z,xz]  feedback=%zu [future x,y,z,xz]"
-                    "  feedback_scaling=%.4f\n",
-                    esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_feedback_channels,
+        std::printf("[Lorenz config] ports:     input=%zu [past x,y,z,xz]  ext_feedback=%zu [future x,y,z,xz]"
+                    "  external_feedback_scaling=%.4f\n",
+                    esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);

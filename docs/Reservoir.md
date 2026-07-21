@@ -47,7 +47,7 @@ Everything that follows serves those two.
 | Field | Default | Range / rule |
 |-------|---------|----------------|
 | `dim` | 10 | **[5, 16]** → N = 2^dim neurons |
-| `seed` | 73895 | master seed; named substreams via SplitMix64 (recurrent / input / feedback / bias / SR probe) |
+| `seed` | 73895 | master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
 | `spectral_radius` | 0.99 | **> 0** (target for recurrent-block rescale) |
 | `leak_rate` | 1.0 | **(0, 1]** — 1 = full replacement |
 | `input_scaling` | 0.5 | DIM-invariant drive (weights × `input_scaling`/√dim) |
@@ -55,8 +55,11 @@ Everything that follows serves those two.
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
 | `history_floor` (K) | 1.0 | **[0.1, 1.0]** — deepest-slice taper; 1.0 = no taper |
 | `verbose` | true | construction banner to stderr |
-| `num_feedback_channels` (D) | 0 | **0** = no feedback path; else **[1, N]** (need **not** divide N) |
-| `feedback_scaling` | 0.5 | like input: × `feedback_scaling`/√dim (only if D > 0) |
+| `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
+| `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
+| `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
+| `fsf_seed` | 1 | seeds only `B_fsf` (standalone RNG; not from `seed`) |
+| `fsf_scaling` | 0.5 | FSF drive × scaling/√dim (only if FSF on) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
@@ -164,20 +167,22 @@ labelled by axis, so hypercube structure remains readable.
 
 ```
 [ input:  N × DIM ]
-[ feedback: N × DIM ]     # only if num_feedback_channels > 0
+[ external feedback: N × DIM ]  # only if num_external_feedback_channels > 0
+[ FSF: N × DIM ]                # only if full_state_feedback
 [ recurrent: N × M × DIM ]  # layout [vertex][slice][axis], matches UpdateState
 ```
 
 | Block | Size | Init scale (pre-SR) | In SR rescale? |
 |-------|------|---------------------|----------------|
 | Input | N·DIM | `input_scaling / √DIM` | **No** |
-| Feedback | N·DIM or 0 | `feedback_scaling / √DIM` | **No** |
+| External feedback | N·DIM or 0 | `external_feedback_scaling / √DIM` | **No** |
+| FSF | N·DIM or 0 | `fsf_scaling / √DIM` (from `fsf_seed`) | **No** |
 | Recurrent | N·DIM·M | `1/√(DIM·M)`, then per-slice depth taper | **Yes** (whole block, one scalar) |
 
 Total weights:
 
 ```
-N · DIM · (M + 1 + [feedback present ? 1 : 0])
+N · DIM · (M + 1 + [ext-fb ? 1 : 0] + [FSF ? 1 : 0])
 ```
 
 Example: DIM 10, M 16, no feedback → 10,240 × 17 ≈ 174K floats.
@@ -190,7 +195,9 @@ Per-step quantities:
 - `vtx_output_history_` / `slice_ptrs_` — ring of M published slices. **Slice 0** is
   newest (`Outputs()`, recurrent age 0). Slice `j` is age `j`.
 - `vtx_input_[v]` — staged input field; cleared after every `Step()`.
-- `vtx_feedback_[v]` — staged feedback field if D > 0; cleared after every `Step()`.
+- `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
+- `vtx_fsf_[v]` — staged FSF field if enabled (φ = V·x filled inside `Step`); cleared every `Step()`.
+- `fsf_gain_` — gain V (length N) when FSF enabled; parameter, not cleared by `Clear`.
 - `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
   cleared by `Clear` / not in snapshots.
 
@@ -201,7 +208,8 @@ drives, writes only `vtx_state_`.
 
 ```
 InjectInput(...)       // optional, each channel you need this step
-InjectFeedback(...)    // optional, if D > 0
+InjectExternalFeedback(...)  // optional, if D > 0
+// FSF (if enabled): staged automatically inside Step from V·x
 Step()                 // update all neurons, age ring, clear drives
 // read Outputs() / SliceAt(age)
 ```
@@ -216,9 +224,13 @@ s = 0
 for i = 0 .. DIM-1:
     s += input[v XOR (1<<i)] * W_in[v][i]
 
-# (b) feedback — same gather on vtx_feedback_ (omitted if D == 0)
+# (b) external feedback — same gather (omitted if D == 0)
 for i = 0 .. DIM-1:
-    s += feedback[v XOR (1<<i)] * W_fb[v][i]
+    s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
+
+# (b2) FSF — φ-broadcast buffer (omitted if FSF off); staged at start of Step
+for i = 0 .. DIM-1:
+    s += fsf[v XOR (1<<i)] * W_fsf[v][i]
 
 # (c) recurrent — M slices × DIM axes
 for j = 0 .. M-1:
@@ -252,7 +264,8 @@ the general multi-input form (neighbors can straddle channel blocks when
 rotate slice_ptrs_ by one          # oldest physical slot becomes new slice 0
 memcpy(slice_ptrs_[0], state, N)   # publish
 memset(input, 0, N)
-if feedback configured: memset(feedback, 0, N)
+if ext-fb configured: memset(ext_fb, 0, N)
+if FSF enabled: memset(fsf, 0, N)
 ```
 
 Shipped `Step()` runs the vertex loop **serially** (embarrassingly parallel in
@@ -272,19 +285,27 @@ history slices stay free of raw input (only post-activation state is published).
 K channels → K contiguous blocks of B = N/K vertices. Cross-channel mixing still
 occurs through recurrent bit-flips near block boundaries.
 
-## Feedback injection (optional)
+## External feedback injection (optional)
 
-When `num_feedback_channels = D > 0`, a second driver path mirrors input:
+When `num_external_feedback_channels = D > 0`, a second driver path mirrors input:
 
 - Own weight block (outside spectral-radius rescale — does **not** guarantee
   closed-loop stability).
-- `InjectFeedback(channel, value)` or `InjectFeedback(ptr, count)` with
-  `count == D`.
+- `InjectExternalFeedback(channel, value)` or `InjectExternalFeedback(ptr, count)`
+  with `count == D`.
 - Block size `floor(N/D)`: if D does not divide N, the tail vertices stay at
-  reset-zero as feedback *sources* but still receive drive via neighbor gather.
+  reset-zero as *sources* but still receive drive via neighbor gather.
 
 Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), then
 `Step()`.
+
+## Full-state linear feedback (optional)
+
+When `full_state_feedback = true`, a third drive path applies φ = V·x **inside**
+each `Step` (V length N, init 0; `SetFullStateFeedbackGain` /
+`GetFullStateFeedbackGain`). Weights from standalone `fsf_seed`. Zero allocation
+when disabled. Warmup/run under ESN still apply FSF if enabled. See
+[design_internal_fsf.md](design_internal_fsf.md).
 
 ## Per-neuron bias (optional)
 
@@ -355,7 +376,8 @@ physical block order meaningless).
 | API | Role |
 |-----|------|
 | `Create(cfg)` | only constructor path |
-| `InjectInput` / `InjectFeedback` | stage drives |
+| `InjectInput` / `InjectExternalFeedback` | stage drives |
+| `Set/GetFullStateFeedbackGain` | FSF gain V (if enabled) |
 | `Step` | one timestep |
 | `Outputs` / `SliceAt` | read state / delay line |
 | `Clear` | zero state + history; keep weights & bias |

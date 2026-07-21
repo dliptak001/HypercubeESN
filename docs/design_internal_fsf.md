@@ -33,6 +33,28 @@
 > | Smoke | Small C++ smoke: FSF off / V=0 / V≠0; C++ only; no V persistence; no Python yet |
 > | Multi-channel FSF | **Never** |
 > | Existing feedback port rename | **A — full rename** to *external* feedback (no aliases). In-tree only; no external API freeze. Same PR as FSF preferred |
+>
+> ### Implementation constraints (from review — non-negotiable)
+>
+> 1. **`fsf_seed` RNG is standalone** — `mt19937_64(fsf_seed)` (or equivalent). Do **not**
+>    draw `B_fsf` via `seed_for(reservoir.seed, …)`. Main-seed substreams
+>    (Recurrent/Input/ExternalFeedback/Bias/SrProbe) must be **bit-identical** whether
+>    FSF is on or off.
+> 2. **F1 is bit-identity** — FSF on + V = 0 ≡ FSF off (same main seed, inputs, no
+>    ext-fb). No ε hedge; mismatch means a layout/pointer bug.
+> 3. **Single recurrent-base helper** — all SR / taper / `UpdateState` /
+>    `EstimateSpectralRadius` offsets go through one place so the FSF block cannot be
+>    forgotten at one call site.
+> 4. **Stage FSF at the top of `Step`** from pre-update `Outputs()` / slice 0; clear
+>    FSF buffer with the other drives at the end.
+> 5. **Always store** `full_state_feedback`, `fsf_seed`, `fsf_scaling` on the object
+>    for `GetConfig` round-trip even when FSF is off (only **allocation** is conditional).
+> 6. **Wording:** input port is required; external feedback and FSF are the optional
+>    drive ports (not “three optional”).
+> 7. **Warmup/Run apply FSF** when enabled — document on ESN; batch train sees the
+>    FSF-closed map.
+> 8. **Rename lands with FSF** (no intermediate tree under old names).
+> 9. **Mid-run `SetV`** is allowed (hard cut in dynamics); not a freeze API.
 
 ---
 

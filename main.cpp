@@ -1,12 +1,5 @@
 /// @file main.cpp
-/// @brief Reservoir snapshot/restore fidelity diagnostics.
-///
-/// Snapshot/restore fidelity: snapshot -> drive N steps -> restore -> replay
-/// the same N inputs must reproduce the identical trajectory bit-for-bit. The
-/// restore is a branch-point primitive, so equality here is exact (memcmp), not
-/// approximate. Exercised across open-loop, leaky multi-input, and
-/// feedback-driven configs (the feedback config drives the reservoir's
-/// dedicated feedback port directly via InjectFeedback).
+/// @brief Reservoir snapshot/restore fidelity + FSF smoke diagnostics.
 
 #include <cstdio>
 #include <cstring>
@@ -14,41 +7,40 @@
 #include <stdexcept>
 #include <vector>
 
+#include "ESN.h"
 #include "Reservoir.h"
 
 namespace
 {
-    /// Deterministic per-step drive values for input + feedback channels.
+    /// Deterministic per-step drive values for input + external-feedback channels.
     struct DriveSeries
     {
         std::vector<float> inputs; // steps * num_inputs
-        std::vector<float> feedback; // steps * num_feedback_channels (empty if none)
+        std::vector<float> ext_feedback; // steps * num_external_feedback_channels
     };
 
-    DriveSeries MakeDrive(size_t steps, size_t num_inputs, size_t num_fb, uint64_t seed)
+    DriveSeries MakeDrive(size_t steps, size_t num_inputs, size_t num_ext_fb, uint64_t seed)
     {
         std::mt19937_64 rng(seed);
         std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
         DriveSeries d;
         d.inputs.resize(steps * num_inputs);
         for (float& v : d.inputs) v = dist(rng);
-        d.feedback.resize(steps * num_fb);
-        for (float& v : d.feedback) v = dist(rng);
+        d.ext_feedback.resize(steps * num_ext_fb);
+        for (float& v : d.ext_feedback) v = dist(rng);
         return d;
     }
 
-    /// Drive `steps` steps from the series starting at step `t0`, appending
-    /// each post-step state (N floats) to `trace`.
     void Drive(Reservoir& r, const DriveSeries& d, size_t t0, size_t steps,
-               size_t num_inputs, size_t num_fb, std::vector<float>* trace)
+               size_t num_inputs, size_t num_ext_fb, std::vector<float>* trace)
     {
         const size_t n = r.Size();
         for (size_t s = 0; s < steps; ++s)
         {
             for (size_t ch = 0; ch < num_inputs; ++ch)
                 r.InjectInput(ch, d.inputs[(t0 + s) * num_inputs + ch]);
-            for (size_t ch = 0; ch < num_fb; ++ch)
-                r.InjectFeedback(ch, d.feedback[(t0 + s) * num_fb + ch]);
+            for (size_t ch = 0; ch < num_ext_fb; ++ch)
+                r.InjectExternalFeedback(ch, d.ext_feedback[(t0 + s) * num_ext_fb + ch]);
             r.Step();
             if (trace)
                 trace->insert(trace->end(), r.Outputs(), r.Outputs() + n);
@@ -61,29 +53,25 @@ namespace
                std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0;
     }
 
-    /// Run the snapshot fidelity suite for one reservoir config.
-    /// Returns the number of failed checks (0 = pass).
     int TestConfig(const char* label, const ReservoirConfig& cfg,
                    size_t warm_steps, size_t replay_steps)
     {
         int failures = 0;
         auto r = Reservoir::Create(cfg);
-        const size_t num_fb = cfg.num_feedback_channels;
+        const size_t num_ext_fb = cfg.num_external_feedback_channels;
         const DriveSeries d =
-            MakeDrive(warm_steps + replay_steps, cfg.num_inputs, num_fb, /*seed=*/0xFEEDBAC + cfg.dim);
+            MakeDrive(warm_steps + replay_steps, cfg.num_inputs, num_ext_fb,
+                      /*seed=*/0xFEEDBAC + cfg.dim);
 
-        // Warm up to a mid-rotation ring state, then snapshot.
-        Drive(*r, d, 0, warm_steps, cfg.num_inputs, num_fb, nullptr);
+        Drive(*r, d, 0, warm_steps, cfg.num_inputs, num_ext_fb, nullptr);
         const Reservoir::Snapshot snap = r->TakeSnapshot();
 
-        // Branch A: drive forward, record trajectory.
         std::vector<float> trace_a;
-        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_fb, &trace_a);
+        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_ext_fb, &trace_a);
 
-        // Branch B: restore, replay identical drive, record again.
         r->RestoreSnapshot(snap);
         std::vector<float> trace_b;
-        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_fb, &trace_b);
+        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_ext_fb, &trace_b);
 
         if (!BitIdentical(trace_a, trace_b))
         {
@@ -91,8 +79,6 @@ namespace
             ++failures;
         }
 
-        // Canonicality: Take -> Restore -> Take must reproduce the snapshot
-        // exactly (restore re-homes the ring; the capture is rotation-free).
         r->RestoreSnapshot(snap);
         const Reservoir::Snapshot snap2 = r->TakeSnapshot();
         if (!BitIdentical(snap.state, snap2.state) || !BitIdentical(snap.history, snap2.history))
@@ -101,21 +87,18 @@ namespace
             ++failures;
         }
 
-        // Staged-drive isolation: an injection staged before a restore must
-        // not leak into the post-restore trajectory.
         r->RestoreSnapshot(snap);
         r->InjectInput(0, 123.456f);
-        if (num_fb > 0) r->InjectFeedback(0, -77.7f);
+        if (num_ext_fb > 0) r->InjectExternalFeedback(0, -77.7f);
         r->RestoreSnapshot(snap);
         std::vector<float> trace_c;
-        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_fb, &trace_c);
+        Drive(*r, d, warm_steps, replay_steps, cfg.num_inputs, num_ext_fb, &trace_c);
         if (!BitIdentical(trace_a, trace_c))
         {
             std::printf("  [%s] FAIL: staged injections leaked through RestoreSnapshot\n", label);
             ++failures;
         }
 
-        // Size validation: a mismatched snapshot must throw.
         bool threw = false;
         try
         {
@@ -134,8 +117,134 @@ namespace
         }
 
         if (failures == 0)
-            std::printf("  [%s] PASS (%zu warm + %zu replay steps, N=%zu, M=%zu, fb=%zu)\n",
-                        label, warm_steps, replay_steps, r->Size(), cfg.history_depth, num_fb);
+            std::printf("  [%s] PASS (%zu warm + %zu replay steps, N=%zu, M=%zu, ext_fb=%zu)\n",
+                        label, warm_steps, replay_steps, r->Size(), cfg.history_depth, num_ext_fb);
+        return failures;
+    }
+
+    /// F0: FSF off. F1: FSF on V=0 bit-identical to F0. F2: V≠0 diverges. F6: Clear keeps V.
+    int TestFsf()
+    {
+        int failures = 0;
+        constexpr size_t kSteps = 64;
+        constexpr uint64_t kDriveSeed = 0xA11CE;
+
+        ReservoirConfig base;
+        base.dim = 6;
+        base.history_depth = 4;
+        base.seed = 4242;
+        base.verbose = false;
+
+        auto run_trace = [&](Reservoir& r) {
+            const DriveSeries d = MakeDrive(kSteps, r.GetConfig().num_inputs, 0, kDriveSeed);
+            std::vector<float> tr;
+            Drive(r, d, 0, kSteps, r.GetConfig().num_inputs, 0, &tr);
+            return tr;
+        };
+
+        auto off = Reservoir::Create(base);
+        const std::vector<float> tr_off = run_trace(*off);
+
+        ReservoirConfig on_cfg = base;
+        on_cfg.full_state_feedback = true;
+        on_cfg.fsf_seed = 99;
+        on_cfg.fsf_scaling = 0.5f;
+        auto on_v0 = Reservoir::Create(on_cfg);
+        if (!on_v0->FullStateFeedbackEnabled())
+        {
+            std::printf("  [FSF] FAIL: FullStateFeedbackEnabled false after enable\n");
+            ++failures;
+        }
+        const std::vector<float> tr_v0 = run_trace(*on_v0);
+        if (!BitIdentical(tr_off, tr_v0))
+        {
+            std::printf("  [FSF] FAIL: FSF on + V=0 not bit-identical to FSF off (F1)\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS F0/F1: off ≡ on with V=0\n");
+
+        // F2: nonzero V changes trajectory
+        auto on_v = Reservoir::Create(on_cfg);
+        std::vector<float> V(on_v->Size(), 0.0f);
+        V[0] = 0.25f;
+        V[1] = -0.1f;
+        V[on_v->Size() / 2] = 0.05f;
+        on_v->SetFullStateFeedbackGain(V.data(), V.size());
+        const std::vector<float> tr_v = run_trace(*on_v);
+        if (BitIdentical(tr_v0, tr_v))
+        {
+            std::printf("  [FSF] FAIL: nonzero V did not change trajectory (F2)\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS F2: nonzero V changes trajectory\n");
+
+        // F6: Clear does not wipe V
+        on_v->Clear();
+        std::vector<float> V2(on_v->Size());
+        on_v->GetFullStateFeedbackGain(V2.data(), V2.size());
+        if (!BitIdentical(V, V2))
+        {
+            std::printf("  [FSF] FAIL: Clear wiped V (F6)\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS F6: Clear preserves V\n");
+
+        // Set/Get throw when off
+        bool threw = false;
+        try { off->SetFullStateFeedbackGain(V.data(), V.size()); }
+        catch (const std::invalid_argument&) { threw = true; }
+        if (!threw)
+        {
+            std::printf("  [FSF] FAIL: SetV on disabled reservoir did not throw\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS SetV throws when FSF off\n");
+
+        // ESN surface: FSF applies during ReservoirWarmup without external feedback
+        ESNConfig ec;
+        ec.reservoir = on_cfg;
+        ec.reservoir.verbose = false;
+        ec.readout.num_outputs = 1;
+        ESN esn(ec);
+        if (!esn.FullStateFeedbackEnabled())
+        {
+            std::printf("  [FSF] FAIL: ESN FullStateFeedbackEnabled\n");
+            ++failures;
+        }
+        esn.SetFullStateFeedbackGain(V.data(), V.size());
+        std::vector<float> u(kSteps, 0.3f);
+        esn.ReservoirWarmup(u.data(), kSteps);
+        std::vector<float> state(esn.ReservoirNeuronCount());
+        esn.CopyReservoirState(state.data());
+        double nrm = 0.0;
+        for (float x : state) nrm += static_cast<double>(x) * x;
+        if (nrm <= 0.0)
+        {
+            std::printf("  [FSF] FAIL: ESN warmup under FSF left zero state\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS ESN SetV + Warmup under FSF\n");
+
+        // GetConfig round-trip of FSF knobs when disabled
+        ReservoirConfig off_seed = base;
+        off_seed.full_state_feedback = false;
+        off_seed.fsf_seed = 12345;
+        off_seed.fsf_scaling = 0.7f;
+        auto r_off = Reservoir::Create(off_seed);
+        const auto got = r_off->GetConfig();
+        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f || got.full_state_feedback)
+        {
+            std::printf("  [FSF] FAIL: GetConfig lost FSF knobs while disabled\n");
+            ++failures;
+        }
+        else
+            std::printf("  [FSF] PASS GetConfig round-trip while FSF off\n");
+
         return failures;
     }
 } // namespace
@@ -153,16 +262,19 @@ int main()
 
     ReservoirConfig deep;
     deep.dim = 8;
-    deep.history_depth = 7; // odd depth so warm_steps leaves the ring mid-rotation
-    deep.leak_rate = 0.8f; // exercise the leaky-integrator path (old state feeds in)
+    deep.history_depth = 7;
+    deep.leak_rate = 0.8f;
     deep.num_inputs = 2;
     deep.verbose = false;
     failures += TestConfig("dim8 M7 leaky 2-in", deep, 37, 50);
 
     ReservoirConfig fb = deep;
-    fb.num_feedback_channels = 3; // non-dividing D: drives the feedback port, exercises the D<=N path
-    fb.feedback_scaling = 0.4f;
-    failures += TestConfig("dim8 M7 +feedback", fb, 37, 50);
+    fb.num_external_feedback_channels = 3;
+    fb.external_feedback_scaling = 0.4f;
+    failures += TestConfig("dim8 M7 +ext-feedback", fb, 37, 50);
+
+    std::printf("=== Full-state feedback smoke ===\n");
+    failures += TestFsf();
 
     if (failures == 0)
     {

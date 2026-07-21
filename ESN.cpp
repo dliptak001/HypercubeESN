@@ -128,28 +128,37 @@ void ESN::AssembleReadoutInput(const float* u_raw) const
         std::fill(blk + j * sub, blk + (j + 1) * sub, j < d_aux_ ? u_raw[j] : 0.0f);
 }
 
-void ESN::ReservoirStep(const float* inputs, const float* feedback)
+void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
 {
-    // Closed-loop only when feedback is actually supplied. Stage it on the D
-    // feedback channels (raw, no clamp) through the reservoir's dedicated port
-    // (own weights + feedback_scaling, outside the SR rescale — a twin of the
-    // input port). The ESN never generates feedback itself.
-    if (feedback != nullptr)
+    // External feedback: caller-owned closed-loop drive. Stage on the D channels
+    // (raw, no clamp) through the reservoir's external-feedback port (own weights
+    // + external_feedback_scaling, outside the SR rescale). The ESN never invents
+    // these values. Full-state feedback (if enabled) is applied inside Reservoir::Step.
+    if (external_feedback != nullptr)
     {
-        // Guard the contract explicitly: with D == 0 the reservoir has no
-        // feedback port, and InjectFeedback(ptr, 0) would no-op (0 == 0 passes
-        // its count check) — silently degrading this to an open-loop step. Throw
-        // instead, so a feedback caller on a non-feedback ESN fails loud.
-        if (esn_config_.reservoir.num_feedback_channels == 0)
+        // Guard: with D == 0 InjectExternalFeedback(ptr, 0) would no-op and silently
+        // degrade to no external drive. Fail loud instead.
+        if (esn_config_.reservoir.num_external_feedback_channels == 0)
             throw std::invalid_argument(
-                "ESN::ReservoirStep: feedback supplied but not configured "
-                "(num_feedback_channels == 0); pass feedback=nullptr for open-loop drive");
-        reservoir_->InjectFeedback(feedback, esn_config_.reservoir.num_feedback_channels);
+                "ESN::ReservoirStep: external_feedback supplied but not configured "
+                "(num_external_feedback_channels == 0); pass nullptr to skip");
+        reservoir_->InjectExternalFeedback(
+            external_feedback, esn_config_.reservoir.num_external_feedback_channels);
     }
 
     for (size_t ch = 0; ch < num_inputs_; ++ch)
         reservoir_->InjectInput(ch, inputs[ch]);
     reservoir_->Step();
+}
+
+void ESN::SetFullStateFeedbackGain(const float* v, size_t n)
+{
+    reservoir_->SetFullStateFeedbackGain(v, n);
+}
+
+void ESN::GetFullStateFeedbackGain(float* v_out, size_t n) const
+{
+    reservoir_->GetFullStateFeedbackGain(v_out, n);
 }
 
 void ESN::ReservoirWarmup(const float* inputs, size_t num_steps)

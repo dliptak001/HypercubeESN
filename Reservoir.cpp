@@ -22,8 +22,11 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       verbose_(cfg.verbose),
       history_depth_(cfg.history_depth),
       history_floor_(cfg.history_floor),
-      num_feedback_channels_(cfg.num_feedback_channels),
-      feedback_scaling_(cfg.feedback_scaling),
+      num_ext_feedback_channels_(cfg.num_external_feedback_channels),
+      ext_feedback_scaling_(cfg.external_feedback_scaling),
+      fsf_enabled_(cfg.full_state_feedback),
+      fsf_seed_(cfg.fsf_seed),
+      fsf_scaling_(cfg.fsf_scaling),
       bias_scaling_(cfg.bias_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
       lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
@@ -48,15 +51,18 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
         throw std::invalid_argument("history_depth must be in [1, 64]");
     if (history_floor_ < 0.1f || history_floor_ > 1.0f)
         throw std::invalid_argument("history_floor must be in [0.1, 1.0]");
-    if (num_feedback_channels_ > n_)
-        throw std::invalid_argument("num_feedback_channels must not exceed N = 2^dim "
+    if (num_ext_feedback_channels_ > n_)
+        throw std::invalid_argument(
+            "num_external_feedback_channels must not exceed N = 2^dim "
             "(each channel drives a block of floor(N/D) >= 1 vertices)");
     // D need NOT divide N: with block = floor(N/D), a non-dividing D leaves the
-    // N mod D (<= D-1) tail vertices at reset-zero — benign zero feedback sources
-    // that still RECEIVE drive via the neighbor gather (verified, gap G11). So any
-    // D in [1, N] is admissible, not only divisors of N.
+    // N mod D (<= D-1) tail vertices at reset-zero — benign zero sources that
+    // still RECEIVE drive via the neighbor gather. Any D in [1, N] is admissible.
 
-    num_weights_ = n_ * dim_ * (history_depth_ + 1 /*inputs*/ + (num_feedback_channels_ > 0) /*feedback*/);
+    const size_t drive_blocks = 1 /*input*/
+        + (num_ext_feedback_channels_ > 0 ? 1u : 0u)
+        + (fsf_enabled_ ? 1u : 0u);
+    num_weights_ = n_ * dim_ * (history_depth_ + drive_blocks);
 
     vtx_input_.reset(AllocAligned(n_));
     vtx_state_.reset(AllocAligned(n_));
@@ -69,9 +75,16 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
 
     vtx_bias_.reset(AllocAligned(n_));
 
-    num_feedback_weights_ = num_feedback_channels_ > 0 ? n_ * dim_ : 0;
-    if (num_feedback_channels_ > 0)
-        vtx_feedback_.reset(AllocAligned(n_));
+    num_ext_feedback_weights_ = num_ext_feedback_channels_ > 0 ? n_ * dim_ : 0;
+    if (num_ext_feedback_channels_ > 0)
+        vtx_ext_feedback_.reset(AllocAligned(n_));
+
+    num_fsf_weights_ = fsf_enabled_ ? n_ * dim_ : 0;
+    if (fsf_enabled_)
+    {
+        vtx_fsf_.reset(AllocAligned(n_));
+        fsf_gain_.assign(n_, 0.0f); // V = 0 until SetFullStateFeedbackGain
+    }
 
     Initialize();
 }
@@ -91,7 +104,15 @@ static inline uint64_t mix64(uint64_t x)
 
 // Named substreams of the reservoir's single master seed. Labelled (not
 // sequential) so adding a role later does not perturb the existing ones.
-enum class SeedRole : uint64_t { Recurrent = 1, Input = 2, Feedback = 3, Bias = 4, SrProbe = 5 };
+// Numeric labels are ABI for reproducibility — do not renumber.
+// Full-state feedback weights use a *standalone* fsf_seed RNG (not listed here).
+enum class SeedRole : uint64_t {
+    Recurrent = 1,
+    Input = 2,
+    ExternalFeedback = 3, // was Feedback; keep value 3 for stream stability
+    Bias = 4,
+    SrProbe = 5
+};
 
 void Reservoir::Initialize()
 {
@@ -100,7 +121,7 @@ void Reservoir::Initialize()
     };
     std::mt19937_64 rng(seed_for(SeedRole::Recurrent));
     std::mt19937_64 in_rng(seed_for(SeedRole::Input));
-    std::mt19937_64 fb_rng(seed_for(SeedRole::Feedback));
+    std::mt19937_64 ext_fb_rng(seed_for(SeedRole::ExternalFeedback));
     std::mt19937_64 bias_rng(seed_for(SeedRole::Bias));
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
@@ -119,13 +140,23 @@ void Reservoir::Initialize()
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(in_rng)) * in_scaling;
 
-    const float feedback_scaling = feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
-    for (size_t i = 0; i < num_feedback_weights_; ++i)
-        (*pW++) = static_cast<float>(dist(fb_rng)) * feedback_scaling;
+    const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
+    for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
+        (*pW++) = static_cast<float>(dist(ext_fb_rng)) * ext_scale;
 
+    // FSF weights: standalone RNG from fsf_seed — must not touch main seed streams.
+    if (num_fsf_weights_ > 0)
+    {
+        std::mt19937_64 fsf_rng(fsf_seed_);
+        const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
+        for (size_t i = 0; i < num_fsf_weights_; ++i)
+            (*pW++) = static_cast<float>(dist(fsf_rng)) * fsf_scale;
+    }
+
+    const size_t rec_base = RecurrentWeightBase();
     const float w_scaling = 1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
-    for (size_t i = 0; i < num_weights_ - num_input_weights_ - num_feedback_weights_; i++)
-        (*pW++) = static_cast<float>(dist(rng)) * w_scaling;
+    for (size_t i = rec_base; i < num_weights_; ++i)
+        vtx_weight_[i] = static_cast<float>(dist(rng)) * w_scaling;
 
     // Depth taper: linearly down-weight older history so a deeper (older) slice
     // contributes less. Slice i is scaled by factor(i) = 1 - (1-K)*(i+1)/M, ramping
@@ -139,7 +170,7 @@ void Reservoir::Initialize()
         depth_factor[i] = 1.0f - (1.0f - history_floor_)
             * static_cast<float>(i + 1)
             / static_cast<float>(history_depth_);
-    float* pRec = vtx_weight_.get() + num_input_weights_ + num_feedback_weights_;
+    float* pRec = vtx_weight_.get() + rec_base;
     for (size_t v = 0; v < n_; ++v)
         for (size_t i = 0; i < history_depth_; ++i)
             for (size_t j = 0; j < dim_; ++j)
@@ -165,7 +196,7 @@ void Reservoir::Initialize()
     auto eval_sr = [&](float s)
     {
         const float rel = s / applied_scale;
-        for (size_t i = num_input_weights_ + num_feedback_weights_; i < num_weights_; ++i) vtx_weight_[i] *= rel;
+        for (size_t i = rec_base; i < num_weights_; ++i) vtx_weight_[i] *= rel;
         applied_scale = s;
         return EstimateSpectralRadius(sr_x, sr_y);
     };
@@ -202,16 +233,33 @@ void Reservoir::Initialize()
     }
     realized_spectral_radius_ = post_sr;
     if (verbose_)
+    {
         std::printf("[Reservoir DIM=%zu M=%zu seed=%llu leak=%.3g in_scale=%.3g "
-                    "hist_floor=%.3g SR target=%.4f post=%.4f (secant iters=%d)]\n",
+                    "hist_floor=%.3g SR target=%.4f post=%.4f (secant iters=%d)",
                     dim_, history_depth_,
                     static_cast<unsigned long long>(rng_seed_),
                     leak_rate_, input_scaling_, history_floor_,
                     target, post_sr, sr_iters);
+        if (fsf_enabled_)
+            std::printf(" FSF on fsf_seed=%llu fsf_scale=%.3g",
+                        static_cast<unsigned long long>(fsf_seed_), fsf_scaling_);
+        std::printf("]\n");
+    }
 }
 
 void Reservoir::Step()
 {
+    // Full-state feedback: stage φ = V·x from the *pre-update* published state.
+    if (fsf_enabled_)
+    {
+        const float* x = slice_ptrs_[0];
+        double acc = 0.0;
+        for (size_t i = 0; i < n_; ++i)
+            acc += static_cast<double>(fsf_gain_[i]) * static_cast<double>(x[i]);
+        const float phi = static_cast<float>(acc);
+        std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
+    }
+
     const float* p_vtx_prev = slice_ptrs_[0];
     for (size_t v = 0; v < n_; v++)
         UpdateState(v, p_vtx_prev[v]);
@@ -225,8 +273,10 @@ void Reservoir::Step()
     std::memcpy(slice_ptrs_[0], vtx_state_.get(), n_ * sizeof(float));
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
 
-    if (num_feedback_channels_ > 0)
-        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
+    if (num_ext_feedback_channels_ > 0)
+        std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
+    if (fsf_enabled_)
+        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 // --- Lorentzian envelope (no exp; heavier tails) ---------------------------
@@ -246,12 +296,7 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
 {
     float s = 0.0f;
     const float* iw = vtx_weight_.get() + v * dim_; // input block
-    const float* w = &vtx_weight_[num_input_weights_ + num_feedback_weights_] + v * dim_ * history_depth_;
-    // recurrent block
-
-    const float* fw = nullptr;
-    if (num_feedback_channels_ > 0)
-        fw = &vtx_weight_[num_input_weights_] + v * dim_; // feedback block
+    const float* w = &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
 
     /*Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
     For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
@@ -267,10 +312,18 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
     for (size_t i = 0; i < dim_; i++)
         s += vtx_input_[v ^ NearestMask(i)] * iw[i];
 
-    if (fw != nullptr)
+    if (num_ext_feedback_channels_ > 0)
     {
+        const float* ew = &vtx_weight_[num_input_weights_] + v * dim_;
         for (size_t i = 0; i < dim_; i++)
-            s += vtx_feedback_[v ^ NearestMask(i)] * fw[i];
+            s += vtx_ext_feedback_[v ^ NearestMask(i)] * ew[i];
+    }
+
+    if (fsf_enabled_)
+    {
+        const float* fsw = &vtx_weight_[num_input_weights_ + num_ext_feedback_weights_] + v * dim_;
+        for (size_t i = 0; i < dim_; i++)
+            s += vtx_fsf_[v ^ NearestMask(i)] * fsw[i];
     }
 
     for (size_t i = 0; i < history_depth_; i++)
@@ -295,24 +348,49 @@ void Reservoir::InjectInput(const size_t channel, const float input)
         vtx_input_[v] = input;
 }
 
-void Reservoir::InjectFeedback(const size_t channel, const float feedback)
+void Reservoir::InjectExternalFeedback(const size_t channel, const float value)
 {
-    if (channel >= num_feedback_channels_)
-        throw std::invalid_argument("InjectFeedback: channel out of range [0, num_feedback_channels)");
+    if (channel >= num_ext_feedback_channels_)
+        throw std::invalid_argument(
+            "InjectExternalFeedback: channel out of range [0, num_external_feedback_channels)");
 
-    const size_t block = n_ / num_feedback_channels_;
+    const size_t block = n_ / num_ext_feedback_channels_;
     const size_t v_end = (channel + 1) * block;
     for (size_t v = channel * block; v < v_end; ++v)
-        vtx_feedback_[v] = feedback;
+        vtx_ext_feedback_[v] = value;
 }
 
-void Reservoir::InjectFeedback(const float* feedback, const size_t count)
+void Reservoir::InjectExternalFeedback(const float* values, const size_t count)
 {
-    if (count != num_feedback_channels_)
+    if (count != num_ext_feedback_channels_)
         throw std::invalid_argument(
-            "InjectFeedback(vector): count must equal num_feedback_channels");
+            "InjectExternalFeedback(vector): count must equal num_external_feedback_channels");
     for (size_t c = 0; c < count; ++c)
-        InjectFeedback(c, feedback[c]);
+        InjectExternalFeedback(c, values[c]);
+}
+
+void Reservoir::SetFullStateFeedbackGain(const float* v, const size_t n)
+{
+    if (!fsf_enabled_)
+        throw std::invalid_argument(
+            "SetFullStateFeedbackGain: full-state feedback is not enabled "
+            "(ReservoirConfig::full_state_feedback == false)");
+    if (n != n_ || v == nullptr)
+        throw std::invalid_argument(
+            "SetFullStateFeedbackGain: n must equal N and v must be non-null");
+    std::memcpy(fsf_gain_.data(), v, n_ * sizeof(float));
+}
+
+void Reservoir::GetFullStateFeedbackGain(float* v_out, const size_t n) const
+{
+    if (!fsf_enabled_)
+        throw std::invalid_argument(
+            "GetFullStateFeedbackGain: full-state feedback is not enabled "
+            "(ReservoirConfig::full_state_feedback == false)");
+    if (n != n_ || v_out == nullptr)
+        throw std::invalid_argument(
+            "GetFullStateFeedbackGain: n must equal N and v_out must be non-null");
+    std::memcpy(v_out, fsf_gain_.data(), n_ * sizeof(float));
 }
 
 Reservoir::Snapshot Reservoir::TakeSnapshot() const
@@ -344,10 +422,12 @@ void Reservoir::RestoreSnapshot(const Snapshot& snap)
         slice_ptrs_[i] = &vtx_output_history_[i * n_];
 
     // Staged drives are not part of a snapshot; clear them so the post-restore
-    // trajectory depends only on the snapshot and subsequent injections.
+    // trajectory depends only on the snapshot and subsequent injections (+ FSF).
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
-    if (num_feedback_channels_ > 0)
-        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
+    if (num_ext_feedback_channels_ > 0)
+        std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
+    if (fsf_enabled_)
+        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 ReservoirConfig Reservoir::GetConfig() const
@@ -362,8 +442,11 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.history_depth = history_depth_;
     cfg.history_floor = history_floor_;
     cfg.verbose = verbose_;
-    cfg.num_feedback_channels = num_feedback_channels_;
-    cfg.feedback_scaling = feedback_scaling_;
+    cfg.num_external_feedback_channels = num_ext_feedback_channels_;
+    cfg.external_feedback_scaling = ext_feedback_scaling_;
+    cfg.full_state_feedback = fsf_enabled_;
+    cfg.fsf_seed = fsf_seed_;
+    cfg.fsf_scaling = fsf_scaling_;
     cfg.bias_scaling = bias_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
@@ -386,8 +469,11 @@ void Reservoir::Clear()
     std::memset(vtx_state_.get(), 0, n_ * sizeof(float));
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
 
-    if (num_feedback_channels_ > 0)
-        std::memset(vtx_feedback_.get(), 0, n_ * sizeof(float));
+    if (num_ext_feedback_channels_ > 0)
+        std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
+    if (fsf_enabled_)
+        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
+    // fsf_gain_ (V) is a parameter — not cleared
 
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));
 
@@ -437,7 +523,7 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
         for (size_t v = 0; v < n_; v++)
         {
             float s = 0.0f;
-            const float* w = &vtx_weight_[num_input_weights_ + num_feedback_weights_] + v * dim_ * history_depth_;
+            const float* w = &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
             for (size_t j = 0; j < history_depth_; j++)
             {
                 const float* x_j = x.data() + j * n_;

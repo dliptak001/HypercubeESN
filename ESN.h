@@ -108,26 +108,19 @@ public:
     /// then let the reservoir update. No learning happens here — this only moves
     /// the reservoir forward in time.
     ///
-    /// **Open-loop vs closed-loop.** Normally you run *open-loop*: the reservoir
-    /// is driven purely by the external input you pass (@p feedback == nullptr).
-    /// In *closed-loop* mode you additionally feed a signal back into the
-    /// reservoir — typically the previous step's own prediction — which is how an
-    /// ESN can generate a sequence by itself, free-running with no external input.
-    /// Passing @p feedback switches to closed-loop.
+    /// **Drive ports.** Task @p inputs always stage on the input port. Optional
+    /// @p external_feedback (when non-null) stages caller-owned closed-loop drive
+    /// on the external-feedback port (e.g. previous-step prediction for free-run).
+    /// If this ESN was built with @c full_state_feedback, each step **also**
+    /// applies internal full-state feedback φ = V·x automatically inside the
+    /// reservoir — that path is not passed here (use @ref SetFullStateFeedbackGain).
     ///
-    /// The ESN never invents or learns the feedback signal itself; *you* compute
-    /// it (e.g. from the last @ref Predict) and hand it in here. The values are
-    /// staged RAW (no clamp) on the reservoir's dedicated feedback port, which has
-    /// its own weight block and feedback_scaling, separate from the input port.
-    /// This is the one and only feedback entry point.
-    ///
-    /// @param inputs   NumInputs() floats — the task input for this step.
-    /// @param feedback nullptr for open-loop; otherwise NumFeedbackChannels()
-    ///                 floats for closed-loop drive.
-    /// @throws std::invalid_argument if @p feedback is non-null but this ESN was
-    ///         built without a feedback port (NumFeedbackChannels() == 0). Failing
-    ///         loudly here stops a closed-loop call from silently running open-loop.
-    void ReservoirStep(const float* inputs, const float* feedback = nullptr);
+    /// @param inputs              NumInputs() floats — the task input for this step.
+    /// @param external_feedback   nullptr to skip external feedback; otherwise
+    ///                            NumExternalFeedbackChannels() floats.
+    /// @throws std::invalid_argument if @p external_feedback is non-null but this
+    ///         ESN has no external-feedback port (NumExternalFeedbackChannels()==0).
+    void ReservoirStep(const float* inputs, const float* external_feedback = nullptr);
 
     /// @brief Drive the reservoir for @p num_steps **without saving any states** —
     /// the warm-up that washes out the cold-start transient.
@@ -139,9 +132,10 @@ public:
     /// and discarded — nothing is recorded.
     ///
     /// @p inputs is row-major: @p num_steps * NumInputs() floats, i.e. NumInputs()
-    /// values per timestep laid end to end. Each step runs open-loop via
-    /// @ref ReservoirStep, so no feedback is injected even on a feedback-capable
-    /// ESN; for a closed-loop warm-up, call @ref ReservoirStep yourself.
+    /// values per timestep laid end to end. Each step calls @ref ReservoirStep
+    /// without external feedback. **If full-state feedback is enabled, FSF still
+    /// applies each step** (internal φ = V·x). For external-feedback warm-up,
+    /// call @ref ReservoirStep yourself with the second argument.
     ///
     /// This is also the warm-up for online/streaming training: drive here to
     /// settle the reservoir before your first @ref TrainStep / @ref TrainStepBatch.
@@ -153,8 +147,9 @@ public:
     ///
     /// This is the data-collection step: each recorded row (ReadoutInputWidth() floats)
     /// becomes one training row, to be paired with one target. @p inputs has the same
-    /// row-major layout as @ref ReservoirWarmup. Each step runs open-loop, so the
-    /// recorded rows never carry feedback drive, regardless of NumFeedbackChannels().
+    /// row-major layout as @ref ReservoirWarmup. External feedback is not injected
+    /// (pass it via @ref ReservoirStep if needed). **Full-state feedback, if enabled,
+    /// still applies** so recorded states match the FSF-closed dynamics.
     ///
     /// @throws std::logic_error if the readout has an auxiliary block
     ///         (aux_input_dim > 0). The batch path has nowhere to take a per-step
@@ -355,26 +350,44 @@ public:
     /// @throws std::out_of_range if @p slot >= ReadoutBlockCount().
     [[nodiscard]] size_t ReadoutBlockOf(size_t slot) const;
 
-    /// @brief Number of external feedback channels D (cfg.reservoir.num_feedback_channels).
+    /// @brief Number of external-feedback channels D
+    /// (cfg.reservoir.num_external_feedback_channels).
     ///
-    /// 0 means this ESN has no feedback port and can only run open-loop. When
-    /// D > 0, a closed-loop @ref ReservoirStep expects exactly this many feedback
-    /// values per step.
-    [[nodiscard]] size_t NumFeedbackChannels() const
+    /// 0 means no external-feedback port. When D > 0, a non-null second argument
+    /// to @ref ReservoirStep must supply exactly D floats.
+    [[nodiscard]] size_t NumExternalFeedbackChannels() const
     {
-        return esn_config_.reservoir.num_feedback_channels;
+        return esn_config_.reservoir.num_external_feedback_channels;
     }
+
+    /// @brief True if built with cfg.reservoir.full_state_feedback.
+    [[nodiscard]] bool FullStateFeedbackEnabled() const
+    {
+        return reservoir_->FullStateFeedbackEnabled();
+    }
+
+    /// @brief Set full-state gain V (length @ref ReservoirNeuronCount). No-op path
+    /// throws if FSF was not enabled at construction. Mid-run changes apply on the
+    /// next @ref ReservoirStep.
+    void SetFullStateFeedbackGain(const float* v, size_t n);
+
+    /// @brief Copy current V into @p v_out (length n == N). Throws if FSF off.
+    void GetFullStateFeedbackGain(float* v_out, size_t n) const;
 
     // --- Configuration & save/load ---
 
     /// @brief Return the fully-resolved config this ESN was built from — handy for
     /// rebuilding an identical ESN or for serialization.
+    ///
+    /// Note: when full-state feedback is enabled, the gain V is **not** in the
+    /// config (use @ref GetFullStateFeedbackGain). Config + seeds rebuild weight
+    /// blocks and B_fsf, not a non-zero V.
     [[nodiscard]] ESNConfig GetConfig() const;
 
     /// @brief A portable snapshot of the trained readout's weights — everything
-    /// that learning produces. Save it to disk to reuse a trained model later
-    /// without retraining; the fixed reservoir is fully determined by the config +
-    /// seed, so it never needs saving.
+    /// that readout learning produces. Save it to disk to reuse a trained model
+    /// later without retraining. Reservoir topology/weights are determined by
+    /// config + seeds; a non-zero FSF gain V is separate (Get/Set above).
     struct ReadoutState
     {
         std::vector<double> weights;
