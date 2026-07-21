@@ -249,7 +249,10 @@ void Reservoir::Initialize()
 
 void Reservoir::Step()
 {
-    // Full-state feedback: stage φ = V·x from the *pre-update* published state.
+    // Full-state feedback: φ = V·x from the pre-update published state, then stage
+    // pad[v] = φ * V[v]. Same vector V scores the state and paints the FSF field
+    // (w ≡ V forever — no separate staging vector). UpdateState gathers neighbors
+    // of that field through B_fsf (non-uniform unless V is flat).
     if (fsf_enabled_)
     {
         const float* x = slice_ptrs_[0];
@@ -257,7 +260,8 @@ void Reservoir::Step()
         for (size_t i = 0; i < n_; ++i)
             acc += static_cast<double>(fsf_gain_[i]) * static_cast<double>(x[i]);
         const float phi = static_cast<float>(acc);
-        std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
+        for (size_t v = 0; v < n_; ++v)
+            vtx_fsf_[v] = phi * fsf_gain_[v];
     }
 
     const float* p_vtx_prev = slice_ptrs_[0];

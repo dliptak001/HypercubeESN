@@ -229,7 +229,7 @@ for i = 0 .. DIM-1:
 for i = 0 .. DIM-1:
     s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
 
-# (b2) FSF — φ-broadcast buffer (omitted if FSF off); staged at start of Step
+# (b2) FSF — pad[v]=φ·V[v] staged at start of Step (omitted if FSF off)
 for i = 0 .. DIM-1:
     s += fsf[v XOR (1<<i)] * W_fsf[v][i]
 
@@ -302,21 +302,25 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 ## Full-state linear feedback (optional)
 
-When `full_state_feedback = true`, a third drive path applies φ = V·x **inside**
-each `Step` (V length N, init 0; `SetFullStateFeedbackGain` /
-`GetFullStateFeedbackGain`). Weights from a standalone `fsf_seed` (not the main
-reservoir seed stream). Zero allocation when disabled.
+When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
+
+1. φ = V · x (V length N, init 0; `SetFullStateFeedbackGain` / `Get…`)
+2. Stage `vtx_fsf_[v] = φ * V[v]` — **same V** paints the field (**w ≡ V forever**;
+   no separate staging vector)
+3. XOR-gather that field through **B_fsf** (from standalone `fsf_seed` /
+   `fsf_scaling`)
+
+Zero allocation when disabled.
 
 Implications:
 
-- **Warmup / Run** under `ESN` still apply FSF when enabled — recorded states
-  match the FSF-closed dynamics.
-- **V = 0** contributes nothing (bit-identical open-loop if main seed/inputs match
-  an FSF-off run).
+- **Warmup / Run** under `ESN` still apply FSF when enabled.
+- **V = 0** ⇒ φ = 0 and pads zero ⇒ no FSF contribution (open-loop match if
+  main seed/inputs match an FSF-off run).
 - **Clear / snapshot** do not touch V; staged FSF buffer is cleared like other drives.
-- Mid-run `SetV` is a hard cut in dynamics (allowed; not a freeze API).
+- Mid-run `SetV` is a hard cut in dynamics.
 
-Theory mapping and paper citation: [full_state_linear_feedback.md](full_state_linear_feedback.md).
+Details: [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)
 

@@ -30,11 +30,12 @@ struct ReservoirConfig
 
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
     // When false: zero FSF allocation. When true: B_fsf + staging buffer + gain V
-    // (length N, init 0). Each Step applies φ = V·x automatically. fsf_seed seeds
-    // only B_fsf (standalone RNG — not mixed from `seed`). See docs/full_state_linear_feedback.md.
+    // (length N, init 0). Each Step: φ = V·x, pad[v] = φ·V[v] (w ≡ V forever),
+    // gather via B_fsf. fsf_seed seeds only B_fsf (standalone RNG — not mixed from
+    // `seed`). See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
-    float fsf_scaling = 0.5f; // DIM-invariant: weights × scaling/√dim
+    float fsf_scaling = 0.5f; // DIM-invariant B_fsf: weights × scaling/√dim
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
 
@@ -95,9 +96,10 @@ struct ReservoirConfig
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
 ///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     φ = V·x each step (V length N, init 0; @ref SetFullStateFeedbackGain).
-///     Own weight block seeded by @c fsf_seed. Outside SR rescale. Zero alloc
-///     when disabled.
+///     each step: φ = V·x, stage pad[v] = φ·V[v] (same V; no separate staging
+///     vector), gather through B_fsf. V length N, init 0 until
+///     @ref SetFullStateFeedbackGain. B_fsf from @c fsf_seed / @c fsf_scaling.
+///     Outside SR rescale. Zero alloc when disabled.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
