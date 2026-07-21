@@ -66,45 +66,77 @@ projection, and train only the layer that reads it out.
 
 ## Architecture
 
-The conv stack is sized from DIM. Each Conv+Pool pair halves the hypercube — pooling
-drops DIM by one — and HCNNConv needs DIM >= 3, so a reservoir of dimension DIM
-admits at most `DIM - 2` pairs. Channels double at every layer, starting from
-`conv_channels` (16 -> 32 -> ...).
+The conv stack is sized from DIM and built through HypercubeCNN’s architecture
+product (`LayerSpec` / `HCNNConfig::Build` in `Readout.cpp`) — not hand-rolled
+private-layer calls. Each Conv+Pool stage halves the hypercube when pooling is
+on (antipodal pool drops DIM by one). HypercubeCNN requires DIM >= 3 for conv;
+ESN reservoirs use DIM 5–16, so a reservoir of dimension DIM admits at most
+`DIM - 2` pooled stages. Channels grow by `channel_growth` (default 2) after
+each conv, starting from `conv_channels` (16 -> 32 -> …).
 
 `num_layers` chooses the depth:
 
-- **`1` (default)** — a single Conv+Pool layer at the base `conv_channels`.
+- **`1` (default)** — a single Conv(+Pool) stage at the base `conv_channels`.
 - **`0` (auto)** — `min(DIM - 2, 2)`; across all supported DIMs (5-16) that cap of
-  2 is always hit, giving a 2-layer stack (16 -> 32).
-- **explicit `n`** — exactly `n` pairs, asserted `<= DIM - 2`.
+  2 is always hit, giving a 2-layer stack (16 -> 32 with default growth).
+- **explicit `n`** — exactly `n` stages, asserted `<= DIM - 2` when pooling.
 
-Whatever the source, the count is clamped to at least 1 (`std::max(layers, 1)`),
-and the final hypercube dimension is the start DIM minus the layer count.
+Additional knobs (defaults preserve historical stacks): `use_pooling`,
+`pool_type` (Max/Avg), `use_batchnorm` (off — keeps weight blobs stable),
+`optimizer` (Adam), `channel_growth`.
 
 | Component        | Supported DIM | Source                                |
 |------------------|---------------|---------------------------------------|
-| HypercubeCNN     | 3-32          | `HCNNNetwork.cpp:24`                  |
-| HypercubeESN ESN  | 5-16          | `Reservoir::Create` (validates `dim`) |
-| Readout          | **5-16**      | Intersection; matches the ESN range   |
+| HypercubeCNN     | 3–30          | public `HCNN` ctor contract           |
+| HypercubeESN ESN | 5–16          | `Reservoir::Create` (validates `dim`) |
+| Readout          | **5–16**      | Intersection; matches the ESN range   |
+
+Host integration plan: [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md).
 
 ## Training (batch)
 
-A stack of hypercube Conv+MaxPool layers feeds a flatten and a dense head, trained
-with Adam under a cosine-annealed learning rate.
+A stack of hypercube Conv(+Pool) layers feeds a flatten and a dense head, trained
+under HypercubeCNN’s unified train API with a cosine-annealed learning rate.
 
-1. Build the conv stack from DIM (see [Architecture](#architecture)) and attach the
-   Adam optimizer.
-2. Each epoch, shuffle the samples into mini-batches — the shuffle seed varies per
-   epoch — and run Adam forward/backward over the full training set. The learning
-   rate follows a cosine schedule from `lr_max` down to `lr_max * lr_min_frac` over
-   `lr_decay_epochs` (0 = `epochs`).
-3. Two task heads:
+1. Build the stack via `HCNNConfig` / `LayerSpec` from DIM (see [Architecture](#architecture));
+   default optimizer is Adam.
+2. `Readout::Train` drives `hcnn::HCNNTrainer`: full-capacity `HCNNInputView`,
+   per-epoch shuffle seed, cosine LR via `hcnn::cosine_lr` from `lr_max` down to
+   `lr_max * lr_min_frac` over `lr_decay_epochs` (0 = `epochs`; last scheduled
+   epoch hits the floor when the horizon is > 1).
+3. Two task heads (overload by target type — no `*Regression` names):
    - **Regression** — MSE loss; raw network output at inference (the readout does
      **not** center targets — see [Task Types](#task-types)).
    - **Classification** — integer class labels, softmax + cross-entropy; logits via
      `PredictRaw` or argmax via `PredictClass`.
 4. After training, the weights are flattened via `HCNN::GetWeights()` for
-   serialization and restored with `SetWeights()` on reload.
+   serialization and restored with `SetWeights()` on reload (`ReadoutLoadMode::Eval`
+   default; `ResumeTrain` resets optimizer moments).
+
+### Best-epoch restore (optional)
+
+Set `ReadoutConfig::restore_best_epoch = true` to score after every epoch and
+restore the best snapshot at the end of `Train` (default is still last-epoch
+weights). Metrics:
+
+| Task | Metric | Helper |
+|------|--------|--------|
+| Regression | min MSE | `HCNNBestMetricCheckpoint` |
+| Classification | max accuracy | `HCNNDualCheckpoint` best-acc |
+
+Optional `best_epoch_holdout_frac` (0…0.5): take that fraction of samples from
+the **tail** of the batch as a hold-out score set; train only on the prefix.
+`0` scores the full training set. Cost is one full forward over the score set
+per epoch. Query the selected epoch with `Readout::BestEpoch()` /
+`ESN::ReadoutBestEpoch()` (1-based, or 0 if unused).
+
+### Multi-ESN threading
+
+HypercubeCNN may open its own worker pool (`num_threads`: 0 = auto, 1 = none,
+N = N workers). When the **host** already parallelizes across many `ESN`
+instances (seed surveys, grid search), set `readout.num_threads = 1` so each
+net stays single-threaded and you do not nest pools. Lorenz’s survey does this;
+single-ESN demos can leave the default `0` (auto).
 
 The conv stack sees raw reservoir state, with no per-vertex standardization — and
 that is deliberate. Reservoir outputs are already tanh-bounded in `(-1, +1)`, the
@@ -133,19 +165,25 @@ struct ReadoutConfig {
     size_t dim           = 0;        // input feature dim: 2^dim features per sample (set by ESN)
     int num_outputs      = 1;        // classes or regression targets
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // Conv+Pool pairs; 0 = auto: min(DIM-2, 2)
-    int conv_channels    = 16;       // base channels (doubles per layer)
+    int num_layers       = 1;        // Conv(+Pool) stages; 0 = auto: min(DIM-2, 2)
+    bool use_pooling     = true;     // antipodal pool after each conv
+    ReadoutPoolType pool_type = ReadoutPoolType::Max;
+    int conv_channels    = 16;       // base channels (first conv)
+    int channel_growth   = 2;        // multiply channels after each stage
+    bool use_batchnorm   = false;    // off keeps weight-blob layout stable
+    ReadoutOptimizer optimizer = ReadoutOptimizer::Adam;
     int epochs           = 200;
     int batch_size       = 32;
     float lr_max         = 0.0015f;  // cosine annealing peak (keep <= 0.005 to avoid NaN)
     float lr_min_frac    = 0.01f;    // floor = lr_max * lr_min_frac
     int   lr_decay_epochs = 0;       // cosine decay horizon; 0 = use epochs
     float weight_decay   = 0.0f;
-    float momentum       = 0.0f;     // SGD momentum; 0.9 typical for CNN
+    float momentum       = 0.0f;     // SGD momentum; ignored by Adam
     unsigned seed        = 42;       // CNN weight init seed
-    bool verbose         = false;    // print per-epoch lr
-    bool verbose_train_acc = false;  // also print train accuracy/MSE each epoch
-    ReadoutActivation activation = ReadoutActivation::TANH;  // per-Conv-layer (TANH/RELU/LEAKY_RELU/NONE)
+    ReadoutActivation activation = ReadoutActivation::TANH;
+    size_t num_threads   = 0;        // HCNN pool: 0=auto, 1=ST, N=N workers
+    bool restore_best_epoch = false; // restore best-epoch weights after Train
+    float best_epoch_holdout_frac = 0.0f; // tail hold-out for best metric (0=score train)
 };
 ```
 
@@ -192,20 +230,45 @@ floats; for classification, a single class-index float (cast to int).
 | `TrainStep(state, target, lr, wd)` | Single sample | `num_outputs` floats, or a (1,) class index |
 | `TrainStepBatch(states, targets, count, lr, wd)` | Mini-batch | `count * num_outputs`, or `count` class indices |
 
-Mini-batch is parallelized via `HCNN::TrainBatch` (classification) and
-`HCNN::TrainBatchRegression` (regression).
+Mini-batch is parallelized via unified `HCNN::TrainBatch` (int* labels or
+float* targets, overload by type).
 
 See `examples/StreamingText/` for a working streaming implementation
 and `examples/StreamingAnomaly.cpp` for an anomaly-detection use case.
 
 ## Serialization
 
-Weights are flattened/restored via `HCNN::GetWeights()` / `SetWeights()`.
-Layout: conv kernels + biases (per layer, in order) then readout weights + bias.
+### ESN-native blob (`Weights` / `SetState`)
 
-`rebuild_from_blob()` reconstructs the full HCNN network from `config_`
-(which carries `dim` and the architecture knobs) via `build_architecture()`,
-then injects the weight blob -- no retraining needed.
+Weights are flattened/restored via `HCNN::GetWeights()` / `SetWeights()`.
+Layout: per conv (kernel, bias?, BN stats if enabled) then readout weights + bias.
+Optimizer moments are **not** in the blob. The blob is **unversioned** (same layout
+as the live HCNN); architecture is implied by `ReadoutConfig` used to build the net.
+
+The network is built eagerly from `config_` in the Readout ctor; `SetState`
+injects the blob into the live net. `ReadoutLoadMode::Eval` (default) restores
+parameters only; `ResumeTrain` also resets optimizer moments for continued online
+training.
+
+### HypercubeCNN-native model (`SaveHcnnModel` / `LoadHcnnModel`)
+
+Portable pair written from a path **stem** (no extension):
+
+| File | Contents |
+|------|----------|
+| `stem.hcnw` | Versioned HCNW binary (`hcnn::save_weights`) — dims, task, layer counts, float32 weights |
+| `stem.arch.json` | ESN arch sidecar (`format: hypercube_esn_readout_arch`, `version: 1`) — knobs + expanded `layers` + `weight_count` |
+
+Load validates the sidecar against the **live** readout architecture when the JSON
+is present, then calls `hcnn::load_weights`. Missing sidecar still loads HCNW
+(HCNN checks dim/task/layer counts). ESN wrappers: `SaveReadoutHcnnModel` /
+`LoadReadoutHcnnModel`. Logging: `ArchSummary()` / `ReadoutArchSummary()`.
+
+```cpp
+esn.SaveReadoutHcnnModel("models/lorenz_readout");
+// ... rebuild same ESNConfig / architecture ...
+esn.LoadReadoutHcnnModel("models/lorenz_readout"); // Eval by default
+```
 
 ## Readout Public Interface
 
@@ -221,8 +284,12 @@ and evaluation to it. The methods below are on Readout; see
 | `PredictClass(state)` | int (argmax over logits) |
 | `R2(states, targets, num_samples)` | double |
 | `Accuracy(states, labels, num_samples)` | double |
-| `Weights()` | `vector<double>` (flattened blob) |
-| `SetState(weights)` | void (rebuild network from blob) |
+| `Weights()` | `vector<double>` (unversioned flattened blob) |
+| `SetState(weights, mode=Eval)` | void (load blob into live net) |
+| `SaveHcnnModel(stem)` | void — write `stem.hcnw` + `stem.arch.json` |
+| `LoadHcnnModel(stem, mode=Eval)` | void — validate arch sidecar, load HCNW |
+| `ArchSummary()` | `string` — layers + param counts |
+| `BestEpoch()` | int — 1-based best epoch after `restore_best_epoch` Train, else 0 |
 | `NumFeatures()` | size_t — features per sample = 2^dim; equals the reservoir's N (the readout sees all N vertices) |
 | `NumOutputs()` | size_t |
 

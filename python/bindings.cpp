@@ -29,7 +29,10 @@ PYBIND11_MODULE(_core, m)
                          float readout_lr_max, float readout_lr_min_frac,
                          int readout_lr_decay_epochs, float readout_weight_decay,
                          float readout_momentum, const char* readout_activation,
-                         unsigned readout_seed) {
+                         unsigned readout_seed,
+                         size_t readout_num_threads,
+                         bool readout_restore_best_epoch,
+                         float readout_best_epoch_holdout_frac) {
             ESNConfig cfg;
             cfg.reservoir.dim              = reservoir_hypercube_dimension;
             cfg.reservoir.seed             = seed;
@@ -62,6 +65,9 @@ PYBIND11_MODULE(_core, m)
                 std::string("readout_activation must be one of "
                             "'tanh', 'relu', 'leaky_relu', 'none' (got '") + readout_activation + "')");
             cfg.readout.seed               = readout_seed;
+            cfg.readout.num_threads        = readout_num_threads;
+            cfg.readout.restore_best_epoch = readout_restore_best_epoch;
+            cfg.readout.best_epoch_holdout_frac = readout_best_epoch_holdout_frac;
             return std::make_unique<ESN>(cfg);
         }),
             py::arg("reservoir_hypercube_dimension"),
@@ -85,7 +91,10 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_weight_decay")     = 0.0f,
             py::arg("readout_momentum")         = 0.0f,
             py::arg("readout_activation")       = "tanh",
-            py::arg("readout_seed")             = 42u)
+            py::arg("readout_seed")             = 42u,
+            py::arg("readout_num_threads")      = 0ULL,
+            py::arg("readout_restore_best_epoch") = false,
+            py::arg("readout_best_epoch_holdout_frac") = 0.0f)
 
         // ── Reservoir driving ──
         .def("reservoir_warmup", [](ESN& self, py::array_t<float, py::array::c_style | py::array::forcecast> inputs) {
@@ -343,7 +352,33 @@ PYBIND11_MODULE(_core, m)
             s.is_trained = d["is_trained"].cast<bool>();
             auto w = d["weights"].cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
             s.weights.assign(w.data(), w.data() + w.size());
-            self.SetReadoutState(s);
+            ReadoutLoadMode mode = ReadoutLoadMode::Eval;
+            if (d.contains("mode")) {
+                const auto m = d["mode"].cast<std::string>();
+                if (m == "resume_train" || m == "ResumeTrain")
+                    mode = ReadoutLoadMode::ResumeTrain;
+            }
+            self.SetReadoutState(s, mode);
         })
+        .def("save_readout_hcnn_model",
+             &ESN::SaveReadoutHcnnModel,
+             py::arg("path_stem"),
+             "Write portable stem.hcnw + stem.arch.json for the HCNN readout.")
+        .def("load_readout_hcnn_model",
+             [](ESN& self, const std::string& path_stem, const std::string& mode) {
+                 ReadoutLoadMode m = ReadoutLoadMode::Eval;
+                 if (mode == "resume_train" || mode == "ResumeTrain")
+                     m = ReadoutLoadMode::ResumeTrain;
+                 self.LoadReadoutHcnnModel(path_stem, m);
+             },
+             py::arg("path_stem"),
+             py::arg("mode") = "eval",
+             "Load stem.hcnw (+ arch sidecar) into the live readout. mode: 'eval' or 'resume_train'.")
+        .def("readout_arch_summary",
+             &ESN::ReadoutArchSummary,
+             "Human-readable HCNN readout architecture and parameter counts.")
+        .def_property_readonly("readout_best_epoch",
+             &ESN::ReadoutBestEpoch,
+             "1-based best epoch after restore_best_epoch training, else 0.")
         ;
 }

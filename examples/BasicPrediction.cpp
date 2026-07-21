@@ -60,6 +60,7 @@ int main(int argc, char* argv[])
     std::cout << "  Training: " << cfg.readout.epochs << " epochs, batch=" << cfg.readout.batch_size
               << ", lr=" << cfg.readout.lr_max
               << " (cosine, floor=" << (cfg.readout.lr_max * cfg.readout.lr_min_frac) << ")\n";
+    std::cout << esn.ReadoutArchSummary();
 
     esn.ReservoirWarmup(signal.data(), warmup);
     esn.ReservoirRun(signal.data() + warmup, train_size + test_size);

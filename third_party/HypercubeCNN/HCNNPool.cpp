@@ -3,7 +3,9 @@
 
 #include "HCNNPool.h"
 #include "ThreadPool.h"
+#include <cstdint>
 #include <stdexcept>
+#include <string>
 
 namespace hcnn {
 
@@ -12,8 +14,16 @@ static constexpr int POOL_THREAD_DIM_THRESHOLD = 14;
 
 HCNNPool::HCNNPool(int input_dim, PoolType type)
     : input_dim(input_dim), output_dim(input_dim - 1),
-      input_N(1 << input_dim), output_N(1 << (input_dim - 1)),
-      type(type) {}
+      input_N(0), output_N(0), type(type) {
+    // Align with HCNNNetwork: need dim >= 2 to pool; N = 2^dim in signed int.
+    if (input_dim < 2 || input_dim > 30) {
+        throw std::runtime_error(
+            "HCNNPool requires 2 <= input_dim <= 30, got "
+            + std::to_string(input_dim));
+    }
+    input_N  = static_cast<int>(std::uint32_t{1} << input_dim);
+    output_N = static_cast<int>(std::uint32_t{1} << (input_dim - 1));
+}
 
 void HCNNPool::forward(const float* in, float* out, int num_channels,
                        std::vector<int>* max_indices) const {

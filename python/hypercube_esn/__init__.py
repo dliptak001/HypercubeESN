@@ -103,6 +103,15 @@ class ESN:
         or "none".
     readout_seed : int
         CNN weight initialization seed. Default: 42.
+    readout_num_threads : int
+        HCNN worker pool size: 0 = auto, 1 = single-threaded (use for multi-ESN
+        hosts), N = N workers. Default: 0.
+    readout_restore_best_epoch : bool
+        If True, restore best-epoch weights after batch train (min MSE /
+        max accuracy). Default: False.
+    readout_best_epoch_holdout_frac : float
+        Tail hold-out fraction for best-epoch scoring when restore is on.
+        Default: 0.0 (score full train set).
 
     Examples
     --------
@@ -152,6 +161,9 @@ class ESN:
         readout_momentum: float = 0.0,
         readout_activation: str = "tanh",
         readout_seed: int = 42,
+        readout_num_threads: int = 0,
+        readout_restore_best_epoch: bool = False,
+        readout_best_epoch_holdout_frac: float = 0.0,
     ):
         if not (_DIM_MIN <= reservoir_hypercube_dimension <= _DIM_MAX):
             raise ValueError(
@@ -172,6 +184,9 @@ class ESN:
             "readout_momentum": readout_momentum,
             "readout_activation": readout_activation,
             "readout_seed": readout_seed,
+            "readout_num_threads": readout_num_threads,
+            "readout_restore_best_epoch": readout_restore_best_epoch,
+            "readout_best_epoch_holdout_frac": readout_best_epoch_holdout_frac,
         }
         self._impl = _ESN(
             reservoir_hypercube_dimension=reservoir_hypercube_dimension,
@@ -780,6 +795,35 @@ class ESN:
             **readout_kwargs,
         )
         self._impl._set_readout_state(state["readout_state"])
+
+    def save_readout_hcnn_model(self, path_stem) -> None:
+        """Export the HCNN readout as portable ``stem.hcnw`` + ``stem.arch.json``.
+
+        Path stem should omit the extension (e.g. ``\"models/readout\"``).
+        Architecture must match on load (same ``ReadoutConfig`` shape knobs).
+        """
+        self._impl.save_readout_hcnn_model(str(path_stem))
+
+    def load_readout_hcnn_model(self, path_stem, *, mode: str = "eval") -> None:
+        """Load ``stem.hcnw`` (+ arch sidecar) into this ESN's readout.
+
+        Parameters
+        ----------
+        path_stem : str or Path
+            Path without extension.
+        mode : str
+            ``\"eval\"`` (default) or ``\"resume_train\"`` (reset optimizer moments).
+        """
+        self._impl.load_readout_hcnn_model(str(path_stem), mode)
+
+    def readout_arch_summary(self) -> str:
+        """Human-readable HCNN readout architecture and parameter counts."""
+        return self._impl.readout_arch_summary()
+
+    @property
+    def readout_best_epoch(self) -> int:
+        """1-based best epoch after ``readout_restore_best_epoch`` train, else 0."""
+        return int(self._impl.readout_best_epoch)
 
     def save(self, path) -> None:
         """Save the trained ESN to a file.

@@ -322,10 +322,25 @@ ESN::ReadoutState ESN::GetReadoutState() const
     return s;
 }
 
-void ESN::SetReadoutState(const ReadoutState& state)
+void ESN::SetReadoutState(const ReadoutState& state, ReadoutLoadMode mode)
 {
     if (!state.is_trained) return;
-    readout_.SetState(state.weights);
+    readout_.SetState(state.weights, mode);
+}
+
+void ESN::SaveReadoutHcnnModel(const std::string& path_stem) const
+{
+    readout_.SaveHcnnModel(path_stem);
+}
+
+void ESN::LoadReadoutHcnnModel(const std::string& path_stem, ReadoutLoadMode mode)
+{
+    readout_.LoadHcnnModel(path_stem, mode);
+}
+
+std::string ESN::ReadoutArchSummary() const
+{
+    return readout_.ArchSummary();
 }
 
 // ---------------------------------------------------------------

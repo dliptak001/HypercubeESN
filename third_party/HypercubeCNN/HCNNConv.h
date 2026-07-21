@@ -11,15 +11,18 @@
  * channels on the same hypercube.  For each output vertex v, the layer
  * computes:
  *
- *   out_co(v) = b_co + sum over (ci, k) of w[co,ci,k] * in[ci, v ^ (1 << k)]
+ *   out_co(v) = b_co
+ *             + sum over (ci)     of w[co,ci,SELF] * in[ci, v]
+ *             + sum over (ci, k)  of w[co,ci,k]    * in[ci, v ^ (1 << k)]
  *
- * where k ranges over [0, DIM), so each mask is a single-bit flip
- * selecting the nearest neighbor at Hamming distance 1 along bit k.
+ * where k ranges over [0, DIM) (Hamming-distance-1 neighbors) and SELF = DIM
+ * is the center / self tap (mask 0).  Kernel width K = DIM + 1.
  *
- * Each mask selects exactly one neighbor per vertex; each gets its own learned
- * weight, shared across all vertices (CNN-style weight sharing).
+ * Each tap has its own learned weight, shared across all vertices (CNN-style
+ * weight sharing).  The self tap is the hypercube analogue of the center
+ * weight in a spatial 3x3 kernel; neighbors are the bit-axis directions.
  *
- * All geometry is bitwise — neighbor lookup uses XOR with single-bit masks;
+ * All neighbor geometry is bitwise — lookup uses XOR with single-bit masks;
  * there are no adjacency lists or spatial padding.
  *
  * Memory layout is **channel-major**: element [c*N + v] stores channel c,
@@ -28,6 +31,8 @@
 
 #pragma once
 
+#include "HCNNTypes.h"
+
 #include <vector>
 #include <random>
 
@@ -35,74 +40,27 @@ namespace hcnn {
 
 class ThreadPool;
 
-/// Activation function applied after convolution (and optional batch normalization).
-///
-/// - `NONE`: identity, useful when the layer's output feeds directly into a
-///   downstream nonlinearity (e.g. an antipodal max-pool that is itself the
-///   network's nonlinearity).
-/// - `RELU`, `LEAKY_RELU`: standard rectified-linear variants.  Single-sided,
-///   non-smooth at zero, fast.  Use He/Kaiming initialization (set
-///   automatically by `randomize_weights`).
-/// - `TANH`: smooth, symmetric, bounded in (-1, 1).  The standard activation
-///   for time-series and recurrent-network workloads (LSTM, GRU, ESN), and
-///   the natural choice when HCNN is used as a regression readout for a
-///   reservoir whose state is itself tanh-bounded -- the activations of the
-///   conv layer then live in the same range as the reservoir state, and the
-///   gradient is everywhere smooth (no kink at zero like RELU/LEAKY_RELU,
-///   which interacts badly with the antipodal max-pool's already-non-smooth
-///   gradient).  Uses Xavier/Glorot initialization.
-enum class Activation { NONE, RELU, LEAKY_RELU, TANH };
-
-/// Optimizer for weight updates.
-enum class OptimizerType { SGD, ADAM };
-
 /**
  * @class HCNNConv
- * @brief One hypercube convolutional layer.  Maps c_in input channels on a
- *        DIM-dimensional binary hypercube to c_out output channels on the
- *        same hypercube using K = DIM single-bit-flip XOR neighbor masks.
+ * @brief One hypercube convolutional layer — private implementation.
  *
- * Each output channel learns one weight per (input channel, neighbor
- * direction) pair plus an optional bias.  Weight sharing across vertices is
- * exact (the hypercube is vertex-transitive), so there is no padding,
- * border handling, or adjacency table.
+ * Not installed.  Owned by `HCNNNetwork` / `HCNN`.  Application code must not
+ * include this header; in-tree tests may.  New user-facing knobs go on `HCNN`.
  *
- * Owns: kernel + (optional) bias + (optional) batch-norm parameters, plus
- * the matching first / second moment buffers for SGD-momentum or Adam.
- *
- * Configurable per layer:
- *   - activation: NONE / RELU / LEAKY_RELU / TANH
- *   - use_bias: per-output-channel learnable bias
- *   - use_batchnorm: per-channel batch normalization between conv and activation
- *   - optimizer: SGD-with-momentum or Adam (set via set_optimizer)
- *
- * Two backward paths share the same gradient math but differ in where the
- * gradients land:
- *   - backward(): apply gradients in-place via the configured optimizer
- *     (used by single-sample TrainStep)
- *   - compute_gradients() + apply_gradients(): write raw gradients into
- *     caller-provided buffers, then apply once (used by mini-batch
- *     training to accumulate per-sample grads across threads)
- *
- * Threading: an optional ThreadPool parallelizes the inner vertex loop;
- * only kicks in when DIM >= 12, since fork-join overhead dominates below.
- * Disabled automatically during batch-parallel dispatch (LayerThreadGuard).
- *
- * Layout convention: all activation tensors are channel-major,
- * `data[c * N + v]` for channel c, vertex v.
- *
- * Power-user class: ordinary SDK consumers should use HCNN, which builds
- * and owns conv layers internally.
+ * Maps c_in → c_out channels on a DIM-cube with K = DIM + 1 taps (self +
+ * one-bit XOR neighbors).  Layout: channel-major `data[c * N + v]`.
  */
 class HCNNConv {
 public:
     /**
      * @brief Construct a hypercube convolutional layer.
      *
-     * Uses K = DIM nearest-neighbor XOR masks (computed inline).  Kernel and
-     * bias weights are initialized to zero; call randomize_weights() before training.
+     * Uses K = DIM + 1 taps: self (index DIM) plus DIM nearest-neighbor XOR
+     * directions (indices 0 .. DIM-1).  Kernel and bias weights are
+     * initialized to zero; call randomize_weights() before training.
      *
-     * Requires dim >= 3 so that K >= 3.
+     * Requires 3 <= dim <= 30 (N = 2^dim fits in signed 32-bit int) and
+     * c_in >= 1, c_out >= 1.
      *
      * @param dim            Hypercube dimension.  The layer operates on N = 2^dim vertices.
      * @param c_in           Number of input channels.
@@ -123,7 +81,7 @@ public:
      *   ReLU/LeakyReLU with c_in > 1: He/Kaiming uniform, s = sqrt(6 / fan_in).
      *   Otherwise (NONE, TANH, or first layer with c_in=1):
      *     Xavier/Glorot uniform, s = sqrt(6 / (fan_in + fan_out)).
-     * fan_in = c_in * K, fan_out = c_out * K.
+     * fan_in = c_in * K, fan_out = c_out * K  (K = DIM + 1, self + neighbors).
      *
      * Biases are reset to zero.  Momentum velocity buffers are cleared.
      *
@@ -135,9 +93,9 @@ public:
     /**
      * @brief Execute the forward pass over all output channels.
      *
-     * For each output channel and each vertex, looks up K specific neighbors
-     * via XOR masks, multiplies by the corresponding kernel weight, sums,
-     * adds bias, and applies the activation function.
+     * For each output channel and each vertex, accumulates the self tap and
+     * DIM Hamming-1 neighbors (XOR masks), multiplies by the corresponding
+     * kernel weights, adds bias, and applies the activation function.
      *
      * When batch normalization is enabled, normalization is applied between
      * the weighted sum and activation.  In training mode, per-sample statistics
@@ -148,36 +106,38 @@ public:
      * @param[out] out      Output activations, channel-major [c_out * N].
      * @param[out] pre_act  If non-null, receives the pre-activation values
      *                      [c_out * N].  Required by backward().
-     * @param[out] bn_save  If non-null and BN enabled, receives per-channel
-     *                      inv_std values [c_out].  Required by backward() in
-     *                      training mode.
+     * @param[out] bn_save  If non-null and BN enabled, receives layout
+     *                      [inv_std(c_out), mean(c_out), var(c_out)] —
+     *                      length get_bn_save_size().  Required for backward
+     *                      / compute_gradients when BN is enabled.
      */
     void forward(const float* in, float* out, float* pre_act = nullptr,
                  float* bn_save = nullptr) const;
 
     /**
-     * @brief Backward pass: compute input gradients and update weights via SGD.
+     * @brief Backward pass: input gradients + in-place optimizer step
+     *        (SGD+momentum or Adam, per set_optimizer).
      *
-     * Applies the chain rule through the activation function, then:
-     *   -# Computes grad_in (if non-null) using the same XOR-lookup structure
-     *      as forward (XOR is self-inverse, so the transpose is itself).
-     *   -# Updates kernel weights using momentum SGD:
-     *      v <- mu*v + g,  w <- w - eta*v
-     *   -# Updates bias weights similarly (if bias is enabled).
+     * Applies the chain rule through the activation (and BN if enabled), then:
+     *   -# Computes grad_in (if non-null) using the same XOR/self structure
+     *      as forward (XOR is self-inverse).
+     *   -# Updates kernel / bias / BN params via the configured optimizer.
+     *      Weight decay applies to kernels only (not bias or BN affine).
+     *
+     * When use_batchnorm, bn_save from the matching forward is required.
      *
      * @param[in]  grad_out      Gradient of loss w.r.t. output activations [c_out * N].
      * @param[in]  in            Input activations from the forward pass [c_in * N].
      * @param[in]  pre_act       Pre-activation values from the forward pass [c_out * N].
      * @param[out] grad_in       Gradient of loss w.r.t. input activations [c_in * N],
      *                           or nullptr if not needed (e.g. first layer).
-     * @param      learning_rate SGD learning rate (eta).
-     * @param      momentum      SGD momentum coefficient (mu); default 0 (no momentum).
-     * @param      weight_decay  L2 regularization coefficient; default 0 (no decay).
-     * @param[in]  post_act      Optional post-activation values [c_out * N] from the
-     *                           forward pass.  When supplied and activation==TANH,
-     *                           the activation derivative is computed as 1 - y^2
-     *                           from the post-activation, avoiding a redundant
-     *                           std::tanh call per element.  Numerically equivalent.
+     * @param      learning_rate Learning rate (eta).
+     * @param      momentum      SGD momentum coefficient (mu); ignored by Adam.
+     * @param      weight_decay  L2 / decoupled decay on kernels; default 0.
+     * @param[in]  bn_save       BN cache from forward (required if BN enabled).
+     * @param      timestep      Adam bias-correction step (t >= 1); ignored by SGD.
+     * @param[in]  post_act      Optional post-activation [c_out * N].  When set
+     *                           and activation==TANH, derivative uses 1 - y^2.
      */
     void backward(const float* grad_out, const float* in, const float* pre_act,
                   float* grad_in, float learning_rate, float momentum = 0.0f,
@@ -185,11 +145,13 @@ public:
                   int timestep = 0, const float* post_act = nullptr);
 
     /**
-     * @brief Compute gradients without applying an SGD update.
+     * @brief Compute gradients without applying an optimizer update.
      *
-     * Identical to the gradient-computation portion of backward(), but writes
-     * raw gradients into caller-provided buffers instead of updating internal
-     * weights.  Used for numerical gradient checking.
+     * Same gradient math as backward(), but writes raw grads into caller
+     * buffers.  Used by mini-batch training (accumulate then apply_gradients)
+     * and by numerical gradient checks.
+     *
+     * When use_batchnorm, bn_save from the matching forward is required.
      *
      * @param[in]  grad_out    Gradient of loss w.r.t. output activations [c_out * N].
      * @param[in]  in          Input activations from the forward pass [c_in * N].
@@ -199,11 +161,10 @@ public:
      * @param[out] kernel_grad Gradient of loss w.r.t. kernel weights [c_out * c_in * K].
      * @param[out] bias_grad   Gradient of loss w.r.t. bias [c_out],
      *                         or nullptr if bias is disabled.
-     * @param[in]  post_act    Optional post-activation values [c_out * N] from the
-     *                         forward pass.  When supplied and activation==TANH,
-     *                         the activation derivative is computed as 1 - y^2
-     *                         from the post-activation, avoiding a redundant
-     *                         std::tanh call per element.  Numerically equivalent.
+     * @param      work_buf    Optional scratch [c_out * N]; heap fallback if null.
+     * @param[in]  bn_save     BN cache from forward (required if BN enabled).
+     * @param[out] bn_gamma_grad / bn_beta_grad  BN affine grads, or null.
+     * @param[in]  post_act    Optional post-activation for TANH 1-y^2 path.
      */
     void compute_gradients(const float* grad_out, const float* in, const float* pre_act,
                            float* grad_in, float* kernel_grad, float* bias_grad,
@@ -213,16 +174,18 @@ public:
                            const float* post_act = nullptr) const;
 
     /**
-     * @brief Apply externally computed gradients via momentum SGD.
+     * @brief Apply externally computed (e.g. batch-averaged) gradients.
      *
-     * Used by mini-batch training: gradients are computed per-sample via
-     * compute_gradients(), averaged across the batch, then applied here.
+     * Used by mini-batch training after compute_gradients + reduce.
+     * Optimizer is SGD+momentum or Adam (same formulas as backward).
      *
      * @param kernel_grad  Averaged kernel gradients [c_out * c_in * K].
      * @param bias_grad    Averaged bias gradients [c_out], or nullptr if no bias.
-     * @param learning_rate SGD learning rate.
-     * @param momentum      SGD momentum coefficient.
-     * @param weight_decay  L2 regularization coefficient; default 0.
+     * @param learning_rate Learning rate.
+     * @param momentum      SGD momentum; ignored by Adam.
+     * @param weight_decay  Kernel decay; default 0.
+     * @param bn_gamma_grad / bn_beta_grad  BN affine grads when BN enabled.
+     * @param timestep      Adam bias-correction step (t >= 1).
      */
     void apply_gradients(const float* kernel_grad, const float* bias_grad,
                          float learning_rate, float momentum, float weight_decay = 0.0f,
@@ -236,10 +199,13 @@ public:
     int get_N() const { return N; }           ///< Vertex count (2^DIM).
     int get_c_in() const { return c_in; }     ///< Number of input channels.
     int get_c_out() const { return c_out; }   ///< Number of output channels.
-    int get_K() const { return K; }           ///< Number of connection masks (= DIM).
+    int get_K() const { return K; }           ///< Kernel taps (= DIM + 1: neighbors + self).
+    /// Index of the self/center tap in the last axis of the kernel (always DIM).
+    int get_self_index() const { return DIM; }
     ///@}
 
-    /// Set the thread pool for parallel execution (nullptr = single-threaded).
+    /// Non-owning pool for DIM>=12 paths; nullptr = single-threaded.
+    /// Pool must outlive any forward/backward that uses it.
     void set_thread_pool(ThreadPool* pool) { thread_pool = pool; }
 
     /// Set training mode (true) or eval mode (false) for batch normalization.
@@ -266,18 +232,33 @@ public:
     /// Size of the BN gamma/beta gradient buffers (c_out if BN, else 0).
     int get_bn_grad_size() const { return use_batchnorm ? c_out : 0; }
 
+    /// Length of each BN affine / running-stats vector (c_out if BN, else 0).
+    int get_bn_param_size() const { return use_batchnorm ? c_out : 0; }
+
     /// Update running mean/var from externally computed batch statistics.
     /// Applies Bessel's correction (N/(N-1)) to var before EMA update.
     void update_running_stats(const float* mean, const float* var);
 
+    /// Zero first/second moments (SGD velocity / Adam m,v) including BN affine.
+    /// Does not change optimizer type or weights.
+    void clear_optimizer_moments();
+
     /** @name Raw weight access (for serialization and gradient checking) */
     ///@{
-    float* get_kernel_data() { return kernel.data(); }                           ///< Pointer to kernel weight array.
-    const float* get_kernel_data() const { return kernel.data(); }              ///< Const pointer to kernel weight array.
-    int get_kernel_size() const { return static_cast<int>(kernel.size()); }      ///< Total kernel weight count.
-    float* get_bias_data() { return bias.data(); }                               ///< Pointer to bias array.
-    const float* get_bias_data() const { return bias.data(); }                  ///< Const pointer to bias array.
-    int get_bias_size() const { return static_cast<int>(bias.size()); }          ///< Bias element count (0 if bias disabled).
+    float* get_kernel_data() { return kernel.data(); }
+    const float* get_kernel_data() const { return kernel.data(); }
+    int get_kernel_size() const { return static_cast<int>(kernel.size()); }
+    float* get_bias_data() { return bias.data(); }
+    const float* get_bias_data() const { return bias.data(); }
+    int get_bias_size() const { return static_cast<int>(bias.size()); }
+    float* get_bn_gamma_data() { return bn_gamma.data(); }
+    const float* get_bn_gamma_data() const { return bn_gamma.data(); }
+    float* get_bn_beta_data() { return bn_beta.data(); }
+    const float* get_bn_beta_data() const { return bn_beta.data(); }
+    float* get_bn_running_mean_data() { return bn_running_mean.data(); }
+    const float* get_bn_running_mean_data() const { return bn_running_mean.data(); }
+    float* get_bn_running_var_data() { return bn_running_var.data(); }
+    const float* get_bn_running_var_data() const { return bn_running_var.data(); }
     ///@}
 
 private:
@@ -285,14 +266,14 @@ private:
     int N;            ///< Number of vertices, always 2^DIM.
     int c_in;         ///< Input channel count.
     int c_out;        ///< Output channel count (number of filters).
-    int K;            ///< Number of connection masks (= DIM).
+    int K;            ///< Number of kernel taps (= DIM + 1: bit-flips 0..DIM-1 + self at DIM).
     Activation activation;  ///< Activation function applied after convolution.
     bool use_bias;       ///< Whether a learnable bias term is added per output channel.
     bool use_batchnorm;  ///< Whether batch normalization is applied between conv and activation.
     mutable bool training_ = true; ///< Training mode (true) or eval mode (false) for BN.
     mutable bool skip_running_stats_ = false; ///< When true, forward() skips EMA updates (batch-parallel mode).
 
-    std::vector<float> kernel;          ///< Kernel weights, layout [c_out * c_in * K].
+    std::vector<float> kernel;          ///< Kernel weights, layout [c_out * c_in * K]; k in [0,DIM) = bit k, k==DIM = self.
     std::vector<float> bias;            ///< Per-output-channel bias, size c_out (empty if bias disabled).
     std::vector<float> kernel_m;        ///< First moment (SGD velocity / Adam m) for kernel.
     std::vector<float> bias_m;          ///< First moment for bias.
@@ -312,7 +293,7 @@ private:
     static constexpr float bn_eps_ = 1e-5f;      ///< Epsilon for numerical stability.
 
     // Optimizer configuration
-    OptimizerType optimizer_type_ = OptimizerType::SGD;
+    OptimizerType optimizer_type_ = OptimizerType::ADAM;
     float adam_beta1_ = 0.9f, adam_beta2_ = 0.999f, adam_eps_ = 1e-8f;
 
     std::vector<float> backward_work_;  ///< Persistent scratch for backward() [c_out * N], grown on demand.
@@ -323,7 +304,7 @@ private:
      * @brief Compute the flat index into the kernel array.
      * @param co Output channel index.
      * @param ci Input channel index.
-     * @param k  Mask index (0 .. K-1).
+     * @param k  Tap index: 0 .. DIM-1 = neighbor bit k; DIM = self.
      * @return   Index into the kernel vector.
      */
     int kernel_idx(int co, int ci, int k) const {

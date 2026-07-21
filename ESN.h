@@ -385,7 +385,27 @@ public:
     [[nodiscard]] ReadoutState GetReadoutState() const;
     /// @brief Load previously-saved readout weights (from @ref GetReadoutState)
     /// back into this ESN. A not-trained state is ignored.
-    void SetReadoutState(const ReadoutState& state);
+    /// @param mode Eval (default) restores parameters only; ResumeTrain also
+    ///        resets CNN optimizer moments for continued online training.
+    void SetReadoutState(const ReadoutState& state,
+                         ReadoutLoadMode mode = ReadoutLoadMode::Eval);
+
+    /// @brief 1-based epoch of the best restored weights after the last batch
+    /// @ref Train with @c ReadoutConfig::restore_best_epoch, else 0. See
+    /// @ref Readout::BestEpoch.
+    [[nodiscard]] int ReadoutBestEpoch() const { return readout_.BestEpoch(); }
+
+    /// @brief Export the trained readout as HCNW + arch sidecar (see
+    /// @ref Readout::SaveHcnnModel). Path stem without extension.
+    void SaveReadoutHcnnModel(const std::string& path_stem) const;
+
+    /// @brief Load HCNW (+ optional arch sidecar) into the live readout
+    /// (see @ref Readout::LoadHcnnModel).
+    void LoadReadoutHcnnModel(const std::string& path_stem,
+                              ReadoutLoadMode mode = ReadoutLoadMode::Eval);
+
+    /// @brief Architecture summary of the HCNN readout (param counts, layers).
+    [[nodiscard]] std::string ReadoutArchSummary() const;
 
 private:
     std::unique_ptr<Reservoir> reservoir_;

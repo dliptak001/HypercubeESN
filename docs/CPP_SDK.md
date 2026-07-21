@@ -259,19 +259,25 @@ struct ReadoutConfig {
     size_t dim           = 0;        // input feature dim = 2^dim; set internally by ESN — do not set
     int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // Conv+Pool pairs; 0 = auto: min(DIM-2, 2)
-    int conv_channels    = 16;       // doubles per layer
+    int num_layers       = 1;        // Conv(+Pool) stages; 0 = auto: min(DIM-2, 2)
+    bool use_pooling     = true;
+    ReadoutPoolType pool_type = ReadoutPoolType::Max;
+    int conv_channels    = 16;       // first-layer channels
+    int channel_growth   = 2;        // multiply after each stage
+    bool use_batchnorm   = false;
+    ReadoutOptimizer optimizer = ReadoutOptimizer::Adam;
     int epochs           = 200;
     int batch_size       = 32;
     float lr_max         = 0.0015f;
     float lr_min_frac    = 0.01f;
     int   lr_decay_epochs = 0;       // 0 = use epochs
     float weight_decay   = 0.0f;
-    float momentum       = 0.0f;     // heavy-ball SGD momentum; 0 = plain
+    float momentum       = 0.0f;     // SGD only; ignored by Adam
     unsigned seed        = 42;
-    bool verbose         = false;
-    bool verbose_train_acc = false;
-    ReadoutActivation activation = ReadoutActivation::TANH;  // per-Conv-layer
+    ReadoutActivation activation = ReadoutActivation::TANH;
+    size_t num_threads   = 0;        // 0=auto, 1=single-threaded HCNN, N=N workers
+    bool restore_best_epoch = false; // restore best-epoch weights after Train
+    float best_epoch_holdout_frac = 0.0f; // tail hold-out for selection (0=score train)
 };
 ```
 
@@ -280,21 +286,29 @@ struct ReadoutConfig {
 | `dim` | `size_t` | `0` | Input feature dimension (features per sample = 2^dim). **Set internally by the ESN** to `cfg.reservoir.dim` (the readout sees all N vertices) — consumers do not set this; any value here is overwritten at construction. |
 | `num_outputs` | `int` | `1` | Number of output neurons. For regression: number of targets. For classification: number of classes. |
 | `task` | `ReadoutTask` | `Regression` | Task head. See [ReadoutTask](#readouttask). |
-| `num_layers` | `int` | `1` | Number of Conv+Pool pairs. `1` (default) builds a single Conv+Pool layer. `0` auto-computes `min(DIM - 2, 2)`. Each Pool halves the hypercube dimension, capped by `DIM - 2` (HCNNConv requires DIM >= 3). |
-| `conv_channels` | `int` | `16` | Base channel count for the first Conv layer. Doubles per layer (16, 32 for a 2-layer stack). |
+| `num_layers` | `int` | `1` | Number of Conv(+Pool) stages. `1` (default) builds a single stage. `0` auto-computes `min(DIM - 2, 2)`. Each Pool halves the hypercube dimension, capped by `DIM - 2`. |
+| `use_pooling` | `bool` | `true` | Antipodal pool after each conv. |
+| `pool_type` | `ReadoutPoolType` | `Max` | Max or Avg pool when pooling is on. |
+| `conv_channels` | `int` | `16` | Base channel count for the first Conv layer. |
+| `channel_growth` | `int` | `2` | Multiplier applied to channels after each stage (historical default: double). |
+| `use_batchnorm` | `bool` | `false` | Per-conv BN. Off keeps the weight-blob layout stable; enabling grows the blob. |
+| `optimizer` | `ReadoutOptimizer` | `Adam` | Forwarded to HypercubeCNN. |
 | `epochs` | `int` | `200` | Training epochs (batch mode). Structured signals saturate at ~25 epochs; chaotic signals need ~2000. Ignored in online mode. |
 | `batch_size` | `int` | `32` | Mini-batch size (batch mode). Use 128+ on multi-core CPUs to saturate threading. |
 | `lr_max` | `float` | `0.0015` | Peak learning rate for cosine annealing. **Keep <= 0.005 to avoid weight divergence into denormal/NaN territory.** |
 | `lr_min_frac` | `float` | `0.01` | Cosine schedule floor as fraction of `lr_max`. Effective `lr_min = lr_max * lr_min_frac`. |
 | `lr_decay_epochs` | `int` | `0` | Cosine decay horizon. 0 = use `epochs`. Set > epochs to trace only a prefix of the cosine curve (keeps lr high when shortening a run). |
 | `weight_decay` | `float` | `0.0` | L2 weight decay. |
-| `momentum` | `float` | `0.0` | Heavy-ball SGD momentum. `0` = plain SGD; `0.9` is typical for a wider CNN head. |
+| `momentum` | `float` | `0.0` | Heavy-ball SGD momentum. `0` = plain SGD; ignored under Adam. |
 | `seed` | `unsigned` | `42` | Seed for weight initialization. |
-| `verbose` | `bool` | `false` | Print per-epoch lr to stdout. |
-| `verbose_train_acc` | `bool` | `false` | Also compute and print training accuracy (classification) or MSE (regression) each epoch. Costs one extra forward pass per epoch. |
 | `activation` | `ReadoutActivation` | `TANH` | Activation applied after each Conv layer. See [ReadoutActivation](#readoutactivation). |
+| `num_threads` | `size_t` | `0` | HCNN worker pool: `0` auto, `1` single-threaded (**required** when the host parallelizes across many ESNs — avoid nested pools), `N` workers. |
+| `restore_best_epoch` | `bool` | `false` | After each epoch, score MSE (regression) or accuracy (classification) and restore the best weights at the end of `Train`. Default keeps last-epoch weights. |
+| `best_epoch_holdout_frac` | `float` | `0.0` | With `restore_best_epoch`: fraction of samples (tail, input order) held out for scoring only; train on the prefix. `0` scores the full train set. Clamped to [0, 0.5]. |
 
-**Architecture:** the default `num_layers = 1` builds a single Conv+Pool layer (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` Conv+Pool pairs with channels doubling per layer. See [Readout.md](Readout.md) for the full design notes.
+**Architecture:** built via HypercubeCNN `LayerSpec` / `HCNNConfig`. The default `num_layers = 1` builds a single Conv+Pool stage (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` stages with channels growing by `channel_growth`. See [Readout.md](Readout.md) and [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md).
+
+**Multi-ESN threading:** set `readout.num_threads = 1` whenever outer code runs many ESNs in parallel (e.g. Lorenz survey). Leave `0` for a single-ESN process so HCNN can use an auto pool.
 
 ---
 
@@ -595,8 +609,12 @@ The ESN exposes its trained readout state for save/restore. The reservoir weight
 
 | Method | Description |
 |--------|-------------|
-| `GetReadoutState()` | Extract trained readout for serialization. |
-| `SetReadoutState(state)` | Restore a previously saved readout state. Reconstructs the CNN from stored config + weight blob. |
+| `GetReadoutState()` | Extract trained readout for serialization (unversioned double blob). |
+| `SetReadoutState(state, mode=Eval)` | Restore a previously saved readout state into the live CNN. `ReadoutLoadMode::Eval` (default) loads parameters only; `ResumeTrain` also resets optimizer moments for continued online training. |
+| `ReadoutBestEpoch()` | 1-based epoch restored when `restore_best_epoch` was used, else 0. |
+| `SaveReadoutHcnnModel(stem)` | Write portable `stem.hcnw` + `stem.arch.json` (HypercubeCNN-native). |
+| `LoadReadoutHcnnModel(stem, mode=Eval)` | Load HCNW after validating arch sidecar against the live net. |
+| `ReadoutArchSummary()` | Human-readable layer stack and parameter counts. |
 
 **Example: save and restore a trained model**
 

@@ -202,7 +202,7 @@ int main(int argc, char* argv[])
 
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
-    cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.99
+    cfg.reservoir.spectral_radius = 0.95; // A(x): 0.9,  tanh(x): 0.99
     cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 1.5
     cfg.readout.num_outputs   = NUM_CLASSES;
     cfg.readout.task          = ReadoutTask::Classification;

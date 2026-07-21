@@ -1,11 +1,14 @@
 # Adapting HypercubeESN to current HypercubeCNN
 
 **Audience:** maintainers re-vendoring HypercubeCNN and updating `Readout`.  
-**Status:** guidance only — HypercubeESN may still pin an older HCNN snapshot.  
+**Status:** Phase A+B done (v1.0.0 pin + facade-native Readout). Remaining work
+in [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md) (Phases C–E).  
 **Upstream:** [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) (Apache-2.0).  
 **Do not edit** `third_party/HypercubeCNN` by hand; re-vendor from upstream (see [VENDORED.md](../third_party/HypercubeCNN/VENDORED.md)).
 
-This note captures **why** HypercubeCNN’s public surface moved, **what** must change in HypercubeESN, and **how** to integrate cleanly as a long-term readout host. It is written from HypercubeESN’s current `Readout` usage and HypercubeCNN’s post–0.2 facade work (train unify, session defaults, input types, private Network, etc.).
+This note captures **why** HypercubeCNN’s public surface moved, **what** changed
+in HypercubeESN, and **how** to stay a clean long-term readout host. Prefer the
+active plan doc for sequencing and remaining work.
 
 ---
 
@@ -22,20 +25,20 @@ HypercubeRC is deprecated; treat HypercubeESN as the **canonical host** when cho
 
 ---
 
-## 2. Current HypercubeESN ↔ HCNN coupling (as of old vendor)
+## 2. Current HypercubeESN ↔ HCNN coupling (v1.0.0 host)
 
 All HCNN use is confined to **`Readout.cpp`** (PIMPL). Public ESN headers only forward-declare `hcnn::HCNN`.
 
-| Concern | What Readout does today (old snapshot) |
-|---------|----------------------------------------|
-| Construct | `HCNN(dim, num_outputs, 1, task, LossType::Default, num_threads)` |
-| Arch | `AddConv` / optional `AddPool(MAX)` / `RandomizeWeights` / `SetOptimizer(ADAM)` / `PrepareBuffers` |
-| Batch train | `TrainEpoch` vs `TrainEpochRegression` by `ReadoutTask` |
-| Online train | `TrainStep` / `TrainBatch` vs `*Regression` twins |
-| Infer | Manual `Embed` + `Forward` (scratch buffers); local argmax for class |
-| Weights | `GetWeights` → `vector<double>`; `SetWeights` from double blob |
-| Inputs | Always **full** length `N = 2^dim` (reservoir state) |
-| Schedule | **ESN-owned** `CosineLR` / `ExponentialDecayLR` — not HCNN helpers |
+| Concern | What Readout does now |
+|---------|------------------------|
+| Construct | `HCNNConfig` + `LayerSpec[]` → `Build()` (no `LossType`) |
+| Arch | Generated `LayerSpec` (Conv ± Pool, optional BN); `summarize()` then `Build()` |
+| Batch train | `HCNNTrainer` + unified `TrainEpoch` (int* vs float*) + HCNN `cosine_lr` |
+| Online train | `TrainStep` / `TrainBatch` with `TrainParams` (no `*Regression`) |
+| Infer | `Predict` / `PredictClass`; eval uses `ForwardBatch` |
+| Weights | `GetWeights` → `vector<double>`; `SetWeights` + `ReadoutLoadMode` |
+| Inputs | Full capacity via `HCNNInputView` for batch train |
+| Schedule | Batch: HCNN cosine via trainer; online hosts may still use `CosineLR` |
 | Spatial / MNIST path | **Unused** (correct for ESN) |
 
 Nothing in ESN should include `HCNNNetwork`, `HCNNConv`, etc.
@@ -83,7 +86,7 @@ net_->TrainEpoch(states, n, float_targets, num_samples, batch,
 
 Same pattern for `TrainStep` / `TrainBatch`.
 
-**Transition:** `Train*Regression(...)` still exist as **thin aliases** to the float* overloads. ESN may call either after re-vendor; prefer the unified names in new code.
+**v1.0.0:** `Train*Regression(...)` are **removed**. Use the `float*` overloads only.
 
 Dispatch in `Readout` can stay:
 
@@ -195,7 +198,8 @@ Keep ESN’s public `Readout::Train` / `TrainStep` / `TrainStepBatch` **float* t
 - Pass **learning rate every step/epoch** (or adopt `TrainParams` later if you want).  
 - **Adam** is HCNN’s default; explicit `SetOptimizer(ADAM)` remains good documentation.  
 - `momentum` on train calls is for **SGD**; under Adam it is ignored — keep config fields if you might switch optimizers.  
-- Use **`num_threads = 1`** on HCNN when the host parallelizes across many ESN instances (avoid nested pools).  
+- Use **`num_threads = 1`** on HCNN when the host parallelizes across many ESN instances (avoid nested pools). Single-ESN demos may leave `0` (auto).
+- Optional **`restore_best_epoch`** scores train (or a tail hold-out) each epoch and restores best MSE / accuracy at the end of `Train` (default off).  
 - Own the **LR schedule** in ESN (`CosineLR` / `ExponentialDecayLR`) unless you deliberately migrate to `hcnn::cosine_lr` / `HCNNTrainer` for shared behavior with HCNN demos.
 
 ### 6.4 Inference
@@ -207,9 +211,10 @@ Keep ESN’s public `Readout::Train` / `TrainStep` / `TrainStepBatch` **float* t
 ### 6.5 Weights and checkpoints
 
 - Prefer **`GetWeights` / `SetWeights`** for the HCNN blob (float).  
-- ESN may keep double blobs for its own checkpoint format; convert at the edge.  
-- After load, decide: eval only (default moments) vs continue training (`SetWeights(blob, true)` or re-`SetOptimizer`).  
-- Architecture (dim, layers, channels, task, outputs) must match the blob; HCNN validates size on `SetWeights`.
+- ESN keeps **unversioned** double blobs for `ReadoutState` / `Weights` / `SetState` (convert at the edge).  
+- Portable path: **`SaveHcnnModel` / `LoadHcnnModel`** → HCNW + `hypercube_esn_readout_arch` v1 sidecar.  
+- After load, decide: eval only (default moments) vs continue training (`SetWeights(blob, true)` / `ReadoutLoadMode::ResumeTrain`).  
+- Architecture (dim, layers, channels, task, outputs) must match the blob; HCNN validates size on `SetWeights` / `load_weights`.
 
 ### 6.6 What not to couple to
 
@@ -272,7 +277,8 @@ After re-vendor + Readout edits, smoke at least:
 
 | Doc | Role |
 |-----|------|
-| [Readout.md](Readout.md) | Product story of HCNN-as-readout (may lag this checklist) |
+| [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md) | Active re-vendor / best-use plan and progress |
+| [Readout.md](Readout.md) | Product story of HCNN-as-readout |
 | [CPP_SDK.md](CPP_SDK.md) | HypercubeESN public C++ API |
 | [../third_party/HypercubeCNN/VENDORED.md](../third_party/HypercubeCNN/VENDORED.md) | Vendor pin and update rule |
 | Upstream [HypercubeCNN docs/CPP_SDK.md](https://github.com/dliptak001/HypercubeCNN/blob/main/docs/CPP_SDK.md) | Canonical HCNN public API |

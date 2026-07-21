@@ -48,7 +48,8 @@ API reference for embedding HypercubeESN in your own project:
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [adapt_HypercubeCNN.md](adapt_HypercubeCNN.md) | Re-vendor HypercubeCNN, adapt `Readout` to the current HCNN facade, interop best practices |
+| [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md) | Active plan: full re-vendor + best-use HCNN host (phases A–E, blast radius, risks) |
+| [adapt_HypercubeCNN.md](adapt_HypercubeCNN.md) | API deltas and interop checklist for the HCNN facade |
 
 ## Key source files
 

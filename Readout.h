@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace hcnn
@@ -19,10 +20,25 @@ enum class ReadoutTask { Regression, Classification };
 /// (PIMPL discipline -- mapping lives in Readout.cpp).
 enum class ReadoutActivation { TANH, RELU, LEAKY_RELU, NONE };
 
+/// Antipodal pool reduction (only used when @ref ReadoutConfig::use_pooling).
+enum class ReadoutPoolType { Max, Avg };
+
+/// Weight-update rule forwarded to HypercubeCNN (default Adam).
+enum class ReadoutOptimizer { Adam, Sgd };
+
+/// How @ref Readout::SetState treats optimizer state after loading weights.
+/// Eval: restore parameters only (default; safe for inference / export).
+/// ResumeTrain: also zero Adam/SGD moments so online training continues cleanly.
+enum class ReadoutLoadMode { Eval, ResumeTrain };
+
 /// Cosine-annealing learning-rate schedule: eases the rate smoothly from
 /// @p lr_max (at @p progress = 0) down to @p lr_min (at @p progress = 1).
 /// Shared between the batch and streaming training paths so the schedule shape
 /// is identical. @p progress is clamped to [0, 1].
+///
+/// Note: batch @ref Readout::Train uses HypercubeCNN's `cosine_lr` (last epoch
+/// hits the floor when the horizon is the epoch count). This free function
+/// remains for hosts that drive online @ref TrainStep learning rates themselves.
 inline float CosineLR(float progress, float lr_max, float lr_min)
 {
     if (progress < 0.0f) progress = 0.0f;
@@ -48,8 +64,8 @@ inline float ExponentialDecayLR(float progress, float lr_max, float lr_min)
 ///
 /// The defaults are sensible for a first run; you mainly set @c dim,
 /// @c num_outputs, and @c task. The fields split into two groups: the network
-/// *shape* (dim, num_outputs, task, num_layers, conv_channels, activation) and
-/// the *training* hyperparameters (epochs, batch_size, the learning-rate
+/// *shape* (dim, num_outputs, task, num_layers, conv_channels, activation, …)
+/// and the *training* hyperparameters (epochs, batch_size, the learning-rate
 /// schedule, weight_decay, momentum, seed).
 ///
 /// Must stay trivially copyable (POD) so it can be written into a checkpoint.
@@ -60,20 +76,29 @@ struct ReadoutConfig
     ReadoutTask task = ReadoutTask::Regression;
     int num_layers = 1; ///< Conv(+Pool) layers. 0 = auto: min(DIM-2, 2).
 
-    /// Append an antipodal max-pool after each Conv (true = the historical behavior).
+    /// Append an antipodal pool after each Conv (true = the historical behavior).
     /// The pool pairs each vertex with its bitwise complement, so it mixes *every* bit —
     /// including any block-index bits of a block-structured input. Set false to keep
     /// that structure intact through the conv stack; the flatten readout then sees
     /// twice as many features.
     bool use_pooling = true;
-    int conv_channels = 16; ///< Base channels (doubles per layer).
+    ReadoutPoolType pool_type = ReadoutPoolType::Max; ///< Used when use_pooling.
+    int conv_channels = 16; ///< Base channels for the first conv.
+    /// Channel multiplier after each conv stage (historical default: double).
+    int channel_growth = 2;
+    /// Per-conv batch-norm (HypercubeCNN). Default off — enables BN γ/β + running
+    /// stats in the weight blob; keep off for stable checkpoint sizes unless you
+    /// intentionally train with BN.
+    bool use_batchnorm = false;
+    ReadoutOptimizer optimizer = ReadoutOptimizer::Adam;
+
     int epochs = 200;
     int batch_size = 32;
     float lr_max = 0.0015f; ///< Cosine annealing peak. Keep <= 0.005 to avoid NaN.
     float lr_min_frac = 0.01f; ///< Floor = lr_max * lr_min_frac.
     int lr_decay_epochs = 0; ///< Cosine decay horizon. 0 = use `epochs`.
     float weight_decay = 0.0f;
-    float momentum = 0.0f; ///< SGD momentum (heavy-ball). 0 = plain SGD. 0.9 typical for CNN.
+    float momentum = 0.0f; ///< SGD momentum (heavy-ball). 0 = plain SGD. Ignored by Adam.
     unsigned seed = 42; ///< CNN weight initialization seed.
     ReadoutActivation activation = ReadoutActivation::TANH; ///< Per-Conv-layer activation.
 
@@ -82,6 +107,17 @@ struct ReadoutConfig
     /// N > 1 = N workers. Use 1 when the host already parallelizes across ESN
     /// instances (e.g. a multi-seed survey) to avoid nested oversubscription.
     size_t num_threads = 0;
+
+    /// After each batch @ref Readout::Train epoch, score a metric and at the end
+    /// restore the best weights seen (regression: min MSE; classification: max
+    /// accuracy). Default false keeps historical last-epoch weights. Extra cost:
+    /// one full forward over the score set every epoch.
+    bool restore_best_epoch = false;
+    /// When @c restore_best_epoch is true: fraction of samples (in input order,
+    /// taken from the tail) held out for best-metric selection only — training
+    /// uses the prefix. 0 = score the full training set. Clamped to [0, 0.5].
+    /// Requires at least 2 samples when > 0.
+    float best_epoch_holdout_frac = 0.0f;
 };
 
 /// @brief The **trainable half of an @ref ESN**: a small convolutional network
@@ -95,11 +131,12 @@ struct ReadoutConfig
 /// ## Data path
 /// ```
 ///   state[N] ──▶ Embed ──▶ [ Conv + Pool ] × L ──▶ Flatten ──▶ Linear ──▶ output
-///                          channels double each layer
+///                          channels grow by channel_growth each layer
 /// ```
-/// The stack is auto-sized from @c dim: by default L = min(dim - 2, 2) Conv+Pool
-/// pairs (override with @ref ReadoutConfig::num_layers), the first conv using
-/// @ref ReadoutConfig::conv_channels channels and doubling each layer.
+/// The stack is built via HypercubeCNN's architecture product (`LayerSpec` /
+/// `HCNNConfig`) from @c dim: by default L = min(dim - 2, 2) Conv(+Pool) stages
+/// (override with @ref ReadoutConfig::num_layers), the first conv using
+/// @ref ReadoutConfig::conv_channels channels.
 ///
 /// ## Lifecycle
 /// Pick a training path:
@@ -190,25 +227,53 @@ public:
     [[nodiscard]] bool IsTrained() const { return net_ != nullptr; }
     [[nodiscard]] const ReadoutConfig& GetConfig() const { return config_; }
 
+    /// @brief 1-based epoch that produced the restored best weights after the last
+    /// @ref Train with @c restore_best_epoch, or 0 if that path was not used / no
+    /// snapshot was taken.
+    [[nodiscard]] int BestEpoch() const { return best_epoch_; }
+
     // ----- Serialization -----
 
     /// @brief Snapshot the live CNN weights as an opaque blob, returned by value so
     /// the copy can't go stale behind a later TrainStep* call (streaming training
     /// mutates the network in place). Pair with @ref SetState.
+    ///
+    /// Format is an **unversioned** float32 layout promoted to double (same order as
+    /// `HCNN::GetWeights`). Prefer @ref SaveHcnnModel for portable, versioned files.
     [[nodiscard]] std::vector<double> Weights() const;
 
     /// @brief Load a weight blob from @ref Weights back into the network.
     /// An empty blob is ignored.
-    void SetState(std::vector<double> weights);
+    /// @param mode Eval (default) restores parameters only; ResumeTrain also resets
+    ///        optimizer moments for clean continued training.
+    void SetState(std::vector<double> weights,
+                  ReadoutLoadMode mode = ReadoutLoadMode::Eval);
+
+    /// Arch sidecar format version written by @ref SaveHcnnModel (`.arch.json`).
+    static constexpr int kArchSidecarVersion = 1;
+
+    /// @brief Write HypercubeCNN-native weights + ESN arch sidecar:
+    ///   `@p path_stem.hcnw`     — versioned HCNW (via `hcnn::save_weights`)
+    ///   `@p path_stem.arch.json` — architecture knobs + expanded layer list
+    /// Pass a path **without** extension (e.g. `"out/readout"`).
+    void SaveHcnnModel(const std::string& path_stem) const;
+
+    /// @brief Load `@p path_stem.hcnw` into this readout after validating
+    /// `@p path_stem.arch.json` against the live architecture (when the sidecar
+    /// exists). If the sidecar is missing, HCNW's own dim/task/layer checks still
+    /// apply. @p mode follows @ref SetState.
+    void LoadHcnnModel(const std::string& path_stem,
+                       ReadoutLoadMode mode = ReadoutLoadMode::Eval);
+
+    /// @brief Human-readable architecture + parameter count (for logs / demos).
+    [[nodiscard]] std::string ArchSummary() const;
 
 private:
     std::unique_ptr<hcnn::HCNN> net_;
     ReadoutConfig config_;
     size_t num_features_ = 0;
     size_t num_outputs_ = 1;
-
-    mutable std::vector<float> scratch_embedded_;
-    mutable std::vector<float> scratch_pred_;
+    int best_epoch_ = 0; ///< See @ref BestEpoch.
 
     void build_architecture();
 };

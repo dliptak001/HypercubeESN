@@ -40,11 +40,19 @@ namespace hcnn {
  *     batch dispatch precisely to prevent this.
  *   - Must be driven from a single thread; concurrent `ForEach` calls on
  *     the same pool are unsupported.
+ *   - Do not destroy the pool while a `ForEach` is in progress.
  *   - Non-copyable.  Move is not provided (the worker threads capture
  *     `this`).
  *
+ * Exceptions: worker exceptions are captured and rethrown on the caller
+ * after all workers finish.  If the caller's own chunk throws, workers are
+ * still joined before the exception propagates (no abandoned threads /
+ * dangling functor references).
+ *
  * Header-only, no dependencies beyond `<thread>` / `<mutex>` / `<atomic>`.
- * Re-exported transitively via `HCNN.h`.
+ *
+ * Private implementation — not installed.  Used by HCNNNetwork and in-tree
+ * tests only.  Application code must not include this header.
  */
 class ThreadPool
 {
@@ -80,6 +88,9 @@ public:
     /// Total thread count (workers + caller).
     [[nodiscard]] size_t NumThreads() const { return workers_.size() + 1; }
 
+    /// Number of background worker threads (excludes caller).
+    [[nodiscard]] size_t NumWorkers() const { return workers_.size(); }
+
     /// Execute func(thread_id, range_begin, range_end) for chunks of [0, count).
     /// Caller participates as thread 0. Blocks until all work completes.
     /// Must be called from a single thread (not concurrently with itself).
@@ -111,14 +122,24 @@ public:
         }
         cv_work_.notify_all();
 
-        // Caller handles chunk 0
-        func(size_t{0}, size_t{0}, std::min(chunk, count));
+        // Caller handles chunk 0.  Capture any throw so we still join workers
+        // (for_func_ holds a reference to `func` until remaining_ hits 0).
+        std::exception_ptr caller_ex;
+        try {
+            func(size_t{0}, size_t{0}, std::min(chunk, count));
+        } catch (...) {
+            caller_ex = std::current_exception();
+        }
 
-        // Wait for all workers to finish
+        // Always wait for all workers before releasing for_func_ / returning.
         {
             std::unique_lock lock(mutex_);
             cv_done_.wait(lock, [this] { return remaining_.load() == 0; });
             for_func_ = nullptr; // release captured references
+            if (caller_ex) {
+                exception_ = nullptr;
+                std::rethrow_exception(caller_ex);
+            }
             if (exception_) std::rethrow_exception(exception_);
         }
     }
