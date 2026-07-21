@@ -199,14 +199,14 @@ class TestStreamingValidation:
         esn = ESN(reservoir_hypercube_dimension=5, readout_num_outputs=2, verbose=False)
         states = np.zeros((2, esn.reservoir_neuron_count), dtype=np.float32)  # 2 rows
         targets = np.zeros((3, 2), dtype=np.float32)                    # 3 samples
-        with pytest.raises(ValueError, match="reservoir_neuron_count"):
+        with pytest.raises(ValueError, match="readout_input_width"):
             esn.train_step_batch(states, targets, lr=0.01)
 
     def test_batch_classification_states_mismatch(self):
         esn = ESN(reservoir_hypercube_dimension=5, readout_num_outputs=2, readout_task="classification",
                   verbose=False)
         states = np.zeros((2, esn.reservoir_neuron_count), dtype=np.float32)
-        with pytest.raises(ValueError, match="reservoir_neuron_count"):
+        with pytest.raises(ValueError, match="readout_input_width"):
             esn.train_step_batch(states, np.zeros(3, dtype=np.int32), lr=0.01)
 
 
@@ -221,6 +221,8 @@ class TestSurfaceParity:
         "predict_from_state",
         "predictions", "r2", "nrmse", "accuracy",
         "collected_states", "save", "load",
+        "save_readout_hcnn_model", "load_readout_hcnn_model",
+        "readout_arch_summary",
     ]
 
     @pytest.mark.parametrize("name", EXPECTED)

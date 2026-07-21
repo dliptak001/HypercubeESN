@@ -52,11 +52,12 @@ target_link_libraries(_core PRIVATE ${HCNN_LIBS})
 
 # ── Linking ──
 if(MINGW)
-    # Statically link MinGW runtime DLLs so the .pyd is self-contained.
+    # Static libgcc/libstdc++ keep the .pyd free of those DLLs. Do NOT static-link
+    # winpthread: mingw-w64 15.2.0's libwinpthread.a references __intrinsic_setjmpex
+    # and fails at link (same constraint as the top-level CMakeLists.txt exes).
+    # Posix-model MinGW still needs libwinpthread-1.dll at runtime — ship the DLL
+    # from THIS toolchain (stale copies miss symbols like nanosleep64).
     target_link_options(_core PRIVATE -static-libgcc -static-libstdc++)
-    target_link_libraries(_core PRIVATE -Wl,-Bstatic pthread winpthread -Wl,-Bdynamic)
-    # Posix-model MinGW always needs libwinpthread-1.dll at runtime.
-    # Ship it inside the package so the .pyd loads without MinGW on PATH.
     find_file(WINPTHREAD_DLL libwinpthread-1.dll PATHS ENV PATH NO_DEFAULT_PATH)
     if(WINPTHREAD_DLL)
         install(FILES ${WINPTHREAD_DLL} DESTINATION hypercube_esn)
