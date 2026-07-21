@@ -32,13 +32,11 @@ struct ReservoirConfig
     // When false: zero FSF allocation. When true: B_fsf + staging buffer + V
     // (length N). From standalone fsf_seed (not mixed from `seed`): first N → V as
     // U(-1,1) with no scale baked in; then N·dim → B_fsf × fsf_scaling/√dim.
-    // Each Step: φ = fsf_score_scaling·(V·x), pad[v] = fsf_stage_scaling·φ·V[v]
-    // (w ≡ V forever), gather via B_fsf. Score/stage scales are independent.
-    // See docs/full_state_linear_feedback.md.
+    // Each Step: φ = V·x, pad[v] = fsf_stage_scaling·φ·V[v] (w ≡ V forever),
+    // gather via B_fsf. See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
     float fsf_scaling = 0.5f;        // B_fsf: U(-1,1) × scaling/√dim (construction)
-    float fsf_score_scaling = 1.0f;  // Step: φ = scale · (V · x)
     float fsf_stage_scaling = 1.0f;  // Step: pad[v] = scale · φ · V[v]
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
@@ -100,10 +98,9 @@ struct ReservoirConfig
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
 ///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     each step: φ = @c fsf_score_scaling·(V·x), pad[v] = @c fsf_stage_scaling·φ·V[v]
-///     (w ≡ V forever), gather through B_fsf. V is U(-1,1) from @c fsf_seed (no
-///     scale baked in); B_fsf from same seed with @c fsf_scaling. Outside SR.
-///     Zero alloc when off.
+///     each step: φ = V·x, pad[v] = @c fsf_stage_scaling·φ·V[v] (w ≡ V forever),
+///     gather through B_fsf. V is U(-1,1) from @c fsf_seed; B_fsf from same seed
+///     with @c fsf_scaling. Outside SR. Zero alloc when off.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
@@ -306,7 +303,6 @@ private:
     bool fsf_enabled_ = false;
     uint64_t fsf_seed_ = 1;
     float fsf_scaling_ = 0.5f;
-    float fsf_score_scaling_ = 1.0f;
     float fsf_stage_scaling_ = 1.0f;
     size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
     std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer

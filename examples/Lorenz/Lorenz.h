@@ -36,8 +36,7 @@ namespace config
     constexpr bool FULL_STATE_FEEDBACK = false;
     constexpr uint64_t FSF_SEED = 1;
     constexpr float FSF_SCALING = 0.5f;        // B_fsf: U(-1,1)×scale/√dim
-    constexpr float FSF_SCORE_SCALING = 1.0f;  // φ = scale · (V · x)
-    constexpr float FSF_STAGE_SCALING = 1.0f;  // pad[v] = scale · φ · V[v]
+    constexpr float FSF_STAGE_SCALING = 1.0f;  // pad[v] = scale · (V·x) · V[v]
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

@@ -60,8 +60,7 @@ Everything that follows serves those two.
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
 | `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
 | `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only if FSF on) |
-| `fsf_score_scaling` | 1.0 | Step: φ = scale · (V · x) |
-| `fsf_stage_scaling` | 1.0 | Step: pad[v] = scale · φ · V[v] |
+| `fsf_stage_scaling` | 1.0 | Step: pad[v] = scale · (V·x) · V[v] |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
@@ -306,14 +305,13 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
 1. V is U(−1,1)^N from `fsf_seed` at construction (no scale baked into V)
-2. φ = `fsf_score_scaling` · (V · x)
+2. φ = V · x
 3. Stage `pad[v] = fsf_stage_scaling · φ · V[v]` (**w ≡ V forever**)
 4. XOR-gather pad through **B_fsf** (`fsf_scaling`/√dim at construction)
 
-Zero allocation when disabled. No runtime Set/Get of V. Score and stage scales
-are independent (listen vs paint).
-
-Details: [full_state_linear_feedback.md](full_state_linear_feedback.md).
+Zero allocation when disabled. No runtime Set/Get of V.
+`fsf_stage_scaling` sizes the pad field; `fsf_scaling` sizes inject weights
+(see [full_state_linear_feedback.md](full_state_linear_feedback.md)).
 
 ## Per-neuron bias (optional)
 

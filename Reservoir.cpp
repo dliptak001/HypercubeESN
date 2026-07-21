@@ -27,7 +27,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       fsf_enabled_(cfg.full_state_feedback),
       fsf_seed_(cfg.fsf_seed),
       fsf_scaling_(cfg.fsf_scaling),
-      fsf_score_scaling_(cfg.fsf_score_scaling),
       fsf_stage_scaling_(cfg.fsf_stage_scaling),
       bias_scaling_(cfg.bias_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
@@ -148,7 +147,7 @@ void Reservoir::Initialize()
 
     // FSF: standalone RNG from fsf_seed — must not touch main seed streams.
     // Order is part of the ABI: first N draws → V as U(-1,1) (no scale baked in),
-    // then N·dim → B_fsf × fsf_scaling/√dim. Score/stage scales apply in Step only.
+    // then N·dim → B_fsf × fsf_scaling/√dim. Stage scale applies in Step only.
     if (fsf_enabled_)
     {
         std::mt19937_64 fsf_rng(fsf_seed_);
@@ -247,9 +246,9 @@ void Reservoir::Initialize()
                     leak_rate_, input_scaling_, history_floor_,
                     target, post_sr, sr_iters);
         if (fsf_enabled_)
-            std::printf(" FSF on fsf_seed=%llu B_fsf_scale=%.3g score_scale=%.3g stage_scale=%.3g",
+            std::printf(" FSF on fsf_seed=%llu B_fsf_scale=%.3g stage_scale=%.3g",
                         static_cast<unsigned long long>(fsf_seed_),
-                        fsf_scaling_, fsf_score_scaling_, fsf_stage_scaling_);
+                        fsf_scaling_, fsf_stage_scaling_);
         std::printf("]\n");
     }
 }
@@ -257,15 +256,15 @@ void Reservoir::Initialize()
 void Reservoir::Step()
 {
     // Full-state feedback: V is U(-1,1) from construction (no scale baked in).
-    // φ = score_scale · (V·x); pad[v] = stage_scale · φ · V[v] (w ≡ V forever).
-    // UpdateState gathers neighbors of pad through B_fsf.
+    // φ = V·x; pad[v] = stage_scale · φ · V[v] (w ≡ V forever).
+    // UpdateState gathers neighbors of pad through B_fsf (× fsf_scaling at construct).
     if (fsf_enabled_)
     {
         const float* x = slice_ptrs_[0];
         double acc = 0.0;
         for (size_t i = 0; i < n_; ++i)
             acc += static_cast<double>(fsf_gain_[i]) * static_cast<double>(x[i]);
-        const float phi = fsf_score_scaling_ * static_cast<float>(acc);
+        const float phi = static_cast<float>(acc);
         const float stage = fsf_stage_scaling_ * phi;
         for (size_t v = 0; v < n_; ++v)
             vtx_fsf_[v] = stage * fsf_gain_[v];
@@ -437,7 +436,6 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.full_state_feedback = fsf_enabled_;
     cfg.fsf_seed = fsf_seed_;
     cfg.fsf_scaling = fsf_scaling_;
-    cfg.fsf_score_scaling = fsf_score_scaling_;
     cfg.fsf_stage_scaling = fsf_stage_scaling_;
     cfg.bias_scaling = bias_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
