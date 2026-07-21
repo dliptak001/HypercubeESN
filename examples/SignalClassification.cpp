@@ -212,6 +212,7 @@ int main(int argc, char* argv[])
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth << "  Input Scaling=" << cfg.reservoir.input_scaling
               << "  Task=Classification  Classes=" << NUM_CLASSES << "\n";
+    std::cout << esn.ReadoutArchSummary();
 
     esn.ReservoirWarmup(signal.data(), warmup);
     esn.ReservoirRun(signal.data() + warmup, train_size + test_size);

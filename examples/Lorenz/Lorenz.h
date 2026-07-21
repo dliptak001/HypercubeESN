@@ -144,6 +144,11 @@ public:
     /// are always returned in a FreeRunResult (valid == false if 0 steps scored).
     FreeRunResult FreeRun(bool verbose);
 
+    /// Human-readable HCNN stack + param counts (shared across survey seeds).
+    [[nodiscard]] std::string ReadoutArchSummary() const {
+        return esn_.ReadoutArchSummary();
+    }
+
 private:
     uint64_t seed_, orbit_seed_;
 

@@ -544,6 +544,12 @@ int main(int argc, char** argv)
     // strings and printed serially below — don't interleave.
     config::ENABLE_PRINTF = false;
 
+    // Architecture is identical for every survey seed — print once before the pool.
+    {
+        Lorenz probe(seed, orbit_seed);
+        std::cout << probe.ReadoutArchSummary();
+    }
+
     // Optional positional CLI overrides (applied only when present and in range):
     //   argv[1] = NUM_THREADS — parallel trials, one ESN seed each (default = hardware_concurrency)
     //   argv[2] = NUM_RUNS    — free-runs accumulated per trial      (default = 50)

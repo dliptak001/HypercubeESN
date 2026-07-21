@@ -88,6 +88,8 @@ int Run()
               << " num_inputs=" << esn_cfg.reservoir.num_inputs << "\n";
 
     ESN esn(esn_cfg);
+    // Same banner channel as the rest of [stext] diagnostics.
+    std::cerr << esn.ReadoutArchSummary();
 
     const std::uint64_t embed_seed = esn_cfg.reservoir.seed ^ config::kCharEmbedSeedXor;
     CharEmbedding char_embed(corpus, embed_seed);

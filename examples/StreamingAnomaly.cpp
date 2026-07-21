@@ -101,7 +101,9 @@ int main(int argc, char* argv[])
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth
         << "  Leak=" << cfg.reservoir.leak_rate
         << "  Input Scaling=" << cfg.reservoir.input_scaling
-        << "  Threshold=" << anomaly_threshold << "x baseline\n\n";
+        << "  Threshold=" << anomaly_threshold << "x baseline\n";
+    std::cout << esn.ReadoutArchSummary();
+    std::cout << "\n";
 
     std::cout << "--- Phase 1: Learn what \"normal\" looks like ---\n\n";
 

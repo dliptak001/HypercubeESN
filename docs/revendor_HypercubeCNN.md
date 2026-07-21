@@ -165,7 +165,8 @@ drive online LR themselves.
 
 ### Phase E — Surface, examples, Python, docs
 
-- [x] Example(s) print arch summary / param count (`BasicPrediction`)
+- [x] Examples print arch summary / param count (BasicPrediction, NARMA, SignalClassification,
+      StreamingAnomaly, StreamingText, Lorenz; MemoryCapacity is ridge-only, no HCNN)
 - [x] Python bindings: HCNW I/O, arch summary, best-epoch knobs / accessor
 - [x] Refresh `Readout.md`, `adapt_HypercubeCNN.md`, CPP_SDK snippets (A–D)
 - [x] Smoke: HCNW round-trip; Release link of core + key examples
