@@ -8,6 +8,10 @@ predict the next value without ever seeing the input directly.
 
 If you're new to reservoir computing, start here.
 
+**FSF A/B:** after building `ESNConfig`, the example calls `fsf_ab::ApplyTo(cfg)`
+from [`FsfAbSwitch.h`](FsfAbSwitch.h). Flip `fsf_ab::kEnable` there (optional
+`kApplyDemoGain` for a nonzero V). See [examples/README.md](README.md).
+
 ## Conceptual background
 
 In a traditional neural network, you train all the weights. In reservoir

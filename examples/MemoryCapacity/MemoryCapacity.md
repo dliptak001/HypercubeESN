@@ -30,6 +30,8 @@ The measurement is built around a clean split between two kinds of settings:
   `history_depth`, `seed`, `input_scaling`. It is **passed into `Measure()`** per
   cell. There is no parallel "extended parameter list" — the operating point is
   exactly a `ReservoirConfig`, the same struct the rest of the library uses.
+  `main` also calls `fsf_ab::ApplyTo(base)` so full-state feedback A/B is one flip
+  in [`FsfAbSwitch.h`](../FsfAbSwitch.h) (optional demo V via `kApplyDemoGain`).
 
 This is why a sweep is cheap and comparable: the meter generates **one** white-noise
 drive up front and reuses it for every operating point, so every cell scores the

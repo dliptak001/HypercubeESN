@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include "ESN.h"
+#include "examples/FsfAbSwitch.h"
 
 int main(int argc, char* argv[])
 {
@@ -49,9 +50,12 @@ int main(int argc, char* argv[])
     cfg.readout.batch_size    = 16;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
     cfg.readout.use_pooling = true;
+    fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
+    fsf_ab::MaybeSetDemoGain(esn);
 
     std::cout << "  Config: N=" << N << "  history_depth=" << cfg.reservoir.history_depth << "\n";
+    fsf_ab::Log(std::cout);
     std::cout << "  Readout in: " << esn.ReadoutBlockCount() << " block(s) x " << N
               << " = " << esn.ReadoutInputWidth() << " values"
               << "  (slices=" << cfg.readout_slices

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "ESN.h"
+#include "examples/FsfAbSwitch.h"
 #include "NARMA_N.h"
 
 // ---- A/B compile switch ------------------------------------------------------
@@ -93,11 +94,13 @@ int main(int argc, char* argv[])
     base.readout.epochs     = 600;
     base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
     base.readout.activation = ReadoutActivation::TANH;
+    fsf_ab::ApplyTo(base); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
 
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
               << "  sr=" << base.reservoir.spectral_radius
               << " leak=" << base.reservoir.leak_rate
               << " input_scaling=" << base.reservoir.input_scaling << "\n";
+    fsf_ab::Log(std::cout);
     std::cout << "  Training: " << base.readout.epochs << " epochs, batch="
               << base.readout.batch_size << ", lr=" << base.readout.lr_max
               << " (cosine, floor=" << (base.readout.lr_max * base.readout.lr_min_frac)

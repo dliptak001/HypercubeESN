@@ -11,6 +11,9 @@ internal state.
 This example focuses on multi-class classification, with a confusion
 matrix and transition dynamics analysis.
 
+**FSF A/B:** `fsf_ab::ApplyTo(cfg)` — switch in [`FsfAbSwitch.h`](FsfAbSwitch.h).
+See [examples/README.md](README.md).
+
 ## Conceptual background
 
 Reservoir computing is often presented as a time series prediction tool,

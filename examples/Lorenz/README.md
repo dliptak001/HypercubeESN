@@ -12,10 +12,24 @@ at all). Report VPT and RMSE with that distinction stated.
 |-------|--------|
 | Index motion | [`JanusCursor.h`](JanusCursor.h) · [`JanusCursor.md`](JanusCursor.md) |
 | Orbit + normalize | [`LorenzAttractor.h`](LorenzAttractor.h), [`LorenzDatastream.{h,cpp}`](LorenzDatastream.h) |
-| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` |
+| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` (incl. FSF A/B) |
 | CMake target | `Lorenz` ← `Lorenz.cpp` + `LorenzDatastream.cpp` |
 
 ---
+
+## 0. Full-state feedback A/B
+
+In [`Lorenz.h`](Lorenz.h) `config::`:
+
+| Knob | Default | Role |
+|------|---------|------|
+| `FULL_STATE_FEEDBACK` | `false` | Construction-only FSF port |
+| `FSF_SEED` / `FSF_SCALING` | `1` / `0.5` | `B_fsf` only |
+| `FSF_APPLY_DEMO_GAIN` | `false` | If true with FSF on, isotropic demo V after construct |
+
+Independent of the **external-feedback** future port. Other examples share
+[`FsfAbSwitch.h`](../FsfAbSwitch.h); Lorenz keeps knobs in `config::` for the
+survey harness. Log line: `FSF A/B: ON|OFF …`.
 
 ## 1. Pipeline at a glance
 

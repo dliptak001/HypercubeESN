@@ -9,6 +9,7 @@
 #include <vector>
 #include <cmath>
 #include "ESN.h"
+#include "examples/FsfAbSwitch.h"
 
 static constexpr float PI = 3.14159265358979323846f;
 static constexpr size_t NUM_CLASSES = 4;
@@ -208,10 +209,13 @@ int main(int argc, char* argv[])
     cfg.readout.task          = ReadoutTask::Classification;
     cfg.readout.epochs        = 50;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
+    fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
+    fsf_ab::MaybeSetDemoGain(esn);
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth << "  Input Scaling=" << cfg.reservoir.input_scaling
               << "  Task=Classification  Classes=" << NUM_CLASSES << "\n";
+    fsf_ab::Log(std::cout);
     std::cout << esn.ReadoutArchSummary();
 
     esn.ReservoirWarmup(signal.data(), warmup);

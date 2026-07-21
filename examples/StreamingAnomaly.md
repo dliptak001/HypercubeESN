@@ -14,6 +14,9 @@ Prediction error is the anomaly signal.
 This is the most practical example in the collection: it demonstrates
 how a frozen reservoir model can serve as a real-time process monitor.
 
+**FSF A/B:** `fsf_ab::ApplyTo(cfg)` — switch in [`FsfAbSwitch.h`](FsfAbSwitch.h).
+See [examples/README.md](README.md).
+
 ## Conceptual background
 
 The core idea: if a model can predict normal behavior accurately, then

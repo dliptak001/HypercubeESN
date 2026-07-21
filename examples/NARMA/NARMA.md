@@ -14,6 +14,9 @@ identification, not forecasting** — `y(t)` is aligned to `u(t)`, so the
 reservoir has already seen everything it needs (see "Target alignment"
 below).
 
+**FSF A/B:** `fsf_ab::ApplyTo(base)` in `NARMA.cpp`; flip `fsf_ab::kEnable` in
+[`FsfAbSwitch.h`](../FsfAbSwitch.h). See [examples/README.md](../README.md).
+
 ## The recurrence
 
 For order `N`:

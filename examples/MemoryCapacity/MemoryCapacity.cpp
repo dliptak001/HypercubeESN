@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "MemoryCapacity.h"
+#include "examples/FsfAbSwitch.h"
 
 namespace
 {
@@ -526,6 +527,8 @@ int main(int argc, char* argv[])
     base.leak_rate = 1.0f;
     base.input_scaling = 0.2f; // A(x): 0.2, tanh(x): 0.06f
     base.history_depth = 8;
+    fsf_ab::ApplyTo(base); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
+    fsf_ab::Log(std::cout);
 
     MemoryCapacityMeter meter(DIM, mccfg);
 

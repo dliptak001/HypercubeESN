@@ -19,6 +19,7 @@
 #include "CharEmbedding.h"  // kCharEmbedDim
 #include "Corpus.h"         // kVocabSize, Corpus
 #include "ESN.h"            // ESNConfig (+ ReservoirConfig / ReadoutConfig), ReadoutActivation
+#include "examples/FsfAbSwitch.h"
 
 namespace streaming_text::config
 {
@@ -91,6 +92,7 @@ namespace streaming_text::config
             c.readout.momentum = 0.9f; // momentum term for the readout optimizer (ADAM)
             c.readout.activation = ReadoutActivation::TANH;
 
+            fsf_ab::ApplyTo(c); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
             return c;
         }();
 

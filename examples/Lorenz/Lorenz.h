@@ -27,9 +27,20 @@ namespace config
     constexpr uint64_t SEED = 13649419;//13649188; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.99f; // A(x): ~0.90,  tanh(x): ~0.95 (tune per arm)
     constexpr float INPUT_SCALING = 0.005; // shared across all input channels
-    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated feedback port
+    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
+
+    // Full-state linear feedback (internal φ = V·x). A/B also via examples/FsfAbSwitch.h
+    // defaults if you call fsf_ab::ApplyTo — Lorenz sets these knobs explicitly here.
+    // false = FSF off (zero alloc). true + V=0 matches off dynamics until SetFullStateFeedbackGain.
+    constexpr bool FULL_STATE_FEEDBACK = false;
+    constexpr uint64_t FSF_SEED = 1;
+    constexpr float FSF_SCALING = 0.5f;
+    // When FULL_STATE_FEEDBACK and this are true, apply isotropic demo V after construct
+    // (same recipe as fsf_ab::kApplyDemoGain). Prefer false and set V yourself for real A/B.
+    constexpr bool FSF_APPLY_DEMO_GAIN = false;
+    constexpr float FSF_DEMO_GAIN_SCALE = 0.05f;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

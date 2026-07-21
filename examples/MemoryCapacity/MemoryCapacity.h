@@ -14,6 +14,7 @@
 
 #include "Reservoir.h"
 #include "MCLinalg.h"
+#include "examples/FsfAbSwitch.h"
 
 /// @file MemoryCapacity.h
 /// @brief Class-based memory-capacity (MC) diagnostic for the hypercube
@@ -244,6 +245,7 @@ namespace mc
             rcfg.verbose    = false;
 
             auto reservoir = Reservoir::Create(rcfg);
+            fsf_ab::MaybeSetDemoGain(*reservoir); // no-op unless FsfAbSwitch enables demo V
             const float realized = reservoir->GetRealizedSpectralRadius();
 
             for (std::size_t t = 0; t < cfg_.t_warmup + cfg_.t_collect; ++t)

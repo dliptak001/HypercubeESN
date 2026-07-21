@@ -11,6 +11,9 @@ size (DIM), depth (`history_depth`), and readout width (`conv_channels`)?
 This example is intentionally small. It exists to give the memorization
 objective a clean, self-contained home.
 
+**FSF A/B:** `fsf_ab::ApplyTo` inside the default `ESNConfig` in `Config.h`; log
+via `fsf_ab::Log` in `main.cpp`. Switch: [`FsfAbSwitch.h`](../FsfAbSwitch.h).
+
 ## The corpus (not bundled)
 
 The default corpus is **Tiny Shakespeare** — a single ~1.1 MB plain-text file
