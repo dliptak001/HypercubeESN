@@ -4,7 +4,7 @@
 /// @brief Shared A/B controls for full-state linear feedback (FSF) in examples.
 ///
 /// When enabled: V ~ U(-1,1) from fsf_seed; B_fsf from same seed with fsf_scaling.
-/// Step: φ = fsf_stage_scaling·(V·x), fill vtx_fsf_ with φ (ext-fb D=1). No Set/Get.
+/// Step: φ = V·x, fill vtx_fsf_ with φ (ext-fb D=1). Strength: fsf_scaling only.
 ///
 /// See docs/full_state_linear_feedback.md.
 
@@ -16,19 +16,16 @@
 
 namespace fsf_ab
 {
-    inline constexpr bool kEnable = true;
-    inline constexpr std::uint64_t kSeed = 13459873;
-    /// B_fsf construction: U(-1,1) × kScaling/√dim.
+    inline constexpr bool kEnable = false;
+    inline constexpr std::uint64_t kSeed = 1;
+    /// B_fsf: U(-1,1) × kScaling/√dim (only FSF loudness knob).
     inline constexpr float kScaling = 0.5f;
-    /// Step: φ = kStageScaling · (V·x), then fill vtx_fsf_ with φ.
-    inline constexpr float kStageScaling = 0.1f;
 
     inline void ApplyTo(ReservoirConfig& r) noexcept
     {
         r.full_state_feedback = kEnable;
         r.fsf_seed = kSeed;
         r.fsf_scaling = kScaling;
-        r.fsf_stage_scaling = kStageScaling;
     }
 
     inline void ApplyTo(ESNConfig& c) noexcept { ApplyTo(c.reservoir); }
@@ -39,7 +36,6 @@ namespace fsf_ab
         os << "  FSF A/B: " << (kEnable ? "ON " : "OFF")
            << "  fsf_seed=" << kSeed
            << "  fsf_scaling=" << kScaling
-           << "  fsf_stage_scaling=" << kStageScaling
            << '\n';
     }
 } // namespace fsf_ab

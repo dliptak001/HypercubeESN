@@ -114,7 +114,7 @@ public:
     /// If this ESN was built with @c full_state_feedback, each step **also**
     /// applies internal full-state feedback (φ = V·x, pad = φ⊙V, B_fsf gather)
     /// automatically inside the reservoir — V is fixed at construction from
-    /// @c fsf_seed (U(-1,1)); stage/B_fsf scales apply on the FSF path. Nothing is
+    /// @c fsf_seed (U(-1,1)); strength via @c fsf_scaling on B_fsf. Nothing is
     /// passed here for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.

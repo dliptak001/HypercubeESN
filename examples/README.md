@@ -7,15 +7,14 @@ quick A/B testing against the open-loop baseline.
 
 | Control | Where |
 |---------|--------|
-| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kStageScaling` |
+| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling` |
 | Most examples | `fsf_ab::ApplyTo(cfg)` after building config; `Log` |
-| **Lorenz** | `config::FULL_STATE_FEEDBACK` / seed / scales in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
+| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SEED` / `FSF_SCALING` in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
 
 **How to A/B**
 
 1. **Off:** `kEnable = false`.
-2. **On:** `kEnable = true` — V = U(−1,1) from `kSeed`; `kScaling` = B_fsf;
-   `kStageScaling` scales φ before fill. No Set/Get of V.
+2. **On:** `kEnable = true` — V from `kSeed`; strength = `kScaling` on B_fsf.
 
 Logs print a `FSF A/B:` line. Theory/API:
 [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).

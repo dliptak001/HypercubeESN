@@ -32,11 +32,10 @@ namespace config
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
 
     // Full-state linear feedback (internal). Same knobs as examples/FsfAbSwitch.h.
-    // V = U(-1,1) from FSF_SEED; scales applied in Step (no Set/Get).
+    // V = U(-1,1) from FSF_SEED; φ = V·x; strength = FSF_SCALING on B_fsf.
     constexpr bool FULL_STATE_FEEDBACK = false;
     constexpr uint64_t FSF_SEED = 1;
-    constexpr float FSF_SCALING = 0.5f;        // B_fsf: U(-1,1)×scale/√dim
-    constexpr float FSF_STAGE_SCALING = 1.0f;  // φ = scale · (V·x), fill vtx_fsf_
+    constexpr float FSF_SCALING = 0.5f; // B_fsf: U(-1,1)×scale/√dim
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

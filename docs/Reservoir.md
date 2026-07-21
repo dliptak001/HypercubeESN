@@ -59,8 +59,7 @@ Everything that follows serves those two.
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
 | `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
-| `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only if FSF on) |
-| `fsf_stage_scaling` | 1.0 | Step: scale on φ before fill of vtx_fsf_ |
+| `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only FSF strength knob) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
@@ -304,12 +303,12 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
-1. V is U(−1,1)^N from `fsf_seed` at construction (φ only; no scale baked into V)
-2. φ = `fsf_stage_scaling` · (V · x)
+1. V is U(−1,1)^N from `fsf_seed` (φ only)
+2. φ = V · x
 3. Fill every entry of `vtx_fsf_` with φ (same as one external-feedback channel)
-4. XOR-gather `vtx_fsf_` through **B_fsf** (`fsf_scaling`/√dim at construction)
+4. XOR-gather through **B_fsf** (`fsf_scaling`/√dim — only FSF loudness knob)
 
-Zero allocation when disabled. No runtime Set/Get of V. See
+Zero allocation when disabled. No Set/Get of V. See
 [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)
