@@ -16,10 +16,10 @@
 
 namespace fsf_ab
 {
-    inline constexpr bool kEnable = false;
+    inline constexpr bool kEnable = true;
     inline constexpr std::uint64_t kSeed = 1;
     /// B_fsf: U(-1,1) × kScaling/√dim (only FSF loudness knob).
-    inline constexpr float kScaling = 0.5f;
+    inline constexpr float kScaling = 0.05f;
 
     inline void ApplyTo(ReservoirConfig& r) noexcept
     {

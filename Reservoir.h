@@ -36,7 +36,7 @@ struct ReservoirConfig
     // V only forms φ; loudness is fsf_scaling on B_fsf. See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
-    float fsf_scaling = 0.5f; // B_fsf: U(-1,1) × scaling/√dim (only FSF strength knob)
+    float fsf_scaling = 0.05f; // B_fsf: U(-1,1) × scaling/√dim (only FSF strength knob)
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
 
