@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "ESN.h"
-#include "examples/FsfAbSwitch.h"
 
 /// NARMA-N input/target generator + task builder for the HypercubeESN ESN.
 ///
@@ -386,7 +385,6 @@ inline NARMATrialResult RunNARMATrial(const ESNConfig& cfg, const NARMATask& tas
         centered[t] = y[t] - static_cast<float>(mean);
 
     ESN esn(cfg);
-    fsf_ab::MaybeSetGain(esn); // no-op unless fsf_ab::kEnable && kSetGain
     esn.ReservoirWarmup(task.ri.data(), task.warmup);
     esn.ReservoirRun(task.ri.data() + task.warmup, task.collect);
 

@@ -31,15 +31,12 @@ namespace config
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
 
-    // Full-state linear feedback (internal φ = V·x). Same semantics as examples/FsfAbSwitch.h.
-    // false = FSF off (zero alloc). true + V=0 matches off until SetFullStateFeedbackGain.
+    // Full-state linear feedback (internal). Same knobs as examples/FsfAbSwitch.h.
+    // V and B_fsf drawn at construction from FSF_SEED (no Set/Get).
     constexpr bool FULL_STATE_FEEDBACK = false;
     constexpr uint64_t FSF_SEED = 1;
-    constexpr float FSF_SCALING = 0.5f; // injection weight scale (B_fsf), not V
-    // If FULL_STATE_FEEDBACK: install a default isotropic V after construct (‖V‖₂≈FSF_GAIN_SCALE).
-    // false ⇒ V stays 0; set your own V with SetFullStateFeedbackGain for real A/B.
-    constexpr bool FSF_SET_GAIN = false;
-    constexpr float FSF_GAIN_SCALE = 0.05f;
+    constexpr float FSF_SCALING = 0.5f;   // B_fsf: U(-1,1)×scale/√dim
+    constexpr float FSF_V_SCALING = 1.0f; // V: U(-1,1)×scale
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

@@ -27,6 +27,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       fsf_enabled_(cfg.full_state_feedback),
       fsf_seed_(cfg.fsf_seed),
       fsf_scaling_(cfg.fsf_scaling),
+      fsf_v_scaling_(cfg.fsf_v_scaling),
       bias_scaling_(cfg.bias_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
       lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
@@ -83,7 +84,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     if (fsf_enabled_)
     {
         vtx_fsf_.reset(AllocAligned(n_));
-        fsf_gain_.assign(n_, 0.0f); // V = 0 until SetFullStateFeedbackGain
+        fsf_gain_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
     }
 
     Initialize();
@@ -144,10 +145,13 @@ void Reservoir::Initialize()
     for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
         (*pW++) = static_cast<float>(dist(ext_fb_rng)) * ext_scale;
 
-    // FSF weights: standalone RNG from fsf_seed — must not touch main seed streams.
-    if (num_fsf_weights_ > 0)
+    // FSF: standalone RNG from fsf_seed — must not touch main seed streams.
+    // Order is part of the ABI: first N draws → V, then N·dim → B_fsf.
+    if (fsf_enabled_)
     {
         std::mt19937_64 fsf_rng(fsf_seed_);
+        for (size_t i = 0; i < n_; ++i)
+            fsf_gain_[i] = static_cast<float>(dist(fsf_rng)) * fsf_v_scaling_;
         const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             (*pW++) = static_cast<float>(dist(fsf_rng)) * fsf_scale;
@@ -241,8 +245,9 @@ void Reservoir::Initialize()
                     leak_rate_, input_scaling_, history_floor_,
                     target, post_sr, sr_iters);
         if (fsf_enabled_)
-            std::printf(" FSF on fsf_seed=%llu fsf_scale=%.3g",
-                        static_cast<unsigned long long>(fsf_seed_), fsf_scaling_);
+            std::printf(" FSF on fsf_seed=%llu fsf_scale=%.3g fsf_v_scale=%.3g",
+                        static_cast<unsigned long long>(fsf_seed_),
+                        fsf_scaling_, fsf_v_scaling_);
         std::printf("]\n");
     }
 }
@@ -376,30 +381,6 @@ void Reservoir::InjectExternalFeedback(const float* values, const size_t count)
         InjectExternalFeedback(c, values[c]);
 }
 
-void Reservoir::SetFullStateFeedbackGain(const float* v, const size_t n)
-{
-    if (!fsf_enabled_)
-        throw std::invalid_argument(
-            "SetFullStateFeedbackGain: full-state feedback is not enabled "
-            "(ReservoirConfig::full_state_feedback == false)");
-    if (n != n_ || v == nullptr)
-        throw std::invalid_argument(
-            "SetFullStateFeedbackGain: n must equal N and v must be non-null");
-    std::memcpy(fsf_gain_.data(), v, n_ * sizeof(float));
-}
-
-void Reservoir::GetFullStateFeedbackGain(float* v_out, const size_t n) const
-{
-    if (!fsf_enabled_)
-        throw std::invalid_argument(
-            "GetFullStateFeedbackGain: full-state feedback is not enabled "
-            "(ReservoirConfig::full_state_feedback == false)");
-    if (n != n_ || v_out == nullptr)
-        throw std::invalid_argument(
-            "GetFullStateFeedbackGain: n must equal N and v_out must be non-null");
-    std::memcpy(v_out, fsf_gain_.data(), n_ * sizeof(float));
-}
-
 Reservoir::Snapshot Reservoir::TakeSnapshot() const
 {
     Snapshot s;
@@ -454,6 +435,7 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.full_state_feedback = fsf_enabled_;
     cfg.fsf_seed = fsf_seed_;
     cfg.fsf_scaling = fsf_scaling_;
+    cfg.fsf_v_scaling = fsf_v_scaling_;
     cfg.bias_scaling = bias_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;

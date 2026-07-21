@@ -258,9 +258,10 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
 | `num_external_feedback_channels` | `size_t` | `0` | External-feedback channels D. **0** = path off (no buffer/weights). Else D in **[1, N]** (need not divide N). Caller stages values each step. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
-| `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback (φ = V·x). **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
-| `fsf_seed` | `uint64_t` | `1` | Seeds **only** the FSF weight block (standalone RNG — not derived from `seed`). Stored even when FSF is off (GetConfig round-trip). |
-| `fsf_scaling` | `float` | `0.5` | FSF drive: weights × `scaling / √DIM` when FSF is on. Outside spectral-radius rescale. |
+| `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback. **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
+| `fsf_seed` | `uint64_t` | `1` | Draws V (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. Stored even when FSF is off. |
+| `fsf_scaling` | `float` | `0.5` | B_fsf: U(−1,1) × `scaling / √DIM`. Outside spectral-radius rescale. |
+| `fsf_v_scaling` | `float` | `1.0` | V: U(−1,1) × scale. Outside spectral-radius rescale. |
 
 ---
 
@@ -626,17 +627,15 @@ Returns all collected states: `NumCollectedStates() * ReservoirNeuronCount()` fl
 | `ReservoirHypercubeDimension()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
 | `ReservoirNeuronCount()` | `size_t` | Reservoir neuron count N = 2^`ReservoirHypercubeDimension()`. |
 | `FullStateFeedbackEnabled()` | `bool` | True if built with `full_state_feedback`. |
-| `SetFullStateFeedbackGain(v, n)` | void | Set gain V (n == N). Throws if FSF off. Mid-run changes apply next step. |
-| `GetFullStateFeedbackGain(out, n)` | void | Copy current V. Throws if FSF off. |
-| `GetConfig()` | `ESNConfig` | Full config (reservoir + readout). Includes FSF knobs; **not** the gain vector V. |
+| `GetConfig()` | `ESNConfig` | Full config (reservoir + readout), including FSF knobs. V is reconstructed from seed/scales. |
 
-V is settable only (not trained by the library). See [full_state_linear_feedback.md](full_state_linear_feedback.md).
+See [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ---
 
 ##### Readout State Serialization
 
-The ESN exposes its trained readout state for save/restore. Reservoir topology and weight blocks are deterministic from config + seeds (`seed`, and `fsf_seed` when FSF is on). A **nonzero FSF gain V is not in the config** — re-apply with `SetFullStateFeedbackGain` after restore if you use one. Persist config (`GetConfig()`), readout (`GetReadoutState()`), and V when needed. On restore, construct a fresh `ESN` from the saved `ESNConfig` and call `SetReadoutState`.
+The ESN exposes its trained readout state for save/restore. Reservoir topology, weights, and FSF gain V are deterministic from config + seeds (`seed`, and `fsf_seed` / FSF scales when FSF is on). Persist config (`GetConfig()`) and readout (`GetReadoutState()`). On restore, construct a fresh `ESN` from the saved `ESNConfig` and call `SetReadoutState`.
 
 **`ReadoutState` struct** (nested in `ESN`):
 
@@ -668,7 +667,7 @@ restored.SetReadoutState(state);
 // Ready to predict -- no retraining needed.
 ```
 
-A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig` (including FSF knobs). `Reservoir::Create(reservoir.GetConfig())` rebuilds matching weight blocks from `seed` and `fsf_seed`; a nonzero full-state gain V is **not** in the config — re-apply with `SetFullStateFeedbackGain` if needed. The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
+A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig` (including FSF knobs). `Reservoir::Create(reservoir.GetConfig())` rebuilds matching weight blocks and FSF gain V from `seed` / `fsf_seed` and scales. The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
 
 ---
 

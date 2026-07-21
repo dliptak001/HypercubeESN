@@ -112,8 +112,9 @@ public:
     /// @p external_feedback (when non-null) stages caller-owned closed-loop drive
     /// on the external-feedback port (e.g. previous-step prediction for free-run).
     /// If this ESN was built with @c full_state_feedback, each step **also**
-    /// applies internal full-state feedback φ = V·x automatically inside the
-    /// reservoir — that path is not passed here (use @ref SetFullStateFeedbackGain).
+    /// applies internal full-state feedback (φ = V·x, pad = φ⊙V, B_fsf gather)
+    /// automatically inside the reservoir — V is fixed at construction from
+    /// @c fsf_seed / @c fsf_v_scaling; nothing is passed here for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.
     /// @param external_feedback   nullptr to skip external feedback; otherwise
@@ -366,28 +367,17 @@ public:
         return reservoir_->FullStateFeedbackEnabled();
     }
 
-    /// @brief Set full-state gain V (length @ref ReservoirNeuronCount). No-op path
-    /// throws if FSF was not enabled at construction. Mid-run changes apply on the
-    /// next @ref ReservoirStep.
-    void SetFullStateFeedbackGain(const float* v, size_t n);
-
-    /// @brief Copy current V into @p v_out (length n == N). Throws if FSF off.
-    void GetFullStateFeedbackGain(float* v_out, size_t n) const;
-
     // --- Configuration & save/load ---
 
     /// @brief Return the fully-resolved config this ESN was built from — handy for
-    /// rebuilding an identical ESN or for serialization.
-    ///
-    /// Note: when full-state feedback is enabled, the gain V is **not** in the
-    /// config (use @ref GetFullStateFeedbackGain). Config + seeds rebuild weight
-    /// blocks and B_fsf, not a non-zero V.
+    /// rebuilding an identical ESN or for serialization (including FSF knobs;
+    /// V is reconstructed from @c fsf_seed / @c fsf_v_scaling when FSF is on).
     [[nodiscard]] ESNConfig GetConfig() const;
 
     /// @brief A portable snapshot of the trained readout's weights — everything
     /// that readout learning produces. Save it to disk to reuse a trained model
-    /// later without retraining. Reservoir topology/weights are determined by
-    /// config + seeds; a non-zero FSF gain V is separate (Get/Set above).
+    /// later without retraining. Reservoir topology, weights, and FSF gain V are
+    /// determined by config + seeds.
     struct ReadoutState
     {
         std::vector<double> weights;

@@ -99,7 +99,6 @@ int main(int argc, char* argv[])
     cfg.readout.activation = ReadoutActivation::TANH; // TANH / RELU / LEAKY_RELU / NONE
     fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
-    fsf_ab::MaybeSetGain(esn);
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth
         << "  Leak=" << cfg.reservoir.leak_rate

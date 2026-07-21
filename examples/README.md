@@ -7,19 +7,15 @@ quick A/B testing against the open-loop baseline.
 
 | Control | Where |
 |---------|--------|
-| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kSetGain`, `kGainScale` |
-| Most examples | `fsf_ab::ApplyTo(cfg)` then `MaybeSetGain` after construct |
-| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SET_GAIN` / … in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
+| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kVScaling` |
+| Most examples | `fsf_ab::ApplyTo(cfg)` after building config; `Log` |
+| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SEED` / scales in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
 
 **How to A/B**
 
 1. **Off:** `kEnable = false`.
-2. **Port on, still open-loop dynamics:** `kEnable = true`, `kSetGain = false` (V stays 0).
-3. **FSF actually on:** `kEnable = true` and either `kSetGain = true` (simple default V) or your own `SetFullStateFeedbackGain` after construct.
-
-`kScaling` is only the FSF **weight** scale (how hard φ is injected).  
-`kGainScale` sizes the optional **default V** when `kSetGain` is true. Consumers who
-bring their own V ignore `kSetGain` / `kGainScale` and call `SetFullStateFeedbackGain`.
+2. **On:** `kEnable = true` — V and B_fsf are drawn at construction from `kSeed`
+   (`kVScaling` / `kScaling`). No Set/Get of V.
 
 Logs print a `FSF A/B:` line. Theory/API:
 [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).

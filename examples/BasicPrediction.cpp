@@ -52,7 +52,6 @@ int main(int argc, char* argv[])
     cfg.readout.use_pooling = true;
     fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
-    fsf_ab::MaybeSetGain(esn);
 
     std::cout << "  Config: N=" << N << "  history_depth=" << cfg.reservoir.history_depth << "\n";
     fsf_ab::Log(std::cout);

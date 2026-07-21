@@ -29,13 +29,15 @@ struct ReservoirConfig
     float external_feedback_scaling = 0.5f; // DIM-invariant: weights × scaling/√dim
 
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
-    // When false: zero FSF allocation. When true: B_fsf + staging buffer + gain V
-    // (length N, init 0). Each Step: φ = V·x, pad[v] = φ·V[v] (w ≡ V forever),
-    // gather via B_fsf. fsf_seed seeds only B_fsf (standalone RNG — not mixed from
-    // `seed`). See docs/full_state_linear_feedback.md.
+    // When false: zero FSF allocation. When true: B_fsf + staging buffer + V
+    // (length N). V and B_fsf are drawn once from standalone fsf_seed (not mixed
+    // from `seed`): first N → V × fsf_v_scaling, then N·dim → B_fsf × fsf_scaling/√dim.
+    // Each Step: φ = V·x, pad[v] = φ·V[v] (w ≡ V forever), gather via B_fsf.
+    // See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
-    float fsf_scaling = 0.5f; // DIM-invariant B_fsf: weights × scaling/√dim
+    float fsf_scaling = 0.5f;   // B_fsf: U(-1,1) × scaling/√dim
+    float fsf_v_scaling = 1.0f; // V: U(-1,1) × scaling (no fan-in factor)
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
 
@@ -96,10 +98,9 @@ struct ReservoirConfig
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
 ///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     each step: φ = V·x, stage pad[v] = φ·V[v] (same V; no separate staging
-///     vector), gather through B_fsf. V length N, init 0 until
-///     @ref SetFullStateFeedbackGain. B_fsf from @c fsf_seed / @c fsf_scaling.
-///     Outside SR rescale. Zero alloc when disabled.
+///     each step: φ = V·x, stage pad[v] = φ·V[v] (w ≡ V forever), gather through
+///     B_fsf. V and B_fsf are construction-time draws from @c fsf_seed (with
+///     @c fsf_v_scaling / @c fsf_scaling). Outside SR rescale. Zero alloc when off.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
@@ -147,9 +148,9 @@ public:
     void InjectInput(size_t channel, float input);
 
     /// @brief Reset dynamical state and history to zero and re-home the slice ring
-    /// (undriven live state). Weights, per-neuron bias, and the full-state feedback
-    /// gain V (if FSF is enabled) are left unchanged — V is a parameter, not state.
-    /// Staged input / external-feedback / FSF buffers are cleared.
+    /// (undriven live state). Weights, bias, and FSF gain V (if enabled) are left
+    /// unchanged — construction-time parameters, not dynamical state. Staged input /
+    /// external-feedback / FSF buffers are cleared.
     void Clear();
 
     /// @brief The current reservoir state — the most-recent history slice; this is
@@ -181,12 +182,10 @@ public:
 
     /// @brief Reconstruct the @ref ReservoirConfig this reservoir was built from.
     ///
-    /// Every config field is read back from a stored member (including FSF enable /
-    /// @c fsf_seed / @c fsf_scaling even when FSF is off). @c Create(GetConfig())
-    /// rebuilds matching weight blocks from @c seed and @c fsf_seed; it does **not**
-    /// restore a nonzero full-state gain V — re-apply with
-    /// @ref SetFullStateFeedbackGain if needed. @c spectral_radius here is the
-    /// configured TARGET, not the realized value — use
+    /// Every config field is read back from a stored member (including FSF knobs
+    /// even when FSF is off). @c Create(GetConfig()) rebuilds matching weights and
+    /// FSF gain V from @c seed / @c fsf_seed and the FSF scales. @c spectral_radius
+    /// here is the configured TARGET, not the realized value — use
     /// @ref GetRealizedSpectralRadius for the post-rescale estimate.
     [[nodiscard]] ReservoirConfig GetConfig() const;
 
@@ -215,15 +214,6 @@ public:
     /// @brief True if this reservoir was built with @c full_state_feedback.
     [[nodiscard]] bool FullStateFeedbackEnabled() const { return fsf_enabled_; }
 
-    /// @brief Set the full-state gain V (length N = @ref Size). Init is all zeros.
-    /// Mid-run changes take effect on the next @ref Step (hard cut in dynamics).
-    /// @throws std::invalid_argument if FSF is not enabled or @p n != N.
-    void SetFullStateFeedbackGain(const float* v, size_t n);
-
-    /// @brief Copy the current gain V into @p v_out (@p n must equal N).
-    /// @throws std::invalid_argument if FSF is not enabled or @p n != N.
-    void GetFullStateFeedbackGain(float* v_out, size_t n) const;
-
     /// @brief Copyable capture of the reservoir's persistent dynamical state: the
     /// live vertex state plus every history slice in logical age order (slice 0 =
     /// most recent).
@@ -231,8 +221,9 @@ public:
     /// The per-step staged drives (input, external feedback, FSF staging buffer)
     /// are NOT captured — they are consumed and cleared by every @ref Step, so a
     /// snapshot taken between steps has nothing staged. Weights and FSF gain V are
-    /// not included: a snapshot is only meaningful for the reservoir it was taken
-    /// from (or one built from an identical config + the same V).
+    /// not included (both are construction-time params from config + seeds): a
+    /// snapshot is only meaningful for the reservoir it was taken from (or one
+    /// rebuilt from an identical config).
     struct Snapshot
     {
         std::vector<float> state; ///< live vertex state, N floats
@@ -241,19 +232,19 @@ public:
 
     /// @brief Capture the persistent dynamical state (state + history ring).
     ///
-    /// Call between steps (staged drives are not captured; V is not captured).
-    /// History slices are stored in logical age order regardless of the ring's
-    /// current rotation, so the snapshot is canonical: snapshots of identical
-    /// dynamics compare equal even when taken at different ring phases.
+    /// Call between steps (staged drives are not captured). History slices are
+    /// stored in logical age order regardless of the ring's current rotation, so
+    /// the snapshot is canonical: snapshots of identical dynamics compare equal
+    /// even when taken at different ring phases.
     [[nodiscard]] Snapshot TakeSnapshot() const;
 
     /// @brief Bit-exact restore of a state captured by @ref TakeSnapshot.
     ///
     /// Copies the state and history back, re-homes the slice ring to the canonical
     /// rotation, and clears staged input / external feedback / FSF buffers — so the
-    /// post-restore trajectory depends on the snapshot, the current FSF gain V (if
-    /// enabled), and subsequent injections. Restoring and replaying the same drives
-    /// under the same V reproduces the identical trajectory bit-for-bit.
+    /// post-restore trajectory depends on the snapshot, construction-time FSF
+    /// params (if enabled), and subsequent injections. Restoring and replaying the
+    /// same drives on an identically configured reservoir is bit-exact.
     /// @throws std::invalid_argument if the snapshot's buffer sizes do not match
     ///         this reservoir's N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
@@ -312,8 +303,9 @@ private:
     bool fsf_enabled_ = false;
     uint64_t fsf_seed_ = 1;
     float fsf_scaling_ = 0.5f;
+    float fsf_v_scaling_ = 1.0f;
     size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
-    std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer (φ broadcast)
+    std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer pad[v]=φ·V[v]
     std::vector<float> fsf_gain_; // V, length n_ when enabled (empty when off)
 
     /**** per neuron bias ****/

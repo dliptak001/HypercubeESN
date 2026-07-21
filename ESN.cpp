@@ -151,16 +151,6 @@ void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
     reservoir_->Step();
 }
 
-void ESN::SetFullStateFeedbackGain(const float* v, size_t n)
-{
-    reservoir_->SetFullStateFeedbackGain(v, n);
-}
-
-void ESN::GetFullStateFeedbackGain(float* v_out, size_t n) const
-{
-    reservoir_->GetFullStateFeedbackGain(v_out, n);
-}
-
 void ESN::ReservoirWarmup(const float* inputs, size_t num_steps)
 {
     for (size_t s = 0; s < num_steps; ++s)

@@ -37,6 +37,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.full_state_feedback = config::FULL_STATE_FEEDBACK;
     cfg.reservoir.fsf_seed = config::FSF_SEED;
     cfg.reservoir.fsf_scaling = config::FSF_SCALING;
+    cfg.reservoir.fsf_v_scaling = config::FSF_V_SCALING;
 
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
@@ -72,16 +73,6 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
     esn_config_(MakeESNConfig(seed_)),
     esn_(esn_config_)
 {
-    if (config::FULL_STATE_FEEDBACK && config::FSF_SET_GAIN)
-    {
-        // Default isotropic V (same recipe as fsf_ab::MaybeSetGain). Or set V yourself.
-        const size_t n = esn_.ReservoirNeuronCount();
-        std::vector<float> V(n, 0.0f);
-        const float v = config::FSF_GAIN_SCALE / std::sqrt(static_cast<float>(n));
-        for (float& x : V) x = v;
-        esn_.SetFullStateFeedbackGain(V.data(), V.size());
-    }
-
     if (config::ENABLE_PRINTF)
     {
         std::printf("[Lorenz config] reservoir: DIM=%zu (N=%zu)  seed=%llu  SR=%.3f  input_scaling=%.3f  leak=%.2f"
@@ -93,13 +84,10 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     "  external_feedback_scaling=%.4f\n",
                     esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
-        std::printf("[Lorenz config] FSF A/B:   %s  fsf_seed=%llu  fsf_scaling=%.3f  gain=%s\n",
+        std::printf("[Lorenz config] FSF A/B:   %s  fsf_seed=%llu  fsf_scaling=%.3f  fsf_v_scaling=%.3f\n",
                     config::FULL_STATE_FEEDBACK ? "ON " : "OFF",
                     static_cast<unsigned long long>(config::FSF_SEED),
-                    config::FSF_SCALING,
-                    (config::FULL_STATE_FEEDBACK && config::FSF_SET_GAIN)
-                        ? "default isotropic"
-                        : (config::FULL_STATE_FEEDBACK ? "V=0 until SetFullStateFeedbackGain" : "n/a"));
+                    config::FSF_SCALING, config::FSF_V_SCALING);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  aux=%zu  blocks=%zu  pooling=%s\n",

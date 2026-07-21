@@ -24,8 +24,8 @@ In [`Lorenz.h`](Lorenz.h) `config::`:
 | Knob | Default | Role |
 |------|---------|------|
 | `FULL_STATE_FEEDBACK` | `false` | Construction-only FSF port |
-| `FSF_SEED` / `FSF_SCALING` | `1` / `0.5` | `B_fsf` weight scale (not V) |
-| `FSF_SET_GAIN` / `FSF_GAIN_SCALE` | `false` / `0.05` | Optional default isotropic V after construct |
+| `FSF_SEED` | `1` | Draws V then B_fsf |
+| `FSF_SCALING` / `FSF_V_SCALING` | `0.5` / `1.0` | B_fsf / V scales |
 
 Independent of the **external-feedback** future port. Other examples share
 [`FsfAbSwitch.h`](../FsfAbSwitch.h); Lorenz keeps knobs in `config::` for the

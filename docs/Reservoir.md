@@ -58,17 +58,17 @@ Everything that follows serves those two.
 | `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
-| `fsf_seed` | 1 | seeds only `B_fsf` (standalone RNG; not from `seed`) |
-| `fsf_scaling` | 0.5 | FSF drive × scaling/√dim (only if FSF on) |
+| `fsf_seed` | 1 | draws V then B_fsf (standalone; not from `seed`) |
+| `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only if FSF on) |
+| `fsf_v_scaling` | 1.0 | V: U(−1,1)×scale (only if FSF on) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
 
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
-post-secant value. `Create(GetConfig())` rebuilds matching weight blocks from
-`seed` and `fsf_seed`; a nonzero full-state gain V is **not** in the config —
-re-apply with `SetFullStateFeedbackGain` if needed.
+post-secant value. `Create(GetConfig())` rebuilds matching weight blocks and FSF
+gain V from `seed` / `fsf_seed` and the FSF scales.
 
 ## A topology you don't store
 
@@ -304,21 +304,17 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
-1. φ = V · x (V length N, init 0; `SetFullStateFeedbackGain` / `Get…`)
-2. Stage `vtx_fsf_[v] = φ * V[v]` — **same V** paints the field (**w ≡ V forever**;
-   no separate staging vector)
-3. XOR-gather that field through **B_fsf** (from standalone `fsf_seed` /
-   `fsf_scaling`)
+1. φ = V · x (V length N, drawn at construction from `fsf_seed` × `fsf_v_scaling`)
+2. Stage `vtx_fsf_[v] = φ * V[v]` — **same V** paints the field (**w ≡ V forever**)
+3. XOR-gather that field through **B_fsf** (`fsf_seed` × `fsf_scaling`/√dim)
 
-Zero allocation when disabled.
+Zero allocation when disabled. No runtime Set/Get of V.
 
 Implications:
 
 - **Warmup / Run** under `ESN` still apply FSF when enabled.
-- **V = 0** ⇒ φ = 0 and pads zero ⇒ no FSF contribution (open-loop match if
-  main seed/inputs match an FSF-off run).
 - **Clear / snapshot** do not touch V; staged FSF buffer is cleared like other drives.
-- Mid-run `SetV` is a hard cut in dynamics.
+- `Create(GetConfig())` rebuilds the same V and B_fsf.
 
 Details: [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
@@ -394,7 +390,7 @@ physical block order meaningless).
 |-----|------|
 | `Create(cfg)` | only constructor path |
 | `InjectInput` / `InjectExternalFeedback` | stage drives |
-| `Set/GetFullStateFeedbackGain` | FSF gain V (if enabled) |
+| `FullStateFeedbackEnabled` | FSF port allocated at construction |
 | `Step` | one timestep |
 | `Outputs` / `SliceAt` | read state / delay line |
 | `Clear` | zero state + history; keep weights & bias |

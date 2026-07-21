@@ -122,7 +122,8 @@ namespace
         return failures;
     }
 
-    /// F0: FSF off. F1: FSF on V=0 bit-identical to F0. F2: V≠0 diverges. F6: Clear keeps V.
+    /// F0: FSF off. F1: FSF on differs from off. F2: Create(GetConfig) bit-identical.
+    /// F3: Clear preserves FSF-closed trajectory. F4: ESN warmup under FSF.
     int TestFsf()
     {
         int failures = 0;
@@ -149,62 +150,47 @@ namespace
         on_cfg.full_state_feedback = true;
         on_cfg.fsf_seed = 99;
         on_cfg.fsf_scaling = 0.5f;
-        auto on_v0 = Reservoir::Create(on_cfg);
-        if (!on_v0->FullStateFeedbackEnabled())
+        on_cfg.fsf_v_scaling = 1.0f;
+        auto on_a = Reservoir::Create(on_cfg);
+        if (!on_a->FullStateFeedbackEnabled())
         {
             std::printf("  [FSF] FAIL: FullStateFeedbackEnabled false after enable\n");
             ++failures;
         }
-        const std::vector<float> tr_v0 = run_trace(*on_v0);
-        if (!BitIdentical(tr_off, tr_v0))
+        const std::vector<float> tr_on = run_trace(*on_a);
+        if (BitIdentical(tr_off, tr_on))
         {
-            std::printf("  [FSF] FAIL: FSF on + V=0 not bit-identical to FSF off (F1)\n");
+            std::printf("  [FSF] FAIL: FSF on did not change trajectory vs off (F1)\n");
             ++failures;
         }
         else
-            std::printf("  [FSF] PASS F0/F1: off ≡ on with V=0\n");
+            std::printf("  [FSF] PASS F0/F1: off vs on differ\n");
 
-        // F2: nonzero V changes trajectory
-        auto on_v = Reservoir::Create(on_cfg);
-        std::vector<float> V(on_v->Size(), 0.0f);
-        V[0] = 0.25f;
-        V[1] = -0.1f;
-        V[on_v->Size() / 2] = 0.05f;
-        on_v->SetFullStateFeedbackGain(V.data(), V.size());
-        const std::vector<float> tr_v = run_trace(*on_v);
-        if (BitIdentical(tr_v0, tr_v))
+        // F2: seed+scales rebuild identical V and B_fsf
+        auto on_b = Reservoir::Create(on_a->GetConfig());
+        const std::vector<float> tr_rebuild = run_trace(*on_b);
+        if (!BitIdentical(tr_on, tr_rebuild))
         {
-            std::printf("  [FSF] FAIL: nonzero V did not change trajectory (F2)\n");
+            std::printf("  [FSF] FAIL: Create(GetConfig) trajectory mismatch (F2)\n");
             ++failures;
         }
         else
-            std::printf("  [FSF] PASS F2: nonzero V changes trajectory\n");
+            std::printf("  [FSF] PASS F2: Create(GetConfig) bit-identical\n");
 
-        // F6: Clear does not wipe V
-        on_v->Clear();
-        std::vector<float> V2(on_v->Size());
-        on_v->GetFullStateFeedbackGain(V2.data(), V2.size());
-        if (!BitIdentical(V, V2))
+        // F3: Clear does not wipe construction-time V — same drive after clear matches
+        // a fresh run from zero only if we clear then re-drive from cold; instead check
+        // snapshot restore under FSF still works (Clear leaves V, zeros state).
+        on_a->Clear();
+        const std::vector<float> tr_after_clear = run_trace(*on_a);
+        if (!BitIdentical(tr_on, tr_after_clear))
         {
-            std::printf("  [FSF] FAIL: Clear wiped V (F6)\n");
+            std::printf("  [FSF] FAIL: Clear changed FSF-closed trajectory (F3)\n");
             ++failures;
         }
         else
-            std::printf("  [FSF] PASS F6: Clear preserves V\n");
+            std::printf("  [FSF] PASS F3: Clear preserves FSF params (same re-drive)\n");
 
-        // Set/Get throw when off
-        bool threw = false;
-        try { off->SetFullStateFeedbackGain(V.data(), V.size()); }
-        catch (const std::invalid_argument&) { threw = true; }
-        if (!threw)
-        {
-            std::printf("  [FSF] FAIL: SetV on disabled reservoir did not throw\n");
-            ++failures;
-        }
-        else
-            std::printf("  [FSF] PASS SetV throws when FSF off\n");
-
-        // ESN surface: FSF applies during ReservoirWarmup without external feedback
+        // F4: ESN warmup under FSF
         ESNConfig ec;
         ec.reservoir = on_cfg;
         ec.reservoir.verbose = false;
@@ -215,7 +201,6 @@ namespace
             std::printf("  [FSF] FAIL: ESN FullStateFeedbackEnabled\n");
             ++failures;
         }
-        esn.SetFullStateFeedbackGain(V.data(), V.size());
         std::vector<float> u(kSteps, 0.3f);
         esn.ReservoirWarmup(u.data(), kSteps);
         std::vector<float> state(esn.ReservoirNeuronCount());
@@ -228,16 +213,18 @@ namespace
             ++failures;
         }
         else
-            std::printf("  [FSF] PASS ESN SetV + Warmup under FSF\n");
+            std::printf("  [FSF] PASS F4: ESN Warmup under FSF\n");
 
         // GetConfig round-trip of FSF knobs when disabled
         ReservoirConfig off_seed = base;
         off_seed.full_state_feedback = false;
         off_seed.fsf_seed = 12345;
         off_seed.fsf_scaling = 0.7f;
+        off_seed.fsf_v_scaling = 0.3f;
         auto r_off = Reservoir::Create(off_seed);
         const auto got = r_off->GetConfig();
-        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f || got.full_state_feedback)
+        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f || got.fsf_v_scaling != 0.3f
+            || got.full_state_feedback)
         {
             std::printf("  [FSF] FAIL: GetConfig lost FSF knobs while disabled\n");
             ++failures;
