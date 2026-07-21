@@ -245,7 +245,7 @@ namespace mc
             rcfg.verbose    = false;
 
             auto reservoir = Reservoir::Create(rcfg);
-            fsf_ab::MaybeSetDemoGain(*reservoir); // no-op unless FsfAbSwitch enables demo V
+            fsf_ab::MaybeSetGain(*reservoir); // no-op unless fsf_ab::kEnable && kSetGain
             const float realized = reservoir->GetRealizedSpectralRadius();
 
             for (std::size_t t = 0; t < cfg_.t_warmup + cfg_.t_collect; ++t)

@@ -7,18 +7,21 @@ quick A/B testing against the open-loop baseline.
 
 | Control | Where |
 |---------|--------|
-| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `fsf_ab::kEnable`, `kSeed`, `kScaling`, `kApplyDemoGain` |
-| BasicPrediction, SignalClassification, StreamingAnomaly, NARMA, MemoryCapacity, StreamingText | `fsf_ab::ApplyTo(cfg)` after building config; `Log` + `MaybeSetDemoGain` after construct |
-| **Lorenz** | `config::FULL_STATE_FEEDBACK` (and related knobs) in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) — same semantics, local to the harness |
+| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kSetGain`, `kGainScale` |
+| Most examples | `fsf_ab::ApplyTo(cfg)` then `MaybeSetGain` after construct |
+| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SET_GAIN` / … in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
 
 **How to A/B**
 
-1. Baseline: leave `kEnable = false` (or Lorenz `FULL_STATE_FEEDBACK = false`).
-2. Port on, V = 0: set `kEnable = true`, leave `kApplyDemoGain = false` — dynamics match off (sanity).
-3. Closed FSF: `kEnable = true` and either `kApplyDemoGain = true` or your own
-   `SetFullStateFeedbackGain` after `ESN` construction (replace the demo gain).
+1. **Off:** `kEnable = false`.
+2. **Port on, still open-loop dynamics:** `kEnable = true`, `kSetGain = false` (V stays 0).
+3. **FSF actually on:** `kEnable = true` and either `kSetGain = true` (simple default V) or your own `SetFullStateFeedbackGain` after construct.
 
-Logs print a `FSF A/B:` line so runs are labeled. Theory/API:
+`kScaling` is only the FSF **weight** scale (how hard φ is injected).  
+`kGainScale` sizes the optional **default V** when `kSetGain` is true. Consumers who
+bring their own V ignore `kSetGain` / `kGainScale` and call `SetFullStateFeedbackGain`.
+
+Logs print a `FSF A/B:` line. Theory/API:
 [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).
 
 ## BasicPrediction

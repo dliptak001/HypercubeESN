@@ -90,7 +90,7 @@ int Run()
     fsf_ab::Log(std::cerr);
 
     ESN esn(esn_cfg);
-    fsf_ab::MaybeSetDemoGain(esn);
+    fsf_ab::MaybeSetGain(esn);
     // Same banner channel as the rest of [stext] diagnostics.
     std::cerr << esn.ReadoutArchSummary();
 

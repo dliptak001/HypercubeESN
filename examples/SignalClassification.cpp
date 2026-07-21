@@ -211,7 +211,7 @@ int main(int argc, char* argv[])
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
     fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
-    fsf_ab::MaybeSetDemoGain(esn);
+    fsf_ab::MaybeSetGain(esn);
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth << "  Input Scaling=" << cfg.reservoir.input_scaling
               << "  Task=Classification  Classes=" << NUM_CLASSES << "\n";

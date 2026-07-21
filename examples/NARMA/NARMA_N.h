@@ -386,7 +386,7 @@ inline NARMATrialResult RunNARMATrial(const ESNConfig& cfg, const NARMATask& tas
         centered[t] = y[t] - static_cast<float>(mean);
 
     ESN esn(cfg);
-    fsf_ab::MaybeSetDemoGain(esn); // no-op unless FsfAbSwitch enables demo V
+    fsf_ab::MaybeSetGain(esn); // no-op unless fsf_ab::kEnable && kSetGain
     esn.ReservoirWarmup(task.ri.data(), task.warmup);
     esn.ReservoirRun(task.ri.data() + task.warmup, task.collect);
 
