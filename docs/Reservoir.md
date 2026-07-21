@@ -66,8 +66,9 @@ Everything that follows serves those two.
 
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
-post-secant value. `Create(GetConfig())` rebuilds an identical weight draw
-(deterministic in the seed).
+post-secant value. `Create(GetConfig())` rebuilds matching weight blocks from
+`seed` and `fsf_seed`; a nonzero full-state gain V is **not** in the config —
+re-apply with `SetFullStateFeedbackGain` if needed.
 
 ## A topology you don't store
 
@@ -361,12 +362,13 @@ depth: surveyed spectral radius and M are not fully independent in practice.
 ## Snapshots
 
 `TakeSnapshot()` captures `vtx_state_` and the history ring in **logical age
-order** (slice 0 first). Staged input/feedback are not included (they would be
-empty between steps). Weights and bias are not included — restore only onto the
-same (or identically configured) reservoir.
+order** (slice 0 first). Staged input / external feedback / FSF buffers are not
+included (empty between steps). Weights, bias, and FSF gain V are not included —
+restore only onto the same (or identically configured) reservoir with the same V.
 
 `RestoreSnapshot` copies state + history, re-homes the ring to canonical rotation,
-and clears staged drives. Replaying the same injections afterward is bit-exact.
+and clears staged drives. Replaying the same injections under the same V afterward
+is bit-exact.
 
 `SliceAt(age)` is the live delay-line view (age 0 ≡ `Outputs()`); throws if
 `age ≥ history_depth`. Prefer this over raw buffer layout (ring rotation makes
@@ -374,9 +376,10 @@ physical block order meaningless).
 
 ## Computational properties
 
-- **Time per step:** O(N · DIM · M) recurrent + O(N · DIM) input + O(N · DIM) if
-  feedback — i.e. **O(N · DIM · (M + 1 + [fb]))**, vs O(N²) for a dense ESN.
-- **Weights:** **N · DIM · (M + 1 + [fb])** as above; zero adjacency storage.
+- **Time per step:** O(N · DIM · M) recurrent + O(N · DIM) per enabled drive port
+  (input always; + external feedback; + FSF) — i.e.
+  **O(N · DIM · (M + 1 + [ext] + [FSF]))**, vs O(N²) for a dense ESN.
+- **Weights:** **N · DIM · (M + 1 + [ext] + [FSF])** as above; zero adjacency storage.
 - **Neighbor addresses** are arithmetic (`v XOR (1<<i)`); weight rows are contiguous.
   Neighbor *state* gathers are still strided (high-bit flips jump by N/2).
 - **Parallelism:** vertex updates are independent; the released `Step()` is serial.

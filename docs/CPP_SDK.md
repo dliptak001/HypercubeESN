@@ -668,7 +668,7 @@ restored.SetReadoutState(state);
 // Ready to predict -- no retraining needed.
 ```
 
-A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig`, and `Reservoir::Create(reservoir.GetConfig())` rebuilds an identical reservoir (the weights are deterministic in the seed). The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
+A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig` (including FSF knobs). `Reservoir::Create(reservoir.GetConfig())` rebuilds matching weight blocks from `seed` and `fsf_seed`; a nonzero full-state gain V is **not** in the config — re-apply with `SetFullStateFeedbackGain` if needed. The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
 
 ---
 

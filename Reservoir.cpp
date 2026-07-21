@@ -365,6 +365,9 @@ void Reservoir::InjectExternalFeedback(const float* values, const size_t count)
     if (count != num_ext_feedback_channels_)
         throw std::invalid_argument(
             "InjectExternalFeedback(vector): count must equal num_external_feedback_channels");
+    if (count > 0 && values == nullptr)
+        throw std::invalid_argument(
+            "InjectExternalFeedback(vector): values is null but count > 0");
     for (size_t c = 0; c < count; ++c)
         InjectExternalFeedback(c, values[c]);
 }

@@ -128,10 +128,12 @@ public:
 
     /// @brief Advance the reservoir by one timestep.
     ///
-    /// Recomputes every vertex's state from its staged input/feedback and the
-    /// recurrent history, ages the history ring by one slice (the new state
-    /// becomes slice 0), and clears the per-step drives. Stage them first with
+    /// Recomputes every vertex's state from staged input / external feedback /
+    /// (if enabled) full-state feedback and the recurrent history, ages the
+    /// history ring by one slice (the new state becomes slice 0), and clears the
+    /// per-step staged drives. Stage input/external feedback first with
     /// @ref InjectInput / @ref InjectExternalFeedback — they are consumed here.
+    /// Full-state feedback is staged inside this call when enabled.
     void Step();
 
     /// @brief Stage the input for one channel ahead of the next @ref Step.
@@ -142,9 +144,10 @@ public:
     /// @throws std::invalid_argument if @p channel >= num_inputs.
     void InjectInput(size_t channel, float input);
 
-    /// @brief Reset all state and history to zero and re-home the slice ring,
-    /// returning the reservoir to its post-construction (undriven) state. The
-    /// learned/initialized weights and the per-neuron bias are left unchanged.
+    /// @brief Reset dynamical state and history to zero and re-home the slice ring
+    /// (undriven live state). Weights, per-neuron bias, and the full-state feedback
+    /// gain V (if FSF is enabled) are left unchanged — V is a parameter, not state.
+    /// Staged input / external-feedback / FSF buffers are cleared.
     void Clear();
 
     /// @brief The current reservoir state — the most-recent history slice; this is
@@ -176,11 +179,13 @@ public:
 
     /// @brief Reconstruct the @ref ReservoirConfig this reservoir was built from.
     ///
-    /// Every field is read back from a stored member, so @c Create(GetConfig())
-    /// rebuilds an identical reservoir (the weights are deterministic in the seed).
-    /// @c spectral_radius here is the configured TARGET, not the realized value —
-    /// use @ref GetRealizedSpectralRadius for the post-rescale estimate. Gives
-    /// consumers what they need to serialize a standalone reservoir.
+    /// Every config field is read back from a stored member (including FSF enable /
+    /// @c fsf_seed / @c fsf_scaling even when FSF is off). @c Create(GetConfig())
+    /// rebuilds matching weight blocks from @c seed and @c fsf_seed; it does **not**
+    /// restore a nonzero full-state gain V — re-apply with
+    /// @ref SetFullStateFeedbackGain if needed. @c spectral_radius here is the
+    /// configured TARGET, not the realized value — use
+    /// @ref GetRealizedSpectralRadius for the post-rescale estimate.
     [[nodiscard]] ReservoirConfig GetConfig() const;
 
     /// @brief Hypercube dimension; the reservoir has N = 2^Dim() neurons.
@@ -201,7 +206,8 @@ public:
     void InjectExternalFeedback(size_t channel, float value);
 
     /// @brief Stage all D external-feedback channels at once (@p count must equal D).
-    /// @throws std::invalid_argument if @p count != num_external_feedback_channels.
+    /// @throws std::invalid_argument if @p count != num_external_feedback_channels,
+    ///         or if @p values is null when @p count > 0.
     void InjectExternalFeedback(const float* values, size_t count);
 
     /// @brief True if this reservoir was built with @c full_state_feedback.
@@ -220,10 +226,11 @@ public:
     /// live vertex state plus every history slice in logical age order (slice 0 =
     /// most recent).
     ///
-    /// The per-step staged drives (input/feedback) are NOT captured — they are
-    /// consumed and cleared by every @ref Step, so a snapshot taken between steps
-    /// has nothing staged. Weights are not included: a snapshot is only meaningful
-    /// for the reservoir it was taken from (or one built from an identical config).
+    /// The per-step staged drives (input, external feedback, FSF staging buffer)
+    /// are NOT captured — they are consumed and cleared by every @ref Step, so a
+    /// snapshot taken between steps has nothing staged. Weights and FSF gain V are
+    /// not included: a snapshot is only meaningful for the reservoir it was taken
+    /// from (or one built from an identical config + the same V).
     struct Snapshot
     {
         std::vector<float> state; ///< live vertex state, N floats
@@ -232,7 +239,7 @@ public:
 
     /// @brief Capture the persistent dynamical state (state + history ring).
     ///
-    /// Call between steps (per-step staged input/feedback are not captured).
+    /// Call between steps (staged drives are not captured; V is not captured).
     /// History slices are stored in logical age order regardless of the ring's
     /// current rotation, so the snapshot is canonical: snapshots of identical
     /// dynamics compare equal even when taken at different ring phases.
@@ -241,10 +248,10 @@ public:
     /// @brief Bit-exact restore of a state captured by @ref TakeSnapshot.
     ///
     /// Copies the state and history back, re-homes the slice ring to the canonical
-    /// rotation, and clears any staged input/feedback — so the post-restore
-    /// trajectory depends only on the snapshot and subsequent injections:
-    /// restoring and replaying the same inputs reproduces the identical trajectory
-    /// bit-for-bit — a branch-point primitive for any snapshot-and-replay use.
+    /// rotation, and clears staged input / external feedback / FSF buffers — so the
+    /// post-restore trajectory depends on the snapshot, the current FSF gain V (if
+    /// enabled), and subsequent injections. Restoring and replaying the same drives
+    /// under the same V reproduces the identical trajectory bit-for-bit.
     /// @throws std::invalid_argument if the snapshot's buffer sizes do not match
     ///         this reservoir's N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
@@ -318,7 +325,7 @@ private:
     void UpdateState(size_t v, float old_output_v);
     [[nodiscard]] float EstimateSpectralRadius(std::span<float> x, std::span<float> y) const;
 
-    /// Byte offset (in floats) of the recurrent weight block — after input, ext-fb, FSF.
+    /// Index (in floats) of the recurrent weight block — after input, ext-fb, FSF.
     [[nodiscard]] size_t RecurrentWeightBase() const
     {
         return num_input_weights_ + num_ext_feedback_weights_ + num_fsf_weights_;
