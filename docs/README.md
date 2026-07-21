@@ -11,14 +11,17 @@ order below.
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [Reservoir.md](Reservoir.md) | How the hypercube reservoir works — topology, connectivity, timestep mechanics, deep-vertex history depth, spectral-radius tuning, DIM-invariant input drive |
+| [Reservoir.md](Reservoir.md) | Hypercube reservoir — topology, timestep, history depth, SR, drive ports (input / external feedback / full-state feedback) |
 | [Readout.md](Readout.md) | HCNN readout architecture, training algorithm, and streaming mode |
+| [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md) | External-feedback port (caller-owned closed loop) |
+| [full_state_linear_feedback.md](full_state_linear_feedback.md) | Full-state feedback (internal φ = V·x) — theory map + landed API |
 
 These documents cover the full pipeline:
 
 ```
-Input ──> Reservoir (N states) ──────────────────────> Readout ──> Prediction
-           [Reservoir.md]                               [Readout.md]
+Input (+ optional external feedback / FSF)
+        ──> Reservoir (N states) ──> Readout ──> Prediction
+             [Reservoir.md]          [Readout.md]
 ```
 
 ### 2. See it in action

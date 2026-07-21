@@ -26,8 +26,8 @@ at all). Report VPT and RMSE with that distinction stated.
  LorenzDatastream  — integrate once, midpoint-offset + shared-scale → float S[·] ≈ [-1,1]
         │            inherits JanusCursor (past @ ub←, future @ lb→)
         │
-        │  input port    (4): past   [x, y, z, x·z]     always real history
-        │  feedback port (4): future [x, y, z, x·z]     real in train; prediction in free-run
+        │  input port              (4): past   [x, y, z, x·z]  always real history
+        │  external-feedback port  (4): future [x, y, z, x·z]  real in train; prediction in free-run
         ▼
  ESN  — fixed hypercube reservoir + online HCNN readout (3 outputs: x, y, z)
         │
@@ -300,6 +300,7 @@ epochs × many free-runs is heavy).
 | Doc | Role |
 |-----|------|
 | [`JanusCursor.md`](JanusCursor.md) | Exact cursor API and index geometry |
-| [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | Reservoir feedback **port** (mechanism; policy is this harness) |
+| [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
+| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback (not used by this example) |
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh free-run campaign (stale harness) |
 | Project [`docs/README.md`](../../docs/README.md) | Library-wide reading order |

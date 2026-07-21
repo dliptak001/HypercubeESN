@@ -226,6 +226,15 @@ struct ReservoirConfig
     size_t   history_depth   = 16;
     float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
     bool     verbose         = true;
+
+    // External feedback (caller-owned) — 0 = off, no alloc
+    size_t   num_external_feedback_channels = 0;
+    float    external_feedback_scaling      = 0.5f;
+
+    // Full-state linear feedback (internal φ = V·x) — false = off, no alloc
+    bool     full_state_feedback = false;
+    uint64_t fsf_seed            = 1;      // seeds only B_fsf; not derived from seed
+    float    fsf_scaling         = 0.5f;
 };
 
 // Typical:
@@ -239,7 +248,7 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `dim` | `size_t` | `10` | Hypercube dimension; the reservoir has N = 2^dim neurons, sized at construction. Must be in [5, 16] — `Reservoir::Create` throws `std::invalid_argument` otherwise. |
-| `seed` | `uint64_t` | `73895` | RNG seed for weight initialization. Different seeds produce measurably different performance; screen per DIM/task and set explicitly. |
+| `seed` | `uint64_t` | `73895` | Master RNG seed (recurrent / input / external-feedback / bias / SR-probe substreams). Different seeds produce measurably different performance; screen per DIM/task and set explicitly. |
 | `spectral_radius` | `float` | `0.99` | Target spectral radius of the recurrent operator (the MN×MN augmented companion operator when `history_depth` > 1). Controls the echo-state property — how quickly past inputs fade. Tune per DIM/task. |
 | `leak_rate` | `float` | `1.0` | Leaky-integrator coefficient. `state = (1 - leak_rate) * old_output + leak_rate * tanh(drive)`. At 1.0, each step fully replaces state; values < 1.0 add explicit temporal carryover. |
 | `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(-1,1) then scaled by `input_scaling / √DIM`; the `1/√DIM` fan-in normalization makes a given value deliver the same `tanh` drive at any DIM (**DIM-invariant by construction** — not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3). |
@@ -247,6 +256,11 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
 | `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
 | `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
+| `num_external_feedback_channels` | `size_t` | `0` | External-feedback channels D. **0** = path off (no buffer/weights). Else D in **[1, N]** (need not divide N). Caller stages values each step. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
+| `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
+| `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback (φ = V·x). **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
+| `fsf_seed` | `uint64_t` | `1` | Seeds **only** the FSF weight block (standalone RNG — not derived from `seed`). Stored even when FSF is off (GetConfig round-trip). |
+| `fsf_scaling` | `float` | `0.5` | FSF drive: weights × `scaling / √DIM` when FSF is on. Outside spectral-radius rescale. |
 
 ---
 
@@ -392,13 +406,31 @@ ESN esn(cfg);
 
 #### Reservoir Driving
 
+##### `ReservoirStep`
+
+```cpp
+void ReservoirStep(const float* inputs, const float* external_feedback = nullptr);
+```
+
+One timestep: stage task `inputs` (always), optionally stage **external** feedback,
+then `Step`. If `full_state_feedback` was enabled at construction, **FSF applies
+automatically** inside the reservoir (φ = V·x from the current gain V) — do not
+pass φ here.
+
+**Parameters:**
+- `inputs` -- `NumInputs()` floats for this step.
+- `external_feedback` -- `nullptr` to skip; otherwise `NumExternalFeedbackChannels()`
+  floats. Throws if non-null when D == 0.
+
+---
+
 ##### `ReservoirWarmup`
 
 ```cpp
 void ReservoirWarmup(const float* inputs, size_t num_steps);
 ```
 
-Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training.
+Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training. Calls `ReservoirStep` **without** external feedback. **If FSF is enabled, FSF still applies each step.**
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Each timestep has `num_inputs` consecutive values (one per channel). When `num_inputs == 1` (default), this is simply `num_steps` scalars. Values are **not** clamped — pass already-bounded signals (the `1/√DIM` input normalization sets the `tanh` operating point via `input_scaling`).
@@ -412,7 +444,7 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the full state at each step (`ReservoirNeuronCount()` floats — all N vertices). States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate.
+Drives the reservoir for `num_steps` timesteps, recording the readout input at each step. States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate. External feedback is not injected; **FSF still applies if enabled**.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `ReservoirWarmup()`.
@@ -427,7 +459,7 @@ Drives the reservoir for `num_steps` timesteps, recording the full state at each
 void ReservoirClear();
 ```
 
-Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
+Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, FSF gain V (if any), and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
 
 Use for episodic tasks where each episode starts from a clean slate (e.g., per-sequence reset).
 
@@ -590,15 +622,21 @@ Returns all collected states: `NumCollectedStates() * ReservoirNeuronCount()` fl
 | `NumCollectedStates()` | `size_t` | Recorded reservoir-state snapshots (one per timestep) from `ReservoirRun()`. |
 | `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
 | `NumInputs()` | `size_t` | Number of input channels from config. |
+| `NumExternalFeedbackChannels()` | `size_t` | D from `cfg.reservoir.num_external_feedback_channels` (0 = no external-feedback port). |
 | `ReservoirHypercubeDimension()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
 | `ReservoirNeuronCount()` | `size_t` | Reservoir neuron count N = 2^`ReservoirHypercubeDimension()`. |
-| `GetConfig()` | `ESNConfig` | Full config used to construct this ESN (both reservoir and readout). |
+| `FullStateFeedbackEnabled()` | `bool` | True if built with `full_state_feedback`. |
+| `SetFullStateFeedbackGain(v, n)` | void | Set gain V (n == N). Throws if FSF off. Mid-run changes apply next step. |
+| `GetFullStateFeedbackGain(out, n)` | void | Copy current V. Throws if FSF off. |
+| `GetConfig()` | `ESNConfig` | Full config (reservoir + readout). Includes FSF knobs; **not** the gain vector V. |
+
+V is settable only (not trained by the library). See [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ---
 
 ##### Readout State Serialization
 
-The ESN exposes its trained readout state for save/restore. The reservoir weights are deterministic from the seed, so only the config (`GetConfig()`) and readout state (`GetReadoutState()`) need to be persisted. On restore, construct a fresh `ESN` from the saved `ESNConfig` (which carries `reservoir.dim`) and call `SetReadoutState` — the readout config travels with the `ESNConfig`, so no separate `SetCNNConfig` step is needed.
+The ESN exposes its trained readout state for save/restore. Reservoir topology and weight blocks are deterministic from config + seeds (`seed`, and `fsf_seed` when FSF is on). A **nonzero FSF gain V is not in the config** — re-apply with `SetFullStateFeedbackGain` after restore if you use one. Persist config (`GetConfig()`), readout (`GetReadoutState()`), and V when needed. On restore, construct a fresh `ESN` from the saved `ESNConfig` and call `SetReadoutState`.
 
 **`ReadoutState` struct** (nested in `ESN`):
 

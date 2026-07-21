@@ -303,9 +303,19 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 When `full_state_feedback = true`, a third drive path applies φ = V·x **inside**
 each `Step` (V length N, init 0; `SetFullStateFeedbackGain` /
-`GetFullStateFeedbackGain`). Weights from standalone `fsf_seed`. Zero allocation
-when disabled. Warmup/run under ESN still apply FSF if enabled. See
-[design_internal_fsf.md](design_internal_fsf.md).
+`GetFullStateFeedbackGain`). Weights from a standalone `fsf_seed` (not the main
+reservoir seed stream). Zero allocation when disabled.
+
+Implications:
+
+- **Warmup / Run** under `ESN` still apply FSF when enabled — recorded states
+  match the FSF-closed dynamics.
+- **V = 0** contributes nothing (bit-identical open-loop if main seed/inputs match
+  an FSF-off run).
+- **Clear / snapshot** do not touch V; staged FSF buffer is cleared like other drives.
+- Mid-run `SetV` is a hard cut in dynamics (allowed; not a freeze API).
+
+Theory mapping and paper citation: [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)
 
