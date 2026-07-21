@@ -4,7 +4,7 @@
 /// @brief Shared A/B controls for full-state linear feedback (FSF) in examples.
 ///
 /// When enabled: V ~ U(-1,1) from fsf_seed; B_fsf from same seed with fsf_scaling.
-/// pad[v] = fsf_stage_scaling · (V·x) · V[v] in Step. No Set/Get of V.
+/// Step: φ = fsf_stage_scaling·(V·x), fill vtx_fsf_ with φ (ext-fb D=1). No Set/Get.
 ///
 /// See docs/full_state_linear_feedback.md.
 
@@ -16,12 +16,12 @@
 
 namespace fsf_ab
 {
-    inline constexpr bool kEnable = false;
-    inline constexpr std::uint64_t kSeed = 1;
+    inline constexpr bool kEnable = true;
+    inline constexpr std::uint64_t kSeed = 13459873;
     /// B_fsf construction: U(-1,1) × kScaling/√dim.
     inline constexpr float kScaling = 0.5f;
     /// Step: pad[v] = kStageScaling · (V·x) · V[v].
-    inline constexpr float kStageScaling = 1.0f;
+    inline constexpr float kStageScaling = 0.1f;
 
     inline void ApplyTo(ReservoirConfig& r) noexcept
     {

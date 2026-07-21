@@ -1,88 +1,56 @@
 # Full-state linear feedback — theory and landed API
 
 > Status: **landed (mechanism)**.  
-> Ehlers, Nurdin & Soh (arXiv:2312.15141) motivate a full-state gain **V**.  
-> HypercubeESN applies it as a **dedicated internal drive port** (`B_fsf`), not by
-> hijacking input or external feedback. Config and API live on
-> `ReservoirConfig` / `ESN`; dynamics notes in [Reservoir.md](Reservoir.md).
->
-> **Binding:** **w ≡ V** forever (`pad[v] ∝ φ · V[v]`). No separate staging vector.
-> **V** is U(−1,1) from `fsf_seed` (no scale baked in). **No** Set/Get of V.
+> Internal drive port: form a single channel value **φ = V · x**, then inject it
+> **exactly like external feedback with one channel** (fill `vtx_fsf_` with φ,
+> XOR-gather × **B_fsf**). Config on `ReservoirConfig` / `ESN`. Details in
+> [Reservoir.md](Reservoir.md).
 
 ## Design (canonical)
 
 ```
-Construction (fsf_seed, standalone RNG — not reservoir.seed):
-  V[i]     ~ U(-1, 1)                         // first N draws; full range stored
-  B_fsf    ~ U(-1, 1) * fsf_scaling / √dim    // next N·dim draws
+Construction (fsf_seed, standalone — not reservoir.seed):
+  V[i]   ~ U(-1, 1)                         // first N draws; φ only
+  B_fsf  ~ U(-1, 1) * fsf_scaling / √dim    // next N·dim draws
 
 Each Step:
-  φ        = V · x
-  pad[v]   = fsf_stage_scaling * φ * V[v]     // w ≡ V
-  UpdateState: gather neighbors of pad through B_fsf
+  φ = fsf_stage_scaling * (V · x)           // V used only here
+  vtx_fsf_[0 .. N) = φ                      // same scalar on every vertex (ext-fb D=1)
+  UpdateState: s += vtx_fsf_[neighbor] * B_fsf[v,i]
 ```
 
-### Why both `fsf_scaling` and `fsf_stage_scaling`?
+| Piece | Role |
+|--------|------|
+| **V** | Only builds φ |
+| **φ** | Single-channel drive this step |
+| **`vtx_fsf_`** | Staged field (all entries φ) |
+| **B_fsf** | Inject weights (same gather form as external feedback) |
+| **`fsf_stage_scaling`** | Scale on the channel φ |
+| **`fsf_scaling`** | Scale baked into B_fsf at construction |
 
-They scale **different objects** on the path from state to neuron sum:
+No Set/Get of V. `Create(GetConfig())` rebuilds V and B_fsf from seed + scales.
 
-| Scale | What it multiplies | Analogy |
-|-------|--------------------|---------|
-| **`fsf_stage_scaling`** | How strong the **pad field** is: pad ∝ stage · (V·x) · V | Volume of the FSF *message* painted on the cube |
-| **`fsf_scaling`** | How strong **B_fsf** is (inject weights, like `input_scaling`) | How hard that message is *wired into* each neuron |
-
-```text
-  x ──(V)──► φ ──(V, stage_scale)──► pad ──(B_fsf, fsf_scaling)──► neuron sum
-```
-
-- Change **stage** → same inject wiring, louder/softer pads.  
-- Change **fsf_scaling** → same pads, stronger/weaker inject weights (and relative
-  row geometry stays whatever B_fsf drew; overall magnitude moves with the scale).
-
-They are **not** redundant the way score×stage was (that pair only appeared as a
-product into pad). Stage acts **before** the gather; B_fsf scale is **in** the
-gather weights — same split as task input: raw drive vs `input_scaling` on weights.
-
-`Create(GetConfig())` rebuilds the same V and B_fsf (deterministic draw order).
-
-## Landed realization
-
-| Item | Behavior |
-|------|----------|
-| Enable | Construction-only: `full_state_feedback` |
-| Off | Zero FSF allocation |
-| V | Length N; **U(−1,1)** from `fsf_seed` (first N draws) |
-| B_fsf | N×dim; U(−1,1)×`fsf_scaling`/√dim (same seed, next draws) |
-| φ / pads | φ = V·x; pad[v] = `fsf_stage_scaling` · φ · V[v] |
-| Gather | XOR neighbors of pad × B_fsf |
-| API | No Set/Get V |
+## Code sketch
 
 ```cpp
 ESNConfig cfg;
 cfg.reservoir.full_state_feedback = true;
 cfg.reservoir.fsf_seed            = 1;
-cfg.reservoir.fsf_scaling         = 0.5f;  // B_fsf
-cfg.reservoir.fsf_stage_scaling   = 1.0f;  // pads
+cfg.reservoir.fsf_scaling         = 0.5f;
+cfg.reservoir.fsf_stage_scaling   = 1.0f;
 ESN esn(cfg);
+// FSF applies inside ReservoirStep / Warmup / Run automatically
 ```
-
-## What is not in the design
-
-- Separate **w** (forever **w ≡ V**)
-- Runtime Set/Get of V
-- Separate score scale (redundant with stage under w ≡ V)
-- Multi-channel FSF
-- Library training of V
 
 ## Drive-port map
 
 ```
-  input              — always
-  external feedback  — optional caller values
-  FSF                — internal: φ = V·x, pad ∝ φ⊙V, gather B_fsf
+  input              — InjectInput → vtx_input_ → gather B_in
+  external feedback  — InjectExternalFeedback → vtx_ext → gather B_ext
+  FSF                — φ = V·x → fill vtx_fsf_ with φ → gather B_fsf
 ```
 
-![Drive ports: input, external feedback, and FSF into one reservoir step](drive_ports_flow.jpg)
+![FSF one timestep](drive_ports_flow.jpg)
 
 ## Reference
 
@@ -93,21 +61,20 @@ Networks Through Feedback*. arXiv:2312.15141.
 
 ## Appendix: FSF for Dummies
 
-**V** is a random ±1 pattern from seed (score + paint). **B_fsf** is the inject
-weight block. **stage_scale** loudness of the pad field; **fsf_scaling** loudness
-of the inject weights.
+**Make one number, inject like external feedback.**
 
-### Each step
+1. **φ = V · x** — only use of V (full-state score).  
+2. **Write φ into every entry of `vtx_fsf_`** — same as one external-feedback channel.  
+3. **Gather** in `UpdateState`:
 
-```text
-  1. Full state x
-  2. φ  =  V · x
-  3. pad[v]  =  stage_scale · φ · V[v]
-  4. Gather neighbors’ pads × B_fsf into each neuron
-  5. + recurrent + input (+ external feedback) → new state
+```cpp
+s += vtx_fsf_[v ^ NearestMask(i)] * fsw[i];  // fsw = B_fsf row for vertex v
 ```
+
+Staging does **not** multiply by weights; the **B_fsf** multiply is in the gather
+(same as input / external feedback).
 
 ### One-line summary
 
-**V** from seed in [−1,1]; **stage_scale** sizes pads; **fsf_scaling** sizes B_fsf.
-No second N-vector. No Set/Get.
+**V** → φ; **φ** fills **`vtx_fsf_`**; **B_fsf** injects. Same mechanism as
+single-channel external feedback; only the source of the scalar differs.

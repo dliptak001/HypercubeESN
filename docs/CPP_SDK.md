@@ -261,7 +261,7 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback. **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
 | `fsf_seed` | `uint64_t` | `1` | Draws V as U(−1,1) (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. |
 | `fsf_scaling` | `float` | `0.5` | B_fsf: U(−1,1) × `scaling / √DIM` at construction (inject weight scale). |
-| `fsf_stage_scaling` | `float` | `1.0` | Step: pad[v] = scale · (V · x) · V[v] (pad-field strength). |
+| `fsf_stage_scaling` | `float` | `1.0` | Step: φ = scale · (V · x), then fill vtx_fsf_ with φ. |
 
 ---
 

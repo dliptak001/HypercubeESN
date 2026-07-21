@@ -255,19 +255,16 @@ void Reservoir::Initialize()
 
 void Reservoir::Step()
 {
-    // Full-state feedback: V is U(-1,1) from construction (no scale baked in).
-    // φ = V·x; pad[v] = stage_scale · φ · V[v] (w ≡ V forever).
-    // UpdateState gathers neighbors of pad through B_fsf (× fsf_scaling at construct).
+    // FSF: φ = V·x (only use of V). Stage like external feedback D=1 — write the
+    // same scalar onto every entry of vtx_fsf_; B_fsf multiplies in UpdateState.
     if (fsf_enabled_)
     {
         const float* x = slice_ptrs_[0];
         double acc = 0.0;
         for (size_t i = 0; i < n_; ++i)
             acc += static_cast<double>(fsf_v_[i]) * static_cast<double>(x[i]);
-        const float phi = static_cast<float>(acc);
-        const float stage = fsf_stage_scaling_ * phi;
-        for (size_t v = 0; v < n_; ++v)
-            vtx_fsf_[v] = stage * fsf_v_[v];
+        const float phi = fsf_stage_scaling_ * static_cast<float>(acc);
+        std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
     }
 
     const float* p_vtx_prev = slice_ptrs_[0];

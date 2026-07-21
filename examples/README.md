@@ -15,7 +15,7 @@ quick A/B testing against the open-loop baseline.
 
 1. **Off:** `kEnable = false`.
 2. **On:** `kEnable = true` — V = U(−1,1) from `kSeed`; `kScaling` = B_fsf;
-   `kStageScaling` = pad strength in `Step`. No Set/Get of V.
+   `kStageScaling` scales φ before fill. No Set/Get of V.
 
 Logs print a `FSF A/B:` line. Theory/API:
 [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).

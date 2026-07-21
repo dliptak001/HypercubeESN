@@ -60,7 +60,7 @@ Everything that follows serves those two.
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
 | `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
 | `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only if FSF on) |
-| `fsf_stage_scaling` | 1.0 | Step: pad[v] = scale · (V·x) · V[v] |
+| `fsf_stage_scaling` | 1.0 | Step: scale on φ before fill of vtx_fsf_ |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
@@ -197,8 +197,8 @@ Per-step quantities:
   newest (`Outputs()`, recurrent age 0). Slice `j` is age `j`.
 - `vtx_input_[v]` — staged input field; cleared after every `Step()`.
 - `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
-- `vtx_fsf_[v]` — staged FSF field if enabled (φ = V·x filled inside `Step`); cleared every `Step()`.
-- `fsf_v_` — full-state vector **V** (length N) when FSF enabled; parameter, not cleared by `Clear`.
+- `vtx_fsf_[v]` — staged FSF channel (all entries φ) if enabled; filled in `Step`, cleared after.
+- `fsf_v_` — vector **V** (length N) used only for φ = V·x; not cleared by `Clear`.
 - `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
   cleared by `Clear` / not in snapshots.
 
@@ -229,7 +229,7 @@ for i = 0 .. DIM-1:
 for i = 0 .. DIM-1:
     s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
 
-# (b2) FSF — pad[v]=φ·V[v] staged at start of Step (omitted if FSF off)
+# (b2) FSF — vtx_fsf_ filled with φ at start of Step (omitted if FSF off)
 for i = 0 .. DIM-1:
     s += fsf[v XOR (1<<i)] * W_fsf[v][i]
 
@@ -304,14 +304,13 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
-1. V is U(−1,1)^N from `fsf_seed` at construction (no scale baked into V)
-2. φ = V · x
-3. Stage `pad[v] = fsf_stage_scaling · φ · V[v]` (**w ≡ V forever**)
-4. XOR-gather pad through **B_fsf** (`fsf_scaling`/√dim at construction)
+1. V is U(−1,1)^N from `fsf_seed` at construction (φ only; no scale baked into V)
+2. φ = `fsf_stage_scaling` · (V · x)
+3. Fill every entry of `vtx_fsf_` with φ (same as one external-feedback channel)
+4. XOR-gather `vtx_fsf_` through **B_fsf** (`fsf_scaling`/√dim at construction)
 
-Zero allocation when disabled. No runtime Set/Get of V.
-`fsf_stage_scaling` sizes the pad field; `fsf_scaling` sizes inject weights
-(see [full_state_linear_feedback.md](full_state_linear_feedback.md)).
+Zero allocation when disabled. No runtime Set/Get of V. See
+[full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)
 
