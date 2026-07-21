@@ -46,10 +46,8 @@ API reference for embedding HypercubeESN in your own project:
 
 ### 4. Maintainers (dependency)
 
-| Document | What you'll learn |
-|----------|-------------------|
-| [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md) | HypercubeCNN **v1.0.0** pin + facade-native readout host (re-vendor rule; phases A–E done) |
-| [adapt_HypercubeCNN.md](adapt_HypercubeCNN.md) | API deltas and interop checklist for the HCNN facade |
+HypercubeCNN is vendored under `third_party/HypercubeCNN/` (pin and re-vendor rule:
+[VENDORED.md](../third_party/HypercubeCNN/VENDORED.md)). Do not hand-edit the snapshot.
 
 ## Key source files
 

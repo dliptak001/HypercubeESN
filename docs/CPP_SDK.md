@@ -306,7 +306,7 @@ struct ReadoutConfig {
 | `restore_best_epoch` | `bool` | `true` | After each epoch, score MSE (regression) or accuracy (classification) and restore the best weights at the end of `Train`. Set `false` for last-epoch weights. |
 | `best_epoch_holdout_frac` | `float` | `0.0` | With `restore_best_epoch`: fraction of samples (tail, input order) held out for scoring only; train on the prefix. `0` scores the full train set. Clamped to [0, 0.5]. |
 
-**Architecture:** built via HypercubeCNN `LayerSpec` / `HCNNConfig`. The default `num_layers = 1` builds a single Conv+Pool stage (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` stages with channels growing by `channel_growth`. See [Readout.md](Readout.md) and [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md).
+**Architecture:** built via HypercubeCNN `LayerSpec` / `HCNNConfig`. The default `num_layers = 1` builds a single Conv+Pool stage (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` stages with channels growing by `channel_growth`. See [Readout.md](Readout.md) and the vendor pin in [../third_party/HypercubeCNN/VENDORED.md](../third_party/HypercubeCNN/VENDORED.md).
 
 **Multi-ESN threading:** set `readout.num_threads = 1` whenever outer code runs many ESNs in parallel (e.g. Lorenz survey). Leave `0` for a single-ESN process so HCNN can use an auto pool.
 

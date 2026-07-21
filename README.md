@@ -196,8 +196,8 @@ The learned readout is a **vendored** [HypercubeCNN](https://github.com/dliptak0
 snapshot at **v1.0.0** (facade API: unified train, private Network, `K = DIM + 1`
 kernels). It lives in `third_party/HypercubeCNN/` and is built automatically as
 `HypercubeCNNCore` — no separate install or network fetch. Do not hand-edit that
-tree; re-vendor from upstream and follow
-[docs/revendor_HypercubeCNN.md](docs/revendor_HypercubeCNN.md).
+tree; re-vendor from upstream and update
+[third_party/HypercubeCNN/VENDORED.md](third_party/HypercubeCNN/VENDORED.md).
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -246,9 +246,8 @@ HypercubeESN/
     Readout.md            HCNN readout: architecture, training, streaming mode
     CPP_SDK.md            C++ static-library consumer guide
     Python_SDK.md         Python SDK API reference
-    revendor_HypercubeCNN.md  HCNN v1.0.0 pin / re-vendor host record
   third_party/
-    HypercubeCNN/         Vendored HypercubeCNN v1.0.0 (read-only snapshot)
+    HypercubeCNN/         Vendored HypercubeCNN v1.0.0 (read-only; see VENDORED.md)
 ```
 
 ## Documentation
@@ -259,7 +258,7 @@ HypercubeESN/
 | [docs/Readout.md](docs/Readout.md) | HCNN readout architecture, training algorithm, streaming mode, ESN interface |
 | [docs/Python_SDK.md](docs/Python_SDK.md) | Python SDK: pip install, fit/predict API, streaming, persistence |
 | [docs/CPP_SDK.md](docs/CPP_SDK.md) | C++ static library: build, install, find_package usage, API reference |
-| [docs/revendor_HypercubeCNN.md](docs/revendor_HypercubeCNN.md) | HypercubeCNN **v1.0.0** vendor pin and facade-native readout host (re-vendor rule) |
+| [third_party/HypercubeCNN/VENDORED.md](third_party/HypercubeCNN/VENDORED.md) | HypercubeCNN vendor pin and re-vendor rule |
 
 Each example in `examples/` has a companion `.md` walkthrough with sample
 results and interpretation guidance.

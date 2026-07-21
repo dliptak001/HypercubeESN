@@ -3,10 +3,9 @@
 The reservoir does the hard, fixed work of lifting an input stream into a
 high-dimensional state; the readout is the one part that learns. In HypercubeESN
 that readout is a HypercubeCNN — a convolutional network that reads the reservoir
-state *on the cube*, never flattening it into an anonymous feature vector. Two
-things follow from that single choice: the readout's inductive bias matches the
-reservoir's topology exactly, and it discovers its own nonlinear features instead
-of settling for a linear fit.
+state *on the cube*. Two things follow: the readout's inductive bias matches the
+reservoir's topology, and it discovers its own nonlinear features instead of
+settling for a linear fit on a geometry-blind flat vector.
 
 ## A readout that speaks the reservoir's language
 
@@ -16,298 +15,321 @@ state *is* a signal on a hypercube graph. HypercubeCNN's convolutions are built 
 operate on exactly that structure: Hamming-distance kernels that respect the same
 vertex addressing and neighbor relationships the reservoir uses to evolve.
 
-So the state reaches the readout with zero topological distortion. Nothing is
-reshaped into a flat vector for a linear fit, nothing is packed into a fabricated
-2D grid for an image CNN — the data never leaves the hypercube it was born on, and
-the convolution kernels exploit the very adjacency that generated the dynamics.
-Locality on the reservoir graph becomes locality in the kernel: neurons that
-influenced each other as the reservoir ran are neighbors again when the features
-are learned.
+So the state reaches the stack with zero topological distortion. Nothing is packed
+into a fabricated 2D grid for an image CNN, and nothing is thrown at ridge
+regression as an anonymous length-N vector. The data stays on the hypercube through
+the conv (and optional pool) stages; only the **final linear head** flattens
+`(channel, vertex)` features. Locality on the reservoir graph becomes locality in
+the kernel: neurons that influenced each other as the reservoir ran are neighbors
+again when the features are learned.
 
-That is what separates it from the alternatives. Ridge regression on the flattened
-state forgets the graph; a spatial CNN invents one that has nothing to do with the
-reservoir's wiring; HypercubeCNN inherits it — the only readout whose inductive
-bias is the reservoir's own.
+That is what separates it from the alternatives. Ridge on the flattened state
+forgets the graph; a spatial CNN invents one that has nothing to do with the
+reservoir's wiring; HypercubeCNN inherits the reservoir's topology through the
+body of the network.
 
 ## What HypercubeCNN brings
 
 [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) is a standalone
-convolutional library that swaps the 2D pixel grid for a Boolean hypercube, and
-each of its primitives is the reservoir's own geometry seen from the other side:
+convolutional library that swaps the 2D pixel grid for a Boolean hypercube. Each
+primitive is the reservoir's geometry from the other side (v1.0.0 facade used by
+this host):
 
-- **Exact weight sharing.** Every vertex has exactly DIM neighbors, reached by
-  flipping one bit, and the hypercube is vertex-transitive — every vertex sees an
-  identical neighborhood — so one kernel is shared across the entire graph, exact
-  under the hypercube's Z₂ⁿ symmetry, with no boundary where that sharing breaks
-  down. Neighbor lookup is a single XOR instruction; there are no adjacency lists,
-  no padding, and no border effects.
-- **Pooling that stays on a cube.** Each Conv+Pool stage pairs every vertex with
-  its bitwise complement — the maximally distant vertex — and drops DIM by one,
-  leaving a perfect sub-hypercube. Stacking stages builds a feature hierarchy the
-  way a spatial CNN does: DIM shrinks, channel count grows.
+- **Exact weight sharing with a self tap.** Every vertex has **DIM** Hamming
+  neighbors (one bit flip each) **plus a self/center contribution** — kernel width
+  **`K = DIM + 1`**, shared across all vertices. The hypercube is vertex-transitive,
+  so sharing is exact under the Z₂ⁿ symmetry; neighbor lookup is XOR, with no
+  adjacency list and no image border to pad. (ESN always feeds **full capacity**
+  `input_channels × 2^DIM`; short raw vectors would be zero-padded by HCNN, which
+  this host does not rely on.)
+- **Pooling that stays on a cube.** Optional antipodal pool pairs each vertex with
+  its bitwise complement, drops DIM by one, and leaves a perfect sub-hypercube.
+  Stacking stages builds a feature hierarchy: DIM shrinks, channel count grows.
 - **One pipeline, either task.** Classification (softmax + cross-entropy) and
-  regression (MSE) run through the same network, trained end-to-end with
-  backpropagation and Adam.
+  regression (MSE) share the forward graph; loss is fixed by `TaskType`. Default
+  optimizer is Adam (SGD remains available).
+
+Spatial embed/aug helpers exist in HypercubeCNN for images; **reservoir readout
+does not use them** — state is already length-N (or multi-block length N·B) on the cube.
+
+Vendor pin: [third_party/HypercubeCNN/VENDORED.md](../third_party/HypercubeCNN/VENDORED.md).
 
 ## The only thing that learns
 
 ```
-Reservoir (N states) ──────────────────────────────> Readout
-    fixed random                                       TRAINED
+Reservoir (fixed) ──▶ readout input (length 2^readout.dim) ──▶ HypercubeCNN ──▶ y
 ```
 
-Everything upstream is frozen: the reservoir's weights are random and fixed at
-initialization, and every parameter that learns lives in the readout. That is the
-core bargain of reservoir computing — let a fixed nonlinear system do the
-projection, and train only the layer that reads it out.
+Everything upstream is frozen: reservoir weights are random and fixed at init.
+Every trainable parameter lives in the readout — the core reservoir-computing
+bargain.
 
-**Data path:** raw state (N = 2^DIM) → HCNN (Conv→Pool stack → Flatten → Linear)
-→ output.
+**Data path:** embed onto capacity → `[Conv (+ optional Pool)] × L` → **FLATTEN** →
+linear head → `num_outputs` (logits or regression values). Softmax is only inside
+the classification loss, never in `Predict` / `Forward`.
 
 ## Architecture
 
-The conv stack is sized from DIM and built through HypercubeCNN’s architecture
-product (`LayerSpec` / `HCNNConfig::Build` in `Readout.cpp`) — not hand-rolled
-private-layer calls. Each Conv+Pool stage halves the hypercube when pooling is
-on (antipodal pool drops DIM by one). HypercubeCNN requires DIM >= 3 for conv;
-ESN reservoirs use DIM 5–16, so a reservoir of dimension DIM admits at most
-`DIM - 2` pooled stages. Channels grow by `channel_growth` (default 2) after
-each conv, starting from `conv_channels` (16 -> 32 -> …).
+The stack is built through HypercubeCNN’s architecture product (`LayerSpec` /
+`HCNNConfig::Build` in `Readout.cpp`) — not hand-rolled private-layer includes.
+Each pooled stage drops DIM by one when `use_pooling` is on. HypercubeCNN allows
+start DIM in [3, 30]; ESN reservoirs are DIM 5–16, and with pooling the stack is
+asserted to leave DIM ≥ 2 (`num_layers ≤ dim − 2`). Channels grow by
+`channel_growth` (default 2) after each conv, starting from `conv_channels`
+(16 → 32 → …).
 
-`num_layers` chooses the depth:
+`num_layers` chooses depth:
 
-- **`1` (default)** — a single Conv(+Pool) stage at the base `conv_channels`.
-- **`0` (auto)** — `min(DIM - 2, 2)`; across all supported DIMs (5-16) that cap of
-  2 is always hit, giving a 2-layer stack (16 -> 32 with default growth).
-- **explicit `n`** — exactly `n` stages, asserted `<= DIM - 2` when pooling.
+- **`1` (default)** — one Conv(+Pool) stage at `conv_channels`.
+- **`0` (auto)** — `min(DIM − 2, 2)`; for DIM 5–16 that is always a 2-stage stack
+  (16 → 32 with default growth) when pooling allows.
+- **explicit `n`** — `n` stages; with pooling, asserted `n ≤ DIM − 2`.
 
-Additional knobs (defaults preserve historical stacks): `use_pooling`,
-`pool_type` (Max/Avg), `use_batchnorm` (off — keeps weight blobs stable),
-`optimizer` (Adam), `channel_growth`.
+Other shape knobs: `use_pooling`, `pool_type` (Max/Avg), `use_batchnorm` (default
+off — keeps weight-blob layout stable), `optimizer` (Adam), `activation`,
+`channel_growth`. `input_channels` is always **1** at the HCNN ctor; multi-block
+ESN inputs expand **DIM**, not channel count (below).
 
-| Component        | Supported DIM | Source                                |
-|------------------|---------------|---------------------------------------|
-| HypercubeCNN     | 3–30          | public `HCNN` ctor contract           |
-| HypercubeESN ESN | 5–16          | `Reservoir::Create` (validates `dim`) |
-| Readout          | **5–16**      | Intersection; matches the ESN range   |
+| Component    | Supported DIM | Source |
+|--------------|---------------|--------|
+| HypercubeCNN | 3–30          | public `HCNN` ctor |
+| HypercubeESN | 5–16          | `Reservoir::Create` |
+| Readout      | **5–16**      | Intersection with ESN |
 
-Host integration plan: [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md).
+### Input size: single block vs multi-block
+
+`ReadoutConfig::dim` is the hypercube dimension of the **readout input**, not
+always the reservoir DIM:
+
+- **Default ESN** (`readout_slices = 1`, no aux): `readout.dim = reservoir.dim`,
+  `NumFeatures() = N = 2^reservoir.dim` — one float per reservoir vertex.
+- **Multi-block** (`readout_slices > 1` and/or `aux_input_dim > 0`): ESN requires
+  `B = readout_slices + (aux ? 1 : 0)` to be a power of two and sets
+  `readout.dim = reservoir.dim + log2(B)`. Then `NumFeatures() = N × B`. Blocks
+  are packed so Hamming neighbors can mix across the structure the ESN builds.
+
+Antipodal pooling mixes **every** bit, including block-index bits when B > 1;
+set `use_pooling = false` to keep block structure intact into the flatten head
+(more features, more parameters). See `ESNConfig` in [CPP_SDK.md](CPP_SDK.md).
 
 ## Training (batch)
 
-A stack of hypercube Conv(+Pool) layers feeds a flatten and a dense head, trained
-under HypercubeCNN’s unified train API with a cosine-annealed learning rate.
-
-1. Build the stack via `HCNNConfig` / `LayerSpec` from DIM (see [Architecture](#architecture));
-   default optimizer is Adam.
+1. Build the stack via `HCNNConfig` / `LayerSpec` (see [Architecture](#architecture));
+   default optimizer Adam (`SetOptimizer` / config).
 2. `Readout::Train` drives `hcnn::HCNNTrainer`: full-capacity `HCNNInputView`,
    per-epoch shuffle seed, cosine LR via `hcnn::cosine_lr` from `lr_max` down to
-   `lr_max * lr_min_frac` over `lr_decay_epochs` (0 = `epochs`; last scheduled
-   epoch hits the floor when the horizon is > 1).
-3. Two task heads (overload by target type — no `*Regression` names):
-   - **Regression** — MSE loss; raw network output at inference (the readout does
-     **not** center targets — see [Task Types](#task-types)).
-   - **Classification** — integer class labels, softmax + cross-entropy; logits via
-     `PredictRaw` or argmax via `PredictClass`.
-4. After training, the weights are flattened via `HCNN::GetWeights()` for
-   serialization and restored with `SetWeights()` on reload (`ReadoutLoadMode::Eval`
-   default; `ResumeTrain` resets optimizer moments).
+   `lr_max * lr_min_frac` over horizon `lr_decay_epochs` if > 0, else `epochs`.
+   When the horizon is > 1, the cosine schedule reaches the floor at the last
+   **schedule** index (epoch `horizon − 1`); if `epochs` differs from the horizon,
+   training may stop before or hold at the floor afterward.
+3. Task overload (no `*Regression` names):
+   - **Regression** — MSE; raw network output at inference (no automatic target
+     centering — see [Task Types](#task-types)).
+   - **Classification** — integer class labels; softmax CE in the loss; logits via
+     `PredictRaw`, argmax via `PredictClass`.
+4. A second `Train()` **continues** from current weights; construct a new `Readout`
+   (or ESN) for a fresh random init.
+5. Weights for checkpoints: `GetWeights` / `SetWeights` (see [Serialization](#serialization)).
 
-### Best-epoch restore (optional)
+### Best-epoch restore (default on)
 
-By default (`ReadoutConfig::restore_best_epoch = true`), `Train` scores after
-every epoch and restores the best snapshot at the end. Set `false` for
-historical last-epoch weights. Metrics:
+By default (`restore_best_epoch = true`), after each epoch `Train` scores a metric
+and at the end restores the best snapshot. Set `false` for last-epoch weights.
 
 | Task | Metric | Helper |
 |------|--------|--------|
 | Regression | min MSE | `HCNNBestMetricCheckpoint` |
 | Classification | max accuracy | `HCNNDualCheckpoint` best-acc |
 
-Optional `best_epoch_holdout_frac` (0…0.5): take that fraction of samples from
-the **tail** of the batch as a hold-out score set; train only on the prefix.
-`0` scores the full training set. Cost is one full forward over the score set
-per epoch. Query the selected epoch with `Readout::BestEpoch()` /
-`ESN::ReadoutBestEpoch()` (1-based, or 0 if unused).
+`best_epoch_holdout_frac` in [0, 0.5]: fraction of samples (input order, **tail**)
+held out for scoring only; train on the prefix. `0` scores the full training set
+(not a pure validation early-stop). Cost: one full forward over the score set
+**every epoch**. Query with `Readout::BestEpoch()` / `ESN::ReadoutBestEpoch()`
+(1-based; 0 if restore was off or no snapshot).
 
 ### Multi-ESN threading
 
-HypercubeCNN may open its own worker pool (`num_threads`: 0 = auto, 1 = none,
-N = N workers). When the **host** already parallelizes across many `ESN`
-instances (seed surveys, grid search), set `readout.num_threads = 1` so each
-net stays single-threaded and you do not nest pools. Lorenz’s survey does this;
-single-ESN demos can leave the default `0` (auto).
+HCNN worker pool: `num_threads` 0 = auto, 1 = no background workers, N = N workers.
+When the host parallelizes across many ESNs (seed surveys), set
+`readout.num_threads = 1` to avoid nested pools. Lorenz’s survey does this;
+single-ESN demos can leave `0`.
 
-The conv stack sees raw reservoir state, with no per-vertex standardization — and
-that is deliberate. Reservoir outputs are already tanh-bounded in `(-1, +1)`, the
-distribution the kernel is tuned for; centering or scaling each vertex on its own
-would shift them independently and break the very spatial correlations across the
-hypercube that the kernel exists to read.
+### Input scaling note
+
+The stack sees raw readout input with no per-vertex standardization — deliberate.
+Reservoir units are typically tanh-bounded in (−1, +1); centering or scaling each
+vertex independently would break the spatial correlations the kernel is meant to
+read.
 
 ## Task Types
 
-| Task             | targets layout                         | Output             | Metric   |
-|------------------|----------------------------------------|--------------------|----------|
-| Regression       | num_samples x num_outputs (row-major)  | raw network output | R2, NRMSE |
-| Classification   | num_samples floats (class indices)     | logits (argmax)    | Accuracy |
+| Task | `targets` layout | Output | Readout metric |
+|------|------------------|--------|----------------|
+| Regression | `num_samples × num_outputs` (row-major) | raw predictions | `R2` (below) |
+| Classification | `num_samples` class indices as float | logits / argmax | `Accuracy` (below) |
 
-For regression with non-zero-mean targets, center your targets before
-training and add the mean back to predictions — the readout no longer
-does this for you.
+**R²:** average of per-output coefficients of determination over the sample set
+(multi-output). Perfect fit → 1.0.
 
-Configured via `ReadoutConfig::task` (`ReadoutTask::Regression` / `Classification`)
-and `ReadoutConfig::num_outputs`.
+**Accuracy:** multi-class = fraction of argmax matches; single-output classif
+thresholds the logit at 0. **NRMSE** is an **ESN** helper (RMSE / target std),
+not a `Readout` method.
+
+For regression with non-zero-mean targets, center targets before training and
+add the mean back on predictions if you need absolute scale — the readout does
+not center for you.
+
+Configured via `ReadoutTask` and `num_outputs`.
 
 ## ReadoutConfig
 
 ```cpp
 struct ReadoutConfig {
-    size_t dim           = 0;        // input feature dim: 2^dim features per sample (set by ESN)
-    int num_outputs      = 1;        // classes or regression targets
+    size_t dim           = 0;        // 2^dim features per sample (set by ESN)
+    int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // Conv(+Pool) stages; 0 = auto: min(DIM-2, 2)
-    bool use_pooling     = true;     // antipodal pool after each conv
+    int num_layers       = 1;        // 0 = auto min(DIM-2, 2)
+    bool use_pooling     = true;
     ReadoutPoolType pool_type = ReadoutPoolType::Max;
-    int conv_channels    = 16;       // base channels (first conv)
-    int channel_growth   = 2;        // multiply channels after each stage
-    bool use_batchnorm   = false;    // off keeps weight-blob layout stable
+    int conv_channels    = 16;
+    int channel_growth   = 2;
+    bool use_batchnorm   = false;
     ReadoutOptimizer optimizer = ReadoutOptimizer::Adam;
     int epochs           = 200;
     int batch_size       = 32;
-    float lr_max         = 0.0015f;  // cosine annealing peak (keep <= 0.005 to avoid NaN)
-    float lr_min_frac    = 0.01f;    // floor = lr_max * lr_min_frac
-    int   lr_decay_epochs = 0;       // cosine decay horizon; 0 = use epochs
+    float lr_max         = 0.0015f;  // keep <= ~0.005 to avoid NaN
+    float lr_min_frac    = 0.01f;
+    int   lr_decay_epochs = 0;       // 0 = use epochs as cosine horizon
     float weight_decay   = 0.0f;
-    float momentum       = 0.0f;     // SGD momentum; ignored by Adam
-    unsigned seed        = 42;       // CNN weight init seed
+    float momentum       = 0.0f;     // SGD only; ignored by Adam
+    unsigned seed        = 42;
     ReadoutActivation activation = ReadoutActivation::TANH;
-    size_t num_threads   = 0;        // HCNN pool: 0=auto, 1=ST, N=N workers
-    bool restore_best_epoch = true;  // restore best-epoch weights after Train (default)
-    float best_epoch_holdout_frac = 0.0f; // tail hold-out for best metric (0=score train)
+    size_t num_threads   = 0;        // 0=auto, 1=ST, N=N workers
+    bool restore_best_epoch = true;
+    float best_epoch_holdout_frac = 0.0f;
 };
 ```
 
-**Cost:** O(epochs * samples * layer_flops). For a typical DIM=8
-configuration (~256 states per sample, 1-2 Conv+Pool pairs, ~20k samples,
-a few hundred epochs) this runs in seconds to minutes depending on core
-count. CPU cores saturate at `batch_size >= 128`.
+**Cost:** roughly O(epochs × samples × layer flops), plus an extra score forward
+per epoch when `restore_best_epoch` is on (default). Typical DIM=8, hundreds of
+epochs: seconds to minutes. `batch_size >= 128` often saturates multi-core HCNN
+pools when `num_threads` is not 1.
 
-**Stability note:** `lr_max` above ~0.005 can drive weights into
-denormal/NaN territory, where CPU falls off fast math paths and
-throughput collapses.
+**Stability:** `lr_max` above ~0.005 can push weights into denormal/NaN territory
+and tank throughput.
 
 ## When to Use
 
-- Tasks where a linear-readout ceiling is hit and nonlinear feature
-  discovery is worth the training cost.
-- Classification problems. HCNN natively supports multi-class with
-  softmax+cross-entropy. See `examples/SignalClassification.cpp`.
-- DIM 7+ where the auto-sized architecture gets enough Conv+Pool depth
-  to be expressive.
+- Tasks where a linear readout ceiling is hit and nonlinear features are worth
+  the train cost.
+- Multi-class problems (native CE). See `examples/SignalClassification.cpp`.
+- DIM 7+ when auto depth and pooling give a more expressive stack.
 
-**When not to use:** Small-DIM tasks (5-6) where the architecture has
-minimal depth and training cost isn't justified by accuracy gains.
+**When not to use:** tiny DIM (5–6) if train cost is not worth the accuracy gain;
+or pure linear diagnostics (e.g. MemoryCapacity uses ridge, not this readout).
 
 ## Streaming Training API
 
-Readout supports per-sample and mini-batch streaming gradient steps
-for applications where data arrives continuously.
+Per-sample and mini-batch gradient steps for continuous data.
 
 ### Setup
 
-The architecture and Adam optimizer are built eagerly in the `Readout`
-constructor — no separate init call. Warm up the reservoir (via
-`ESN::ReservoirWarmup`) before the first gradient step.
+Architecture and optimizer are built eagerly in the `Readout` ctor — no separate
+init. Warm the reservoir (`ESN::ReservoirWarmup`) before the first online step.
 
 ### Gradient steps
 
-Both methods dispatch on the construction-time task (`config_.task`), so a
-single `const float*` target serves both — for regression it is `num_outputs`
-floats; for classification, a single class-index float (cast to int).
+Dispatch on construction-time task. Caller supplies **lr** (and optional
+weight decay) each call; **momentum** comes from config (SGD).
 
 | Method | Granularity | target |
 |--------|-------------|--------|
-| `TrainStep(state, target, lr, wd)` | Single sample | `num_outputs` floats, or a (1,) class index |
-| `TrainStepBatch(states, targets, count, lr, wd)` | Mini-batch | `count * num_outputs`, or `count` class indices |
+| `TrainStep(state, target, lr, wd)` | one sample | `num_outputs` floats, or one class-index float |
+| `TrainStepBatch(states, targets, count, lr, wd)` | mini-batch | `count × num_outputs`, or `count` class indices |
 
-Mini-batch is parallelized via unified `HCNN::TrainBatch` (int* labels or
-float* targets, overload by type).
+Batch path uses unified `HCNN::TrainBatch`. For online schedules, hosts often use
+`CosineLR` / `ExponentialDecayLR` from `Readout.h` (batch `Train` uses HCNN’s
+`cosine_lr` instead).
 
-See `examples/StreamingText/` for a working streaming implementation
-and `examples/StreamingAnomaly.cpp` for an anomaly-detection use case.
+See `examples/StreamingText/` and `examples/StreamingAnomaly.cpp`.
 
 ## Serialization
 
 ### ESN-native blob (`Weights` / `SetState`)
 
-Weights are flattened/restored via `HCNN::GetWeights()` / `SetWeights()`.
-Layout: per conv (kernel, bias?, BN stats if enabled) then readout weights + bias.
-Optimizer moments are **not** in the blob. The blob is **unversioned** (same layout
-as the live HCNN); architecture is implied by `ReadoutConfig` used to build the net.
-
-The network is built eagerly from `config_` in the Readout ctor; `SetState`
-injects the blob into the live net. `ReadoutLoadMode::Eval` (default) restores
+`HCNN::GetWeights` layout as `vector<double>`: per conv (kernel, bias?, BN stats
+if enabled) then linear head. **No** optimizer moments. Unversioned; architecture
+must already match the live net (built in the ctor). `SetState` **injects** into
+that net — it does not rebuild layers. `ReadoutLoadMode::Eval` (default) loads
 parameters only; `ResumeTrain` also resets optimizer moments for continued online
 training.
 
 ### HypercubeCNN-native model (`SaveHcnnModel` / `LoadHcnnModel`)
 
-Portable pair written from a path **stem** (no extension):
+Path **stem** (no extension):
 
 | File | Contents |
 |------|----------|
-| `stem.hcnw` | Versioned HCNW binary (`hcnn::save_weights`) — dims, task, layer counts, float32 weights |
-| `stem.arch.json` | ESN arch sidecar (`format: hypercube_esn_readout_arch`, `version: 1`) — knobs + expanded `layers` + `weight_count` |
+| `stem.hcnw` | Versioned HCNW (`hcnn::save_weights`) |
+| `stem.arch.json` | `format: hypercube_esn_readout_arch`, `version: 1` — knobs, expanded layers, `weight_count` |
 
-Load validates the sidecar against the **live** readout architecture when the JSON
-is present, then calls `hcnn::load_weights`. Missing sidecar still loads HCNW
-(HCNN checks dim/task/layer counts). ESN wrappers: `SaveReadoutHcnnModel` /
-`LoadReadoutHcnnModel`. Logging: `ArchSummary()` / `ReadoutArchSummary()`.
+Load validates the sidecar against the live architecture when present, then
+`load_weights`. Missing sidecar: HCNW’s own dim/task/layer checks still apply.
+ESN: `SaveReadoutHcnnModel` / `LoadReadoutHcnnModel`. Logs: `ArchSummary()` /
+`ReadoutArchSummary()`.
 
 ```cpp
 esn.SaveReadoutHcnnModel("models/lorenz_readout");
-// ... rebuild same ESNConfig / architecture ...
+// rebuild matching ESNConfig / architecture
 esn.LoadReadoutHcnnModel("models/lorenz_readout"); // Eval by default
 ```
 
-## Readout Public Interface
+## Readout public interface
 
-`Readout` is the readout class used by `ESN`. ESN holds it as a
-direct `Readout readout_` member and delegates training, prediction,
-and evaluation to it. The methods below are on Readout; see
-`docs/CPP_SDK.md` for the ESN-level wrappers.
+ESN holds `Readout readout_` and delegates. Methods on `Readout` (see also
+[CPP_SDK.md](CPP_SDK.md)):
 
 | Method | Returns |
 |--------|---------|
-| `Train(states, targets, num_samples)` | void |
-| `PredictRaw(state, output)` | void (multi-output) |
-| `PredictClass(state)` | int (argmax over logits) |
-| `R2(states, targets, num_samples)` | double |
-| `Accuracy(states, labels, num_samples)` | double |
-| `Weights()` | `vector<double>` (unversioned flattened blob) |
-| `SetState(weights, mode=Eval)` | void (load blob into live net) |
-| `SaveHcnnModel(stem)` | void — write `stem.hcnw` + `stem.arch.json` |
-| `LoadHcnnModel(stem, mode=Eval)` | void — validate arch sidecar, load HCNW |
-| `ArchSummary()` | `string` — layers + param counts |
-| `BestEpoch()` | int — 1-based best epoch after `restore_best_epoch` Train, else 0 |
-| `NumFeatures()` | size_t — features per sample = 2^dim; equals the reservoir's N (the readout sees all N vertices) |
-| `NumOutputs()` | size_t |
+| `Train(states, targets, num_samples)` | void (continues weights if called again) |
+| `TrainStep` / `TrainStepBatch` | void |
+| `PredictRaw(state, output)` | void |
+| `PredictClass(state)` | int |
+| `R2` / `Accuracy` | double |
+| `Weights()` | `vector<double>` |
+| `SetState(weights, mode=Eval)` | void |
+| `SaveHcnnModel` / `LoadHcnnModel` | void |
+| `ArchSummary()` | string |
+| `BestEpoch()` | int |
+| `NumFeatures()` / `NumOutputs()` | size_t |
+| `GetConfig()` / `IsTrained()` | config / always true once constructed |
 
-### ESN Integration Points
+`NumFeatures()` = `2^dim` for this readout’s input cube (reservoir N only when
+`dim` equals reservoir dim — see multi-block above).
 
-The readout's `ReadoutConfig` travels inside `ESNConfig` and is passed once at ESN construction — `Train` takes no config argument, and the readout CNN is built eagerly in the ESN ctor.
+### ESN integration
 
-- `ESN::Train(targets, train_size)` → `Readout::Train` using `cfg.readout`
-- `ESN::ReservoirWarmup(inputs, num_steps)` → settle the reservoir before `TrainStep` / `TrainStepBatch`
-- `ESN::Predict()` / `ESN::PredictFromRecorded(timestep)` / `ESN::PredictFromState(state)` → return `std::vector<float>` (NumOutputs())
-- `ESN::NumOutputs()` → delegates to `Readout::NumOutputs()`
-- `ESN::R2/NRMSE/Accuracy` → handle multi-output target layout
+`ReadoutConfig` lives in `ESNConfig`; the CNN is built in the ESN ctor
+(`MakeReadoutConfig` may rewrite `dim` from slices/aux).
 
-## Implementation Notes
+| ESN | Readout |
+|-----|---------|
+| `Train(targets, train_size)` | `Train` on collected readout inputs |
+| `TrainStep` / `TrainStepBatch` | streaming |
+| `Predict` / `PredictFromRecorded` / `PredictFromState` | `PredictRaw` |
+| `R2` / `NRMSE` / `Accuracy` | eval helpers (NRMSE is ESN-only) |
+| `GetReadoutState` / `SetReadoutState(..., mode)` | `Weights` / `SetState` |
+| `SaveReadoutHcnnModel` / `LoadReadoutHcnnModel` | HCNW + arch |
+| `ReadoutArchSummary` / `ReadoutBestEpoch` | `ArchSummary` / `BestEpoch` |
+| `NumOutputs` | `NumOutputs` |
 
-- Lives at the project root with separate .h/.cpp files.
-- Holds a `std::unique_ptr<hcnn::HCNN>` via PIMPL so that
-  `#include "HCNN.h"` stays in the .cpp only.
-- Not templated -- accepts arbitrary feature counts at runtime.
-- Does not store training data -- only learned weights and the config
-  used to rebuild the network on reload.
+## Implementation notes
+
+- Project root: `Readout.h` / `Readout.cpp`.
+- `std::unique_ptr<hcnn::HCNN>` PIMPL — `#include "HCNN.h"` only in the .cpp.
+- Not templated; capacity is a power of two (`2^dim`), with `dim ≥ 5` asserted at
+  stack build.
+- Does not store training data — only live weights, config, and best-epoch
+  metadata after `Train`.
+- Examples print `ReadoutArchSummary()` after construction (or once before multi-seed
+  surveys). MemoryCapacity uses ridge, not this readout.

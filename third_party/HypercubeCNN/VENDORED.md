@@ -15,4 +15,4 @@ CMakeLists.txt in this directory is HypercubeESN build glue (ours), NOT part of 
 upstream snapshot. Updates flow one way: re-vendor by recopying the core files +
 LICENSE from upstream at a chosen tag/commit; never hand-edit the snapshot here.
 
-Host integration plan: docs/revendor_HypercubeCNN.md
+Readout host usage (facade-native train/infer): see docs/Readout.md and docs/CPP_SDK.md.
