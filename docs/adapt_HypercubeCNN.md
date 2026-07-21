@@ -199,7 +199,7 @@ Keep ESN’s public `Readout::Train` / `TrainStep` / `TrainStepBatch` **float* t
 - **Adam** is HCNN’s default; explicit `SetOptimizer(ADAM)` remains good documentation.  
 - `momentum` on train calls is for **SGD**; under Adam it is ignored — keep config fields if you might switch optimizers.  
 - Use **`num_threads = 1`** on HCNN when the host parallelizes across many ESN instances (avoid nested pools). Single-ESN demos may leave `0` (auto).
-- Optional **`restore_best_epoch`** scores train (or a tail hold-out) each epoch and restores best MSE / accuracy at the end of `Train` (default off).  
+- **`restore_best_epoch`** (default **on**) scores train (or a tail hold-out) each epoch and restores best MSE / accuracy at the end of `Train`.  
 - Own the **LR schedule** in ESN (`CosineLR` / `ExponentialDecayLR`) unless you deliberately migrate to `hcnn::cosine_lr` / `HCNNTrainer` for shared behavior with HCNN demos.
 
 ### 6.4 Inference

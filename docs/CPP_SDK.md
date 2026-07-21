@@ -276,7 +276,7 @@ struct ReadoutConfig {
     unsigned seed        = 42;
     ReadoutActivation activation = ReadoutActivation::TANH;
     size_t num_threads   = 0;        // 0=auto, 1=single-threaded HCNN, N=N workers
-    bool restore_best_epoch = false; // restore best-epoch weights after Train
+    bool restore_best_epoch = true;  // restore best-epoch weights after Train
     float best_epoch_holdout_frac = 0.0f; // tail hold-out for selection (0=score train)
 };
 ```
@@ -303,7 +303,7 @@ struct ReadoutConfig {
 | `seed` | `unsigned` | `42` | Seed for weight initialization. |
 | `activation` | `ReadoutActivation` | `TANH` | Activation applied after each Conv layer. See [ReadoutActivation](#readoutactivation). |
 | `num_threads` | `size_t` | `0` | HCNN worker pool: `0` auto, `1` single-threaded (**required** when the host parallelizes across many ESNs — avoid nested pools), `N` workers. |
-| `restore_best_epoch` | `bool` | `false` | After each epoch, score MSE (regression) or accuracy (classification) and restore the best weights at the end of `Train`. Default keeps last-epoch weights. |
+| `restore_best_epoch` | `bool` | `true` | After each epoch, score MSE (regression) or accuracy (classification) and restore the best weights at the end of `Train`. Set `false` for last-epoch weights. |
 | `best_epoch_holdout_frac` | `float` | `0.0` | With `restore_best_epoch`: fraction of samples (tail, input order) held out for scoring only; train on the prefix. `0` scores the full train set. Clamped to [0, 0.5]. |
 
 **Architecture:** built via HypercubeCNN `LayerSpec` / `HCNNConfig`. The default `num_layers = 1` builds a single Conv+Pool stage (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` stages with channels growing by `channel_growth`. See [Readout.md](Readout.md) and [revendor_HypercubeCNN.md](revendor_HypercubeCNN.md).

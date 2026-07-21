@@ -115,9 +115,9 @@ under HypercubeCNN’s unified train API with a cosine-annealed learning rate.
 
 ### Best-epoch restore (optional)
 
-Set `ReadoutConfig::restore_best_epoch = true` to score after every epoch and
-restore the best snapshot at the end of `Train` (default is still last-epoch
-weights). Metrics:
+By default (`ReadoutConfig::restore_best_epoch = true`), `Train` scores after
+every epoch and restores the best snapshot at the end. Set `false` for
+historical last-epoch weights. Metrics:
 
 | Task | Metric | Helper |
 |------|--------|--------|
@@ -182,7 +182,7 @@ struct ReadoutConfig {
     unsigned seed        = 42;       // CNN weight init seed
     ReadoutActivation activation = ReadoutActivation::TANH;
     size_t num_threads   = 0;        // HCNN pool: 0=auto, 1=ST, N=N workers
-    bool restore_best_epoch = false; // restore best-epoch weights after Train
+    bool restore_best_epoch = true;  // restore best-epoch weights after Train (default)
     float best_epoch_holdout_frac = 0.0f; // tail hold-out for best metric (0=score train)
 };
 ```

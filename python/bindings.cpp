@@ -93,7 +93,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_activation")       = "tanh",
             py::arg("readout_seed")             = 42u,
             py::arg("readout_num_threads")      = 0ULL,
-            py::arg("readout_restore_best_epoch") = false,
+            py::arg("readout_restore_best_epoch") = true,
             py::arg("readout_best_epoch_holdout_frac") = 0.0f)
 
         // ── Reservoir driving ──

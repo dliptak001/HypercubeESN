@@ -143,7 +143,7 @@ familiar; the **engine** is a proper HCNN host.
 - [x] `ReadoutLoadMode` on `SetState` (Eval vs ResumeTrain)
 
 **Defaults after B:** arch via `HCNNConfig`, `Predict`, Trainer path, capacity discipline.  
-**Default off (API present later in C/D):** BN, best-epoch restore, HCNW.
+**Later defaults:** best-epoch restore **on** (product default); BN off; HCNW opt-in APIs.
 
 **Cosine schedule note:** HCNN `cosine_lr` uses `epoch / max(num_epochs-1, 1)` so the
 last epoch hits `lr_min`. Old ESN `CosineLR(e/horizon)` differs slightly — retune if
@@ -152,7 +152,7 @@ drive online LR themselves.
 
 ### Phase C — Training quality
 
-- [x] Optional best-metric epoch restore (`HCNNBestMetricCheckpoint` / dual acc); config-gated, default off
+- [x] Best-metric epoch restore (`HCNNBestMetricCheckpoint` / dual acc); product default **on**
 - [x] Load modes: eval vs resume-train on `Readout::SetState` and `ESN::SetReadoutState`
 - [x] Batch eval via `ForwardBatch` for R²/Accuracy on large sets (done in Phase B)
 - [x] Document multi-ESN `num_threads = 1` policy
@@ -231,3 +231,4 @@ optional best-epoch later).
 | 2026-07-21 | Phase C: `restore_best_epoch` + holdout frac; ESN load mode; threading docs. |
 | 2026-07-21 | Phase D: HCNW + `.arch.json` Save/Load; ArchSummary; round-trip smoke OK. |
 | 2026-07-21 | Phase E: BasicPrediction arch print; Python HCNW/best-epoch bindings. |
+| 2026-07-21 | Product default: `restore_best_epoch = true` (C++ + Python). |

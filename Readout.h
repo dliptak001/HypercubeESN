@@ -110,9 +110,10 @@ struct ReadoutConfig
 
     /// After each batch @ref Readout::Train epoch, score a metric and at the end
     /// restore the best weights seen (regression: min MSE; classification: max
-    /// accuracy). Default false keeps historical last-epoch weights. Extra cost:
-    /// one full forward over the score set every epoch.
-    bool restore_best_epoch = false;
+    /// accuracy). Default true (prefer generalization over last-epoch snapshot).
+    /// Set false for historical last-epoch behavior. Extra cost: one full forward
+    /// over the score set every epoch.
+    bool restore_best_epoch = true;
     /// When @c restore_best_epoch is true: fraction of samples (in input order,
     /// taken from the tail) held out for best-metric selection only — training
     /// uses the prefix. 0 = score the full training set. Clamped to [0, 0.5].

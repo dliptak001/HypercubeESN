@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
 {
     (void)argc; (void)argv;
 
-    constexpr size_t DIM         = 8;
+    constexpr size_t DIM         = 12;
     constexpr size_t N           = 1ULL << DIM;
     constexpr size_t narma_order = 30;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 8000;        // states fed to the readout (80/20 split)
@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
     // history_depth (M) sweep points: below, around, and beyond the NARMA order,
     // to map where the delay line can finally hold the full lag history (the knee
     // sits near M = order). history_depth is capped at 64 by Reservoir::Create.
-    const std::vector<size_t> sweep_M = {28, 30, 32, 34, 36};
+    const std::vector<size_t> sweep_M = {32};//{28, 30, 32, 34, 36};
 
     // Second sweep dimension: reservoir-init seed. The target series depends on
     // narma_order + data_seed only (NOT the reservoir seed), so every (seed, M)
@@ -84,9 +84,10 @@ int main(int argc, char* argv[])
     ESNConfig base;
     base.reservoir.dim = DIM;
     base.reservoir.verbose = false;   // 40 trials -- suppress the per-trial SR banner
-    base.reservoir.spectral_radius = 0.95;  // A(x): 0.92, tanh(x): 0.95;
-    base.reservoir.input_scaling = 0.1;     // A(x): 0.019, tanh(x): 0.1
+    base.reservoir.spectral_radius = 0.95;
+    base.reservoir.input_scaling = 0.1;
     base.reservoir.leak_rate = 1.0;
+    base.readout.momentum = 0.9;
 
     base.readout.task       = ReadoutTask::Regression;
     base.readout.epochs     = 600;
@@ -106,6 +107,18 @@ int main(int argc, char* argv[])
     std::cout << "\n  Seeds:    ";
     for (uint64_t sd : sweep_seeds) std::cout << sd << ' ';
     std::cout << "\n";
+
+    // Architecture is shared across the M×seed sweep (only history_depth / seed
+    // change). Probe once so logs show stack + param count without per-trial noise.
+    {
+        ESNConfig probe = base;
+        probe.reservoir.seed =
+            sweep_seeds.empty() ? 42ULL : sweep_seeds.front();
+        probe.reservoir.history_depth =
+            sweep_M.empty() ? 32ULL : sweep_M.front();
+        ESN probe_esn(probe);
+        std::cout << probe_esn.ReadoutArchSummary();
+    }
 
     // ---- Run the sweep (seed x M) --------------------------------------------
     const size_t nM = sweep_M.size();

@@ -108,7 +108,7 @@ class ESN:
         hosts), N = N workers. Default: 0.
     readout_restore_best_epoch : bool
         If True, restore best-epoch weights after batch train (min MSE /
-        max accuracy). Default: False.
+        max accuracy). Default: True.
     readout_best_epoch_holdout_frac : float
         Tail hold-out fraction for best-epoch scoring when restore is on.
         Default: 0.0 (score full train set).
@@ -162,7 +162,7 @@ class ESN:
         readout_activation: str = "tanh",
         readout_seed: int = 42,
         readout_num_threads: int = 0,
-        readout_restore_best_epoch: bool = False,
+        readout_restore_best_epoch: bool = True,
         readout_best_epoch_holdout_frac: float = 0.0,
     ):
         if not (_DIM_MIN <= reservoir_hypercube_dimension <= _DIM_MAX):
