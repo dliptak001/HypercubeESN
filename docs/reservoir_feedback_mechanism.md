@@ -4,8 +4,8 @@
 >
 > With full-state linear feedback (FSF) also landed as a separate **internal** port,
 > this document covers only the **external** path. See
-> [design_internal_fsf.md](design_internal_fsf.md) for FSF (temporary design) and
-> [Reservoir.md](Reservoir.md) for the full three-path picture once docs are folded.
+> [full_state_linear_feedback.md](full_state_linear_feedback.md) for FSF and
+> [Reservoir.md](Reservoir.md) for the full drive-port picture.
 
 ## 1. Source-agnostic by design — external drive only (this port)
 

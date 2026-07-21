@@ -31,7 +31,7 @@ struct ReservoirConfig
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
     // When false: zero FSF allocation. When true: B_fsf + staging buffer + gain V
     // (length N, init 0). Each Step applies φ = V·x automatically. fsf_seed seeds
-    // only B_fsf (standalone RNG — not mixed from `seed`). See docs/design_internal_fsf.md.
+    // only B_fsf (standalone RNG — not mixed from `seed`). See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
     float fsf_scaling = 0.5f; // DIM-invariant: weights × scaling/√dim
