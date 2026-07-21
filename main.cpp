@@ -150,7 +150,8 @@ namespace
         on_cfg.full_state_feedback = true;
         on_cfg.fsf_seed = 99;
         on_cfg.fsf_scaling = 0.5f;
-        on_cfg.fsf_v_scaling = 1.0f;
+        on_cfg.fsf_score_scaling = 1.0f;
+        on_cfg.fsf_stage_scaling = 1.0f;
         auto on_a = Reservoir::Create(on_cfg);
         if (!on_a->FullStateFeedbackEnabled())
         {
@@ -220,10 +221,12 @@ namespace
         off_seed.full_state_feedback = false;
         off_seed.fsf_seed = 12345;
         off_seed.fsf_scaling = 0.7f;
-        off_seed.fsf_v_scaling = 0.3f;
+        off_seed.fsf_score_scaling = 0.3f;
+        off_seed.fsf_stage_scaling = 0.4f;
         auto r_off = Reservoir::Create(off_seed);
         const auto got = r_off->GetConfig();
-        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f || got.fsf_v_scaling != 0.3f
+        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f
+            || got.fsf_score_scaling != 0.3f || got.fsf_stage_scaling != 0.4f
             || got.full_state_feedback)
         {
             std::printf("  [FSF] FAIL: GetConfig lost FSF knobs while disabled\n");

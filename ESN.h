@@ -114,7 +114,8 @@ public:
     /// If this ESN was built with @c full_state_feedback, each step **also**
     /// applies internal full-state feedback (φ = V·x, pad = φ⊙V, B_fsf gather)
     /// automatically inside the reservoir — V is fixed at construction from
-    /// @c fsf_seed / @c fsf_v_scaling; nothing is passed here for FSF.
+    /// @c fsf_seed (U(-1,1)); score/stage/B_fsf scales apply in Step. Nothing is
+    /// passed here for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.
     /// @param external_feedback   nullptr to skip external feedback; otherwise
@@ -371,7 +372,7 @@ public:
 
     /// @brief Return the fully-resolved config this ESN was built from — handy for
     /// rebuilding an identical ESN or for serialization (including FSF knobs;
-    /// V is reconstructed from @c fsf_seed / @c fsf_v_scaling when FSF is on).
+    /// V is reconstructed from @c fsf_seed when FSF is on; scales are in config).
     [[nodiscard]] ESNConfig GetConfig() const;
 
     /// @brief A portable snapshot of the trained readout's weights — everything

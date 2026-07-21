@@ -3,12 +3,12 @@
 /// @file FsfAbSwitch.h
 /// @brief Shared A/B controls for full-state linear feedback (FSF) in examples.
 ///
-/// When enabled, V and B_fsf are drawn at construction from @c fsf_seed
-/// (@c fsf_v_scaling / @c fsf_scaling). No Set/Get of V — seed + scales only.
+/// When enabled, V is drawn U(-1,1) from @c fsf_seed (no scale baked in); B_fsf
+/// from the same seed with @c fsf_scaling. Score/stage scales apply in Step only
+/// so φ and pad painting stay independently tunable. No Set/Get of V.
 ///
 /// @code
 ///   ESNConfig cfg;
-///   // ... other knobs ...
 ///   fsf_ab::ApplyTo(cfg);
 ///   ESN esn(cfg);
 ///   fsf_ab::Log(std::cout);
@@ -28,17 +28,20 @@ namespace fsf_ab
     //  A/B SWITCHES
     // =========================================================================
 
-    /// Allocate FSF and apply φ = V·x / pad = φ⊙V each step (false ⇒ zero alloc).
+    /// Allocate FSF and apply the internal path each step (false ⇒ zero alloc).
     inline constexpr bool kEnable = false;
 
-    /// Seeds V then B_fsf (standalone; not mixed from reservoir.seed).
+    /// Seeds V (U(-1,1)) then B_fsf (standalone; not mixed from reservoir.seed).
     inline constexpr std::uint64_t kSeed = 1;
 
-    /// B_fsf: U(-1,1) × kScaling/√dim (inject/gather weights).
+    /// B_fsf construction: U(-1,1) × kScaling/√dim.
     inline constexpr float kScaling = 0.5f;
 
-    /// V: U(-1,1) × kVScaling (state→φ and pad paint; w ≡ V).
-    inline constexpr float kVScaling = 1.0f;
+    /// Step: φ = kScoreScaling · (V · x).
+    inline constexpr float kScoreScaling = 1.0f;
+
+    /// Step: pad[v] = kStageScaling · φ · V[v].
+    inline constexpr float kStageScaling = 1.0f;
 
     // =========================================================================
 
@@ -47,7 +50,8 @@ namespace fsf_ab
         r.full_state_feedback = kEnable;
         r.fsf_seed = kSeed;
         r.fsf_scaling = kScaling;
-        r.fsf_v_scaling = kVScaling;
+        r.fsf_score_scaling = kScoreScaling;
+        r.fsf_stage_scaling = kStageScaling;
     }
 
     inline void ApplyTo(ESNConfig& c) noexcept { ApplyTo(c.reservoir); }
@@ -58,7 +62,8 @@ namespace fsf_ab
         os << "  FSF A/B: " << (kEnable ? "ON " : "OFF")
            << "  fsf_seed=" << kSeed
            << "  fsf_scaling=" << kScaling
-           << "  fsf_v_scaling=" << kVScaling
+           << "  fsf_score_scaling=" << kScoreScaling
+           << "  fsf_stage_scaling=" << kStageScaling
            << '\n';
     }
 } // namespace fsf_ab

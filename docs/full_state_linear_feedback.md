@@ -7,67 +7,71 @@
 > `ReservoirConfig` / `ESN`; dynamics notes in [Reservoir.md](Reservoir.md).
 >
 > **Binding:** there is **no** separate staging vector **w**. Staging uses the
-> same **V** that builds φ: `pad[v] = φ · V[v]`. That choice is permanent.
+> same **V** that builds φ: `pad[v] ∝ φ · V[v]`. That choice is permanent.
 >
-> **Why w ≡ V:** a free **w ≠ V** would only reshape how φ is painted on the cube.
-> Any practical gain over tying the paint to V is small next to the cost of a
-> second N-vector. **w ≡ V** keeps one gain vector and an honest gather.
+> **Why w ≡ V:** a free **w ≠ V** would only reshape how φ is painted; the extra
+> N-vector is not worth the management cost.
 >
-> **V is construction-time only:** drawn from `fsf_seed` × `fsf_v_scaling` when
-> FSF is enabled. **No** Set/Get of V.
+> **V is construction-time only:** drawn U(−1,1) from `fsf_seed` with **no scale
+> baked in**. Independent scales apply in `Step` for score (φ) and stage (pads).
+> **No** Set/Get of V.
 
-## Paper idea (compact)
+## Design (canonical)
 
 ```
-φ_k     = V · x_k                    (V length N; scalar drive)
-pad     = φ_k * V                    (elementwise; same V)
-x_{k+1} = g(A x_k + B u_k + … + gather(B_fsf, pad) + …)
+Construction (fsf_seed, standalone RNG — not reservoir.seed):
+  V[i]     ~ U(-1, 1)                         // first N draws; full range stored
+  B_fsf    ~ U(-1, 1) * fsf_scaling / √dim    // next N·dim draws
+
+Each Step:
+  φ        = fsf_score_scaling * (V · x)      // score side
+  pad[v]   = fsf_stage_scaling * φ * V[v]     // stage side (w ≡ V)
+  UpdateState: gather neighbors of pad through B_fsf
 ```
 
-Drive ports (input, external feedback, FSF) sit **outside** the recurrent
-spectral-radius rescale. This is **not** Jaeger output feedback (ŷ → reservoir).
+Score and stage scales are independent: tune “how hard we listen” vs “how hard we
+paint” without redrawing V or coupling them by baking a single scale into V.
 
-## Landed realization (HypercubeESN)
+`Create(GetConfig())` rebuilds the same V and B_fsf (deterministic draw order).
+
+## Landed realization
 
 | Item | Behavior |
 |------|----------|
 | Enable | Construction-only: `full_state_feedback` |
-| Off | **Zero** FSF allocation |
-| V | Length N; U(−1,1)×`fsf_v_scaling` from **`fsf_seed`** (first N draws) |
-| B_fsf | N×dim; U(−1,1)×`fsf_scaling`/√dim from **same seed** (next N·dim draws) |
-| φ / pads | φ = V·x; `pad[v] = φ·V[v]` (**w ≡ V**) |
-| Gather | XOR neighbors of `pad` × B_fsf |
-| API | No Set/Get V — enable + seed + scales only |
-| Warmup / Run | Apply FSF when enabled |
-| Coexist | Independent of multi-channel **external** feedback |
+| Off | Zero FSF allocation |
+| V | Length N; **U(−1,1)** from `fsf_seed` (first N draws) |
+| B_fsf | N×dim; U(−1,1)×`fsf_scaling`/√dim (same seed, next draws) |
+| Score | φ = `fsf_score_scaling` · (V · x) in `Step` |
+| Stage | pad[v] = `fsf_stage_scaling` · φ · V[v] in `Step` |
+| Gather | XOR neighbors of pad × B_fsf in `UpdateState` |
+| API | No Set/Get V — enable + seed + three scales |
 
 ```cpp
 ESNConfig cfg;
 cfg.reservoir.full_state_feedback = true;
 cfg.reservoir.fsf_seed            = 1;
 cfg.reservoir.fsf_scaling         = 0.5f;  // B_fsf
-cfg.reservoir.fsf_v_scaling       = 1.0f;  // V
+cfg.reservoir.fsf_score_scaling   = 1.0f;  // φ
+cfg.reservoir.fsf_stage_scaling   = 1.0f;  // pads
 ESN esn(cfg);
-// V and B_fsf already drawn; no SetFullStateFeedbackGain
 esn.ReservoirWarmup(u, T);
 ```
 
-`Create(GetConfig())` rebuilds the same V and B_fsf (deterministic in `fsf_seed`
-and the two scales).
+## What is not in the design
 
-## What is deliberately not in the design
-
-- Separate staging vector **w** (rejected forever; **w ≡ V**)
+- Separate staging vector **w** (forever **w ≡ V**)
 - Runtime Set/Get of V
+- Baking score/stage scale into stored V
 - Multi-channel FSF
-- Library training of V (outer-loop research may still re-implement offline)
+- Library training of V
 
 ## Drive-port map
 
 ```
   input              — always
   external feedback  — optional caller values
-  FSF                — internal: φ = V·x, pad = φ⊙V, gather B_fsf
+  FSF                — internal: score V·x, stage φ⊙V, gather B_fsf
 ```
 
 ## Reference
@@ -79,34 +83,30 @@ Networks Through Feedback*. arXiv:2312.15141.
 
 ## Appendix: FSF for Dummies
 
-**Short answer:** **V is not the feedback weight matrix.** You have **one** length-N
-vector **V** and **one** inject weight block **B_fsf**. V both **scores** the state
-and **paints** the FSF field; B_fsf is how that field enters each neuron. Both are
-drawn at construction from `fsf_seed` (plus scales). No Set/Get.
+**V is not the feedback weight matrix.** One length-N vector **V** (random ±1
+pattern from seed) and one inject block **B_fsf**. Scales are volumes applied when
+the signal is used, not folded into V.
 
-### What happens each step (FSF on)
+### Each step
 
 ```text
-  1. Full state x  (N numbers)
-
-  2. φ  =  V · x
-
-  3. pad[v]  =  φ * V[v]     (same V; w ≡ V forever)
-
-  4. Each neuron: XOR-gather neighbors’ pads × B_fsf
-
-  5. Sum with recurrent + input (+ external feedback) → activation → new state
+  1. Full state x
+  2. φ  =  score_scale · (V · x)
+  3. pad[v]  =  stage_scale · φ · V[v]     (same V; w ≡ V)
+  4. Gather neighbors’ pads × B_fsf into each neuron
+  5. + recurrent + input (+ external feedback) → activation → new state
 ```
 
-| Symbol | What it is | Shape |
-|--------|------------|--------|
-| **x** | Reservoir state | N |
-| **V** | Score → φ and paint pads (from seed + `fsf_v_scaling`) | N |
+| Symbol | Role | Shape |
+|--------|------|--------|
+| **V** | Score and paint pattern (U(−1,1) from seed) | N |
 | **φ** | One drive strength this step | scalar |
 | **pad** | Per-vertex FSF field | N |
-| **B_fsf** | Gather pads into each neuron (from seed + `fsf_scaling`) | N×dim |
+| **B_fsf** | Gather pads into neurons | N×dim |
+| **score_scale** | Tunable strength of φ | scalar |
+| **stage_scale** | Tunable strength of painting | scalar |
 
 ### One-line summary
 
-**φ** = V · x. **Pads** = φ ⊙ V. **B_fsf** gathers pads. V and B_fsf come from
-**seed + scales** at construction — nothing else.
+**V** fixed from seed in [−1,1]; **φ** and **pads** use **separate scales** in
+`Step`; **B_fsf** injects. No second N-vector. No Set/Get.

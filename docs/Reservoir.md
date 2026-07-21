@@ -58,9 +58,10 @@ Everything that follows serves those two.
 | `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
-| `fsf_seed` | 1 | draws V then B_fsf (standalone; not from `seed`) |
+| `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
 | `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only if FSF on) |
-| `fsf_v_scaling` | 1.0 | V: U(−1,1)×scale (only if FSF on) |
+| `fsf_score_scaling` | 1.0 | Step: φ = scale · (V · x) |
+| `fsf_stage_scaling` | 1.0 | Step: pad[v] = scale · φ · V[v] |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
@@ -304,17 +305,13 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
-1. φ = V · x (V length N, drawn at construction from `fsf_seed` × `fsf_v_scaling`)
-2. Stage `vtx_fsf_[v] = φ * V[v]` — **same V** paints the field (**w ≡ V forever**)
-3. XOR-gather that field through **B_fsf** (`fsf_seed` × `fsf_scaling`/√dim)
+1. V is U(−1,1)^N from `fsf_seed` at construction (no scale baked into V)
+2. φ = `fsf_score_scaling` · (V · x)
+3. Stage `pad[v] = fsf_stage_scaling · φ · V[v]` (**w ≡ V forever**)
+4. XOR-gather pad through **B_fsf** (`fsf_scaling`/√dim at construction)
 
-Zero allocation when disabled. No runtime Set/Get of V.
-
-Implications:
-
-- **Warmup / Run** under `ESN` still apply FSF when enabled.
-- **Clear / snapshot** do not touch V; staged FSF buffer is cleared like other drives.
-- `Create(GetConfig())` rebuilds the same V and B_fsf.
+Zero allocation when disabled. No runtime Set/Get of V. Score and stage scales
+are independent (listen vs paint).
 
 Details: [full_state_linear_feedback.md](full_state_linear_feedback.md).
 

@@ -37,7 +37,8 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.full_state_feedback = config::FULL_STATE_FEEDBACK;
     cfg.reservoir.fsf_seed = config::FSF_SEED;
     cfg.reservoir.fsf_scaling = config::FSF_SCALING;
-    cfg.reservoir.fsf_v_scaling = config::FSF_V_SCALING;
+    cfg.reservoir.fsf_score_scaling = config::FSF_SCORE_SCALING;
+    cfg.reservoir.fsf_stage_scaling = config::FSF_STAGE_SCALING;
 
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
@@ -84,10 +85,12 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     "  external_feedback_scaling=%.4f\n",
                     esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
-        std::printf("[Lorenz config] FSF A/B:   %s  fsf_seed=%llu  fsf_scaling=%.3f  fsf_v_scaling=%.3f\n",
+        std::printf("[Lorenz config] FSF A/B:   %s  fsf_seed=%llu  fsf_scaling=%.3f"
+                    "  score=%.3f  stage=%.3f\n",
                     config::FULL_STATE_FEEDBACK ? "ON " : "OFF",
                     static_cast<unsigned long long>(config::FSF_SEED),
-                    config::FSF_SCALING, config::FSF_V_SCALING);
+                    config::FSF_SCALING, config::FSF_SCORE_SCALING,
+                    config::FSF_STAGE_SCALING);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  aux=%zu  blocks=%zu  pooling=%s\n",

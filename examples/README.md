@@ -7,15 +7,15 @@ quick A/B testing against the open-loop baseline.
 
 | Control | Where |
 |---------|--------|
-| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kVScaling` |
+| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling`, `kScoreScaling`, `kStageScaling` |
 | Most examples | `fsf_ab::ApplyTo(cfg)` after building config; `Log` |
-| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SEED` / scales in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
+| **Lorenz** | `config::FULL_STATE_FEEDBACK` / seed / scales in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
 
 **How to A/B**
 
 1. **Off:** `kEnable = false`.
-2. **On:** `kEnable = true` — V and B_fsf are drawn at construction from `kSeed`
-   (`kVScaling` / `kScaling`). No Set/Get of V.
+2. **On:** `kEnable = true` — V = U(−1,1) from `kSeed`; B_fsf uses `kScaling`;
+   `kScoreScaling` / `kStageScaling` tune φ vs pad painting in `Step`. No Set/Get of V.
 
 Logs print a `FSF A/B:` line. Theory/API:
 [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).

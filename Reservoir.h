@@ -30,14 +30,16 @@ struct ReservoirConfig
 
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
     // When false: zero FSF allocation. When true: B_fsf + staging buffer + V
-    // (length N). V and B_fsf are drawn once from standalone fsf_seed (not mixed
-    // from `seed`): first N → V × fsf_v_scaling, then N·dim → B_fsf × fsf_scaling/√dim.
-    // Each Step: φ = V·x, pad[v] = φ·V[v] (w ≡ V forever), gather via B_fsf.
+    // (length N). From standalone fsf_seed (not mixed from `seed`): first N → V as
+    // U(-1,1) with no scale baked in; then N·dim → B_fsf × fsf_scaling/√dim.
+    // Each Step: φ = fsf_score_scaling·(V·x), pad[v] = fsf_stage_scaling·φ·V[v]
+    // (w ≡ V forever), gather via B_fsf. Score/stage scales are independent.
     // See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
-    float fsf_scaling = 0.5f;   // B_fsf: U(-1,1) × scaling/√dim
-    float fsf_v_scaling = 1.0f; // V: U(-1,1) × scaling (no fan-in factor)
+    float fsf_scaling = 0.5f;        // B_fsf: U(-1,1) × scaling/√dim (construction)
+    float fsf_score_scaling = 1.0f;  // Step: φ = scale · (V · x)
+    float fsf_stage_scaling = 1.0f;  // Step: pad[v] = scale · φ · V[v]
 
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
 
@@ -98,9 +100,10 @@ struct ReservoirConfig
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
 ///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     each step: φ = V·x, stage pad[v] = φ·V[v] (w ≡ V forever), gather through
-///     B_fsf. V and B_fsf are construction-time draws from @c fsf_seed (with
-///     @c fsf_v_scaling / @c fsf_scaling). Outside SR rescale. Zero alloc when off.
+///     each step: φ = @c fsf_score_scaling·(V·x), pad[v] = @c fsf_stage_scaling·φ·V[v]
+///     (w ≡ V forever), gather through B_fsf. V is U(-1,1) from @c fsf_seed (no
+///     scale baked in); B_fsf from same seed with @c fsf_scaling. Outside SR.
+///     Zero alloc when off.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
@@ -303,10 +306,11 @@ private:
     bool fsf_enabled_ = false;
     uint64_t fsf_seed_ = 1;
     float fsf_scaling_ = 0.5f;
-    float fsf_v_scaling_ = 1.0f;
+    float fsf_score_scaling_ = 1.0f;
+    float fsf_stage_scaling_ = 1.0f;
     size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
-    std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer pad[v]=φ·V[v]
-    std::vector<float> fsf_gain_; // V, length n_ when enabled (empty when off)
+    std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer
+    std::vector<float> fsf_gain_; // V ∈ U(-1,1)^N when enabled (empty when off)
 
     /**** per neuron bias ****/
     float bias_scaling_;

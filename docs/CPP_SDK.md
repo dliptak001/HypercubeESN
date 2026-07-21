@@ -259,9 +259,10 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `num_external_feedback_channels` | `size_t` | `0` | External-feedback channels D. **0** = path off (no buffer/weights). Else D in **[1, N]** (need not divide N). Caller stages values each step. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
 | `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback. **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
-| `fsf_seed` | `uint64_t` | `1` | Draws V (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. Stored even when FSF is off. |
-| `fsf_scaling` | `float` | `0.5` | B_fsf: U(−1,1) × `scaling / √DIM`. Outside spectral-radius rescale. |
-| `fsf_v_scaling` | `float` | `1.0` | V: U(−1,1) × scale. Outside spectral-radius rescale. |
+| `fsf_seed` | `uint64_t` | `1` | Draws V as U(−1,1) (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. |
+| `fsf_scaling` | `float` | `0.5` | B_fsf: U(−1,1) × `scaling / √DIM` at construction. |
+| `fsf_score_scaling` | `float` | `1.0` | Step: φ = scale · (V · x). Independent of stage scale. |
+| `fsf_stage_scaling` | `float` | `1.0` | Step: pad[v] = scale · φ · V[v]. Independent of score scale. |
 
 ---
 

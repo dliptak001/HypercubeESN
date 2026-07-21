@@ -24,8 +24,9 @@ In [`Lorenz.h`](Lorenz.h) `config::`:
 | Knob | Default | Role |
 |------|---------|------|
 | `FULL_STATE_FEEDBACK` | `false` | Construction-only FSF port |
-| `FSF_SEED` | `1` | Draws V then B_fsf |
-| `FSF_SCALING` / `FSF_V_SCALING` | `0.5` / `1.0` | B_fsf / V scales |
+| `FSF_SEED` | `1` | Draws V as U(−1,1) then B_fsf |
+| `FSF_SCALING` | `0.5` | B_fsf inject scale |
+| `FSF_SCORE_SCALING` / `FSF_STAGE_SCALING` | `1` / `1` | φ vs pad paint (Step) |
 
 Independent of the **external-feedback** future port. Other examples share
 [`FsfAbSwitch.h`](../FsfAbSwitch.h); Lorenz keeps knobs in `config::` for the
