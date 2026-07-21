@@ -59,7 +59,7 @@ Everything that follows serves those two.
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
 | `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
 | `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
-| `fsf_scaling` | 0.5 | B_fsf: U(−1,1)×scale/√dim (only FSF strength knob) |
+| `fsf_scaling` | 0.05 | B_fsf: U(−1,1)×scale/√dim (only FSF strength knob) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |

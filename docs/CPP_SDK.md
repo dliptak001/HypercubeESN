@@ -234,7 +234,7 @@ struct ReservoirConfig
     // Full-state linear feedback (internal φ = V·x) — false = off, no alloc
     bool     full_state_feedback = false;
     uint64_t fsf_seed            = 1;      // seeds only B_fsf; not derived from seed
-    float    fsf_scaling         = 0.5f;
+    float    fsf_scaling         = 0.05f;
 };
 
 // Typical:
@@ -260,7 +260,7 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
 | `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback. **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
 | `fsf_seed` | `uint64_t` | `1` | Draws V as U(−1,1) (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. |
-| `fsf_scaling` | `float` | `0.5` | B_fsf: U(−1,1) × `scaling / √DIM` (only FSF strength knob; like `input_scaling`). |
+| `fsf_scaling` | `float` | `0.05` | B_fsf: U(−1,1) × `scaling / √DIM` (only FSF strength knob; like `input_scaling`). |
 
 ---
 

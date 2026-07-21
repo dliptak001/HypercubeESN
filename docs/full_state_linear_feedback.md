@@ -31,7 +31,7 @@ No Set/Get of V. No separate stage scale (it only multiplied `fsf_scaling`).
 ESNConfig cfg;
 cfg.reservoir.full_state_feedback = true;
 cfg.reservoir.fsf_seed            = 1;
-cfg.reservoir.fsf_scaling         = 0.5f;
+cfg.reservoir.fsf_scaling         = 0.05f;
 ESN esn(cfg);
 ```
 
