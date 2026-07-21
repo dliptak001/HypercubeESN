@@ -8,6 +8,11 @@
 >
 > **Binding:** there is **no** separate staging vector **w**. Staging uses the
 > same **V** that builds φ: `pad[v] = φ · V[v]`. That choice is permanent.
+>
+> **Why:** a free **w ≠ V** would only reshape how φ is painted on the cube. Any
+> practical gain over tying the paint to V is small next to the cost of a second
+> N-vector (config, seed/scale story, Set/Get, docs, A/B surface). **w ≡ V** keeps
+> one gain vector and an honest gather without that management burden.
 
 ## Paper idea (compact)
 
