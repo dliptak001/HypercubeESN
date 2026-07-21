@@ -9,7 +9,7 @@ predict the next value without ever seeing the input directly.
 If you're new to reservoir computing, start here.
 
 **FSF A/B:** `fsf_ab::ApplyTo(cfg)` via [`FsfAbSwitch.h`](FsfAbSwitch.h)
-(`kEnable`, seed, scales). See [examples/README.md](README.md).
+(`kEnable`, seed, `kScaling`). See [examples/README.md](README.md).
 
 ## Conceptual background
 

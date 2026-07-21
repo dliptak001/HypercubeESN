@@ -67,7 +67,7 @@ Everything that follows serves those two.
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
 post-secant value. `Create(GetConfig())` rebuilds matching weight blocks and FSF
-gain V from `seed` / `fsf_seed` and the FSF scales.
+gain V from `seed` / `fsf_seed` and `fsf_scaling`.
 
 ## A topology you don't store
 

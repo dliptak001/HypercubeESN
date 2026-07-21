@@ -112,10 +112,11 @@ public:
     /// @p external_feedback (when non-null) stages caller-owned closed-loop drive
     /// on the external-feedback port (e.g. previous-step prediction for free-run).
     /// If this ESN was built with @c full_state_feedback, each step **also**
-    /// applies internal full-state feedback (φ = V·x, pad = φ⊙V, B_fsf gather)
-    /// automatically inside the reservoir — V is fixed at construction from
-    /// @c fsf_seed (U(-1,1)); strength via @c fsf_scaling on B_fsf. Nothing is
-    /// passed here for FSF.
+    /// applies internal full-state feedback automatically inside the reservoir:
+    /// φ = V·x, fill @c vtx_fsf_ with φ (same as external feedback D=1), then
+    /// XOR-gather through B_fsf. V is fixed at construction from @c fsf_seed
+    /// (U(-1,1)); strength via @c fsf_scaling on B_fsf. Nothing is passed here
+    /// for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.
     /// @param external_feedback   nullptr to skip external feedback; otherwise
@@ -372,7 +373,8 @@ public:
 
     /// @brief Return the fully-resolved config this ESN was built from — handy for
     /// rebuilding an identical ESN or for serialization (including FSF knobs;
-    /// V is reconstructed from @c fsf_seed when FSF is on; scales are in config).
+    /// V is reconstructed from @c fsf_seed when FSF is on; @c fsf_scaling is in
+    /// config).
     [[nodiscard]] ESNConfig GetConfig() const;
 
     /// @brief A portable snapshot of the trained readout's weights — everything

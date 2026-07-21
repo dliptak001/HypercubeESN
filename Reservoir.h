@@ -183,7 +183,7 @@ public:
     ///
     /// Every config field is read back from a stored member (including FSF knobs
     /// even when FSF is off). @c Create(GetConfig()) rebuilds matching weights and
-    /// FSF gain V from @c seed / @c fsf_seed and the FSF scales. @c spectral_radius
+    /// FSF gain V from @c seed / @c fsf_seed and @c fsf_scaling. @c spectral_radius
     /// here is the configured TARGET, not the realized value — use
     /// @ref GetRealizedSpectralRadius for the post-rescale estimate.
     [[nodiscard]] ReservoirConfig GetConfig() const;

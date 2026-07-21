@@ -165,7 +165,7 @@ namespace
         else
             std::printf("  [FSF] PASS F0/F1: off vs on differ\n");
 
-        // F2: seed+scales rebuild identical V and B_fsf
+        // F2: seed+fsf_scaling rebuild identical V and B_fsf
         auto on_b = Reservoir::Create(on_a->GetConfig());
         const std::vector<float> tr_rebuild = run_trace(*on_b);
         if (!BitIdentical(tr_on, tr_rebuild))

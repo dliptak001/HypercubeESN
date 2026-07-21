@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
 {
     (void)argc; (void)argv;
 
-    constexpr size_t DIM         = 12;
+    constexpr size_t DIM         = 10;
     constexpr size_t N           = 1ULL << DIM;
     constexpr size_t narma_order = 30;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 8000;        // states fed to the readout (80/20 split)
