@@ -20,7 +20,7 @@ namespace fsf_ab
     inline constexpr std::uint64_t kSeed = 13459873;
     /// B_fsf construction: U(-1,1) × kScaling/√dim.
     inline constexpr float kScaling = 0.5f;
-    /// Step: pad[v] = kStageScaling · (V·x) · V[v].
+    /// Step: φ = kStageScaling · (V·x), then fill vtx_fsf_ with φ.
     inline constexpr float kStageScaling = 0.1f;
 
     inline void ApplyTo(ReservoirConfig& r) noexcept
