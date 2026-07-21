@@ -84,7 +84,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     if (fsf_enabled_)
     {
         vtx_fsf_.reset(AllocAligned(n_));
-        fsf_gain_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
+        fsf_v_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
     }
 
     Initialize();
@@ -152,7 +152,7 @@ void Reservoir::Initialize()
     {
         std::mt19937_64 fsf_rng(fsf_seed_);
         for (size_t i = 0; i < n_; ++i)
-            fsf_gain_[i] = static_cast<float>(dist(fsf_rng));
+            fsf_v_[i] = static_cast<float>(dist(fsf_rng));
         const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             (*pW++) = static_cast<float>(dist(fsf_rng)) * fsf_scale;
@@ -263,11 +263,11 @@ void Reservoir::Step()
         const float* x = slice_ptrs_[0];
         double acc = 0.0;
         for (size_t i = 0; i < n_; ++i)
-            acc += static_cast<double>(fsf_gain_[i]) * static_cast<double>(x[i]);
+            acc += static_cast<double>(fsf_v_[i]) * static_cast<double>(x[i]);
         const float phi = static_cast<float>(acc);
         const float stage = fsf_stage_scaling_ * phi;
         for (size_t v = 0; v < n_; ++v)
-            vtx_fsf_[v] = stage * fsf_gain_[v];
+            vtx_fsf_[v] = stage * fsf_v_[v];
     }
 
     const float* p_vtx_prev = slice_ptrs_[0];
@@ -463,7 +463,7 @@ void Reservoir::Clear()
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
     if (fsf_enabled_)
         std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
-    // fsf_gain_ (V) is a parameter — not cleared
+    // fsf_v_ (V) is a parameter — not cleared
 
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));
 

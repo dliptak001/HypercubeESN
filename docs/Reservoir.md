@@ -198,7 +198,7 @@ Per-step quantities:
 - `vtx_input_[v]` — staged input field; cleared after every `Step()`.
 - `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
 - `vtx_fsf_[v]` — staged FSF field if enabled (φ = V·x filled inside `Step`); cleared every `Step()`.
-- `fsf_gain_` — gain V (length N) when FSF enabled; parameter, not cleared by `Clear`.
+- `fsf_v_` — full-state vector **V** (length N) when FSF enabled; parameter, not cleared by `Clear`.
 - `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
   cleared by `Clear` / not in snapshots.
 
