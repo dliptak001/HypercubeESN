@@ -1,15 +1,25 @@
 # Activation Function A(x) — Central-Slope-Boosted tanh
 
-> Status: **exploratory**. This documents a new reservoir activation under active
-> investigation, not approved/default behavior. The shipped default in
-> `Reservoir::UpdateState` is still `std::tanh(s)`; `A_lorentz` is wired in behind
-> a commented call site. Experimental numbers below are early and from a narrow
-> sweep — treat them as evidence, not a settled result.
+> Status: **shipped path, exploratory use.** `Reservoir::UpdateState` always
+> calls `A_lorentz(s, lorentz_gamma, lorentz_inv_sigma2)`. The product default is
+> `lorentz_gamma = 0`, which recovers **plain `tanh(s)` exactly**. Nonzero γ is
+> the experimental regime documented below — early, from narrow sweeps; treat
+> those numbers as evidence, not a settled product default.
+
+Related config (see [Reservoir.md](Reservoir.md) / `ReservoirConfig`):
+
+| Field | Default | Role |
+|-------|---------|------|
+| `lorentz_gamma` (γ) | `0.0` | Peak central gain boost; **0 = off** (plain tanh) |
+| `lorentz_inv_sigma2` (1/σ²) | `250.0` | Lorentzian width (σ ≈ 0.063 at default) |
+
+Bias is applied **after** A: `activation = A_lorentz(s, …) + bias[v]`, then the
+leak blend. Changing γ does not change the bias path.
 
 ## Definition
 
-`A_lorentz` (in `Reservoir.cpp`, ~line 207) is a `tanh` whose effective slope is
-amplified by a Lorentzian bump centered on the origin:
+`A_lorentz` (inline in `Reservoir.cpp`) is a `tanh` whose local slope is scaled
+by a Lorentzian bump centered on the origin:
 
 ```
   A(x) = tanh( x · g(x) ),     g(x) = 1 + γ · φ(x),     φ(x) = 1 / (1 + x²/σ²)
@@ -31,7 +41,15 @@ half-width `σ` at the origin. `φ` is the Lorentzian (Cauchy) kernel — chosen
 over a Gaussian deliberately: **no `exp`, heavier tails**, so the gain decays
 back to 1 gradually rather than abruptly.
 
-## Shape and limits
+**Sign of γ (from code comments):**
+
+- `γ = 0` → `g ≡ 1` → plain `tanh(x)` (shipped default).
+- `γ > 0` → steeper central slope, tanh tails (sharpening) — the regime in the
+  experiments below.
+- `γ < 0` with `|γ| > 1` → central gain can cross zero → non-monotone “fold”.
+  Not used in the tables below; available as a sweep axis.
+
+## Shape and limits (γ > 0)
 
 ```
    A(x)
@@ -61,14 +79,14 @@ back to 1 gradually rather than abruptly.
 
 ## The two parameters
 
-| Param | Code | Meaning | Tested value |
-|-------|------|---------|--------------|
-| `γ` (gamma) | `gamma` | Peak gain boost; slope at origin is `1+γ` | `1.5` → slope 2.5× |
-| `σ` (sigma) | `inv_sigma2 = 1/σ²` | Half-width of the boosted region | `inv_sigma2=100` → σ=0.1 |
+| Param | Config / code | Meaning | Values used in tables below |
+|-------|---------------|---------|-----------------------------|
+| `γ` (gamma) | `lorentz_gamma` | Peak gain boost; slope at origin is `1+γ` | e.g. `1.1`, `1.4`, `1.5` (not the default `0`) |
+| `σ` (sigma) | `lorentz_inv_sigma2 = 1/σ²` | Half-width of the boosted region | e.g. `100` (σ=0.1), `~250` (σ≈0.063); default inv_sigma2 is `250` |
 
-Both are first guesses, not tuned. `γ` controls *how much* the center is steepened;
-`σ` controls *how wide* the steepened region is relative to the reservoir's
-operating amplitude.
+Hand-found per task in early sweeps, not jointly tuned. `γ` controls *how much*
+the center is steepened; `σ` controls *how wide* the steepened region is relative
+to the reservoir's operating amplitude.
 
 ## Why this is not just a higher spectral radius
 
@@ -99,6 +117,10 @@ task tested (see NARMA-30 below); the decoupling buys a gentler drive, not lower
 error.
 
 ## Early experimental evidence
+
+Experiments below compare **nonzero γ** (labelled `A`) against **plain tanh**
+(γ = 0, or an equivalent pure-tanh build). They are not the current default
+config unless you set `lorentz_gamma` yourself.
 
 ### NARMA-30 (memory-bound task) — parity, reached at a far gentler drive
 
@@ -271,48 +293,56 @@ Two secondary trends both reinforce the picture:
 | Linear memory capacity | capacity probe | **`tanh` wins** (`A` ≈ 0.67–0.83×) | `A` trades linear MC for nonlinear computation |
 
 The honest bottom line: across every task tested — easy and memory-bound alike —
-`A` is a **no-regression drop-in that matches `tanh` on task error at a markedly
-gentler operating point** (lower `sr`, ~5–19× smaller input drive). It does not
-beat `tanh` on error anywhere once `tanh` is properly tuned. Its distinguishing,
-measurable property is the reallocation of capacity (lower linear MC, gentler drive
-to reach the same dynamics), not a performance win. Whether that gentler operating
-point is *useful* — e.g. for dynamic range, quantization, or hardware drive limits
-— is the open question that would justify `A` over plain `tanh`.
+nonzero-γ `A` is a **no-regression drop-in that matches `tanh` on task error at a
+markedly gentler operating point** (lower `sr`, ~5–19× smaller input drive). It
+does not beat `tanh` on error anywhere once `tanh` is properly tuned. Its
+distinguishing, measurable property is the reallocation of capacity (lower linear
+MC, gentler drive to reach the same dynamics), not a performance win. Whether that
+gentler operating point is *useful* — e.g. for dynamic range, quantization, or
+hardware drive limits — is the open question that would justify nonzero γ over
+plain `tanh` (γ = 0).
+
+## Call site (current code)
+
+`Reservoir::UpdateState` always applies:
+
+```cpp
+const float activation =
+    A_lorentz(s, lorentz_gamma_, lorentz_inv_sigma2_) + vtx_bias_[v];
+```
+
+There is no separate commented `std::tanh` branch. Set knobs on `ReservoirConfig`
+(or ESN’s reservoir config) before construction:
+
+```cpp
+cfg.reservoir.lorentz_gamma = 1.1f;           // e.g. NARMA-tuned exploratory
+cfg.reservoir.lorentz_inv_sigma2 = 250.0f;    // 1/σ²  (σ ≈ 0.063)
+// lorentz_gamma = 0.0f  → plain tanh (default)
+```
+
+No other code path is affected — `A` is a drop-in scalar nonlinearity with the same
+codomain as `tanh` when γ ≥ 0 and γ is below the monotonicity bound.
 
 ## Open questions / next steps
 
 1. **Is the gentler operating point actually worth anything?** This is now the
-   central question. `A` matches `tanh` on error but reaches it at lower `sr` and
-   far smaller input drive. That only matters if some downstream constraint cares —
-   fixed-point/quantized state, analog or hardware drive limits, dynamic-range
-   headroom. Absent such a constraint, plain `tanh` is the simpler choice. Worth
-   identifying a task or deployment where the gentler drive pays off before
-   investing further.
+   central question. Nonzero-γ `A` matches `tanh` on error but reaches it at lower
+   `sr` and far smaller input drive. That only matters if some downstream
+   constraint cares — fixed-point/quantized state, analog or hardware drive
+   limits, dynamic-range headroom. Absent such a constraint, plain `tanh` (γ = 0)
+   is the simpler choice.
 2. **Tune `(γ, σ)` jointly with the operating point.** Values tried so far
    (`(1.5,σ=0.1)`, `(1.4,σ≈0.071)`, `(1.1,σ≈0.063)`) were hand-found per task. A
    real 2D grid — co-swept with `input_scaling`/`sr`, since the right `σ` tracks
    operating amplitude — would say whether any `(γ,σ)` breaks parity into an actual
    error win, or confirm that none does.
 3. **Transfer to Lorenz free-run** — the primary target (NARMA-30 is the proxy
-   here). A small-signal-gain boost could sharpen a chaotic attractor's fine
+   here). A small-signal-gain boost could sharpen a chaotic attractor’s fine
    structure, or could perturb the free-run Lyapunov exponent; needs a direct test.
-   This is the most likely place a *qualitative* difference (not just an
-   operating-point offset) could show up.
 4. **Interaction with `leak_rate`.** `leak < 1` is the other stability knob; worth
-   a sweep alongside `(γ, σ)` as it may shift `A`'s usable operating window.
-5. **Cost.** `A` adds a divide + a couple of FMAs per unit per step over `tanh`'s
-   single call; the recurrent block (`dim × history_depth` FMAs) dominates, so the
-   overhead is expected to be negligible — worth confirming on a timed run.
-
-## Call site
-
-`Reservoir::UpdateState` (`Reservoir.cpp`, ~line 257) currently reads:
-
-```cpp
-const float activation = std::tanh(s);
-//const float activation = A_lorentz(s, 1.1, 250);   // (γ, 1/σ²); NARMA-tuned, task-dependent
-```
-
-Switching the active line swaps the activation for every unit, every step. No
-other code path is affected — `A` is a drop-in scalar nonlinearity with the same
-domain and codomain as `tanh`.
+   a sweep alongside `(γ, σ)`.
+5. **Cost.** `A` adds a divide + a couple of FMAs per unit per step over a lone
+   `tanh`; the recurrent block (`dim × history_depth` FMAs) dominates, so overhead
+   is expected to be small — worth a timed run if γ becomes default-nonzero.
+6. **Negative γ / fold regime.** Supported in code; not characterized in the tables
+   above.

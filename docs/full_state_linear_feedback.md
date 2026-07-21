@@ -128,22 +128,14 @@ The existing port contract still holds either way: the reservoir does not own
 the policy. Something *outside* `Reservoir` owns V and stages the drive before
 each `Step`. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md).
 
-### Multi-channel generalization
+### Scalar full-state gain only
 
-The paper treats scalar u and B in R^n. HypercubeESN allows K input channels
-and D feedback channels (block-broadcast layout).
-
-Natural generalizations:
-
-```
-scalar paper form:     φ_k = V · x_k            ∈ R,    V ∈ R^n
-K-channel same-B:      φ_k = V^T x_k            ∈ R^K,  V ∈ R^{n×K}
-D-channel feedback:    φ_k = V^T x_k            ∈ R^D,  V ∈ R^{n×D}
-```
-
-Start with **D = 1 or K = 1** (single scalar full-state gain). Multi-column V
-is more expressive and more expensive to train; promote only if single-column
-plateaus.
+The paper’s main form is scalar: φ_k = V · x_k with V ∈ R^n. **HypercubeESN
+FSF stays in that form permanently** — one scalar φ, V length N. Multi-column /
+multi-channel FSF is not part of the product plan (see
+[design_internal_fsf.md](design_internal_fsf.md)). Task **input** may still be
+multi-channel; **external** feedback may still use D channels. Those are
+different ports.
 
 ### Readout difference (important)
 
@@ -271,8 +263,7 @@ Suggested ownership (proposal, not API yet):
 
 ```
 struct FullStateFeedback {
-    std::vector<float> V;     // size N, or N * D
-    size_t channels = 1;      // 1 for scalar φ
+    std::vector<float> V;     // size N — scalar φ = V · x only
     enum class Path { SameInput, FeedbackPort } path = Path::FeedbackPort;
     float learning_rate = 1e-3f;
 };
@@ -297,8 +288,8 @@ Phase the work so each step is independently testable:
    log train/hold-out loss per iteration; enforce ‖V‖ cap.
 4. **HCNN readout** — freeze best V, train production readout; A/B against
    V = 0 with matched compute (same epochs, same seed).
-5. **Optional** — multi-column V, analytic gradients, online RLS-style V
-   updates for streaming.
+5. **Optional** — analytic gradients, online RLS-style V updates for streaming
+   (not multi-channel V).
 
 ### 4. Config surface (proposed)
 
@@ -307,9 +298,8 @@ Keep defaults off so nothing changes until opted in:
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `full_state_feedback` | false | Master enable |
-| `fsf_path` | `FeedbackPort` | `SameInput` or `FeedbackPort` |
-| `fsf_channels` | 1 | Columns of V / width of φ |
-| `fsf_learning_rate` | 1e-3 | Outer-loop η |
+| `fsf_path` | `FeedbackPort` | `SameInput` or `FeedbackPort` (older sketch; internal B_fsf supersedes) |
+| `fsf_learning_rate` | 1e-3 | Outer-loop η (deferred) |
 | `fsf_max_iters` | 50 | Outer GD iterations |
 | `fsf_v_l2_cap` | (none / large) | Soft stability clamp on ‖V‖_2 |
 | `fsf_probe` | `LinearRidge` | Nested readout used while training V |
