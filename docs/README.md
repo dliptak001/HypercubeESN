@@ -32,7 +32,7 @@ The `examples/` directory contains worked examples, each with a companion
 | Example | What it demonstrates |
 |---------|---------------------|
 | [BasicPrediction](../examples/BasicPrediction.md) | Simplest end-to-end demo — predict a sine wave. Start here. |
-| [SignalClassification](../examples/SignalClassification.md) | Reservoir as feature extractor for multi-class waveform recognition |
+| [SignalClassification](../examples/SignalClassification.md) | Process-mode ID (Cruise/Chatter/Ramp/Spin-up); conf + TTL stream |
 | [StreamingAnomaly](../examples/StreamingAnomaly.md) | Anomaly detection in a simulated industrial process |
 | [StreamingText](../examples/StreamingText/StreamingText.md) | Streaming prequential character memorization of a text corpus |
 | [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger memory-capacity benchmark — the reservoir's linear short-term memory |

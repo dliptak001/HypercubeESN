@@ -1,15 +1,13 @@
-# Signal Classification — Waveform Recognition
+# Signal Classification — Process Mode Recognition
 
 ## What this example demonstrates
 
-The reservoir acts as a feature extractor for pattern recognition.
-Four waveform types — sine, square, triangle, chirp — are fed to the
-reservoir in alternating blocks. The HCNN readout classifies which
-waveform is active at each timestep, using only the reservoir's
-internal state.
-
-This example focuses on multi-class classification, with a confusion
-matrix and transition dynamics analysis.
+A single vibration channel streams through the reservoir while an industrial
+process switches among four operating modes. The HCNN readout names the
+active mode from **reservoir state alone** — not from raw samples. The demo
+shows multi-class classification with a live block-stream monitor (confidence
++ time-to-lock), a structured confusion matrix, and a residual hard pair
+(Cruise ↔ Spin-up) even when overall accuracy is high.
 
 **FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
 in `SignalClassification.cpp`. Log: `FSF: ON|OFF …`.
@@ -17,134 +15,132 @@ See [examples/README.md](README.md).
 
 ## Conceptual background
 
-Reservoir computing is often presented as a time series prediction tool,
-but the reservoir state is also a powerful feature vector for classification.
-At any given timestep, the N-dimensional state encodes the recent input
-history — and different waveforms produce different trajectories through
-state space.
+Reservoir computing is often presented as a time-series prediction tool, but
+the reservoir state is also a strong feature vector for classification. At
+each timestep the N-dimensional state encodes recent input history — and
+different waveforms leave different trajectories through state space.
 
-The key insight: you don't need to design features by hand. The reservoir's
-nonlinear dynamics and fading memory automatically transform the raw input
-into a high-dimensional representation where different signal classes become
-separable.
+You do not design those features by hand. Nonlinear dynamics and fading
+memory lift the raw channel into a space where mode classes become
+separable. With enough capacity, Chatter and Ramp go near-perfect; the
+interesting residual is the smooth-shape pair (Cruise vs Spin-up) and the
+few steps of lock-on delay after each mode switch.
 
-**HCNN: native multi-class.** The CNN readout supports multi-class
-natively via `num_outputs=4` and `ReadoutTask::Classification`, using
-softmax + cross-entropy loss. A single readout handles all four classes.
+**HCNN: native multi-class.** The CNN readout uses `num_outputs=4` and
+`ReadoutTask::Classification` (softmax + cross-entropy). One readout handles
+all four modes.
 
-## The four waveforms
+## The four process modes
 
-| Waveform | Frequency | Character |
-|----------|-----------|-----------|
-| Sine | 0.11 | Smooth, continuous |
-| Square | 0.13 | Discontinuous jumps |
-| Triangle | 0.12 | Piecewise linear |
-| Chirp | 0.10 | Accelerating frequency |
+| Mode | Shape | Frequency | Physical analogy |
+|------|-------|-----------|------------------|
+| Cruise | sine | 0.11 | Smooth harmonic load |
+| Chatter | square | 0.13 | Hard-edged clutch / relay chatter |
+| Ramp | triangle | 0.12 | Linear load ramp |
+| Spin-up | chirp | 0.10 | Accelerating runaway |
 
-Frequencies are deliberately close together and 15% uniform noise is
-added to the signal. This forces the readout to classify by waveform
-shape rather than frequency alone.
+Frequencies are deliberately close. Uniform noise in [-0.18, +0.18] is
+added so the readout must key on **shape**, not tone. Blocks of 40 steps
+are drawn in **random order** with no immediate class repeat — a stream of
+mode switches rather than a fixed 0→1→2→3 cycle.
 
 ## The pipeline
 
 ```
-Waveform blocks ──> Reservoir ──> HCNN: 4-class softmax ──> Class
-  40 steps each      256 neurons    (all 256 vertices)       0,1,2,3
-                     (fixed)
+Mode blocks ──> Reservoir ──> HCNN: 4-class softmax ──> Mode label
+  40 steps        256 neurons    (DIM=8)                 + confidence
+  random order    (fixed)        frozen after Phase 1    + time-to-lock
 ```
 
-**Step by step:**
+**Phase 1 — Learn the modes**
 
-1. **Generate signal** — 75 full cycles through all 4 waveforms (300 blocks
-   total, 40 steps each = 12,000 timesteps). Each block starts at phase 0.
-   Uniform noise in [-0.15, +0.15] is added to every sample.
+1. Build 600 random-order mode blocks (24,000 steps) + 300-step warmup.
+2. Warmup, then collect reservoir states for train+test (70/30 by block).
+3. Train one 4-class HCNN readout on 420 blocks (16,800 steps), 100 epochs.
 
-2. **Warmup** — 300 steps of sine to wash out initial conditions.
+**Phase 2 — Monitor the held-out stream**
 
-3. **Collect** — 12,000 steps with per-step class labels (train=8,400,
-   test=3,600 at 70/30 split).
+1. Score every test step (argmax + softmax confidence).
+2. Print a live table for the first 24 blocks: true / majority pred /
+   block accuracy / mean conf / time-to-lock / status.
+3. Aggregate: overall accuracy, per-mode breakdown, confusion matrix,
+   early-window lock-on curve, TTL stats on switch blocks.
+4. Print a short **What happened** epilogue derived from those numbers.
 
-4. **Train** — Single 4-class HCNN readout on 70% of the data, trained
-   with Adam and cosine LR schedule.
-
-5. **Evaluate** — Confusion matrix, per-class accuracy, and transition
-   dynamics (how quickly the reservoir locks onto a new waveform after a
-   block switch).
+**Time-to-lock (TTL):** first step index where the next `K=3` predictions
+are all correct. Captures how long residual state from the previous mode
+delays a stable ID after a switch.
 
 ## What to expect
 
-### Default configuration
+DIM=8, 256 neurons, `history_depth = 16`, `spectral_radius = 0.95`
+(realized ~0.95), `input_scaling = 0.1`, `leak_rate = 1.0` (struct default),
+FSF OFF. Trained 100 epochs (batch 32, `lr_max = 0.0015` cosine, ~23 s on a
+typical Release build). Exact figures track seed and HCNN init; the
+qualitative pattern is reproducible.
 
-DIM=8, 256 neurons, `history_depth = 16` and `spectral_radius = 0.99`
-(realized ~0.99), `input_scaling = 1.5`, `leak_rate = 1.0` (full replacement —
-the struct default, no override), readout on all 256 vertices. Trained for
-50 epochs (batch 32, `lr_max = 0.0015` cosine, ~4 s). At this capacity the
-task is trivially separable.
+**Overall step accuracy: ~94.5%** (7,200 test steps / 180 blocks)
 
-**Overall accuracy: 100.0%** (3,600 test samples)
+| Mode | Accuracy | Notes |
+|------|----------|-------|
+| Cruise | ~88% | Hard pair with Spin-up (~12% of Cruise steps) |
+| Chatter | ~99% | Strong |
+| Ramp | ~100% | Near-perfect (sharp linear shape) |
+| Spin-up | ~90% | Second-hardest; leaks into Cruise (~10%) |
 
-| Class | Accuracy | Notes |
-|-------|----------|-------|
-| Sine | 100.0% (880/880) | Perfectly separable |
-| Square | 100.0% (880/880) | Perfectly separable |
-| Triangle | 100.0% (920/920) | Perfectly separable |
-| Chirp | 100.0% (920/920) | Perfectly separable |
+Representative confusion (row = actual, % of row):
 
-The confusion matrix is diagonal — zero off-diagonal entries.
+| Actual \ Pred | Cruise | Chatter | Ramp | Spin-up |
+|---------------|--------|---------|------|---------|
+| Cruise | ~88 | ~0 | ~0 | ~12 |
+| Chatter | ~1 | ~99 | ~0 | ~0 |
+| Ramp | ~0 | ~0 | ~100 | ~0 |
+| Spin-up | ~10 | ~0 | ~0 | ~90 |
 
-### Transition lock-on
+**Lock-on (accuracy in first M steps of each block):**
 
-| Steps after switch | Accuracy |
-|--------------------|----------|
-| 0-3 | 100.0% |
-| 0-5 | 100.0% |
-| 0-10 | 100.0% |
-| 0-20 | 100.0% |
-| Entire block | 100.0% |
+| Window | Accuracy |
+|--------|----------|
+| 0–3 | ~84% |
+| 0–5 | ~84% |
+| 0–10 | ~85% |
+| 0–20 | ~89% |
+| Entire block | ~94.5% |
 
-Instant lock-on after each block transition. With `leak_rate = 1.0`,
-neurons fully replace their state at each step — there's no carryover
-from the previous waveform to slow recognition of the new one.
+**TTL (switch blocks, K=3 consecutive correct):** mean ~2.1 steps, max ~17;
+all switch blocks eventually lock under this config.
 
-### Making the task harder
+**What to notice**
 
-This default configuration leaves no headroom to study. To recover an
-interesting tradeoff:
+- **Strong overall, structured residual.** Chatter and Ramp are essentially
+  solved; almost all remaining error sits in Cruise ↔ Spin-up.
+- **Cruise ↔ Spin-up is the hard pair.** Smooth harmonic vs accelerating
+  chirp share early-block shape under noise.
+- **Early window costs more.** First 3–10 steps after a switch sit ~10
+  points below full-block accuracy — residual dynamics from the previous
+  mode, not a broken classifier. Mean TTL ~2 steps.
+- **Stream statuses.** `LOCKED` = high block accuracy + confidence;
+  `SWITCHING` = TTL still counting after a mode change; `SETTLING` /
+  `CONFUSED` / `NO LOCK` mark partial or failed locks.
 
-- **Drop DIM.** At DIM=5 (32 neurons) the reservoir's representational
-  capacity becomes the limit and per-class errors appear.
-- **Shrink blocks.** Smaller `block_size` (e.g., 10-20) means the
-  transition zone dominates each block; lock-on speed starts to matter.
-- **Add a leaky integrator.** `cfg.reservoir.leak_rate < 1.0` makes
-  old-waveform dynamics persist briefly into a new block, slowing
-  lock-on and producing measurable transition-zone errors.
-- **More noise.** Raising `NOISE_LEVEL` toward 0.25+ blurs the shape
-  cues the readout relies on.
+### Making it harder / easier
 
-> Note: `NOISE_LEVEL` (input noise, 0.15) is added to the *signal* itself and
-> is part of the task — it perturbs the waveform the readout must classify,
-> forcing it to key on shape rather than amplitude.
+- **Easier:** more epochs, lower `NOISE_LEVEL` (e.g. 0.10), or longer
+  `block_size` (more steady-state samples per mode).
+- **Harder:** drop DIM to 6 (N=64), `NOISE_LEVEL` 0.25+, `block_size` 15–20,
+  or `leak_rate < 1.0` so the previous mode hangs longer into the next block.
+- **More memory hangover:** try `cfg.reservoir.leak_rate = 0.5` and watch
+  mean TTL and the 0–5 window climb.
 
 ## Things to try
 
-- **Leak rate.** Set `cfg.reservoir.leak_rate` in the source. The
-  example uses the struct default 1.0 (instant lock-on, no
-  carryover). Try 0.65 (some history retention, slower transitions)
-  or 0.3 (longer memory, may improve steady-state accuracy on harder
-  variants but hurts lock-on).
-
-- **Block size.** The default is 40 steps. Try 150 for an easier task
-  (more context per block) or 20 for a harder one (transition zone
-  dominates each block).
-
-- **Noise level.** `NOISE_LEVEL` is 0.15. Raise to 0.25+ for a harder
-  task, or remove noise entirely to see the floor.
-
-- **DIM.** The default is DIM=8 (256 neurons). Try DIM=5 (32 neurons)
-  to see capacity-limited behavior with visible per-class confusion.
-
-- **HCNN epochs.** The example uses 50. Try 25 to see undertrained
-  behavior; 200 or 1000 to push the loss further on harder variants.
+- **DIM.** Default is 8. Try 6 (capacity-starved residual grows) or 5.
+- **Noise.** `NOISE_LEVEL` is 0.18. Raise toward 0.25+ or cut to 0.05.
+- **Block size.** Default 40. Short blocks make TTL dominate the score.
+- **Epochs.** Default 100. Try 50 for a quicker / slightly weaker readout.
+- **Leak rate.** Struct default 1.0. Try 0.65 for slower washout after switches.
+- **Lock streak `lock_k`.** Default 3. Raise to 5 for a stricter “locked” definition.
+- **FSF.** Toggle full-state feedback and compare overall accuracy / mean TTL.
 
 ## Build and run
 

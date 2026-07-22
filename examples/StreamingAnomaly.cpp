@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    constexpr size_t DIM = 8;
+    constexpr size_t DIM = 7;
     constexpr size_t N = 1ULL << DIM;
     constexpr size_t warmup = 500;
     constexpr size_t prime_steps = 4000;
@@ -88,18 +88,24 @@ int main(int argc, char* argv[])
 
     ESNConfig cfg;
     cfg.reservoir.dim = DIM;
-    cfg.reservoir.spectral_radius = 0.95; // A(x): 0.9,  tanh(x): 0.99
-    cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 1.9
+    cfg.reservoir.history_depth = 24;
+    cfg.reservoir.spectral_radius = 0.99;
+    cfg.reservoir.input_scaling = 0.1;
     cfg.readout.task = ReadoutTask::Regression;
     cfg.readout.epochs = 1000;
     cfg.readout.momentum = 0.9;
     cfg.readout.conv_channels = 8;
     cfg.readout.batch_size = 64;
-    cfg.readout.activation = ReadoutActivation::TANH; // TANH / RELU / LEAKY_RELU / NONE
-    // Full-state linear feedback (internal). Edit these three for A/B.
+    cfg.readout.activation = ReadoutActivation::TANH;
+
+    // Full-state linear feedback (internal).
     cfg.reservoir.full_state_feedback = false;
     cfg.reservoir.fsf_seed = 4415756;
     cfg.reservoir.fsf_scaling = 0.003f;
+
+    cfg.readout.num_layers = 1;
+    cfg.readout.conv_channels = 16;
+    cfg.readout.use_pooling = false;
     ESN esn(cfg);
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth
@@ -202,14 +208,19 @@ int main(int argc, char* argv[])
     std::cout << "--- What happened ---\n\n";
     std::cout << "The reservoir learned to predict normal process output during priming.\n";
     std::cout << "During monitoring, prediction error is the anomaly signal:\n\n";
-    std::cout << "  Noise spike:  RMSE jumps ~12x -- random disturbance is unpredictable.\n";
-    std::cout << "                Recovery is instant (next normal window back to baseline).\n\n";
-    std::cout << "  DC drift:     RMSE rises dramatically -- the model didn't learn this offset.\n";
-    std::cout << "                The leaky integrator compounds the error across steps.\n";
-    std::cout << "                Takes 1-2 windows to wash out after recovery.\n\n";
-    std::cout << "  Freq shift:   RMSE spikes -- changed dynamics break the learned pattern.\n";
-    std::cout << "                Slowest recovery: reservoir needs 1-2 extra windows to\n";
-    std::cout << "                wash out the altered frequency from its internal state.\n";
+    std::cout << "  Noise spike:  RMSE jumps ~12x (here ~11.6-12.1x) -- random disturbance\n";
+    std::cout << "                is unpredictable. Recovery is essentially instant: the\n";
+    std::cout << "                first normal window is only mildly elevated (~1.4x),\n";
+    std::cout << "                then back to baseline. No washout flag.\n\n";
+    std::cout << "  DC drift:     RMSE rises to ~52-53x -- the model never saw this offset.\n";
+    std::cout << "                Strongest mid-tier structured signal. One residual normal\n";
+    std::cout << "                window sits at ~7x (under the 10x threshold, not flagged),\n";
+    std::cout << "                then baseline. No washout flag.\n\n";
+    std::cout << "  Freq shift:   RMSE rises to ~56-62x -- changed dynamics break the pattern.\n";
+    std::cout << "                Slowest recovery: one extra \"normal\" window is still ~30x\n";
+    std::cout << "                and flagged while recurrent/delay-line state washes out.\n";
+    std::cout << "                That single washout flag is expected (10 total = 9 anomaly\n";
+    std::cout << "                windows + 1 washout), not a false positive.\n";
 
     return 0;
 }

@@ -48,26 +48,32 @@ your data volume.
 
 ## SignalClassification
 
-Classify four waveform types — sine, square, triangle, chirp — from reservoir state
-alone. The HCNN readout performs native 4-class classification (softmax + cross-entropy),
-producing a confusion matrix and transition dynamics analysis showing how quickly the
-reservoir locks on after a waveform switch.
+Name which of four industrial process modes is active (Cruise / Chatter / Ramp /
+Spin-up — sine, square, triangle, chirp under the hood) from reservoir state alone.
+DIM=8 gives strong overall ID; residual error clusters on Cruise ↔ Spin-up, with
+a short lock-on delay after each mode switch. A live block-stream table reports
+accuracy, softmax confidence, and time-to-lock.
 
 **What it shows:**
-- Reservoir as a feature extractor for pattern recognition
-- HCNN native multi-class classification
-- Confusion matrix and per-class accuracy breakdown
-- Transition dynamics: accuracy vs steps after waveform switch
+- Reservoir as a feature extractor for multi-class mode ID
+- HCNN native 4-class classification (softmax + cross-entropy)
+- Live stream monitor: conf, TTL, LOCKED / SWITCHING / SETTLING
+- Confusion matrix + early-window lock-on + mean time-to-lock
 
 **Expected output (abbreviated):**
 ```
 === HypercubeESN: Signal Classification ===
 
-Overall accuracy: 100.0%
+Config: DIM=8  N=256  History Depth=16  ...  Classes=4
+  FSF: OFF
 
-  Steps after switch  | Accuracy
-  0 - 3               |  100.0%
-  Entire block        |  100.0%
+  Blk | True      Pred      | Acc%  Conf  TTL | Status
+    6 | Cruise    Cruise   |   82  0.81    6 | SWITCHING
+   11 | Cruise    Cruise   |  100  0.99    0 | LOCKED
+
+Overall step accuracy: ~94.5%
+  Cruise ~88%  Chatter ~99%  Ramp ~100%  Spin-up ~90%
+  Mean TTL (switch blocks): ~2.1 steps
 ```
 
 **Make it yours:** Add your own waveform types to `GenerateWaveform()` and increase
@@ -91,15 +97,17 @@ separated by normal operation to show both detection and recovery.
 ```
 === HypercubeESN: Streaming Anomaly Detection ===
 
-Config: DIM=8  N=256  History Depth=16  Leak=1  Input Scaling=1.9  Threshold=10x baseline
+Config: DIM=7  N=128  History Depth=24  Leak=1  Input Scaling=0.1  Threshold=10x baseline
+  FSF: OFF
 
-Baseline (prime test, RMSE): ~0.0061   threshold ~0.061
+Baseline (prime test, RMSE): ~0.0060   threshold ~0.060
 
   Window | Condition   |    RMSE     Ratio | Status
       1  | Normal      |  ~0.006     ~1.0  |
-      6  | Noise spike |  ~0.072    ~12.0  | ** ANOMALY **
-     14  | DC drift    |  ~0.27     ~44.0  | ** ANOMALY **
-     22  | Freq shift  |  ~0.23     ~38.0  | ** ANOMALY **
+      6  | Noise spike |  ~0.073    ~12.1  | ** ANOMALY **
+     14  | DC drift    |  ~0.32     ~52.4  | ** ANOMALY **
+     22  | Freq shift  |  ~0.38     ~62.3  | ** ANOMALY **
+     25  | Normal      |  ~0.18     ~30.5  | ** ANOMALY **  (washout)
 ```
 
 **Make it yours:** Replace `GenerateProcess()` with your real sensor data feed.
