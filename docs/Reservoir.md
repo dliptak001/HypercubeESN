@@ -50,7 +50,7 @@ Everything that follows serves those two.
 | `seed` | 73895 | master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
 | `spectral_radius` | 0.99 | **> 0** (target for recurrent-block rescale) |
 | `leak_rate` | 1.0 | **(0, 1]** — 1 = full replacement |
-| `input_scaling` | 0.5 | DIM-invariant drive (weights × `input_scaling`/√dim) |
+| `input_scaling` | 0.5 | drive strength; weights × `input_scaling`/√dim (fan-in variance; retune per task/DIM) |
 | `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
 | `history_floor` (K) | 1.0 | **[0.1, 1.0]** — deepest-slice taper; 1.0 = no taper |

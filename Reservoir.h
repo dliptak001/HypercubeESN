@@ -26,7 +26,7 @@ struct ReservoirConfig
     // vertices at reset-zero: benign zero sources that still receive drive via
     // the neighbor gather).
     size_t num_external_feedback_channels = 0;
-    float external_feedback_scaling = 0.5f; // DIM-invariant: weights × scaling/√dim
+    float external_feedback_scaling = 0.5f; // weights × scaling/√dim (fan-in; retune per task/DIM)
 
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
     // When false: zero FSF allocation. When true: B_fsf + V (length N). From

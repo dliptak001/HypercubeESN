@@ -163,8 +163,8 @@ Creates the reservoir; the readout consumes all N reservoir vertices. The reserv
 |-----------|------|---------|-------------|
 | `reservoir_hypercube_dimension` | `int` | — | Hypercube dimension (5-16). N = 2^dim neurons. |
 | `seed` | `int` | `73895` | RNG seed for weight initialization. Every seed produces a valid weight topology; different seeds yield measurably different performance. `73895` is a surveyed default; run a seed survey to tune for your task. |
-| `spectral_radius` | `float` | `0.99` | Target spectral radius. DIM-invariant across all dim values (vertex-transitive topology property). No per-size re-tuning needed. |
-| `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights carry a 1/√dim fan-in normalization, so a given value yields the same `tanh` drive at any dim. (The legacy `0.02` was a normalization artifact and no longer applies.) |
+| `spectral_radius` | `float` | `0.99` | Target spectral radius of the recurrent operator. Tune per task (and when you change dim); vertex-transitive topology does not imply one value is optimal at every size. |
+| `input_scaling` | `float` | `0.5` | Input drive coefficient. Weights are drawn U(−1,1) then scaled by `input_scaling / √dim` so each vertex’s dim-neighbor input sum has fan-in-normalized variance. Local construction only — not a claim that one scaling transfers across dim or task. (The legacy `0.02` was a normalization artifact and no longer applies.) |
 | `leak_rate` | `float` | `1.0` | Leaky integrator coefficient. 1.0 = full replacement. < 1.0 adds smoothing. |
 | `num_inputs` | `int` | `1` | Number of input channels. Channel k drives the contiguous vertex block `[k·N/num_inputs, (k+1)·N/num_inputs)`. |
 | `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |

@@ -221,7 +221,7 @@ struct ReservoirConfig
     uint64_t seed            = 73895;
     float    spectral_radius = 0.99f;
     float    leak_rate       = 1.0f;
-    float    input_scaling   = 0.5f;   // DIM-invariant input drive
+    float    input_scaling   = 0.5f;   // weights × input_scaling/√dim (fan-in)
     size_t   num_inputs      = 1;
     size_t   history_depth   = 16;
     float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
@@ -251,7 +251,7 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `seed` | `uint64_t` | `73895` | Master RNG seed (recurrent / input / external-feedback / bias / SR-probe substreams). Different seeds produce measurably different performance; screen per DIM/task and set explicitly. |
 | `spectral_radius` | `float` | `0.99` | Target spectral radius of the recurrent operator (the MN×MN augmented companion operator when `history_depth` > 1). Controls the echo-state property — how quickly past inputs fade. Tune per DIM/task. |
 | `leak_rate` | `float` | `1.0` | Leaky-integrator coefficient. `state = (1 - leak_rate) * old_output + leak_rate * tanh(drive)`. At 1.0, each step fully replaces state; values < 1.0 add explicit temporal carryover. |
-| `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(-1,1) then scaled by `input_scaling / √DIM`; the `1/√DIM` fan-in normalization makes a given value deliver the same `tanh` drive at any DIM (**DIM-invariant by construction** — not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3). |
+| `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(−1,1) then scaled by `input_scaling / √DIM` so each vertex’s dim-neighbor input sum has fan-in-normalized variance. That is local weight construction, not a promise that one value is optimal at every DIM or task (not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3); retune when you change size or task. |
 | `num_inputs` | `size_t` | `1` | Number of input channels; must divide N evenly. In multi-input mode (K channels), channel k drives the contiguous vertex block `[k*N/K, (k+1)*N/K)`. |
 | `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
 | `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |

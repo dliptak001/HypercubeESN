@@ -26,7 +26,7 @@ staged via `InjectExternalFeedback`. Do not overload this port for FSF.
 
 - **Buffer** `vtx_ext_feedback_`: allocated only when `num_external_feedback_channels > 0`.
 - **Weight block** drawn from the master-seed **ExternalFeedback** substream (label 3).
-- **Fan-in** `external_feedback_scaling / √dim` (DIM-invariant).
+- **Fan-in** `external_feedback_scaling / √dim` (local variance normalization of the dim-neighbor gather; not a claim that the scaling transfers across DIM).
 - **Outside SR rescale.**
 - **Per-step:** stage → `Step` consumes → clear. Not in snapshots.
 

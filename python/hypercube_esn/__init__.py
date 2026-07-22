@@ -51,12 +51,14 @@ class ESN:
         seed; the realization a seed yields measurably affects performance).
     spectral_radius : float
         Target spectral radius for the recurrent weight matrix. Default: 0.99.
-        DIM-invariant: the same value works at every dim.
+        Tune per task (and per dim when you change size); topology alone does
+        not make one value optimal at every dim.
     input_scaling : float
-        Input drive coefficient. Input weights carry a 1/√dim fan-in
-        normalization, so a given value yields the same tanh drive at any dim.
-        Default: 0.5. (The legacy 0.02 was a normalization artifact and no
-        longer applies.)
+        Input drive coefficient. Input weights are drawn U(-1,1) then scaled by
+        input_scaling/√dim so each vertex's dim-neighbor input sum has
+        fan-in-normalized variance. That is a local weight construction choice,
+        not a promise that one scaling is best at every dim or task. Default:
+        0.5. (The legacy 0.02 was a normalization artifact and no longer applies.)
     leak_rate : float
         Leaky integrator coefficient. 1.0 = full replacement (default),
         < 1.0 adds temporal smoothing.

@@ -129,10 +129,12 @@ void Reservoir::Initialize()
 
     float* pW = vtx_weight_.get();
 
-    // Input weights: 1/sqrt(dim) normalizes the dim-neighbor input fan-in so a given
-    // input_scaling delivers DIM-invariant input drive. Unlike the recurrent block
-    // (w_scaling, below) there is NO history factor: the input path has no delay
-    // line — it sums dim neighbor inputs per vertex (UpdateState), independent of M.
+    // Input weights: 1/sqrt(dim) normalizes dim-neighbor input fan-in variance so
+    // the linear gather does not grow with degree. This is local construction only
+    // — not a claim that one input_scaling is optimal at every DIM or task.
+    // Unlike the recurrent block (w_scaling, below) there is NO history factor:
+    // the input path has no delay line — it sums dim neighbor inputs per vertex
+    // (UpdateState), independent of M.
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(in_rng)) * in_scaling;

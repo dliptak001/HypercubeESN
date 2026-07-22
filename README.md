@@ -282,7 +282,7 @@ HypercubeESN/
 
 | Document | Covers |
 |---|---|
-| [docs/Reservoir.md](docs/Reservoir.md) | Hypercube graph, connectivity, deep-vertex history depth, leaky integrator, spectral-radius tuning, DIM-invariant input drive |
+| [docs/Reservoir.md](docs/Reservoir.md) | Hypercube graph, connectivity, deep-vertex history depth, leaky integrator, spectral-radius tuning, input fan-in scaling |
 | [docs/Readout.md](docs/Readout.md) | HCNN readout architecture, training algorithm, streaming mode, ESN interface |
 | [docs/Python_SDK.md](docs/Python_SDK.md) | Python SDK: pip install, fit/predict API, streaming, persistence |
 | [docs/CPP_SDK.md](docs/CPP_SDK.md) | C++ static library: build, install, find_package usage, API reference |
