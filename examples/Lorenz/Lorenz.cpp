@@ -30,7 +30,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.input_scaling = config::INPUT_SCALING;
     cfg.reservoir.leak_rate = config::LEAK_RATE;
     cfg.reservoir.history_depth = config::HISTORY_DEPTH;
-    cfg.reservoir.bias_scaling = 0.0;
+    cfg.reservoir.bias_scaling = 0.01;
     cfg.reservoir.history_floor = 1.0;
 
     // FSF A/B: set config::FULL_STATE_FEEDBACK in Lorenz.h (independent of external fb).
@@ -47,12 +47,14 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout_slices = config::READOUT_SLICES;
     cfg.aux_input_dim = config::AUX_INPUT_DIM;
     cfg.readout.use_pooling = config::USE_POOLING;
-    cfg.readout.num_layers = 1; // TODO num_layers = 2 with no pooling.
+    cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9;
     cfg.readout.conv_channels = 8;
     // One level of parallelism: the seed survey owns outer jthreads. Keep each
     // HCNN single-threaded so we do not spawn (hw−1) idle workers per trial.
     cfg.readout.num_threads = 1;
+    cfg.readout.task = ReadoutTask::Regression;
+    cfg.readout.activation = ReadoutActivation::TANH;
     return cfg;
 }
 

@@ -196,8 +196,9 @@ Per-step quantities:
   newest (`Outputs()`, recurrent age 0). Slice `j` is age `j`.
 - `vtx_input_[v]` — staged input field; cleared after every `Step()`.
 - `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
-- `vtx_fsf_[v]` — staged FSF channel (all entries φ) if enabled; filled in `Step`, cleared after.
 - `fsf_v_` — vector **V** (length N) used only for φ = V·x; not cleared by `Clear`.
+- `fsf_phi_` — scalar φ = V·x for the current `Step` when FSF is on (no length-N
+  staging buffer; recomputed each step, not a snapshot field).
 - `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
   cleared by `Clear` / not in snapshots.
 
@@ -209,12 +210,13 @@ drives, writes only `vtx_state_`.
 ```
 InjectInput(...)       // optional, each channel you need this step
 InjectExternalFeedback(...)  // optional, if D > 0
-// FSF (if enabled): staged automatically inside Step from V·x
-Step()                 // update all neurons, age ring, clear drives
+// FSF (if enabled): φ = V·x formed automatically inside Step
+Step()                 // update all neurons, age ring, clear staged drives
 // read Outputs() / SliceAt(age)
 ```
 
-Both drives are **consumed and zeroed** by `Step()` — re-stage every timestep.
+Staged input / external-feedback are **consumed and zeroed** by `Step()` — re-stage
+every timestep. FSF needs no injection; φ is formed from the published state.
 
 ### Phase 1 — compute new states (per vertex `v`)
 
@@ -228,9 +230,10 @@ for i = 0 .. DIM-1:
 for i = 0 .. DIM-1:
     s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
 
-# (b2) FSF — vtx_fsf_ filled with φ at start of Step (omitted if FSF off)
+# (b2) FSF — φ = V·x computed once at start of Step (omitted if FSF off)
+#           uniform drive: every "neighbor" carries the same scalar φ
 for i = 0 .. DIM-1:
-    s += fsf[v XOR (1<<i)] * W_fsf[v][i]
+    s += φ * W_fsf[v][i]      # ≡ φ · sum_i W_fsf[v][i]
 
 # (c) recurrent — M slices × DIM axes
 for j = 0 .. M-1:
@@ -265,7 +268,7 @@ rotate slice_ptrs_ by one          # oldest physical slot becomes new slice 0
 memcpy(slice_ptrs_[0], state, N)   # publish
 memset(input, 0, N)
 if ext-fb configured: memset(ext_fb, 0, N)
-if FSF enabled: memset(fsf, 0, N)
+# FSF: no staging buffer to clear; φ is recomputed next Step from V and slice 0
 ```
 
 Shipped `Step()` runs the vertex loop **serially** (embarrassingly parallel in
@@ -304,11 +307,13 @@ Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), 
 When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
 
 1. V is U(−1,1)^N from `fsf_seed` (φ only)
-2. φ = V · x
-3. Fill every entry of `vtx_fsf_` with φ (same as one external-feedback channel)
-4. XOR-gather through **B_fsf** (`fsf_scaling`/√dim — only FSF loudness knob)
+2. φ = V · x (one scalar for the whole reservoir this step)
+3. Gather through **B_fsf**: `s += φ * B_fsf[v,i]` over dim neighbors
+   (`fsf_scaling`/√dim — only FSF loudness knob)
 
-Zero allocation when disabled. No Set/Get of V. See
+This is algebraically the same as a uniform external-feedback D=1 field (every
+vertex staged to φ), but there is **no length-N staging buffer** — only the
+scalar `fsf_phi_`. Zero allocation when disabled. No Set/Get of V. See
 [full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)

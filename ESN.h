@@ -113,10 +113,10 @@ public:
     /// on the external-feedback port (e.g. previous-step prediction for free-run).
     /// If this ESN was built with @c full_state_feedback, each step **also**
     /// applies internal full-state feedback automatically inside the reservoir:
-    /// φ = V·x, fill @c vtx_fsf_ with φ (same as external feedback D=1), then
-    /// XOR-gather through B_fsf. V is fixed at construction from @c fsf_seed
-    /// (U(-1,1)); strength via @c fsf_scaling on B_fsf. Nothing is passed here
-    /// for FSF.
+    /// φ = V·x (scalar), then gather φ through B_fsf (equivalent to a uniform
+    /// external-feedback D=1 field, without a length-N staging buffer). V is
+    /// fixed at construction from @c fsf_seed (U(-1,1)); strength via
+    /// @c fsf_scaling on B_fsf. Nothing is passed here for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.
     /// @param external_feedback   nullptr to skip external feedback; otherwise

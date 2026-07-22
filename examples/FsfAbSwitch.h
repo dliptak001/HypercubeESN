@@ -4,7 +4,7 @@
 /// @brief Shared A/B controls for full-state linear feedback (FSF) in examples.
 ///
 /// When enabled: V ~ U(-1,1) from fsf_seed; B_fsf from same seed with fsf_scaling.
-/// Step: φ = V·x, fill vtx_fsf_ with φ (ext-fb D=1). Strength: fsf_scaling only.
+/// Step: φ = V·x (scalar), gather φ through B_fsf. Strength: fsf_scaling only.
 ///
 /// See docs/full_state_linear_feedback.md.
 

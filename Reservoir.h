@@ -29,10 +29,10 @@ struct ReservoirConfig
     float external_feedback_scaling = 0.5f; // DIM-invariant: weights × scaling/√dim
 
     // --- Full-state linear feedback (internal drive; construction-only enable) ---
-    // When false: zero FSF allocation. When true: B_fsf + staging buffer + V
-    // (length N). From standalone fsf_seed (not mixed from `seed`): first N → V as
-    // U(-1,1) with no scale baked in; then N·dim → B_fsf × fsf_scaling/√dim.
-    // Each Step: φ = V·x, fill vtx_fsf_ with φ (ext-fb D=1 style), gather via B_fsf.
+    // When false: zero FSF allocation. When true: B_fsf + V (length N). From
+    // standalone fsf_seed (not mixed from `seed`): first N → V as U(-1,1) with no
+    // scale baked in; then N·dim → B_fsf × fsf_scaling/√dim.
+    // Each Step: φ = V·x (scalar), then s += φ · B_fsf[v,i] over dim neighbors.
     // V only forms φ; loudness is fsf_scaling on B_fsf. See docs/full_state_linear_feedback.md.
     bool full_state_feedback = false;
     uint64_t fsf_seed = 1;
@@ -85,21 +85,23 @@ struct ReservoirConfig
 /// ```
 ///   InjectInput(...)                 // stage task input
 ///   InjectExternalFeedback(...)      // optional — caller-owned closed loop
-///   Step()                           // may also stage internal FSF (φ = V·x), then
-///                                    // update, age history, clear all staged drives
+///   Step()                           // may also form internal FSF φ = V·x, then
+///                                    // update, age history, clear staged drives
 /// ```
 /// Injected drives are *consumed and cleared* by every @ref Step. Full-state
-/// feedback (when enabled) is staged **inside** @ref Step from the current
-/// published state — the caller does not inject it. Newest state: @ref Outputs.
+/// feedback (when enabled) is formed **inside** @ref Step from the current
+/// published state (scalar φ = V·x) — the caller does not inject it. Newest
+/// state: @ref Outputs.
 ///
 /// ## Optional extras (all off by default)
 ///   - **External feedback** (@c num_external_feedback_channels > 0): caller-owned
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
 ///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     each step: φ = V·x, fill @c vtx_fsf_ with φ (same as one external-feedback
-///     channel), gather through B_fsf. V is U(-1,1) from @c fsf_seed; B_fsf from
-///     same seed with @c fsf_scaling. Outside SR. Zero alloc when off.
+///     each step: φ = V·x (scalar), then gather φ through B_fsf. Equivalent to
+///     a uniform D=1 external-feedback field without a length-N staging buffer.
+///     V is U(-1,1) from @c fsf_seed; B_fsf from same seed with @c fsf_scaling.
+///     Outside SR. Zero alloc when off.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
@@ -149,7 +151,8 @@ public:
     /// @brief Reset dynamical state and history to zero and re-home the slice ring
     /// (undriven live state). Weights, bias, and FSF gain V (if enabled) are left
     /// unchanged — construction-time parameters, not dynamical state. Staged input /
-    /// external-feedback / FSF buffers are cleared.
+    /// external-feedback buffers are cleared (FSF has no staging buffer; φ is
+    /// recomputed each @ref Step).
     void Clear();
 
     /// @brief The current reservoir state — the most-recent history slice; this is
@@ -217,10 +220,11 @@ public:
     /// live vertex state plus every history slice in logical age order (slice 0 =
     /// most recent).
     ///
-    /// The per-step staged drives (input, external feedback, FSF staging buffer)
-    /// are NOT captured — they are consumed and cleared by every @ref Step, so a
-    /// snapshot taken between steps has nothing staged. Weights and FSF gain V are
-    /// not included (both are construction-time params from config + seeds): a
+    /// The per-step staged drives (input, external feedback) are NOT captured —
+    /// they are consumed and cleared by every @ref Step, so a snapshot taken
+    /// between steps has nothing staged. FSF has no staging buffer (φ is formed
+    /// each step from V and the published state). Weights and FSF gain V are not
+    /// included (both are construction-time params from config + seeds): a
     /// snapshot is only meaningful for the reservoir it was taken from (or one
     /// rebuilt from an identical config).
     struct Snapshot
@@ -240,10 +244,10 @@ public:
     /// @brief Bit-exact restore of a state captured by @ref TakeSnapshot.
     ///
     /// Copies the state and history back, re-homes the slice ring to the canonical
-    /// rotation, and clears staged input / external feedback / FSF buffers — so the
-    /// post-restore trajectory depends on the snapshot, construction-time FSF
-    /// params (if enabled), and subsequent injections. Restoring and replaying the
-    /// same drives on an identically configured reservoir is bit-exact.
+    /// rotation, and clears staged input / external feedback — so the post-restore
+    /// trajectory depends on the snapshot, construction-time FSF params (if
+    /// enabled), and subsequent injections. Restoring and replaying the same
+    /// drives on an identically configured reservoir is bit-exact.
     /// @throws std::invalid_argument if the snapshot's buffer sizes do not match
     ///         this reservoir's N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
@@ -303,9 +307,8 @@ private:
     uint64_t fsf_seed_ = 1;
     float fsf_scaling_ = 0.5f;
     size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
-    //std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer
-    std::vector<float> fsf_v_; // full-state vector V ∈ U(-1,1)^N when enabled (empty when off)
-    float fsf_phi_;
+    std::vector<float> fsf_v_; // V ∈ U(-1,1)^N when enabled (empty when off); φ only
+    float fsf_phi_ = 0.0f;     // φ = V·x for the current Step (no length-N staging buffer)
 
     /**** per neuron bias ****/
     float bias_scaling_;

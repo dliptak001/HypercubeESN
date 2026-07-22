@@ -145,6 +145,20 @@ Shared config: `sr 0.92, leak 1, input_scaling 0.5`, 600 epochs, warmup 300 /
 collect 8000 (train 6400 / test 1600). Full per-seed logs live in
 `NARMA{10,20,30}_DIM{10,12}_Raw.txt`.
 
+**Note — `collect` is a first-class knob.** Longer post-warmup series cut test
+NRMSE hard on this architecture (Linear ~8k features after pool/flatten): a
+single-seed NARMA-30 / DIM-10 / M=16 spot check went
+`collect 8000 → NRMSE 0.0787`, `16000 → 0.0713`, `32000 → 0.0629` (warmup 300,
+FSF off). That is mostly sample count vs readout capacity (at 8k train is
+under-parameterized relative to features), not a change in NARMA dynamics.
+`NARMA.cpp` comments 8000 as the low-res default and 32000 as high-res.
+
+For **literature-style** comparison there is no single standard length, but
+classic NARMA-10 setups often sit around train ~2k–5k / test ~1k–2k (total
+collect ~3k–6k) with washout ~100–300. Hold `collect` fixed when comparing M /
+seed / FSF; use **8000** to match the table above, not 32k absolute scores
+against classic bands.
+
 > **Untuned baseline — read these numbers accordingly.** Every cell above uses
 > the **same** `sr 0.92, leak 1, input_scaling 0.5`, held fixed across *all* DIM ×
 > M × order combinations. Nothing here is tuned per cell. These hyperparameters

@@ -81,10 +81,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
 
     num_fsf_weights_ = fsf_enabled_ ? n_ * dim_ : 0;
     if (fsf_enabled_)
-    {
-        //vtx_fsf_.reset(AllocAligned(n_));
         fsf_v_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
-    }
 
     Initialize();
 }
@@ -253,17 +250,15 @@ void Reservoir::Initialize()
 
 void Reservoir::Step()
 {
-    // FSF: φ = V·x (only use of V). Stage like external feedback D=1 — write the
-    // same scalar onto every entry of vtx_fsf_; B_fsf multiplies in UpdateState.
+    // FSF: φ = V·x (only use of V). Uniform D=1 external-feedback is equivalent
+    // to this scalar — no length-N staging buffer. B_fsf multiplies in UpdateState.
     if (fsf_enabled_)
     {
         const float* x = slice_ptrs_[0];
         double acc = 0.0;
         for (size_t i = 0; i < n_; ++i)
             acc += static_cast<double>(fsf_v_[i]) * static_cast<double>(x[i]);
-        //const float phi = static_cast<float>(acc);
         fsf_phi_ = static_cast<float>(acc);
-        //std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
     }
 
     const float* p_vtx_prev = slice_ptrs_[0];
@@ -281,8 +276,6 @@ void Reservoir::Step()
 
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    //if (fsf_enabled_)
-    //    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 // --- Lorentzian envelope (no exp; heavier tails) ---------------------------
@@ -327,10 +320,10 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
 
     if (fsf_enabled_)
     {
+        // Uniform φ (all "neighbors" carry the same scalar) → φ · row-sum(B_fsf[v]).
         const float* fsw = &vtx_weight_[num_input_weights_ + num_ext_feedback_weights_] + v * dim_;
         for (size_t i = 0; i < dim_; i++)
             s += fsf_phi_ * fsw[i];
-            //s += vtx_fsf_[v ^ NearestMask(i)] * fsw[i];
     }
 
     for (size_t i = 0; i < history_depth_; i++)
@@ -408,12 +401,11 @@ void Reservoir::RestoreSnapshot(const Snapshot& snap)
         slice_ptrs_[i] = &vtx_output_history_[i * n_];
 
     // Staged drives are not part of a snapshot; clear them so the post-restore
-    // trajectory depends only on the snapshot and subsequent injections (+ FSF).
+    // trajectory depends only on the snapshot and subsequent injections (+ FSF
+    // formed inside the next Step from V and the restored published state).
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    //if (fsf_enabled_)
-    //    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 ReservoirConfig Reservoir::GetConfig() const
@@ -457,9 +449,8 @@ void Reservoir::Clear()
 
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    //if (fsf_enabled_)
-    ///    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
-    // fsf_v_ (V) is a parameter — not cleared
+    // fsf_v_ (V) and B_fsf are construction-time parameters — not cleared.
+    // fsf_phi_ is recomputed at the start of each Step when FSF is on.
 
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));
 
