@@ -47,10 +47,15 @@ int main(int argc, char* argv[])
     const std::vector<size_t> sweep_M = {16};//{28, 30, 32, 34, 36};
 
     // Second sweep dimension: reservoir-init seed. The target series depends on
-    // narma_order + data_seed only (NOT the reservoir seed), so every (seed, M)
-    // cell scores the byte-identical task -- the spread across seeds at a fixed M
-    // is the run-to-run variance, which tells us whether the M-curve shape is real.
-    const std::vector<uint64_t> sweep_seeds = {73896};    //{73896, 73897, 73898};
+    // narma_order + data_seed only (NOT the reservoir / FSF seeds), so every
+    // (seed, fsf_seed, M) cell scores the byte-identical task -- the spread
+    // across seeds at a fixed M is the run-to-run variance, which tells us
+    // whether the M-curve shape is real.
+    const std::vector<uint64_t> sweep_reservoir_seeds = {73896};    //{73896, 73897, 73898};
+
+    // Third sweep dimension: FSF V / B_fsf draw seed. Independent of reservoir
+    // seed; only matters when full_state_feedback is on (see fsf_ab::kEnable).
+    const std::vector<uint64_t> sweep_fsf_seeds = {4415756, 4415757, 4415758, 4415759, 4415760};
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
               << " history_depth (M) x seed sweep ===\n\n";
@@ -61,7 +66,7 @@ int main(int argc, char* argv[])
 
     // ---- Build the NARMA task ONCE -------------------------------------------
     // The task does not depend on M, so every trial scores the byte-identical
-    // target series; the only thing that varies across runs is history_depth.
+    // target series; the only things that vary are history_depth / seeds.
     NARMATaskConfig tc{narma_order, data_seed};
     tc.tanh_wrap = (NARMA_TANH_WRAP != 0);
     NARMATask task = MakeNARMATask(DIM, tc, collect);
@@ -80,13 +85,14 @@ int main(int argc, char* argv[])
               << "  u in [" << task.coeffs.u_low << ", " << task.coeffs.u_high << "]\n";
 
     // ---- Base ESN config -----------------------------------------------------
-    // Shared by every trial; only reservoir.seed and reservoir.history_depth
-    // change per cell, so any NRMSE difference is attributable to those alone.
+    // Shared by every trial; only reservoir.seed, reservoir.fsf_seed, and
+    // reservoir.history_depth change per cell, so any NRMSE difference is
+    // attributable to those alone.
     ESNConfig base;
     base.reservoir.dim = DIM;
     base.reservoir.verbose = false;   // suppress the per-trial SR banner
     base.reservoir.spectral_radius = 0.99;
-    base.reservoir.input_scaling = 0.05;
+    base.reservoir.input_scaling = 0.04;
     base.reservoir.leak_rate = 1.0;
     base.readout.momentum = 0.9;
 
@@ -96,6 +102,7 @@ int main(int argc, char* argv[])
     base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
     base.readout.activation = ReadoutActivation::TANH;
     fsf_ab::ApplyTo(base); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
+    // Per-trial fsf_seed comes from sweep_fsf_seeds (overrides ApplyTo's kSeed).
 
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
               << "  sr=" << base.reservoir.spectral_radius
@@ -106,50 +113,61 @@ int main(int argc, char* argv[])
               << base.readout.batch_size << ", lr=" << base.readout.lr_max
               << " (cosine, floor=" << (base.readout.lr_max * base.readout.lr_min_frac)
               << ")\n";
-    std::cout << "  Sweep M:  ";
+    std::cout << "  Sweep M:     ";
     for (size_t m : sweep_M) std::cout << m << ' ';
-    std::cout << "\n  Seeds:    ";
-    for (uint64_t sd : sweep_seeds) std::cout << sd << ' ';
+    std::cout << "\n  Res seeds:   ";
+    for (uint64_t sd : sweep_reservoir_seeds) std::cout << sd << ' ';
+    std::cout << "\n  FSF seeds:   ";
+    for (uint64_t sd : sweep_fsf_seeds) std::cout << sd << ' ';
     std::cout << "\n";
 
-    // Architecture is shared across the M×seed sweep (only history_depth / seed
+    // Architecture is shared across the M×seed sweep (only history_depth / seeds
     // change). Probe once so logs show stack + param count without per-trial noise.
     {
         ESNConfig probe = base;
         probe.reservoir.seed =
-            sweep_seeds.empty() ? 42ULL : sweep_seeds.front();
+            sweep_reservoir_seeds.empty() ? 42ULL : sweep_reservoir_seeds.front();
+        probe.reservoir.fsf_seed =
+            sweep_fsf_seeds.empty() ? fsf_ab::kSeed : sweep_fsf_seeds.front();
         probe.reservoir.history_depth =
             sweep_M.empty() ? 32ULL : sweep_M.front();
         ESN probe_esn(probe);
         std::cout << probe_esn.ReadoutArchSummary();
     }
 
-    // ---- Run the sweep (seed x M) --------------------------------------------
+    // ---- Run the sweep (reservoir seed x fsf seed x M) -----------------------
     const size_t nM = sweep_M.size();
-    const size_t nS = sweep_seeds.size();
-    std::vector<std::vector<double>> nrmse(nM, std::vector<double>(nS, 0.0));
+    const size_t nS = sweep_reservoir_seeds.size();
+    const size_t nF = sweep_fsf_seeds.size();
+    const size_t nTrials = nS * nF;
+    std::vector<std::vector<double>> nrmse(nM, std::vector<double>(nTrials, 0.0));
     double target_mean = 0.0;  // identical across every cell (same target series)
 
     for (size_t si = 0; si < nS; ++si) {
-        std::cout << "\n  === seed " << sweep_seeds[si]
-                  << "  (" << (si + 1) << "/" << nS << ") ===\n" << std::flush;
-        for (size_t mi = 0; mi < nM; ++mi) {
-            ESNConfig cfg = base;
-            cfg.reservoir.seed = sweep_seeds[si];
-            cfg.reservoir.history_depth = sweep_M[mi];
+        for (size_t fi = 0; fi < nF; ++fi) {
+            const size_t ti = si * nF + fi;
+            std::cout << "\n  === res_seed " << sweep_reservoir_seeds[si]
+                      << "  fsf_seed " << sweep_fsf_seeds[fi]
+                      << "  (" << (ti + 1) << "/" << nTrials << ") ===\n" << std::flush;
+            for (size_t mi = 0; mi < nM; ++mi) {
+                ESNConfig cfg = base;
+                cfg.reservoir.seed = sweep_reservoir_seeds[si];
+                cfg.reservoir.fsf_seed = sweep_fsf_seeds[fi];
+                cfg.reservoir.history_depth = sweep_M[mi];
 
-            NARMATrialResult res = RunNARMATrial(cfg, task);
-            target_mean = res.target_mean;
-            nrmse[mi][si] = res.nrmse;
-            std::cout << std::fixed
-                      << "    M=" << std::setw(2) << sweep_M[mi]
-                      << ": NRMSE=" << std::setprecision(4) << res.nrmse
-                      << "  R2=" << std::setprecision(4) << res.r2
-                      << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
+                NARMATrialResult res = RunNARMATrial(cfg, task);
+                target_mean = res.target_mean;
+                nrmse[mi][ti] = res.nrmse;
+                std::cout << std::fixed
+                          << "    M=" << std::setw(2) << sweep_M[mi]
+                          << ": NRMSE=" << std::setprecision(4) << res.nrmse
+                          << "  R2=" << std::setprecision(4) << res.r2
+                          << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
+            }
         }
     }
 
-    // ---- Aggregate per M across seeds (mean / sample-std / min / max) ---------
+    // ---- Aggregate per M across seed trials (mean / sample-std / min / max) --
     auto stats = [](const std::vector<double>& v) {
         double mn = v[0], mx = v[0], sum = 0.0;
         for (double x : v) { sum += x; mn = std::min(mn, x); mx = std::max(mx, x); }
@@ -162,7 +180,8 @@ int main(int argc, char* argv[])
 
     std::cout << std::fixed;
     std::cout << "\n=== NARMA-" << narma_order << " history_depth x seed sweep"
-              << "  (DIM=" << DIM << ", N=" << N << ", " << nS << " seeds"
+              << "  (DIM=" << DIM << ", N=" << N
+              << ", " << nS << " res seeds x " << nF << " fsf seeds"
               << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
     std::cout << "    " << std::setw(4) << "M"
               << "  " << std::setw(7) << "mean"
@@ -184,15 +203,18 @@ int main(int argc, char* argv[])
                   << "\n";
     }
 
-    // ---- Raw NRMSE matrix (rows = M, cols = seed) ----------------------------
-    std::cout << "\n  Raw NRMSE (rows M, cols seed):\n";
+    // ---- Raw NRMSE matrix (rows = M, cols = res_seed x fsf_seed) -------------
+    std::cout << "\n  Raw NRMSE (rows M, cols = res_seed/fsf_seed):\n";
     std::cout << "    " << std::setw(4) << "M";
-    for (uint64_t sd : sweep_seeds) std::cout << "  " << std::setw(9) << sd;
+    for (size_t si = 0; si < nS; ++si) {
+        for (size_t fi = 0; fi < nF; ++fi)
+            std::cout << "  " << sweep_reservoir_seeds[si] << "/" << sweep_fsf_seeds[fi];
+    }
     std::cout << "\n";
     for (size_t mi = 0; mi < nM; ++mi) {
         std::cout << "    " << std::setw(4) << sweep_M[mi];
-        for (size_t si = 0; si < nS; ++si)
-            std::cout << "  " << std::setw(9) << std::setprecision(4) << nrmse[mi][si];
+        for (size_t ti = 0; ti < nTrials; ++ti)
+            std::cout << "  " << std::setw(9) << std::setprecision(4) << nrmse[mi][ti];
         std::cout << "\n";
     }
 

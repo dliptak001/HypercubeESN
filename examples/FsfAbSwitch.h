@@ -18,7 +18,7 @@ namespace fsf_ab
 {
     inline constexpr bool kEnable = true;
     inline constexpr std::uint64_t kSeed = 4415756;
-    inline constexpr float kScaling = 0.005f;
+    inline constexpr float kScaling = 0.003f;
 
     inline void ApplyTo(ReservoirConfig& r) noexcept
     {
