@@ -78,45 +78,66 @@ relies on.
 
 Each mode builds `ReservoirConfig`s from a base operating point and fans them out.
 
-- **`RunDetailed`** — one operating point, the full per-lag `r²(k)` table plus the
-  headline `Total MC` and the last lag crossing `r² > {0.5, 0.1, 0.01}`.
-- **`RunGridSweep`** — an `sr × leak × history_depth` grid. Prints an ordered
-  results table and one `TotalMC` grid (rows = sr, cols = leak) per depth. The
-  base op-point supplies the fixed `seed` and `input_scaling`.
+- **`RunDetailed`** — one operating point: headline summary (`TotalMC`, `MC/F`,
+  horizons, open-tail flag) then a **sparse** per-lag `r²(k)` dump (dense near
+  lag 1, then every 5/10/50 out to `k_max`).
+- **`RunGridSweep`** — an `sr × leak × history_depth` grid. Ordered cell table
+  (`TotalMC`, `MC/F`, horizons, tail mark) plus an auto-pivoted TotalMC grid:
+  **M × sr** when leak is a singleton (default campaign), **M × leak** when sr is
+  a singleton, else one sr × leak grid per depth. Base supplies fixed `seed` and
+  `input_scaling`. Progress on **stderr**.
 - **`RunSeedSurvey`** — hold the op-point fixed, sweep the reservoir `seed` over an
-  inclusive range. Reports per-seed MC, a summary, and an SR-band-filtered
-  followup + top-5 (the per-seed rescale lands each realization at a slightly
-  different realized SR; the band keeps only those at the same operating point).
+  inclusive range. Per-seed table, summary (**mean / median / std / min / max**,
+  mean `k>.01`), and an SR-band-filtered followup + top-5.
 - **`RunDepthProbe`** — per-lag `r²(k)` curves for several depths side-by-side.
   Discriminates whether a `Total-MC` dip at some `M` is real dynamics (`r²(1)`
   intact, smoothly faster-decaying tail) or an indexing/injection glitch (a
   discontinuity, or an across-the-board depression hitting the lag-1 term).
 
+Every mode prints a shared banner: FSF ON|OFF, meter knobs, `train/F`, op-point,
+and a one-line metrics glossary.
+
 ## Reading the results
 
-- **`TotalMC`** — `Σ_k r²(k)`. Theoretical ceiling is `F` (one unit of capacity
-  per linearly independent state dimension); real reservoirs land far below it.
+- **`TotalMC`** — `Σ_k r²(k)` over **scored** lags. Theoretical ceiling is `F`
+  (one unit of capacity per linearly independent state dimension); real reservoirs
+  land far below it.
+- **`MC/F`** — capacity utilization: `TotalMC / F`. Easier to compare across DIM.
 - **`k>.5 / k>.1 / k>.01`** — the last lag whose reconstruction still clears that
   `r²`. These are the memory *horizons*: how far back the state still carries
   recoverable signal at strong / moderate / faint fidelity.
 - **`realSR`** — the realized post-rescale spectral radius. Memory generally grows
   as `sr → 1⁻` (longer fading memory) and depth × radius is super-multiplicative,
   but pushing `sr` past the echo-state boundary breaks reproducibility.
+- **Tail marks** (grid / seed tables):
+  - **`*` (open tail)** — last scored `r²` is still above the early-stop floor.
+    If the window ended there, **TotalMC is a lower bound** (memory not yet
+    decayed). Raise `k_max` / `t_warmup` (and `t_collect`) to finish the curve.
+  - **`e` (early-stop)** — the lag sweep stopped after a sub-threshold streak;
+    the sum is complete for that cell (curve decayed).
+  - **blank** — full `k_max` scored and the tail closed.
 
 ## Results — DIM 11, spectral-radius × delay-depth sweep
 
 A single authoritative `RunGridSweep` at **DIM 11** (N = F = 2048 — full state,
-below the 8192 feature cap), `input_scaling = 0.06` (weak drive, the
-memory/margin regime), `leak_rate = 1.0`, `warmup = 2000`, `collect = 15000`,
-`Kmax = 2000`, `ridge = 1e-4`. The grid crosses four spectral radii — two
-contractive (0.90, 0.95), the echo-state edge (1.00), and one supercritical
-(1.10) — with the delay depth `M` (`history_depth`) at {1, 2, 4, 8, 16, 32, 64}.
-`realSR` landed within 0.003 of every target, so the spread below is the
-operating point, not rescale drift.
+below the 8192 feature cap). **Defaults in `main()` match this table** so a
+fresh Release rebuild reproduces it (FSF off):
 
-`TotalMC` by depth (rows) and spectral radius (columns). With `leak_rate` fixed
-at 1.0, `RunGridSweep`'s per-depth `sr × leak` grids each reduce to one column;
-they are re-pivoted here into a single depth × sr table:
+| Knob | Value |
+|------|--------|
+| `input_scaling` | **0.06** (weak drive / memory-margin; tanh baseline) |
+| `leak_rate` | 1.0 (singleton → program prints **M × sr** pivot) |
+| `seed` | 738956 |
+| warmup / collect / Kmax / ridge | 2000 / 15000 / 2000 / 1e-4 |
+| FSF | **OFF** |
+
+The grid crosses four spectral radii — two contractive (0.90, 0.95), the
+echo-state edge (1.00), and one supercritical (1.10) — with delay depth `M`
+(`history_depth`) at {1, 2, 4, 8, 16, 32, 64}. `realSR` landed within 0.003 of
+every target, so the spread below is the operating point, not rescale drift.
+
+`TotalMC` by depth (rows) and spectral radius (columns) — same shape the program
+now prints when `leak` is a singleton:
 
 | M \ sr |      0.90 |       0.95 |       1.00 |       1.10 |
 |-------:|----------:|-----------:|-----------:|-----------:|
@@ -151,7 +172,8 @@ What the run shows, at a glance:
   Usable window: M ≈ 2–4.
 - **The top number (922) is an undercount.** `TotalMC` sums `r²(k)` over lags,
   but the sweep only measures out to lag `Kmax = 2000`. At sr = 1.00, M = 64 the
-  state still had recoverable memory at that last lag, so the sum was cut off
-  before the memory decayed — the true capacity is **above 922**. M = 32 decays
-  inside the window, so its 837 is complete. Every cell still sits far below the
-  theoretical F = 2048 ceiling.
+  state still had recoverable memory at that last lag (**open tail `*`** in the
+  live printer), so the sum was cut off before the memory decayed — the true
+  capacity is **above 922**. M = 32 decays inside the window, so its 837 is
+  complete. Every cell still sits far below the theoretical F = 2048 ceiling
+  (MC/F ≈ 0.45 at the open-tail peak).

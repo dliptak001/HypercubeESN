@@ -98,13 +98,20 @@ namespace mc
     /// Result of one MC measurement at a single operating point.
     struct MCResult
     {
-        double total_mc    = 0.0;   ///< Σ_k r²(k) over computed lags
+        double total_mc    = 0.0;   ///< Σ_k r²(k) over computed lags only
         float  realized_sr = 0.0f;  ///< realized post-rescale spectral radius
         int    k50 = 0;             ///< last lag with r² > 0.50
         int    k10 = 0;             ///< last lag with r² > 0.10
         int    k01 = 0;             ///< last lag with r² > 0.01
         bool   pd  = true;          ///< false if the train Gram was not positive-definite
         bool   oom = false;         ///< true if the cell threw std::bad_alloc (skipped)
+        std::size_t lags_scored = 0; ///< how many lags were actually scored (1..k_max)
+        bool   early_stopped = false; ///< true if the lag loop stopped on a sub-threshold streak
+        double r2_tail = 0.0;       ///< r² at the last scored lag (0 if none)
+        /// True when the last scored r² is still above the early-stop threshold.
+        /// If the window (k_max) ended with an open tail, TotalMC is a lower bound
+        /// (memory had not yet decayed). Early-stop with a closed tail is complete.
+        bool   open_tail = false;
         std::vector<double> r2;     ///< per-lag r²(k) at index k-1; lags past early-stop stay 0
     };
 
@@ -204,17 +211,30 @@ namespace mc
                 const double r2_k = ScoreR2(X.data(), w.data(), y.data());
                 r.r2[k - 1] = r2_k;
                 r.total_mc += r2_k;
+                r.lags_scored = k;
+                r.r2_tail = r2_k;
 
                 if (opts.early_stop)
                 {
                     if (r2_k < cfg_.early_stop_thresh)
                     {
-                        if (++below_streak >= cfg_.early_stop_patience) break;
+                        if (++below_streak >= cfg_.early_stop_patience)
+                        {
+                            r.early_stopped = true;
+                            break;
+                        }
                     }
                     else
                         below_streak = 0;
                 }
             }
+
+            // Open tail: memory still above the decay floor at the last scored lag.
+            // With early_stop this is almost always false (streak ended below thresh).
+            // Without early_stop (or if k_max is hit while r² is still high), TotalMC
+            // is a lower bound — the sum was cut off before the curve decayed.
+            r.open_tail = (r.lags_scored > 0) &&
+                          (r.r2_tail >= cfg_.early_stop_thresh);
 
             r.k50 = LastAbove(r.r2, 0.50);
             r.k10 = LastAbove(r.r2, 0.10);
