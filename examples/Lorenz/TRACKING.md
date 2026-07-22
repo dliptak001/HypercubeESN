@@ -90,12 +90,99 @@ win.
 
 ---
 
+### Run 2 — FSF scaling: weak 0.005 vs stronger 0.008 (`4 × 10`)
+
+**Date:** 2026-07-22 (session)  
+**Command:** `Lorenz.exe 4 10`  
+**Fixed:** FSF ON, `FSF_SEED=9089361`, same ESN seeds / 10 orbits / DIM=11 protocol as Run 1.  
+**Only delta:** `FSF_SCALING` **0.005** (weak) vs **0.008** (stronger).  
+Weak arm is the same realization as Run **1b**.
+
+#### Aggregate (mean of per-ESN-seed stats)
+
+| Arm | FSF scale | VPT mean (lt) | VPT max (lt) | RMSE mean | Notes |
+|-----|----------:|--------------:|-------------:|----------:|-------|
+| **2a weak** | 0.005 | ~2.24 | 5.18 | ~0.432 | = Run 1b |
+| **2b stronger** | 0.008 | ~2.19 | 5.16 | ~0.441 | VPT wash; **RMSE worse** |
+| *(Run 1a OFF)* | — | ~2.18 | 5.23 | ~0.440 | for context |
+
+**Δ (0.008 − 0.005):** VPT mean ~−0.05 lt (noise); RMSE mean **~+0.009** (worse).  
+Stronger arm’s RMSE is back near **FSF OFF**, so the mild 0.005 RMSE edge is lost.
+
+#### Per ESN seed
+
+| ESN seed | VPT mean 0.005 → 0.008 | VPT max 0.005 → 0.008 | RMSE mean 0.005 → 0.008 |
+|----------|-----------------------:|----------------------:|------------------------:|
+| 5941978990 | 2.37 → **2.16** | 5.18 → 4.13 | 0.428 → **0.438** |
+| 5941978991 | 2.18 → **2.46** | 4.08 → **5.16** | 0.433 → 0.433 |
+| 5941978992 | 2.22 → 2.28 | 3.10 → **4.17** | 0.433 → 0.437 |
+| 5941978993 | 2.17 → **1.85** | 4.27 → 3.06 | 0.434 → **0.456** |
+
+Mixed per-seed VPT (one up, two down, one flat); **RMSE not improved on any seed** and clearly worse on 8990 / 8993.
+
+#### Orbit notes
+
+| Orbit seed | Role |
+|------------|------|
+| `16519405431026665550` | Still often easy, but not always VPT #1 at 0.008 (e.g. 8990 prefers `898352…` at 4.13 lt; easy orbit drops 5.18 → 3.12 on that seed). At 0.008 / 8991 it recovers to 5.16 lt. |
+| `3731162586949553184` | Still hard (~0.34–0.38 lt) at both scalings — stronger FSF does not help. |
+
+#### Verdict (Run 2)
+
+In this bracket, **0.005 beats 0.008 on free-run RMSE** with no VPT gain from turning FSF up. Stronger feedback looks more like **overdrive / re-randomized difficulty** across seeds than a better free-run operating point. Prefer **0.005** (or a finer probe below 0.008) over pushing higher on this fixed seed/orbit set. n=40 free-runs — still exploratory.
+
+---
+
+### Run 3 — FSF scaling 0.003 (fill-in on the ladder)
+
+**Date:** 2026-07-22 (session)  
+**Command:** `Lorenz.exe 4 10`  
+**FSF ON** `FSF_SEED=9089361` **`FSF_SCALING=0.003`**. Same ESN seeds / orbits / protocol as Runs 1–2.
+
+#### Aggregate ladder (mean of per-ESN-seed stats)
+
+| Arm | Scale | VPT mean (lt) | VPT max (lt) | RMSE mean |
+|-----|------:|--------------:|-------------:|----------:|
+| 1a OFF | — | ~2.18 | 5.23 | ~0.440 |
+| **3 @ 0.003** | **0.003** | **~2.25** | **5.85** | **~0.436** |
+| 2a / 1b | 0.005 | ~2.24 | 5.18 | **~0.432** |
+| 2b | 0.008 | ~2.19 | 5.16 | ~0.441 |
+
+**0.003 vs OFF:** VPT ~+0.07 lt; RMSE ~−0.004 (mild).  
+**0.003 vs 0.005:** VPT ≈ tie; RMSE **worse than 0.005 by ~0.004** (0.005 still best RMSE).  
+**0.003 vs 0.008:** better on both aggregates than the strong arm.
+
+#### Per ESN seed @ 0.003
+
+| ESN seed | VPT mean | VPT max | RMSE mean |
+|----------|---------:|--------:|----------:|
+| 5941978990 | 2.36 | 5.14 | **0.422** |
+| 5941978991 | 2.12 | 4.11 | 0.442 |
+| 5941978992 | 2.30 | 5.47 | 0.442 |
+| 5941978993 | 2.23 | **5.85** | 0.441 |
+
+RMSE edge vs OFF is concentrated on seed **8990** (0.439 → 0.422); other seeds ≈ flat vs OFF. Best single free-run in the whole ladder so far: **5.85 lt** on seed 8993 / orbit `1642173382990087416` (not the usual easy orbit).
+
+#### Orbit notes @ 0.003
+
+| Orbit seed | Role |
+|------------|------|
+| `16519405431026665550` | Still often strong (5.14 / 3.08 / 5.47 / 2.97 lt); pairs with best RMSE on seed 8990 (0.374). |
+| `1642173382990087416` | New VPT champion this arm (5.85 lt on 8993) — orbit ranking still seed-dependent. |
+| `3731162586949553184` | Still hard (~0.34–0.38 lt). |
+
+#### Verdict (Run 3 + scaling ladder)
+
+Monotone-ish **RMSE vs scale** in this set: **OFF (0.440) → 0.003 (0.436) → 0.005 (0.432) → 0.008 (0.441)**, with a sweet spot near **0.005** and a clear downturn by 0.008. VPT means stay in a ~2.2 lt noise band; max VPT is lottery-like. Working default for further Lorenz work: **FSF ON @ 0.005** (or OFF if you want the no-FSF baseline). n still exploratory.
+
+---
+
 ## Queue / next experiments
 
-- [ ] Larger A/B: same seeds, `Lorenz.exe 4 50` (or more) both FSF OFF and ON  
-- [ ] `FSF_SCALING` sweep at fixed `FSF_SEED` (e.g. 0.001 / 0.005 / 0.01 / 0.02)  
-- [ ] Alternate `FSF_SEED` at best scaling  
-- [ ] Record whether hard orbit `373116…` ever improves under any FSF setting  
+- [ ] Larger A/B: same seeds, `Lorenz.exe 4 50` at OFF vs 0.005 if claiming the RMSE edge  
+- [x] `FSF_SCALING` ladder at fixed `FSF_SEED=9089361`: OFF / 0.003 / 0.005 / 0.008 (Runs 1–3)  
+- [ ] Alternate `FSF_SEED` at best scaling (~0.005)  
+- [x] Hard orbit `373116…` still ~0.34–0.38 lt at all scalings tried (no rescue)  
 
 ---
 

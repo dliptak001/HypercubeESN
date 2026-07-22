@@ -77,11 +77,13 @@ namespace
                   << "  is=" << base.input_scaling
                   << "  hist=" << base.history_depth
                   << "  seed=" << base.seed << "\n";
-        std::cout << "Metrics : TotalMC = Σ r²(k)  |  MC/F = util. of F features"
+        // ASCII-only metrics glossary: Windows consoles often mis-decode UTF-8
+        // (CP1252/OEM), turning Σ/²/× into garbage in CLion and cmd.
+        std::cout << "Metrics : TotalMC = sum r^2(k)  |  MC/F = util. of F features"
                   << "  |  k>.5/.1/.01 = last lag above threshold"
                   << "  |  realSR = post-rescale SR\n";
-        std::cout << "          open tail (*) = r² still above decay floor at last scored lag"
-                  << " → TotalMC is a lower bound\n\n";
+        std::cout << "          open tail (*) = r^2 still above decay floor at last scored lag"
+                  << " -> TotalMC is a lower bound\n\n";
     }
 
     /// Live progress on stderr (keeps stdout tables clean in IDEs).
@@ -141,7 +143,7 @@ namespace
             else if (m.early_stopped) ++n_early;
             else ++n_full;
         }
-        std::cout << "\nTail notes: * = open tail (TotalMC lower bound; r² still live at last lag)"
+        std::cout << "\nTail notes: * = open tail (TotalMC lower bound; r^2 still live at last lag)"
                   << "  e = early-stop (curve decayed)"
                   << "  (blank) = full k_max scored, closed tail\n";
         std::cout << "  cells: open*=" << n_open
@@ -195,7 +197,7 @@ namespace
         std::cout << "lags scored = " << r.lags_scored
                   << "  r2_tail = " << std::setprecision(4) << r.r2_tail;
         if (r.open_tail)
-            std::cout << "  OPEN TAIL (*) — TotalMC is a lower bound (memory still live at k_max)\n";
+            std::cout << "  OPEN TAIL (*) - TotalMC is a lower bound (memory still live at k_max)\n";
         else
             std::cout << "  closed tail\n";
         std::cout << std::defaultfloat;
@@ -253,7 +255,7 @@ namespace
         const std::size_t workers = mc::ResolveWorkerCount(cells, meter.PerCellBytes(), sweep_opts);
 
         PrintRunHeader("MC Profile (grid)", meter, base);
-        std::cout << "Grid    : " << nsr << " sr × " << nleak << " leak × " << nhist
+        std::cout << "Grid    : " << nsr << " sr x " << nleak << " leak x " << nhist
                   << " hist = " << cells << " cells  |  " << workers
                   << " workers  |  ~" << std::fixed << std::setprecision(2)
                   << (static_cast<double>(meter.PerCellBytes()) / 1e9) << " GB/cell, est peak ~"
@@ -307,7 +309,7 @@ namespace
         if (nleak == 1 && nsr >= 1 && nhist >= 1)
         {
             // Default campaign shape: depth × sr (matches MemoryCapacity.md)
-            std::cout << "\n=== TotalMC grid (M × sr, leak=" << leak_rates[0]
+            std::cout << "\n=== TotalMC grid (M x sr, leak=" << leak_rates[0]
                       << ", is=" << base.input_scaling << ") ===\n";
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << "M\\sr";
             for (float sr : spectral_radii) std::cout << std::setw(9) << sr;
@@ -322,7 +324,7 @@ namespace
         }
         else if (nsr == 1 && nleak >= 1 && nhist >= 1)
         {
-            std::cout << "\n=== TotalMC grid (M × leak, sr=" << spectral_radii[0]
+            std::cout << "\n=== TotalMC grid (M x leak, sr=" << spectral_radii[0]
                       << ", is=" << base.input_scaling << ") ===\n";
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << "M\\leak";
             for (float lk : leak_rates) std::cout << std::setw(9) << lk;
@@ -371,7 +373,7 @@ namespace
 
         if (seed_end < seed_start)
         {
-            std::cerr << "RunSeedSurvey: seed_end < seed_start — nothing to do.\n";
+            std::cerr << "RunSeedSurvey: seed_end < seed_start - nothing to do.\n";
             return;
         }
         const std::size_t count = static_cast<std::size_t>(seed_end - seed_start + 1);
@@ -597,7 +599,7 @@ namespace
             const MCResult& m = curves[d];
             if (!m.pd)
             {
-                std::cout << "  M=" << depths[d] << ": train Gram not PD — skipped\n";
+                std::cout << "  M=" << depths[d] << ": train Gram not PD - skipped\n";
                 continue;
             }
             double partial = 0.0;
@@ -614,7 +616,7 @@ namespace
                       << "  r2(1)=" << m.r2[0]
                       << "  first k<0.5=" << std::setw(3) << first_below_half
                       << "  first k<0.01=" << std::setw(3) << first_below_001
-                      << "  Σr2[1.." << kmax_probe << "]=" << std::setprecision(3) << partial
+                      << "  sum_r2[1.." << kmax_probe << "]=" << std::setprecision(3) << partial
                       << "  MC/F=" << (partial / static_cast<double>(F));
             if (m.open_tail) std::cout << "  *open";
             std::cout << "\n";
@@ -663,6 +665,7 @@ int main(int argc, char* argv[])
     base.leak_rate = 1.0f;
     base.input_scaling = 0.06f; // tanh baseline (md Results); A(x) often wants ~0.2
     base.history_depth = 8;
+
     // Full-state linear feedback (internal). Edit these three for A/B.
     base.full_state_feedback = false;
     base.fsf_seed = 4415756;
