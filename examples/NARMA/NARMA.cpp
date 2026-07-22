@@ -31,6 +31,7 @@
 #define NARMA_TANH_WRAP 1
 #endif
 
+
 int main(int argc, char* argv[])
 {
     (void)argc; (void)argv;
@@ -92,23 +93,29 @@ int main(int argc, char* argv[])
     base.reservoir.dim = DIM;
     base.reservoir.verbose = false;   // suppress the per-trial SR banner
     base.reservoir.spectral_radius = 0.99;
-    base.reservoir.input_scaling = 0.04;
+    base.reservoir.input_scaling = 0.03;
     base.reservoir.leak_rate = 1.0;
-    base.readout.momentum = 0.9;
+    base.reservoir.fsf_scaling = 0.004;
+    base.reservoir.full_state_feedback = true;
 
+    base.readout.momentum = 0.9;
     base.readout.task       = ReadoutTask::Regression;
     base.readout.restore_best_epoch = true;
     base.readout.epochs     = 600;
     base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
     base.readout.activation = ReadoutActivation::TANH;
-    fsf_ab::ApplyTo(base); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     // Per-trial fsf_seed comes from sweep_fsf_seeds (overrides ApplyTo's kSeed).
 
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
               << "  sr=" << base.reservoir.spectral_radius
               << " leak=" << base.reservoir.leak_rate
               << " input_scaling=" << base.reservoir.input_scaling << "\n";
-    fsf_ab::Log(std::cout);
+
+        std::cout << "  FSF A/B: " << (base.reservoir.full_state_feedback ? "ON " : "OFF")
+           << "  fsf_seed=" << base.reservoir.fsf_seed
+           << "  fsf_scaling=" << base.reservoir.fsf_scaling
+           << '\n';
+
     std::cout << "  Training: " << base.readout.epochs << " epochs, batch="
               << base.readout.batch_size << ", lr=" << base.readout.lr_max
               << " (cosine, floor=" << (base.readout.lr_max * base.readout.lr_min_frac)
