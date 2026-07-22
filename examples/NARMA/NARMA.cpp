@@ -44,13 +44,13 @@ int main(int argc, char* argv[])
     // history_depth (M) sweep points: below, around, and beyond the NARMA order,
     // to map where the delay line can finally hold the full lag history (the knee
     // sits near M = order). history_depth is capped at 64 by Reservoir::Create.
-    const std::vector<size_t> sweep_M = {32};//{28, 30, 32, 34, 36};
+    const std::vector<size_t> sweep_M = {16};//{28, 30, 32, 34, 36};
 
     // Second sweep dimension: reservoir-init seed. The target series depends on
     // narma_order + data_seed only (NOT the reservoir seed), so every (seed, M)
     // cell scores the byte-identical task -- the spread across seeds at a fixed M
     // is the run-to-run variance, which tells us whether the M-curve shape is real.
-    const std::vector<uint64_t> sweep_seeds = {73896, 73897, 73898};    //{73896, 73897, 73898};
+    const std::vector<uint64_t> sweep_seeds = {73896};    //{73896, 73897, 73898};
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
               << " history_depth (M) x seed sweep ===\n\n";
@@ -84,13 +84,14 @@ int main(int argc, char* argv[])
     // change per cell, so any NRMSE difference is attributable to those alone.
     ESNConfig base;
     base.reservoir.dim = DIM;
-    base.reservoir.verbose = false;   // 40 trials -- suppress the per-trial SR banner
-    base.reservoir.spectral_radius = 0.95;
-    base.reservoir.input_scaling = 0.1;
+    base.reservoir.verbose = false;   // suppress the per-trial SR banner
+    base.reservoir.spectral_radius = 0.99;
+    base.reservoir.input_scaling = 0.05;
     base.reservoir.leak_rate = 1.0;
     base.readout.momentum = 0.9;
 
     base.readout.task       = ReadoutTask::Regression;
+    base.readout.restore_best_epoch = true;
     base.readout.epochs     = 600;
     base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
     base.readout.activation = ReadoutActivation::TANH;

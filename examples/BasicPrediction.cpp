@@ -89,20 +89,28 @@ int main(int argc, char* argv[])
     else if (nrmse < 0.1) std::cout << "  (under 10% error)";
     std::cout << "\n\n";
 
+    constexpr size_t n_samples = 10;
     std::cout << "Sample predictions (test set):\n\n";
     std::cout << "  Step  |   Actual   |  Predicted  |    Error\n";
     std::cout << "  ------+------------+-------------+-----------\n";
-    for (size_t i = 0; i < 10; ++i)
+    double sum_abs_err = 0.0;
+    for (size_t i = 0; i < n_samples; ++i)
     {
         float actual = targets[train_size + i];
         float predicted = esn.PredictFromRecorded(train_size + i)[0];
         float error = actual - predicted;
+        sum_abs_err += static_cast<double>(std::fabs(error));
         std::cout << "  " << std::setw(5) << (train_size + i)
                   << " | " << std::showpos << std::setprecision(5) << std::setw(10) << actual
                   << " | " << std::setw(11) << predicted
                   << " | " << std::setw(10) << error
                   << std::noshowpos << "\n";
     }
+    const double mean_abs_err = sum_abs_err / static_cast<double>(n_samples);
+    std::cout << "  ------+------------+-------------+-----------\n";
+    std::cout << std::fixed << std::setprecision(6)
+              << "  Mean |error| over " << n_samples << " samples: "
+              << mean_abs_err << "\n";
 
     std::cout << "\nThe HCNN readout learned sin(t+1) from the reservoir's dynamics,\n";
     std::cout << "discovering features via convolution on the hypercube state.\n";

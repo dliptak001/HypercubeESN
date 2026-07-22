@@ -82,7 +82,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     num_fsf_weights_ = fsf_enabled_ ? n_ * dim_ : 0;
     if (fsf_enabled_)
     {
-        vtx_fsf_.reset(AllocAligned(n_));
+        //vtx_fsf_.reset(AllocAligned(n_));
         fsf_v_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
     }
 
@@ -261,8 +261,9 @@ void Reservoir::Step()
         double acc = 0.0;
         for (size_t i = 0; i < n_; ++i)
             acc += static_cast<double>(fsf_v_[i]) * static_cast<double>(x[i]);
-        const float phi = static_cast<float>(acc);
-        std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
+        //const float phi = static_cast<float>(acc);
+        fsf_phi_ = static_cast<float>(acc);
+        //std::fill(vtx_fsf_.get(), vtx_fsf_.get() + n_, phi);
     }
 
     const float* p_vtx_prev = slice_ptrs_[0];
@@ -280,8 +281,8 @@ void Reservoir::Step()
 
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    if (fsf_enabled_)
-        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
+    //if (fsf_enabled_)
+    //    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 // --- Lorentzian envelope (no exp; heavier tails) ---------------------------
@@ -328,7 +329,8 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
     {
         const float* fsw = &vtx_weight_[num_input_weights_ + num_ext_feedback_weights_] + v * dim_;
         for (size_t i = 0; i < dim_; i++)
-            s += vtx_fsf_[v ^ NearestMask(i)] * fsw[i];
+            s += fsf_phi_ * fsw[i];
+            //s += vtx_fsf_[v ^ NearestMask(i)] * fsw[i];
     }
 
     for (size_t i = 0; i < history_depth_; i++)
@@ -410,8 +412,8 @@ void Reservoir::RestoreSnapshot(const Snapshot& snap)
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    if (fsf_enabled_)
-        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
+    //if (fsf_enabled_)
+    //    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
 }
 
 ReservoirConfig Reservoir::GetConfig() const
@@ -455,8 +457,8 @@ void Reservoir::Clear()
 
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    if (fsf_enabled_)
-        std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
+    //if (fsf_enabled_)
+    ///    std::memset(vtx_fsf_.get(), 0, n_ * sizeof(float));
     // fsf_v_ (V) is a parameter — not cleared
 
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));

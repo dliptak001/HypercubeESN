@@ -303,8 +303,9 @@ private:
     uint64_t fsf_seed_ = 1;
     float fsf_scaling_ = 0.5f;
     size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
-    std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer
+    //std::unique_ptr<float[], AlignedFree> vtx_fsf_; // staging buffer
     std::vector<float> fsf_v_; // full-state vector V ∈ U(-1,1)^N when enabled (empty when off)
+    float fsf_phi_;
 
     /**** per neuron bias ****/
     float bias_scaling_;
