@@ -8,7 +8,6 @@
 #include <iostream>
 #include <vector>
 #include "ESN.h"
-#include "examples/FsfAbSwitch.h"
 
 int main(int argc, char* argv[])
 {
@@ -45,16 +44,23 @@ int main(int argc, char* argv[])
     cfg.readout_slices = 1;
     cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98
     cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 0.1
+    // Full-state linear feedback (internal). Edit these three for A/B.
+    cfg.reservoir.full_state_feedback = false;
+    cfg.reservoir.fsf_seed = 4415756;
+    cfg.reservoir.fsf_scaling = 0.003f;
     cfg.readout.task          = ReadoutTask::Regression;
     cfg.readout.epochs        = 1500;
     cfg.readout.batch_size    = 16;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
     cfg.readout.use_pooling = true;
-    fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
     ESN esn(cfg);
 
     std::cout << "  Config: N=" << N << "  history_depth=" << cfg.reservoir.history_depth << "\n";
-    fsf_ab::Log(std::cout);
+    if (cfg.reservoir.full_state_feedback)
+        std::cout << "  FSF: ON   fsf_seed=" << cfg.reservoir.fsf_seed
+                  << "  fsf_scaling=" << cfg.reservoir.fsf_scaling << "\n";
+    else
+        std::cout << "  FSF: OFF\n";
     std::cout << "  Readout in: " << esn.ReadoutBlockCount() << " block(s) x " << N
               << " = " << esn.ReadoutInputWidth() << " values"
               << "  (slices=" << cfg.readout_slices

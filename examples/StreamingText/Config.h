@@ -19,7 +19,6 @@
 #include "CharEmbedding.h"  // kCharEmbedDim
 #include "Corpus.h"         // kVocabSize, Corpus
 #include "ESN.h"            // ESNConfig (+ ReservoirConfig / ReadoutConfig), ReadoutActivation
-#include "examples/FsfAbSwitch.h"
 
 namespace streaming_text::config
 {
@@ -76,6 +75,10 @@ namespace streaming_text::config
             c.reservoir.spectral_radius = 1.3f;
             c.reservoir.leak_rate = 1.0f;
             c.reservoir.input_scaling = 2.5f;
+            // Full-state linear feedback (internal). Edit these three for A/B.
+            c.reservoir.full_state_feedback = false;
+            c.reservoir.fsf_seed = 4415756;
+            c.reservoir.fsf_scaling = 0.003f;
 
             c.readout.seed = 54544;
             c.readout.task = ReadoutTask::Classification;
@@ -92,7 +95,6 @@ namespace streaming_text::config
             c.readout.momentum = 0.9f; // momentum term for the readout optimizer (ADAM)
             c.readout.activation = ReadoutActivation::TANH;
 
-            fsf_ab::ApplyTo(c); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
             return c;
         }();
 

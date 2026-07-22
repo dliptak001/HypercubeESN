@@ -27,15 +27,15 @@ namespace config
     constexpr uint64_t SEED = 13649419;//13649188; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.005; // shared across all input channels
-    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port
+    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port (BUGBUG - why is feedback scaling so much stronger than input scaling?)
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
 
-    // Full-state linear feedback (internal). Same knobs as examples/FsfAbSwitch.h.
-    // V = U(-1,1) from FSF_SEED; φ = V·x; strength = FSF_SCALING on B_fsf.
-    constexpr bool FULL_STATE_FEEDBACK = false;
-    constexpr uint64_t FSF_SEED = 1;
-    constexpr float FSF_SCALING = 0.5f; // B_fsf: U(-1,1)×scale/√dim
+    // Full-state linear feedback (internal). Edit these three for A/B.
+    // V = U(-1,1) from FSF_SEED; phi = V·x; strength = FSF_SCALING on B_fsf.
+    constexpr bool FULL_STATE_FEEDBACK = true;
+    constexpr uint64_t FSF_SEED = 9089361;
+    constexpr float FSF_SCALING = 0.005f; // B_fsf: U(-1,1)×scale/√dim
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

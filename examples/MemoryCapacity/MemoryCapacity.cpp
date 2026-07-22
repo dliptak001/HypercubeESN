@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "MemoryCapacity.h"
-#include "examples/FsfAbSwitch.h"
 
 namespace
 {
@@ -527,8 +526,21 @@ int main(int argc, char* argv[])
     base.leak_rate = 1.0f;
     base.input_scaling = 0.2f; // A(x): 0.2, tanh(x): 0.06f
     base.history_depth = 8;
-    fsf_ab::ApplyTo(base); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
-    fsf_ab::Log(std::cout);
+    // Full-state linear feedback (internal). Edit these three for A/B.
+    base.full_state_feedback = false;
+    base.fsf_seed = 4415756;
+    base.fsf_scaling = 0.003f;
+
+    std::cout << "  Config: DIM=" << DIM << "  N=" << (1ULL << DIM)
+              << "  sr=" << base.spectral_radius
+              << "  leak=" << base.leak_rate
+              << "  input_scaling=" << base.input_scaling
+              << "  history_depth=" << base.history_depth << "\n";
+    if (base.full_state_feedback)
+        std::cout << "  FSF: ON   fsf_seed=" << base.fsf_seed
+                  << "  fsf_scaling=" << base.fsf_scaling << "\n";
+    else
+        std::cout << "  FSF: OFF\n";
 
     MemoryCapacityMeter meter(DIM, mccfg);
 

@@ -85,10 +85,12 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     "  external_feedback_scaling=%.4f\n",
                     esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
-        std::printf("[Lorenz config] FSF A/B:   %s  fsf_seed=%llu  fsf_scaling=%.3f\n",
-                    config::FULL_STATE_FEEDBACK ? "ON " : "OFF",
-                    static_cast<unsigned long long>(config::FSF_SEED),
-                    config::FSF_SCALING);
+        if (config::FULL_STATE_FEEDBACK)
+            std::printf("[Lorenz config] FSF: ON   fsf_seed=%llu  fsf_scaling=%.3f\n",
+                        static_cast<unsigned long long>(config::FSF_SEED),
+                        config::FSF_SCALING);
+        else
+            std::printf("[Lorenz config] FSF: OFF\n");
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  aux=%zu  blocks=%zu  pooling=%s\n",
@@ -308,6 +310,14 @@ void Lorenz::Train()
                 std::printf("epoch %3zu lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
                             i, lr);
         }
+        else if ((i + 1) % 10 == 0 || i + 1 == config::EPOCHS)
+        {
+            // Survey mode: coarse heartbeat on stderr (no per-step spam).
+            std::fprintf(stderr, "[seed %llu] train epoch %zu/%zu\n",
+                         static_cast<unsigned long long>(seed_),
+                         i + 1, config::EPOCHS);
+            std::fflush(stderr);
+        }
     }
 }
 
@@ -439,13 +449,30 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
 // without their output interleaving.
 static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
 {
+    // Survey progress goes to stderr so it does not interleave with the final
+    // report strings on stdout. ENABLE_PRINTF stays false for per-step noise.
+    auto progress = [esn_seed](const char* phase, int done, int total)
+    {
+        std::fprintf(stderr, "[seed %llu] %s %d/%d\n",
+                     static_cast<unsigned long long>(esn_seed), phase, done, total);
+        std::fflush(stderr);
+    };
+
+    progress("start train", 0, static_cast<int>(config::EPOCHS));
     Lorenz lorenz(esn_seed, orbit_seed);
     lorenz.Train();
+    progress("train done; start free-runs", 0, num_runs);
 
     std::vector<FreeRunResult> results; // one outcome per free-run (RebuildDatastream re-mixes the orbit each call)
     results.reserve(num_runs);
+    // Progress cadence: every free-run for small surveys, else every ~5% (min 10).
+    const int prog_every = (num_runs <= 20) ? 1 : std::max(10, num_runs / 20);
     for (int i = 0; i < num_runs; i++)
+    {
         results.push_back(lorenz.FreeRun(false));
+        if ((i + 1) % prog_every == 0 || i + 1 == num_runs)
+            progress("free-run", i + 1, num_runs);
+    }
 
     std::string out;
     char buf[256];
@@ -563,10 +590,13 @@ int main(int argc, char** argv)
     // Optional positional CLI overrides (applied only when present and in range):
     //   argv[1] = NUM_THREADS — parallel trials, one ESN seed each (default = hardware_concurrency)
     //   argv[2] = NUM_RUNS    — free-runs accumulated per trial      (default = 50)
+    // WARNING: each free-run rebuilds an orbit and re-washes the full training
+    // window (~TRAINING_WINDOW_SIZE reservoir steps) before FREE_RUN_WINDOW_SIZE
+    // generative steps. 4 x 2000 is many hours of wall clock at DIM 11 / 100 epochs.
     const size_t hw = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1;
     const size_t max_threads = 4 * hw; // guard against a fat-fingered arg spawning a thread stampede
     size_t num_threads = hw;
-    int num_runs = 2000;
+    int num_runs = 50; // keep CLI default light; pass e.g. 2000 only for full surveys
     if (argc > 1)
     {
         const int arg = std::atoi(argv[1]);
@@ -577,6 +607,29 @@ int main(int argc, char** argv)
         const int arg = std::atoi(argv[2]);
         if (arg > 1) num_runs = arg;
     }
+
+    // Work estimate (order-of-magnitude). Free-run dominates when NUM_RUNS is large:
+    // each FreeRun washes ~TRAINING_WINDOW_SIZE steps then scores FREE_RUN_WINDOW_SIZE.
+    const long long train_steps_per_trial =
+        static_cast<long long>(config::EPOCHS) *
+        static_cast<long long>(config::TRAINING_WINDOW_SIZE);
+    const long long freerun_steps_per_trial =
+        static_cast<long long>(num_runs) *
+        (static_cast<long long>(config::TRAINING_WINDOW_SIZE) +
+         static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
+    std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
+                "train_window=%d  freerun_window=%zu\n",
+                num_threads, num_runs, config::DIM, size_t{1} << config::DIM,
+                config::EPOCHS, config::TRAINING_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE);
+    std::printf("[survey] ~%lld train reservoir-steps/trial + ~%lld free-run "
+                "reservoir-steps/trial (washout+score); no stdout until all trials finish "
+                "(progress on stderr)\n",
+                train_steps_per_trial, freerun_steps_per_trial);
+    if (num_runs >= 500)
+        std::printf("[survey] NOTE: NUM_RUNS=%d is a heavy survey — expect multi-hour wall "
+                    "clock at this DIM/epoch/window setting\n",
+                    num_runs);
+    std::fflush(stdout);
 
     // Each trial owns its own Lorenz/ESN/datastream (HCNN forced single-threaded
     // in MakeESNConfig). No shared Lorenz mutable state — each thread writes only

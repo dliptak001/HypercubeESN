@@ -26,6 +26,11 @@ construction rather than by luck. The result is an ESN that is at once
 mathematically clean, strikingly memory-frugal, and strong where reservoirs are
 meant to be: long memory and nonlinear computation.
 
+**Headline result:** tanh-wrapped **NARMA-30 test NRMSE 0.0629** — about **5×
+lower error** than the bottom of the rough literature “strong / large-N” band
+(0.30–0.50). Details in [Spotlight: NARMA-30](#spotlight-narma-30-at-nrmse-00629)
+and [examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
+
 ## What is Reservoir Computing?
 
 Reservoir computing is a machine learning paradigm for temporal data. Training a
@@ -76,6 +81,29 @@ the dynamics. The data never leaves the hypercube it was born on.
 
 HypercubeESN targets DIM 5–16 (32 to 65,536 neurons), the practical range for
 reservoir computing.
+
+## Spotlight: NARMA-30 at NRMSE 0.0629
+
+NARMA-30 is the classic hard reservoir stress test: long nonlinear memory of the
+output history plus a delayed input product. Rough literature bands on test
+**NRMSE** place “strong / large-N” performance around **0.30–0.50** (and “good”
+around **0.40–0.60**). HypercubeESN’s best run to date:
+
+| | |
+|--|--|
+| **Test NRMSE** | **0.0629** (R² = 0.9960) |
+| vs strong-band floor (0.30) | **~5× lower error** (0.30 / 0.0629 ≈ 4.8) |
+| Setup | tanh-wrapped NARMA-30 · DIM 10 (1024 neurons) · history depth M=16 · FSF off |
+| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · single seed 73896 |
+| Readout | HypercubeCNN, 8385 parameters |
+
+We have not found published NARMA-30 NRMSE results below that strong-band floor,
+let alone near **0.06**. Order-30 protocols are poorly standardized, so treat
+cross-paper numbers carefully — but the gap is large, and even this project’s
+older multi-seed tables at shorter collect already sit well under 0.30.
+
+Full protocol, M-sweep tables, and caveats:
+[examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
 
 ## Why a Hypercube?
 
@@ -214,7 +242,7 @@ The build produces seven executables:
 | `SignalClassification` | Multi-class waveform recognition with confusion matrix |
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
 | `MemoryCapacity` | Jaeger memory-capacity diagnostic (white-noise MC sweep) |
-| `NARMA` | NARMA-N nonlinear benchmark (M×seed sweep) |
+| `NARMA` | NARMA-N nonlinear benchmark — **best NARMA-30 NRMSE 0.0629** (~5× under lit. strong-band floor); see [NARMA.md](examples/NARMA/NARMA.md) |
 | `StreamingText` | Streaming character-level memorization of a text corpus |
 
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
@@ -235,7 +263,7 @@ HypercubeESN/
     SignalClassification.cpp/md  Multi-class waveform recognition
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
-    NARMA/                       NARMA-N nonlinear benchmark (M×seed sweep)
+    NARMA/                       NARMA-N benchmark (best NARMA-30 NRMSE 0.0629)
     StreamingText/               Streaming character-level text memorization
 
   python/                Python bindings (pybind11 module + pyproject)

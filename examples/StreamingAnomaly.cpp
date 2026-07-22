@@ -9,7 +9,6 @@
 #include <cmath>
 #include <random>
 #include "ESN.h"
-#include "examples/FsfAbSwitch.h"
 
 /// Two-harmonic process signal (0.6*sin + 0.2*sin(3x)) with adjustable noise
 /// level, DC offset, and frequency scale -- the knobs the anomalies modulate.
@@ -97,14 +96,21 @@ int main(int argc, char* argv[])
     cfg.readout.conv_channels = 8;
     cfg.readout.batch_size = 64;
     cfg.readout.activation = ReadoutActivation::TANH; // TANH / RELU / LEAKY_RELU / NONE
-    fsf_ab::ApplyTo(cfg); // A/B: flip fsf_ab::kEnable in examples/FsfAbSwitch.h
+    // Full-state linear feedback (internal). Edit these three for A/B.
+    cfg.reservoir.full_state_feedback = false;
+    cfg.reservoir.fsf_seed = 4415756;
+    cfg.reservoir.fsf_scaling = 0.003f;
     ESN esn(cfg);
 
     std::cout << "Config: DIM=" << DIM << "  N=" << N << "  History Depth=" << cfg.reservoir.history_depth
         << "  Leak=" << cfg.reservoir.leak_rate
         << "  Input Scaling=" << cfg.reservoir.input_scaling
         << "  Threshold=" << anomaly_threshold << "x baseline\n";
-    fsf_ab::Log(std::cout);
+    if (cfg.reservoir.full_state_feedback)
+        std::cout << "  FSF: ON   fsf_seed=" << cfg.reservoir.fsf_seed
+                  << "  fsf_scaling=" << cfg.reservoir.fsf_scaling << "\n";
+    else
+        std::cout << "  FSF: OFF\n";
     std::cout << esn.ReadoutArchSummary();
     std::cout << "\n";
 

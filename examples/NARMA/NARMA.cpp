@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "ESN.h"
-#include "examples/FsfAbSwitch.h"
 #include "NARMA_N.h"
 
 // ---- A/B compile switch ------------------------------------------------------
@@ -97,8 +96,10 @@ int main(int argc, char* argv[])
     base.reservoir.spectral_radius = 0.99;
     base.reservoir.input_scaling = 0.03;
     base.reservoir.leak_rate = 1.0;
-    base.reservoir.fsf_scaling = 0.004;
+    // Full-state linear feedback (internal). Edit these for A/B; fsf_seed is
+    // swept below when full_state_feedback is true (see active_fsf_seeds).
     base.reservoir.full_state_feedback = false;
+    base.reservoir.fsf_scaling = 0.004;
 
     //base.readout.seed = 3423555;
     base.readout.lr_min_frac = 0.005f;

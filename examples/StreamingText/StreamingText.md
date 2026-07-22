@@ -11,8 +11,8 @@ size (DIM), depth (`history_depth`), and readout width (`conv_channels`)?
 This example is intentionally small. It exists to give the memorization
 objective a clean, self-contained home.
 
-**FSF A/B:** `fsf_ab::ApplyTo` inside the default `ESNConfig` in `Config.h`; log
-via `fsf_ab::Log` in `main.cpp`. Switch: [`FsfAbSwitch.h`](../FsfAbSwitch.h).
+**FSF A/B:** set `full_state_feedback` / `fsf_seed` / `fsf_scaling` on the
+default `ESNConfig` in `Config.h`. Log in `main.cpp`: `FSF: ON|OFF …`.
 
 ## The corpus (not bundled)
 

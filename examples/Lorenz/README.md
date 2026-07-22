@@ -12,7 +12,8 @@ at all). Report VPT and RMSE with that distinction stated.
 |-------|--------|
 | Index motion | [`JanusCursor.h`](JanusCursor.h) · [`JanusCursor.md`](JanusCursor.md) |
 | Orbit + normalize | [`LorenzAttractor.h`](LorenzAttractor.h), [`LorenzDatastream.{h,cpp}`](LorenzDatastream.h) |
-| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` (incl. FSF A/B) |
+| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` (incl. FSF) |
+| Result log (FSF A/B, surveys) | [`TRACKING.md`](TRACKING.md) |
 | CMake target | `Lorenz` ← `Lorenz.cpp` + `LorenzDatastream.cpp` |
 
 ---
@@ -27,9 +28,8 @@ In [`Lorenz.h`](Lorenz.h) `config::`:
 | `FSF_SEED` | `1` | Draws V as U(−1,1) then B_fsf |
 | `FSF_SCALING` | `0.5` | B_fsf strength (only FSF loudness knob) |
 
-Independent of the **external-feedback** future port. Other examples share
-[`FsfAbSwitch.h`](../FsfAbSwitch.h); Lorenz keeps knobs in `config::` for the
-survey harness. Log line: `FSF A/B: ON|OFF …`.
+Independent of the **external-feedback** future port. Same local-knob pattern as
+the other demos. Log: `FSF: ON|OFF …` (NARMA style).
 
 ## 1. Pipeline at a glance
 
@@ -271,7 +271,20 @@ Lorenz.exe [NUM_THREADS] [NUM_RUNS]
 | Arg | Default | Meaning |
 |-----|---------|---------|
 | `NUM_THREADS` | `hardware_concurrency` | Parallel trials; each trains one ESN on `seed + t` |
-| `NUM_RUNS` | 2000 | Free-runs per trial after that training |
+| `NUM_RUNS` | **50** | Free-runs per trial after that training (not free-run *length*) |
+
+`FREE_RUN_WINDOW_SIZE` (generative steps scored per free-run) is a **compile-time**
+knob in `config::` (default 2000). CLI `NUM_RUNS` is how many independent free-runs
+(with fresh orbits) to average — orthogonal to window length.
+
+### Why `Lorenz.exe 4 2000` can run for hours
+
+Not a hang — a silent mega-job. Per trial:
+
+1. **Train:** `EPOCHS` × ~`TRAINING_WINDOW_SIZE` online steps (default 100 × 20 000), each a Predict + TrainStep + ReservoirStep at DIM 11.
+2. **Free-run × NUM_RUNS:** each free-run **rebuilds an orbit**, **re-washes the full training window** (~20 000 reservoir steps), then scores `FREE_RUN_WINDOW_SIZE` generative steps.
+
+So `4 2000` ≈ 4 trials × (2e6 train steps + 2000 × 22 000 free-run steps) — tens of millions of reservoir steps **per trial**, HCNN train steps on top, with **no final stdout** until every thread finishes. Progress lines go to **stderr** (`[seed …] free-run k/N`). Prefer something like `4 20` or `4 50` for day-to-day checks; reserve `2000` for overnight surveys.
 
 `main` currently runs a **multi-thread seed survey**:
 
@@ -281,16 +294,14 @@ Lorenz.exe [NUM_THREADS] [NUM_RUNS]
   forced single-threaded (`readout.num_threads = 1`) so the survey does not nest
   a full worker pool inside every ESN.
 - Worker exceptions are caught and reported in that trial’s slot (no process abort).
-- Per-run live printf is silenced (`ENABLE_PRINTF = false`); each trial returns a
-  report string (aggregate VPT / RMSE stats + top-10 leaderboards) printed in seed
-  order after all threads join.
+- Per-step live printf is silenced (`ENABLE_PRINTF = false`); stderr carries coarse
+  progress; each trial returns a report string (aggregate VPT / RMSE + top-10)
+  printed in seed order after all threads join.
 - Completion `Beep` on Windows.
 
 For a **single interactive run** (config banner + per-epoch train RMSE + free-run
 trace): set `config::ENABLE_PRINTF = true`, call `Lorenz(seed, orbit_seed).Train()`
 then `FreeRun(true)` from a slim `main`, or temporarily replace the survey body.
-Do not launch long surveys without intending the wall-clock cost (DIM 11 × 100
-epochs × many free-runs is heavy).
 
 ---
 
@@ -315,6 +326,7 @@ epochs × many free-runs is heavy).
 |-----|------|
 | [`JanusCursor.md`](JanusCursor.md) | Exact cursor API and index geometry |
 | [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
-| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback (not used by this example) |
+| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback (local knobs in `config::`) |
+| [`TRACKING.md`](TRACKING.md) | Live Janus free-run experiment log (FSF A/B, surveys) |
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh free-run campaign (stale harness) |
 | Project [`docs/README.md`](../../docs/README.md) | Library-wide reading order |

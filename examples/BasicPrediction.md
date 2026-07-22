@@ -8,8 +8,8 @@ predict the next value without ever seeing the input directly.
 
 If you're new to reservoir computing, start here.
 
-**FSF A/B:** `fsf_ab::ApplyTo(cfg)` via [`FsfAbSwitch.h`](FsfAbSwitch.h)
-(`kEnable`, seed, `kScaling`). See [examples/README.md](README.md).
+**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
+in `BasicPrediction.cpp`. Log: `FSF: ON|OFF …`. See [examples/README.md](README.md).
 
 ## Conceptual background
 

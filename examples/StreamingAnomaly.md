@@ -14,7 +14,8 @@ Prediction error is the anomaly signal.
 This is the most practical example in the collection: it demonstrates
 how a frozen reservoir model can serve as a real-time process monitor.
 
-**FSF A/B:** `fsf_ab::ApplyTo(cfg)` — switch in [`FsfAbSwitch.h`](FsfAbSwitch.h).
+**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
+in `StreamingAnomaly.cpp`. Log: `FSF: ON|OFF …`.
 See [examples/README.md](README.md).
 
 ## Conceptual background

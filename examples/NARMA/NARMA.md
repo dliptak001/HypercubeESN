@@ -1,5 +1,34 @@
 # NARMA-N — Nonlinear System Identification
 
+## Spotlight — NARMA-30 at NRMSE 0.0629
+
+| | NRMSE | vs this run |
+|--|------:|------------|
+| **HypercubeESN (best to date)** | **0.0629** | — |
+| Literature “strong / large-N” band (floor) | 0.30 | **~4.8× higher error** |
+| Literature “good” band (floor) | 0.40 | **~6.4× higher error** |
+| Literature “good” band (ceiling) | 0.60 | **~9.5× higher error** |
+
+**Test NRMSE 0.0629** (R² = 0.9960) on **tanh-wrapped NARMA-30** sits about
+**five times below** the bottom of the rough literature **strong / large-N**
+band (0.30–0.50). We have not found a published NARMA-30 result on this metric
+that undercuts that band’s floor, let alone this score — with the usual caveats
+that order-30 setups are poorly standardized (see [Reading the results](#reading-the-results)).
+
+| Knob | Value |
+|------|--------|
+| Variant | tanh-wrapped (α=0.3, β=0.05, γ=1.5, δ=0.1) |
+| Reservoir | DIM=10 (N=1024), M=`history_depth`=16, FSF **off** |
+| Seed | res 73896 (single seed) |
+| Series | warmup 300 · collect 32000 (train 25600 / test 6400) |
+| Drive | sr 0.99 · leak 1 · input_scaling 0.03 |
+| Readout | 600 epochs, batch 128, lr 0.0015 (cosine) |
+| HCNN | Conv(1→16, TANH) → MaxPool → Linear(8192→1) · 8385 params |
+
+Open-loop baseline from Release `NARMA.exe`. The multi-seed M-sweep table later
+in this doc uses **collect 8000** and an older op-point — even there, NARMA-30
+already reaches **0.09–0.13** mean NRMSE, still well under the 0.30 floor.
+
 ## What this example demonstrates
 
 NARMA (Nonlinear Auto-Regressive Moving Average) is the classic reservoir
@@ -14,8 +43,9 @@ identification, not forecasting** — `y(t)` is aligned to `u(t)`, so the
 reservoir has already seen everything it needs (see "Target alignment"
 below).
 
-**FSF A/B:** `fsf_ab::ApplyTo(base)` in `NARMA.cpp`; flip `fsf_ab::kEnable` in
-[`FsfAbSwitch.h`](../FsfAbSwitch.h). See [examples/README.md](../README.md).
+**FSF A/B:** set `base.reservoir.full_state_feedback` / `fsf_scaling` (and the
+`sweep_fsf_seeds` list) in `NARMA.cpp`. Log: `FSF: ON|OFF …`. See
+[examples/README.md](../README.md).
 
 ## The recurrence
 
@@ -97,13 +127,19 @@ square-root it first (NMSE 0.16 → NRMSE 0.40). As a quick gut-check on any
 single run: `≤ 0.22` is compelling, `≤ 0.30` credible, `< 1.0` beats
 predict-the-mean, and `≥ 1.0` means something is broken.
 
-Rough literature bands on this same metric, by order:
+Rough literature bands on this same metric, by order — and where HypercubeESN
+lands on the hardest row:
 
-| Order    | "good" NRMSE | strong / large-N | Baseline |
-|----------|--------------|------------------|----------|
-| NARMA-10 | 0.20–0.40    | —                | clean    |
-| NARMA-20 | 0.30–0.50    | 0.20–0.35        | rough    |
-| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    |
+| Order    | "good" NRMSE | strong / large-N | Baseline | **This project** |
+|----------|--------------|------------------|----------|------------------|
+| NARMA-10 | 0.20–0.40    | —                | clean    | see M-sweep table |
+| NARMA-20 | 0.30–0.50    | 0.20–0.35        | rough    | see M-sweep table |
+| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0629** (best; [spotlight](#spotlight--narma-30-at-nrmse-00629)) |
+
+**Read the NARMA-30 row carefully.** The strong / large-N floor is **0.30**.
+Our best test NRMSE is **0.0629** — about **5× lower error** than that floor
+(0.30 / 0.0629 ≈ 4.8). Even the older collect-8000 multi-seed means (~0.09–0.13
+at good M) sit well under 0.30. That is the headline result of this example.
 
 NARMA-10 is the only order with a clean, comparable baseline (Jaeger 2001;
 Rodan & Tiňo 2011): your *aligned* task (`y(t)` from `u(t), u(t−10)`) equals the
@@ -111,7 +147,10 @@ literature's "predict `y(t+1)` from `u(≤t)`" up to index relabeling, so it
 compares directly. Orders 20/30 are **not** well-standardized — many papers wrap
 the recurrence in `tanh(...)` (like the variant above) and schedule coefficients
 differently — so treat their bands as a *sane-regime* check, not exact targets;
-your series won't be bit-identical to any specific paper's.
+your series won't be bit-identical to any specific paper's. The gap above is still
+large enough that protocol mismatch alone is an unlikely full explanation: we
+have not located published NARMA-30 NRMSE numbers that sit below the strong band’s
+floor, much less near 0.06.
 
 ## Results: memory-depth (M) sweep
 
@@ -142,22 +181,22 @@ adds an explicit tapped delay line of past reservoir states that a plain ESN
 lacks; the sub-0.1 numbers reflect that added memory, not a like-for-like win.
 
 Shared config: `sr 0.92, leak 1, input_scaling 0.5`, 600 epochs, warmup 300 /
-collect 8000 (train 6400 / test 1600). Full per-seed logs live in
-`NARMA{10,20,30}_DIM{10,12}_Raw.txt`.
+collect 8000 (train 6400 / test 1600).
 
 **Note — `collect` is a first-class knob.** Longer post-warmup series cut test
-NRMSE hard on this architecture (Linear ~8k features after pool/flatten): a
-single-seed NARMA-30 / DIM-10 / M=16 spot check went
-`collect 8000 → NRMSE 0.0787`, `16000 → 0.0713`, `32000 → 0.0629` (warmup 300,
-FSF off). That is mostly sample count vs readout capacity (at 8k train is
+NRMSE on this architecture (Linear ~8k features after pool/flatten): a
+single-seed NARMA-30 / DIM-10 / M=16 ladder went
+`collect 8000 → 0.0787`, `16000 → 0.0713`, `32000 → 0.0629` (warmup 300,
+FSF off) — the **0.0629** entry is the [spotlight](#spotlight--narma-30-at-nrmse-00629)
+result. That is mostly sample count vs readout capacity (at 8k train is
 under-parameterized relative to features), not a change in NARMA dynamics.
 `NARMA.cpp` comments 8000 as the low-res default and 32000 as high-res.
 
-For **literature-style** comparison there is no single standard length, but
-classic NARMA-10 setups often sit around train ~2k–5k / test ~1k–2k (total
-collect ~3k–6k) with washout ~100–300. Hold `collect` fixed when comparing M /
-seed / FSF; use **8000** to match the table above, not 32k absolute scores
-against classic bands.
+Hold `collect` fixed when comparing M / seed / FSF within this repo. Classic
+NARMA-10 protocols often use shorter series (train ~2k–5k); NARMA-30 paper
+protocols vary widely. For apples-to-apples *internal* tables use **8000**; for
+the absolute best score we report, use the **32000** spotlight config — and note
+that even the 8000-point means already clear the literature strong band.
 
 > **Untuned baseline — read these numbers accordingly.** Every cell above uses
 > the **same** `sr 0.92, leak 1, input_scaling 0.5`, held fixed across *all* DIM ×

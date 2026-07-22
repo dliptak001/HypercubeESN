@@ -24,7 +24,6 @@
 #include "Config.h"
 #include "Corpus.h"
 #include "ESN.h"  // ESN, CosineLR (via Readout.h)
-#include "examples/FsfAbSwitch.h"
 
 /*
  * Plain ESNs historically achieve BPC in the 1.5–2.0+ range on datasets like text8/enwik8
@@ -87,7 +86,11 @@ int Run()
               << " input_scaling=" << esn_cfg.reservoir.input_scaling
               << " leak_rate=" << esn_cfg.reservoir.leak_rate
               << " num_inputs=" << esn_cfg.reservoir.num_inputs << "\n";
-    fsf_ab::Log(std::cerr);
+    if (esn_cfg.reservoir.full_state_feedback)
+        std::cerr << "  FSF: ON   fsf_seed=" << esn_cfg.reservoir.fsf_seed
+                  << "  fsf_scaling=" << esn_cfg.reservoir.fsf_scaling << "\n";
+    else
+        std::cerr << "  FSF: OFF\n";
 
     ESN esn(esn_cfg);
     // Same banner channel as the rest of [stext] diagnostics.

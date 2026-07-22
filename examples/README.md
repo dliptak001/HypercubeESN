@@ -3,21 +3,20 @@
 ## Full-state feedback A/B (all demos)
 
 Every example can enable the optional **full-state linear feedback** port for
-quick A/B testing against the open-loop baseline.
-
-| Control | Where |
-|---------|--------|
-| **Shared switch** | [`FsfAbSwitch.h`](FsfAbSwitch.h) — `kEnable`, `kSeed`, `kScaling` |
-| Most examples | `fsf_ab::ApplyTo(cfg)` after building config; `Log` |
-| **Lorenz** | `config::FULL_STATE_FEEDBACK` / `FSF_SEED` / `FSF_SCALING` in [`Lorenz/Lorenz.h`](Lorenz/Lorenz.h) |
+A/B testing against the open-loop baseline. Knobs are **local to each example**
+(no shared header): set `full_state_feedback`, `fsf_seed`, and `fsf_scaling` on
+the `ReservoirConfig` / `ESNConfig` (or `config::` in Lorenz) next to the other
+reservoir fields.
 
 **How to A/B**
 
-1. **Off:** `kEnable = false`.
-2. **On:** `kEnable = true` — V from `kSeed`; strength = `kScaling` on B_fsf.
+1. **Off:** `full_state_feedback = false` (default in the demos).
+2. **On:** `full_state_feedback = true` — V from `fsf_seed`; strength =
+   `fsf_scaling` on B_fsf.
 
-Logs print a `FSF A/B:` line. Theory/API:
-[docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).
+Logs print a NARMA-style line: `FSF: OFF` or
+`FSF: ON   fsf_seed=…  fsf_scaling=…` (NARMA also lists a seed sweep when on).
+Theory/API: [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).
 
 ## BasicPrediction
 

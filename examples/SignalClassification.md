@@ -11,7 +11,8 @@ internal state.
 This example focuses on multi-class classification, with a confusion
 matrix and transition dynamics analysis.
 
-**FSF A/B:** `fsf_ab::ApplyTo(cfg)` — switch in [`FsfAbSwitch.h`](FsfAbSwitch.h).
+**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
+in `SignalClassification.cpp`. Log: `FSF: ON|OFF …`.
 See [examples/README.md](README.md).
 
 ## Conceptual background
