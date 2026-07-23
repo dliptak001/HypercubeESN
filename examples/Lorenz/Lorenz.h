@@ -42,13 +42,8 @@ namespace config
     constexpr float LEARNING_RATE_MIN = 0.000002f;//0.000005f; // anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 100;
 
-    // ---- Readout input: block-structured (delay-line slices + optional aux block) ----
-    // The readout consumes B = READOUT_SLICES + (AUX_INPUT_DIM > 0) blocks of N, laid
-    // out on a (DIM + log2 B) hypercube: one block per reservoir delay-line slice
-    // (newest first), plus an optional block holding the auxiliary input. B must be a
-    // power of two, and READOUT_SLICES must not exceed HISTORY_DEPTH. The reservoir is
-    // untouched by all of this — the slices are the memory it already computes for its
-    // recurrent gather, and which the readout has never been shown.
+    // Readout input only (reservoir unchanged): B = READOUT_SLICES + (AUX_INPUT_DIM > 0)
+    // blocks of N on a (DIM + log2 B) hypercube. B power-of-two; slices ≤ HISTORY_DEPTH.
     constexpr size_t READOUT_SLICES = 4;//HISTORY_DEPTH;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
     constexpr int NUM_LAYERS = 1;
@@ -60,7 +55,7 @@ namespace config
     constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
     constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
 
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {-0.836584,-0.109998,0.615358};//{0.91, 0.275, 0.19};
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {-0.836584,-0.109998,0.615358};
     constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
 
     // ---- Stage control ----
@@ -69,27 +64,6 @@ namespace config
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.3f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
     constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
-
-    // ---- Exposure-bias remedies (README Issue 2) ----
-    // Both act ONLY during Train(), ONLY on the future block (feedback port) — the
-    // sole train/free-run drive mismatch; the teacher target stays the real S[f].
-    // They perturb the future LINEAR channels; the future x*z is then re-derived so
-    // the block stays consistent with free-run (where it is the predicted x*z). The
-    // FreeRun washout is left clean. Enable ONE at a time to preserve the
-    // campaign's single-delta discipline; both default to OFF (baseline).
-    // 2a — noise injection: zero-mean Gaussian std added to the future channels.
-    //      0 disables. Recommended starting bracket: 1e-3 .. a few 1e-2.
-    constexpr float TRAIN_FUTURE_NOISE = 0.0f;
-
-    // 2b — scheduled sampling: probability ceiling of feeding the model's own
-    //      fresh prediction on the future channels instead of the real sample,
-    //      linearly ramped 0 -> ceiling across epochs. 0 disables.
-    //      Recommended starting ceiling: ~0.25 .. 0.5.
-    constexpr float SCHEDULED_SAMPLING_CEILING = 0.0f;
-
-    // RNG stream for the 2a noise draws and 2b Bernoulli decisions — kept distinct
-    // from the reservoir SEED so toggling these never perturbs the reservoir.
-    constexpr uint64_t TRAIN_EXPOSURE_RNG_SEED = 0x5EED5EEDULL;
 }
 
 /// One seed's free-run outcome: the numeric metrics the survey aggregates, plus a
@@ -135,9 +109,6 @@ public:
     /// Runs config::EPOCHS teacher-forced training passes over the cursor
     /// window, printing one line per epoch: the learning rate and the prequential
     /// train RMSE (normalized units, over all 3 channels x all steps of the sweep).
-    /// Optionally applies the Issue-2 exposure-bias remedies on the future
-    /// channels (config::TRAIN_FUTURE_NOISE for 2a, config::SCHEDULED_SAMPLING_CEILING
-    /// for 2b); both are off by default and the loop is teacher-forced when they are.
     void Train();
 
     /// Generative rollout over the held-out tail. Self-contained: resets the
@@ -196,9 +167,4 @@ private:
     /// final 25% — lowers the single-sample gradient-noise floor late in training
     /// and lets the readout settle at the floor rather than still cooling at the end.
     static float LrProfile(float lr_max, float lr_min, size_t epochs, size_t current_epoch);
-
-    /// Per-epoch scheduled-sampling probability (README Issue 2b): linear ramp
-    /// from 0 at epoch 0 to @p ceiling at the final epoch. Returns @p ceiling
-    /// when epochs <= 1. ceiling == 0 keeps the ramp flat at 0 (2b disabled).
-    static float ScheduledSamplingProfile(float ceiling, size_t epochs, size_t current_epoch);
 };

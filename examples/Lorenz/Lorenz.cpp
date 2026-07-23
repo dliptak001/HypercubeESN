@@ -97,8 +97,6 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::READOUT_SLICES, config::AUX_INPUT_DIM,
                     config::READOUT_SLICES + (config::AUX_INPUT_DIM > 0 ? 1u : 0u),
                     config::USE_POOLING ? "on" : "off");
-        std::printf("[Lorenz config] exposure:  2a future_noise=%.4f  2b ss_ceiling=%.3f\n",
-                    config::TRAIN_FUTURE_NOISE, config::SCHEDULED_SAMPLING_CEILING);
         std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                     config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                     config::RESERVOIR_WARMUP_STEPS);
@@ -188,34 +186,16 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
     //return ExponentialDecayLR(progress / anneal_fraction, lr_max, lr_min);
 }
 
-float Lorenz::ScheduledSamplingProfile(const float ceiling, const size_t epochs, const size_t current_epoch)
-{
-    if (epochs <= 1)
-        return ceiling;
-    const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
-    return ceiling * progress; // linear ramp 0 -> ceiling
-}
-
 void Lorenz::Train()
 {
     float past[4] = {}; // input-port drive: [past x, y, z, x*z]
-    float future[4] = {}; // feedback-port drive: [future x, y, z, x*z] (real; prediction under 2b)
+    float future[4] = {}; // feedback-port drive: [future x, y, z, x*z] (teacher-forced real)
     float targets[3] = {};
     float outputs[3] = {}; // the model's pre-update prediction (prequential read)
     float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
     // nullptr when the readout has no aux block — ESN rejects a stray u_raw, and an aux
     // block is never silently zeroed. `aux` aliases u_past, so it tracks each refill.
     const float* const aux = (config::AUX_INPUT_DIM > 0) ? u_past : nullptr;
-
-    // Exposure-bias remedies (README Issue 2) share one RNG stream. The guards on
-    // the config scalars below keep the baseline path bit-identical (no draws) when
-    // both remedies are off, so toggling them is a clean single-delta change.
-    std::mt19937_64 exposure_rng(config::TRAIN_EXPOSURE_RNG_SEED);
-    // stddev must be > 0 for the distribution (libstdc++ asserts it); when 2a is
-    // off we pass a dummy 1.0 that is never sampled (the draw below is guarded).
-    std::normal_distribution<float> future_noise(
-        0.0f, config::TRAIN_FUTURE_NOISE > 0.0f ? config::TRAIN_FUTURE_NOISE : 1.0f);
-    std::uniform_real_distribution<float> unit_uniform(0.0f, 1.0f);
 
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
@@ -224,9 +204,6 @@ void Lorenz::Train()
         // Step 1: warm up the reservoir open-loop, teacher-forced, no readout update.
         data_stream_->Reset();
         const float lr = LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i);
-        // 2b: this epoch's probability of substituting the model's own prediction
-        // on the future channels (0 when the ceiling is 0, i.e. 2b disabled).
-        const float ss_p = ScheduledSamplingProfile(config::SCHEDULED_SAMPLING_CEILING, config::EPOCHS, i);
         LorenzDatastreamResult past_future_states = data_stream_->States();
         for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
         {
@@ -257,35 +234,6 @@ void Lorenz::Train()
             // Prequential (test-then-train) read: the pre-update prediction of this
             // call's own target, read at the unchanged state x(t) before TrainStep.
             esn_.Predict(outputs, aux);
-
-            // Exposure-bias remedies (README Issue 2), future block only; the teacher
-            // target above stays the real S[f]. Both perturb the future LINEAR
-            // channels; the future x*z is re-derived afterward so the whole block
-            // stays consistent with free-run (where it is the predicted x*z).
-            //
-            // 2b scheduled sampling: with probability ss_p, overwrite the future
-            // linear channels with the model's own fresh prediction of S[f] — which
-            // is exactly `outputs`, read at the same unchanged state x(t).
-            if (config::SCHEDULED_SAMPLING_CEILING > 0.0f && unit_uniform(exposure_rng) < ss_p)
-            {
-                future[0] = outputs[0];
-                future[1] = outputs[1];
-                future[2] = outputs[2];
-            }
-            // 2a noise injection: zero-mean Gaussian on the (possibly substituted)
-            // future linear channels — trains the map to tolerate the perturbation
-            // class the closed loop introduces.
-            if (config::TRAIN_FUTURE_NOISE > 0.0f)
-            {
-                future[0] += future_noise(exposure_rng);
-                future[1] += future_noise(exposure_rng);
-                future[2] += future_noise(exposure_rng);
-            }
-            // Re-derive the future x*z from the (possibly perturbed) linear future,
-            // mirroring free-run where the fed-back x*z is the product of predicted
-            // x,z. A no-op in the teacher-forced baseline (both remedies off).
-            future[3] = future[0] * future[2];
-
             esn_.TrainStep(targets, lr, 0.0f, aux); // fit the readout on x(t)
             esn_.ReservoirStep(past, future); // step to x(t+1)
 

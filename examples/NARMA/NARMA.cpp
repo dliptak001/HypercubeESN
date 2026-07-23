@@ -96,12 +96,15 @@ int main(int argc, char* argv[])
     base.reservoir.spectral_radius = 0.99;
     base.reservoir.input_scaling = 0.03;
     base.reservoir.leak_rate = 1.0;
-    // Full-state linear feedback (internal). Edit these for A/B; fsf_seed is
-    // swept below when full_state_feedback is true (see active_fsf_seeds).
     base.reservoir.full_state_feedback = false;
     base.reservoir.fsf_scaling = 0.004;
 
     //base.readout.seed = 3423555;
+    base.readout_slices = 4;
+    base.readout.num_layers = 2;
+    base.readout.use_pooling = true;
+    base.readout.pool_type = ReadoutPoolType::Max;
+    base.readout.conv_channels = 16;
     base.readout.lr_min_frac = 0.005f;
     base.readout.momentum = 0.9;
     base.readout.task       = ReadoutTask::Regression;

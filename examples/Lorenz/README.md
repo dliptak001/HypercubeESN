@@ -8,33 +8,24 @@ This is **assisted / half-anchored** free-run — continuous partial observation
 on the past — **not** classical unassisted autonomous generation (no true drive
 at all). Report VPT and RMSE with that distinction stated.
 
+**Live knobs** live in `config::` in [`Lorenz.h`](Lorenz.h). This README describes
+mechanisms and protocols; it does **not** pin current numerical defaults.
+Experiment logs and op-point snapshots go in [`TRACKING.md`](TRACKING.md).
+
 | Layer | Files |
 |-------|--------|
 | Index motion | [`JanusCursor.h`](JanusCursor.h) · [`JanusCursor.md`](JanusCursor.md) |
 | Orbit + normalize | [`LorenzAttractor.h`](LorenzAttractor.h), [`LorenzDatastream.{h,cpp}`](LorenzDatastream.h) |
-| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` (incl. FSF) |
-| Result log (FSF A/B, surveys) | [`TRACKING.md`](TRACKING.md) |
+| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` |
+| Result log | [`TRACKING.md`](TRACKING.md) |
 | CMake target | `Lorenz` ← `Lorenz.cpp` + `LorenzDatastream.cpp` |
 
 ---
 
-## 0. Full-state feedback A/B
-
-In [`Lorenz.h`](Lorenz.h) `config::`:
-
-| Knob | Default | Role |
-|------|---------|------|
-| `FULL_STATE_FEEDBACK` | `false` | Construction-only FSF port |
-| `FSF_SEED` | `1` | Draws V as U(−1,1) then B_fsf |
-| `FSF_SCALING` | `0.5` | B_fsf strength (only FSF loudness knob) |
-
-Independent of the **external-feedback** future port. Same local-knob pattern as
-the other demos. Log: `FSF: ON|OFF …` (NARMA style).
-
 ## 1. Pipeline at a glance
 
 ```text
- LorenzAttractor (RK4, σ=10, ρ=28, β=8/3, dt=0.02)
+ LorenzAttractor (RK4 Lorenz-63; σ, ρ, β, dt as configured)
         │
         ▼
  LorenzDatastream  — integrate once, midpoint-offset + shared-scale → float S[·] ≈ [-1,1]
@@ -49,44 +40,143 @@ the other demos. Log: `FSF: ON|OFF …` (NARMA style).
         └─ FreeRun() washout → generative self-feedback; VPT + free-run RMSE
 ```
 
+Optional third drive path: **full-state linear feedback** (FSF) on the reservoir,
+independent of the external-feedback future port. Toggle and seed/scaling live in
+`config::` (`FULL_STATE_FEEDBACK`, `FSF_SEED`, `FSF_SCALING`). See
+[`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md).
+
 ---
 
-## 2. Stream geometry (defaults)
+## 2. Janus dual-cursor concept
 
-From `config::` in `Lorenz.h`:
+The harness is built around a **pair of counter-moving indices** over one forward
+orbit. The index machinery is system-agnostic (`JanusCursor`); Lorenz only maps
+those indices into a normalized sample stream.
+
+### What the two cursors are for
+
+| Cursor | Role in the experiment | Motion |
+|--------|------------------------|--------|
+| **Past** | **Anchor** — always real history on the input port | Starts at `ub`, each `Step()` decrements |
+| **Future** | **Horizon** — teacher in train; self-prediction in free-run | Starts at `lb`, each `Step()` increments |
+
+`Reset()` seats them at **opposite edges** of a shared window. Each `Step()` walks
+them toward and then past each other (one-way pass; no reflection).
 
 ```text
- TRAINING_WINDOW_SIZE  = span = 20000
- FREE_RUN_WINDOW_SIZE  = E    = 2000
- CURSOR_CENTER_INDEX   = E + span/2 = 12000
- STREAM_LENGTH         = 2E + span  = 24000
+stream:  0 ....... lb =========== center =========== ub ....... N
+                    ^future                          ^past       (after Reset)
+         future ──────────────────>          <────────────── past  (each Step)
 ```
+
+### Window geometry (owner-defined)
+
+```text
+lb = center − span/2     // integer division
+ub = center + span/2
+```
+
+| Region | Indices | Role |
+|--------|---------|------|
+| Past free-run runway | `[0, lb)` | Anchor history the past cursor may enter after leaving the window |
+| Training / washout window | `[lb, ub]` | One epoch or washout sweep |
+| Prediction / eval runway | `(ub, stream end]` | Future is generative; held-out truth for scoring |
+
+`JanusCursor` does **not** store samples or know stream length `N`. Bounds and
+runways are the owner’s job (`LorenzDatastream` validates window vs. stream at
+construction). Integer half-span: even `span` → `ub − lb == span`; odd `span` →
+`ub − lb == span − 1`.
+
+In this example, `config::` sets:
+
+- `span` ← `TRAINING_WINDOW_SIZE`
+- past / future runways ← `FREE_RUN_WINDOW_SIZE` (symmetric layout via
+  `CURSOR_CENTER_INDEX` and `STREAM_LENGTH`)
+- total integrated length ← `STREAM_LENGTH` (storage is `stream_length + 1`
+  samples: seed state + one per RK4 step)
+
+Exact formulas are next to those constants in `Lorenz.h`.
+
+### Public signals (asymmetry is intentional)
+
+| Signal | Meaning |
+|--------|---------|
+| **`OOB()`** | **Future only:** `future_index > ub` — generative tail has begun |
+| Past below `lb` | Allowed; real history for anchoring, **not** a public error |
+| Past `< 0` | Owner may throw (`LorenzDatastream::Step` / `States`) |
+| **`Distance()`** | `(future − past) / span` — about `−1` at `Reset`, `~0` at center crossing, about `+1` at the mirror extreme (exact ±1 when `span` is even) |
+| **`AtStartPosition()`** | Past at `ub` only (proxy for “just Reset”) |
+
+Training and washout loops typically stop when `OOB()` becomes true. Free-run
+continues past that edge: future drive switches to the model’s prediction while
+truth for scoring is still `S[future_index]` on the eval runway. The past cursor
+keeps walking into `[0, lb)` until the anchor runway or step budget ends.
+
+Full API and nested-cursor details: [`JanusCursor.md`](JanusCursor.md).
+
+### Why opposite-ends matter (lag curriculum)
+
+For most of a training pass the past and future samples are **far apart** on the
+attractor (up to roughly `span` samples; many Lyapunov times at the ends for
+typical windows). They only share phase near the **center crossing**.
+
+| Role | Port | Training | Free-run (generative) |
+|------|------|----------|------------------------|
+| Teacher of the map | Feedback / future | Real future history → target `S[f]` | Own prediction (closed loop) |
+| Stabilizer / tether | Input / past | Present, often long-lag | Always real history |
+
+Consequence:
+
+- The learnable one-step signal is primarily on the **feedback** port
+  (`S[f−1] → S[f]` style under teacher forcing).
+- The past is a **free-run stabilizer**, not the main training teacher.
+- Zeroing **feedback** scaling during train is ill-posed (climatological floor) —
+  not a clean “observer floor.” To ablate the anchor, dose **input** scaling
+  (or zero the past channels) at free-run time; do not zero feedback during train.
+
+---
+
+## 3. Stream ownership and orbits
 
 ```text
  array index n:   0 ······· lb ····· center ····· ub ········· stream end
                   │         │           │           │            │
                  seed   train edge   midpoint   train edge   eval / free-run
                  T=0       (lb)       (center)      (ub)         tail
-
- lb = 2000,  center = 12000,  ub = 22000
 ```
 
-| Region | Indices | Role |
-|--------|---------|------|
-| Past free-run runway | `[0, lb)` | Anchor history the past cursor walks into after leaving the window |
-| Training window | `[lb, ub]` | One epoch / washout sweep |
-| Prediction / eval runway | `(ub, stream end]` | Future is generative; held-out truth for scoring |
+**Integration.** `LorenzAttractor` advances Lorenz-63 with classical RK4
+(`dx/dt = σ(y−x)`, etc.). `LorenzDatastream::Build` stores the seed state plus one
+sample per step.
 
-`Build()` stores `stream_length + 1` samples (seed state + one sample per RK4
-step). Cursor index math is documented in [`JanusCursor.md`](JanusCursor.md).
+**Normalization** (once per orbit, after RK4; storage is `float` ≈ `[-1, 1]`):
 
-Each `Train` epoch and each `FreeRun` call **rebuilds** a fresh orbit
-(`RebuildDatastream`) so successive free-runs share a fixed orbit-seed sequence
-while the ESN seed is the independent variable in surveys.
+1. Scan **this** raw orbit for per-channel min/max (full stream, including eval tail).
+2. Per-channel midpoint offset (drops `z`’s large positive DC onto zero).
+3. **One shared scale** = max of the three half-ranges (zero scale → `1.0`).
+4. Store `(v − c_v) / scale` per channel.
+
+Shared scale preserves relative amplitudes. Free-run scoring is in these
+**normalized units**.
+
+**Fresh orbits.** Each `Train` epoch and each `FreeRun` call **rebuilds** a
+datastream (`RebuildDatastream`): the orbit seed is remixed (SplitMix-style) and a
+new random initial condition is drawn. Successive free-runs in a survey therefore
+share a **fixed sequence of held-out orbits** when trials start from the same
+`orbit_seed`; the ESN seed is the independent variable across parallel trials.
+
+Note: `config::INITIAL_LORENZ_STATE` is a banner/default-style constant — the
+live train/free-run orbits come from the remix path above, not that fixed IC.
+
+**Cursor → samples.** `LorenzDatastream` inherits `JanusCursor`. `States()` /
+`Step()` return `{Distance, past sample by value, future* }`. When the future
+cursor is OOB, `future` is **`nullptr`** (never an out-of-window address). Callers
+that need truth past `ub` (free-run scoring) read `GetDataStream()[future_index]`
+directly.
 
 ---
 
-## 3. Eight-channel drive and targets
+## 4. Eight-channel drive and targets
 
 ```text
  input port    (4):  past   [ x_p, y_p, z_p, x_p·z_p ]   ExtractPast
@@ -99,67 +189,31 @@ while the ESN seed is the independent variable in surveys.
 - The 4th channel is always the product of that block’s current `x` and `z`
   (derived feature, never a readout target). Formed **after** normalization so
   free-run rebuild is a multiply of predicted channels — no denorm/renorm product bug.
-- Gains are independent: `INPUT_SCALING` on past, `FEEDBACK_SCALING` on future
+- Gains are independent: input scaling on past, external-feedback scaling on future
   (separate weight realizations on the two reservoir ports).
 - Optional readout aux (`AUX_INPUT_DIM == 3`): normalized past `(x,y,z)` into the
-  readout only; reservoir ports unchanged. Default is off (`0`).
-
-### Lag curriculum (why opposite-ends matter)
-
-For most of a training pass the past and future samples are **far apart** on the
-attractor (up to ~`span` samples; hundreds of Lyapunov times at the ends with
-defaults). They only share phase near the **center crossing**.
-
-| Role | Port | Training | Free-run (generative) |
-|------|------|----------|------------------------|
-| Teacher of the map | Feedback / future | Real future history → target `S[f]` | Own prediction (closed loop) |
-| Stabilizer / tether | Input / past | Present, often long-lag | Always real history |
-
-Consequence:
-
-- The learnable one-step signal is primarily on the **feedback** port
-  (`S[f−1] → S[f]` style under teacher forcing).
-- The past is a **free-run stabilizer**, not the main training teacher.
-- `FEEDBACK_SCALING = 0` makes training ill-posed (climatological floor) — it is
-  **not** a clean “observer floor.” To ablate the anchor, dose `INPUT_SCALING`
-  (or zero the past channels) at free-run time; do not zero feedback during train.
-
----
-
-## 4. Normalization
-
-`LorenzDatastream::Normalize` runs **once** after RK4; storage is `float` ≈ `[-1, 1]`.
-
-1. Scan **this** raw orbit for per-channel min/max (full stream, including eval tail).
-2. Per-channel **midpoint offset** `c_v = (v_max + v_min) / 2` (drops `z`’s DC ~+24 onto zero).
-3. **One shared scale** = max of the three half-ranges; zero scale → `1.0`.
-4. Store `(v − c_v) / scale` per channel.
-
-Shared scale preserves relative amplitudes (widest channel reaches ±1; others use
-less). Extremes are stream-dependent, not hardcoded. Free-run scoring is in these
-**normalized units**.
+  readout only; reservoir ports unchanged. Off when aux dim is `0`.
 
 ---
 
 ## 5. Training protocol (`Lorenz::Train`)
 
-Per epoch `i = 0 .. EPOCHS−1`:
+Per epoch:
 
-1. **`RebuildDatastream`** — new orbit from the mixed orbit seed; `Reset()` cursors
-   (past@`ub`, future@`lb`).
+1. **`RebuildDatastream`** — new orbit; `Reset()` cursors (past@`ub`, future@`lb`).
 2. **Warmup** (`RESERVOIR_WARMUP_STEPS`): teacher-forced `ReservoirStep(past, future_real)`
-   only; no readout update.
+   only; no readout update. Advances cursors into the window (shortens the
+   subsequent train sweep if warmup is large relative to span).
 3. **Train sweep** while `!OOB()`:
    - **Horizon-1 alignment:** `Predict` at reservoir state `x(t)` **before** injecting
      this step’s drive; target = current future sample `S[f]` (about to be injected),
      not `S[f+1]`.
    - **Prequential** (test-then-train): pre-update prediction vs that target for the
      epoch RMSE line.
-   - Optional **exposure-bias remedies** on the future **linear** channels only
-     (teacher target stays real `S[f]`) — see [§7](#7-exposure-bias-remedies).
-   - Re-derive `future[3] = x·z`, then `TrainStep` → `ReservoirStep` → cursor `Step()`.
-4. Report prequential train RMSE (3 channels × train steps). LR from `LrProfile`
-   (cosine anneal from `LEARNING_RATE` to `LEARNING_RATE_MIN` by 75% of epochs, then hold).
+   - `TrainStep` → `ReservoirStep(past, future_real)` → cursor `Step()`.
+4. Report prequential train RMSE (3 channels × train steps) when printf is enabled.
+   LR from `LrProfile` (cosine anneal from `LEARNING_RATE` toward `LEARNING_RATE_MIN`
+   by 75% of epochs, then hold).
 
 One epoch = one **one-way** cursor pass. Multi-epoch = outer loop + `Reset` (and a
 fresh orbit each epoch).
@@ -195,63 +249,41 @@ without stating the anchor.
 
 | Field | Meaning |
 |-------|---------|
+| `valid` | False if zero generative steps scored (excluded from survey stats) |
 | `vpt_steps` | First step whose channel-RMS error exceeds `VPT_THRESHOLD` (0 = never) |
 | `vpt_lt` | That horizon in Lyapunov times; if never crossed, window floor (lower bound) |
 | `rmse` | Free-run RMSE over scored steps (normalized units, all 3 channels) |
 | `crossed` | Whether the threshold was ever crossed |
+| `steps` | Generative steps actually scored |
 | `row` | Pre-formatted table line for surveys |
 
-Conversion: `steps_per_lt = 1 / (LYAPUNOV_EXPONENT · DT)` with λ ≈ 0.9056, dt = 0.02
-→ **≈ 55.2 steps / Lyapunov time**.
-
-Callout in config (illustrative, single free-run): seed **13649419** —
-VPT 347 steps (~6.28 λt), free-run RMSE ~0.43 over 2000 steps
-(`free_run_error_seed13649419.png`).
+Conversion: `steps_per_lt = 1 / (LYAPUNOV_EXPONENT · DT)` (canonical Lorenz-63
+λ_max and the configured RK4 `DT`).
 
 ---
 
-## 7. Exposure-bias remedies
+## 7. Configuration surface (`config::` in `Lorenz.h`)
 
-Training is teacher-forced on the future port; free-run feeds the model’s own
-prediction. That train/test drive mismatch is **exposure bias**. Both remedies act
-**only in `Train()`**, **only on the future block** (feedback port). The teacher
-target stays real `S[f]`. After any perturbation, `future[3] = x·z` is re-derived
-so the block matches free-run product semantics. Washout in `FreeRun` stays clean.
+Edit constants there and rebuild the `Lorenz` target. There is no runtime config
+file. Groups of interest:
 
-Enable **one at a time** for single-delta ablations. Both default **off**.
+| Group | What it controls |
+|-------|------------------|
+| Diagnostics | `ENABLE_PRINTF` — banner, per-epoch train lines, free-run traces |
+| Reservoir | dim, seed, spectral radius, input / leak / history depth |
+| Ports | input vs external-feedback channel counts (fixed 4+4 in harness) and their scalings |
+| FSF | construction-only full-state feedback enable, seed (V then B_fsf), scaling |
+| Readout | online Adam LR schedule, epochs, delay-line slices, aux dim, pooling / layers |
+| Stream / Janus | training window (`span`), free-run window, center, stream length, dt |
+| Stage | reservoir warmup steps before train updates |
+| Score | VPT threshold (normalized channel-RMS), Lyapunov exponent for lt conversion |
 
-| Knobs | Effect |
-|-------|--------|
-| `TRAIN_FUTURE_NOISE` (2a) | Zero-mean Gaussian std on future `x,y,z`. `0` disables. Starting bracket ~`1e-3` … few `1e-2`. |
-| `SCHEDULED_SAMPLING_CEILING` (2b) | Probability ceiling of replacing future `x,y,z` with the model’s fresh prediction; linear ramp `0 → ceiling` across epochs. `0` disables. Starting ceiling ~`0.25` … `0.5`. |
-| `TRAIN_EXPOSURE_RNG_SEED` | Dedicated RNG; toggling remedies never perturbs the reservoir seed. |
-
----
-
-## 8. Default model knobs (`config::`)
-
-| Group | Knob | Default |
-|-------|------|---------|
-| Reservoir | `DIM` | 11 (N = 2048) |
-| | `SEED` | 13649419 |
-| | `SPECTRAL_RADIUS` | 0.99 |
-| | `INPUT_SCALING` | 0.005 |
-| | `FEEDBACK_SCALING` | 0.04 |
-| | `LEAK_RATE` | 1.0 |
-| | `HISTORY_DEPTH` | 24 |
-| Readout | online Adam, 3 outputs | |
-| | `LEARNING_RATE` → `LEARNING_RATE_MIN` | 4e-5 → 2e-6 |
-| | `EPOCHS` | 100 |
-| | `READOUT_SLICES` / `AUX_INPUT_DIM` / pooling | 1 / 0 / on |
-| Data | `TRAINING_WINDOW_SIZE` / free-run / warmup | 20000 / 2000 / 1000 |
-| Score | `VPT_THRESHOLD` | 0.3 (normalized channel-RMS) |
-
-Edit constants in `Lorenz.h`; rebuild the `Lorenz` target. There is no runtime
-config file.
+Treat `Lorenz.h` as the source of truth for **current** numbers. Snapshot op-points
+and survey outcomes in [`TRACKING.md`](TRACKING.md), not here.
 
 ---
 
-## 9. Building and running
+## 8. Building and running
 
 **Build** (CLion owns `cmake-build-*` on this machine — do not reconfigure those
 dirs with a foreign generator):
@@ -268,44 +300,51 @@ Release preferred for numerics (`-O3 -ffast-math`).
 Lorenz.exe [NUM_THREADS] [NUM_RUNS]
 ```
 
-| Arg | Default | Meaning |
-|-----|---------|---------|
-| `NUM_THREADS` | `hardware_concurrency` | Parallel trials; each trains one ESN on `seed + t` |
-| `NUM_RUNS` | **50** | Free-runs per trial after that training (not free-run *length*) |
+| Arg | Default behavior | Meaning |
+|-----|------------------|---------|
+| `NUM_THREADS` | hardware concurrency | Parallel trials; each trains one ESN on `base_seed + t` |
+| `NUM_RUNS` | CLI default in `main` | Free-runs **per trial** after that training (not free-run *length*) |
 
 `FREE_RUN_WINDOW_SIZE` (generative steps scored per free-run) is a **compile-time**
-knob in `config::` (default 2000). CLI `NUM_RUNS` is how many independent free-runs
-(with fresh orbits) to average — orthogonal to window length.
+knob in `config::`. CLI `NUM_RUNS` is how many independent free-runs (with fresh
+orbits) to average — orthogonal to window length.
 
-### Why `Lorenz.exe 4 2000` can run for hours
+### Cost model (why large `NUM_RUNS` is heavy)
 
-Not a hang — a silent mega-job. Per trial:
+Per trial, order of magnitude:
 
-1. **Train:** `EPOCHS` × ~`TRAINING_WINDOW_SIZE` online steps (default 100 × 20 000), each a Predict + TrainStep + ReservoirStep at DIM 11.
-2. **Free-run × NUM_RUNS:** each free-run **rebuilds an orbit**, **re-washes the full training window** (~20 000 reservoir steps), then scores `FREE_RUN_WINDOW_SIZE` generative steps.
+1. **Train:** `EPOCHS` × ~training-window online steps (each Predict + TrainStep +
+   ReservoirStep), minus warmup consumed inside the window.
+2. **Free-run × NUM_RUNS:** each free-run **rebuilds an orbit**, **re-washes the full
+   training window**, then scores up to `FREE_RUN_WINDOW_SIZE` generative steps.
 
-So `4 2000` ≈ 4 trials × (2e6 train steps + 2000 × 22 000 free-run steps) — tens of millions of reservoir steps **per trial**, HCNN train steps on top, with **no final stdout** until every thread finishes. Progress lines go to **stderr** (`[seed …] free-run k/N`). Prefer something like `4 20` or `4 50` for day-to-day checks; reserve `2000` for overnight surveys.
+Large `NUM_THREADS × NUM_RUNS` can mean tens of millions of reservoir steps with
+**little final stdout** until every thread finishes. Progress lines go to **stderr**
+(`[seed …] free-run k/N`). Prefer modest `NUM_RUNS` for day-to-day checks; reserve
+huge surveys for overnight.
 
-`main` currently runs a **multi-thread seed survey**:
+### What `main` does today
+
+Multi-thread **seed survey**:
 
 - Shared starting `orbit_seed` across trials → same sequence of held-out orbits;
   ESN seed is the only independent variable.
 - **One level of parallelism:** outer `jthread`s run trials; each trial’s HCNN is
-  forced single-threaded (`readout.num_threads = 1`) so the survey does not nest
-  a full worker pool inside every ESN.
-- Worker exceptions are caught and reported in that trial’s slot (no process abort).
-- Per-step live printf is silenced (`ENABLE_PRINTF = false`); stderr carries coarse
-  progress; each trial returns a report string (aggregate VPT / RMSE + top-10)
-  printed in seed order after all threads join.
+  forced single-threaded so the survey does not nest a full worker pool inside
+  every ESN.
+- `main` forces `ENABLE_PRINTF = false` for the survey; worker exceptions are
+  caught per trial; each trial returns a report string (aggregate VPT / RMSE +
+  top-10) printed in seed order after join.
 - Completion `Beep` on Windows.
 
 For a **single interactive run** (config banner + per-epoch train RMSE + free-run
-trace): set `config::ENABLE_PRINTF = true`, call `Lorenz(seed, orbit_seed).Train()`
-then `FreeRun(true)` from a slim `main`, or temporarily replace the survey body.
+trace): leave or set `config::ENABLE_PRINTF = true`, call
+`Lorenz(seed, orbit_seed).Train()` then `FreeRun(true)` from a slim `main`, or
+temporarily replace the survey body.
 
 ---
 
-## 10. What this example is (and is not)
+## 9. What this example is (and is not)
 
 **Is:**
 
@@ -313,20 +352,22 @@ then `FreeRun(true)` from a slim `main`, or temporarily replace the survey body.
 - Online (single-sample) HCNN readout training with prequential monitoring
 - Half-anchored closed loop: past always teacher, future becomes student past `ub`
 - A harness for long rollouts with a restoring tether and multi-seed surveys
+- Optional FSF as an independent internal drive path
 
 **Is not:**
 
 - Unassisted Pathak-style free-run VPT without an anchor (do not claim that)
+- A frozen hyperparameter sheet — numbers live in `Lorenz.h` / `TRACKING.md`
 
 ---
 
-## 11. Related docs
+## 10. Related docs
 
 | Doc | Role |
 |-----|------|
 | [`JanusCursor.md`](JanusCursor.md) | Exact cursor API and index geometry |
 | [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
-| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback (local knobs in `config::`) |
-| [`TRACKING.md`](TRACKING.md) | Live Janus free-run experiment log (FSF A/B, surveys) |
+| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback |
+| [`TRACKING.md`](TRACKING.md) | Live experiment log (op-points, FSF A/B, surveys) |
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh free-run campaign (stale harness) |
 | Project [`docs/README.md`](../../docs/README.md) | Library-wide reading order |

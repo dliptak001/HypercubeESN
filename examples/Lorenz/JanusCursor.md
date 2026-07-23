@@ -1,4 +1,4 @@
-# JanusCursor — code-faithful reference
+# JanusCursor
 
 | Item | Location |
 |------|----------|
@@ -6,7 +6,7 @@
 | Result type | `JanusCursorResult` = `std::pair<int32_t, int32_t>` → `{past_index, future_index}` |
 | Primary consumer | `LorenzDatastream` (public inheritance); harness protocol in [`README.md`](README.md) |
 
-This document describes **exactly** what `JanusCursor` does. It holds **no stream data** — only two integer indices and the window geometry that defines them. The owner maps those indices into its own buffer.
+This document describes what `JanusCursor` does. It holds **no stream data** — only two integer indices and the window geometry that defines them. The owner maps those indices into its own buffer.
 
 ---
 
@@ -222,7 +222,7 @@ JanusCursor
 
 | Document / file | Covers |
 |-----------------|--------|
-| [`README.md`](README.md) | Full Lorenz experiment: stream layout defaults, 8-channel ports, train / free-run, exposure-bias knobs, VPT scoring, how to build and run |
+| [`README.md`](README.md) | Full Lorenz experiment: stream layout, 8-channel ports, train / free-run, VPT scoring, how to build and run |
 | `LorenzDatastream.{h,cpp}` | RK4 orbit, normalize to float `[-1,1]`, inherits `JanusCursor`, maps indices → samples |
 | `Lorenz.{h,cpp}` | ESN ports, `Train` / `FreeRun`, multi-seed survey `main` |
 | `docs/LorenzFreeRun.md` | Older A(x)-vs-tanh free-run campaign notes — **not** a description of this cursor (stale relative to the Janus harness) |
@@ -241,7 +241,3 @@ JanusCursor
 **Is not:**
 
 - A data source (no samples, no normalization)
-- Center-mirror `±i` free-run from a shared present
-- Reflecting multi-sweep physics inside the cursor
-- Seamless “end training at center → continue free-run without `Reset`”
-- A claim about pure autonomous generative skill — that is a harness / scoring question (`README.md`)
