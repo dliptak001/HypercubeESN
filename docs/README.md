@@ -16,6 +16,7 @@ order below.
 | [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md) | External-feedback port (caller-owned closed loop) |
 | [full_state_linear_feedback.md](full_state_linear_feedback.md) | Full-state feedback (internal φ = V·x) — theory map + landed API |
 | [Rotating-input-map-temporalization.md](Rotating-input-map-temporalization.md) | **Design proposal** — RIMT mechanism for **HypercubeMLP** (own product; static/MLP-class tasks atop HypercubeESN) |
+| [HypercubeLSM.md](HypercubeLSM.md) | **Concept** — HypercubeLSM: spiking liquid state machine on the hypercube (ESN’s event-native sibling; own future project) |
 
 These documents cover the full pipeline:
 
