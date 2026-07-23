@@ -21,31 +21,23 @@ namespace config
     // collects it from FreeRun()'s return value, not from these gated prints.
     inline bool ENABLE_PRINTF = true;
 
-    // **** seed 13649419    VPT 347 steps ( 6.28 lt)  free-run RMSE 0.428023  (2000 steps)
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11; // hypercube dimension
-    constexpr uint64_t SEED = 13649419;//13649188; // reservoir seed
+    constexpr uint64_t SEED = 13649419; // reservoir seed
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.005; // shared across all input channels
-    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port (BUGBUG - why is feedback scaling so much stronger than input scaling?)
+    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
-
-    // Full-state linear feedback (internal). Edit these three for A/B.
-    // V = U(-1,1) from FSF_SEED; phi = V·x; strength = FSF_SCALING on B_fsf.
     constexpr bool FULL_STATE_FEEDBACK = true;
     constexpr uint64_t FSF_SEED = 9089361;
-    constexpr float FSF_SCALING = 0.003; // B_fsf: U(-1,1)×scale/√dim
+    constexpr float FSF_SCALING = 0.003;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.000002f;//0.000005f; // anneal floor reached at the final epoch
+    constexpr float LEARNING_RATE_MIN = 0.000002f;// anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 100;
-
-    // Readout input only (reservoir unchanged): B = READOUT_SLICES + (AUX_INPUT_DIM > 0)
-    // blocks of N on a (DIM + log2 B) hypercube. B power-of-two; slices ≤ HISTORY_DEPTH.
-    constexpr size_t READOUT_SLICES = 4;//HISTORY_DEPTH;
-    constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
+    constexpr size_t READOUT_SLICES = 4;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;
 
@@ -149,11 +141,6 @@ private:
 
     /// Copies the current future sample — the horizon-1 target — into targets.
     static void ExtractTargets(float targets[3], const NormalizedState& future_state);
-
-    /// Packs the auxiliary readout input u_raw = normalized past (x,y,z) — fed onto
-    /// the readout's aux block (see config::AUX_INPUT_DIM). Unused when the readout
-    /// has no aux block.
-    static void ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states);
 
     /// Assembles the ESN config from the config:: constants.
     static ESNConfig MakeESNConfig(uint64_t seed);

@@ -41,11 +41,9 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
 
-    // Block-structured readout input: READOUT_SLICES delay-line slices plus an optional
-    // aux block holding the normalized past (x,y,z). Both feed only the readout; the
-    // reservoir is unchanged. The stream is already [-1,1], so u_raw needs no scaling.
+    // Delay-line slices only (no aux block) — readout input; reservoir unchanged.
     cfg.readout_slices = config::READOUT_SLICES;
-    cfg.aux_input_dim = config::AUX_INPUT_DIM;
+    cfg.aux_input_dim = 0;
     cfg.readout.use_pooling = config::USE_POOLING;
     cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9;
@@ -93,10 +91,8 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
             std::printf("[Lorenz config] FSF: OFF\n");
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
-        std::printf("[Lorenz config] readout in: slices=%zu  aux=%zu  blocks=%zu  pooling=%s\n",
-                    config::READOUT_SLICES, config::AUX_INPUT_DIM,
-                    config::READOUT_SLICES + (config::AUX_INPUT_DIM > 0 ? 1u : 0u),
-                    config::USE_POOLING ? "on" : "off");
+        std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",
+                    config::READOUT_SLICES, config::USE_POOLING ? "on" : "off");
         std::printf("[Lorenz config] stream:    x0=(%.2f, %.2f, %.2f)  warmup=%zu\n",
                     config::INITIAL_LORENZ_STATE.x, config::INITIAL_LORENZ_STATE.y, config::INITIAL_LORENZ_STATE.z,
                     config::RESERVOIR_WARMUP_STEPS);
@@ -163,16 +159,6 @@ void Lorenz::ExtractTargets(float targets[3], const NormalizedState& future_stat
     targets[2] = future_state.z;
 }
 
-static_assert(config::AUX_INPUT_DIM == 0 || config::AUX_INPUT_DIM == 3,
-              "ExtractAuxPast fills exactly 3 components (past x,y,z)");
-
-void Lorenz::ExtractAuxPast(float u_raw[3], const LorenzDatastreamResult& past_future_states)
-{
-    u_raw[0] = past_future_states.past.x; // normalized past x
-    u_raw[1] = past_future_states.past.y; // normalized past y
-    u_raw[2] = past_future_states.past.z; // normalized past z
-}
-
 float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epochs, const size_t current_epoch)
 {
     if (epochs <= 1)
@@ -192,10 +178,6 @@ void Lorenz::Train()
     float future[4] = {}; // feedback-port drive: [future x, y, z, x*z] (teacher-forced real)
     float targets[3] = {};
     float outputs[3] = {}; // the model's pre-update prediction (prequential read)
-    float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
-    // nullptr when the readout has no aux block — ESN rejects a stray u_raw, and an aux
-    // block is never silently zeroed. `aux` aliases u_past, so it tracks each refill.
-    const float* const aux = (config::AUX_INPUT_DIM > 0) ? u_past : nullptr;
 
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
@@ -229,12 +211,11 @@ void Lorenz::Train()
             ExtractTargets(targets, *past_future_states.future);
             ExtractPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
-            ExtractAuxPast(u_past, past_future_states);
 
             // Prequential (test-then-train) read: the pre-update prediction of this
             // call's own target, read at the unchanged state x(t) before TrainStep.
-            esn_.Predict(outputs, aux);
-            esn_.TrainStep(targets, lr, 0.0f, aux); // fit the readout on x(t)
+            esn_.Predict(outputs); // no readout aux in this harness
+            esn_.TrainStep(targets, lr); // fit the readout on x(t)
             esn_.ReservoirStep(past, future); // step to x(t+1)
 
             // Prequential (test-then-train) error: `outputs` is the pre-update
@@ -275,9 +256,6 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     float future[4] = {}; // feedback-port drive: [x, y, z, x*z] of the model's prediction
     float targets[3] = {};
     float outputs[3] = {}; // the model's generative prediction each step
-    float u_past[3] = {}; // auxiliary readout input: normalized past (x,y,z)
-    // nullptr when the readout has no aux block (see Train). Aliases u_past.
-    const float* const aux = (config::AUX_INPUT_DIM > 0) ? u_past : nullptr;
 
     RebuildDatastream(false);
 
@@ -323,8 +301,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
             break;
         }
 
-        ExtractAuxPast(u_past, past_future_states); // u_raw for this Predict
-        esn_.Predict(outputs, aux); // the prediction of S[f]
+        esn_.Predict(outputs); // the prediction of S[f]
         ExtractPast(past, past_future_states); // anchored past -> input port
         ExtractFuturePredicted(future, outputs); // own prediction -> feedback port
         esn_.ReservoirStep(past, future); // absorb the fed-back prediction
