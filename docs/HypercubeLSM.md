@@ -22,6 +22,22 @@ readout is trained.
 Same topology contract as HypercubeESN; **spikes and timing** instead of
 smooth rate units.
 
+### Shelf line
+
+> **Same crystal as Hopfield / CNN / ESN. Different phase of matter.**
+
+Use that as the product face after the name: one shared Boolean-hypercube
+geometry (the crystal); unit model and dynamics differ (the phase) — here,
+spikes instead of rate fields or energy memory. Accurate enough for branding;
+not a formal physics claim. Pair with the training contract nearby: freeze the
+liquid, train the readout.
+
+**Suggested pairing:**
+
+> **HypercubeLSM** — a spiking liquid on the Boolean hypercube.  
+> *Same crystal as Hopfield / CNN / ESN. Different phase of matter.*  
+> Freeze the liquid; train the readout.
+
 ---
 
 ## What LSM means
@@ -74,6 +90,10 @@ The product claim is not “yet another SNN framework.” It is:
 
 > **This liquid is a hypercube** — same lattice as Hopfield / CNN / ESN, unit
 > model = spikes.
+
+Or, shorter:
+
+> **Same crystal as Hopfield / CNN / ESN. Different phase of matter.**
 
 ---
 
@@ -260,7 +280,11 @@ to deserve a separate core.
 | **Liquid state machine** | Full paradigm name in docs |
 | **LSM** | Short handle |
 | **Liquid** | The frozen spiking recurrent graph on the cube |
+| **Crystal / phase** | Brand metaphor: shared hypercube lattice vs unit-model dynamics (see shelf line) |
 | **HypercubeSpiking** | Broader alt name — only if the product outgrows pure LSM scope |
+
+**Shelf line (locked for voice kit):** *Same crystal as Hopfield / CNN / ESN.
+Different phase of matter.*
 
 ---
 
@@ -289,3 +313,5 @@ It **does** claim a coherent product direction:
 > Put a **spiking liquid** on the **Boolean hypercube**, freeze it, train a
 > readout — the event-native sibling of HypercubeESN in the HypercubeML
 > family.
+
+> **Same crystal as Hopfield / CNN / ESN. Different phase of matter.**
