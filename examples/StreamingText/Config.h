@@ -51,7 +51,9 @@ namespace streaming_text::config
         // Plain-text corpus to memorize. NOT bundled with the repo — supply your
         // own and point this at it. Default is Tiny Shakespeare (~1.1 MB), from
         // https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
-        // Any ASCII/UTF-8 text works; the vocabulary is built from its distinct bytes.
+        // Path is resolved relative to the process working directory (or absolute).
+        // Alphabet is the fixed 96-token set (newline + printable ASCII 0x20-0x7E);
+        // any other byte is a hard load error. Plain ASCII text only — not free UTF-8.
         std::string corpus_path = "tinyshakespeare.txt";
 
         // --- Stream budget ---------------------------------------------------

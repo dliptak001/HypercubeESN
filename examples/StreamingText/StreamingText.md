@@ -23,11 +23,15 @@ repo**; you must supply it yourself and point `corpus_path` (`Config.h`) at it.
 
 - **Get it:** download
   <https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt>
-  and save it to the `corpus_path` location (default `tinyshakespeare.txt`,
-  resolved relative to the working directory).
-- **Substitute freely:** any UTF-8/ASCII plain-text file works. The vocabulary
-  is built from the distinct bytes in whatever file you point at, so corpus
-  size and alphabet are discovered at load time — no code change needed. The
+  and save it to the `corpus_path` location (default `tinyshakespeare.txt`).
+  Paths are resolved relative to the **process working directory** (or use an
+  absolute path). If you launch from `cmake-build-release/`, put the file there
+  or set `corpus_path` to an absolute path — not relative to
+  `examples/StreamingText/`.
+- **Substitute freely:** any plain-text file whose bytes all fall in the
+  **fixed 96-token alphabet** (newline + printable ASCII `0x20–0x7E`). Corpus
+  length is discovered at load time; the alphabet is not — any other byte
+  (tab, smart quotes, multi-byte UTF-8, etc.) is a hard load error. The
   reported BPC/top-1 numbers below are specific to Tiny Shakespeare.
 
 ## Operating model
@@ -106,13 +110,13 @@ A single `Cfg` struct (no mode enum):
 
 | Knob | Meaning |
 |------|---------|
-| `corpus_path` | plain-text corpus, not bundled — see [The corpus](#the-corpus-not-bundled) (default `tinyshakespeare.txt`, relative to the working directory) |
+| `corpus_path` | plain-text corpus, not bundled — see [The corpus](#the-corpus-not-bundled) (default `tinyshakespeare.txt`, relative to process CWD; absolute paths OK) |
 | `warmup_chars` | transient reservoir warmup (no training) |
 | `warmup_train_chars` | extra warmup chars to settle the reservoir before training |
 | `total_steps` | single stream budget; laps ≈ `total_steps / L` |
 | `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) block |
 | `mini_batch_size` | grad-accum chunk for `TrainStepBatch` |
-| `lr_min_frac` | cosine schedule floor as a fraction of `lr_max` (this is the **active** floor; `esn.readout.lr_min_frac` is inert in the streaming path) |
+| `lr_min_frac` | cosine schedule floor as a fraction of `lr_max` (this is the **active** floor; `esn.readout.lr_min_frac` is inert in the streaming path — the banner prints `active_lr_min_frac`) |
 | `report_window` | rolling-BPC / top-1 window length (chars) |
 | `report_every` | live-line print cadence (0 = end only) |
 | `sample_every` | chars between teacher-forced readouts (0 = off) |
@@ -166,9 +170,15 @@ Built as the `StreamingText` target (see root `CMakeLists.txt`). Build Release
 with the CLion-bundled toolchain (see [Building and Running](../../README.md#building-and-running-c));
 run `StreamingText.exe` with no arguments — all configuration is in `Config.h`.
 
+**Corpus path:** `corpus_path` is resolved from the process working directory.
+From a shell, either `cd` to the directory that holds `tinyshakespeare.txt` before
+launching, or set an absolute path in `Config.h`. CLion run configs often use
+`cmake-build-release` as CWD — place the file there or override the path.
+
 Expect: a single continuous stream log (no pass / val / restore lines), a live
 rolling-BPC line trending **downward** across laps, and periodic teacher-forced
-readouts at **precessing** corpus positions.
+readouts at **precessing** corpus positions. The startup banner includes
+`history_depth` and `active_lr_min_frac` (the streaming cosine floor).
 
 ## Results
 

@@ -247,8 +247,13 @@ std::vector<float> ESN::PredictFromRecorded(size_t timestep) const
 std::vector<float> ESN::PredictFromState(const float* readout_input) const
 {
     std::vector<float> out(readout_.NumOutputs());
-    readout_.PredictRaw(readout_input, out.data());
+    PredictFromState(readout_input, out.data());
     return out;
+}
+
+void ESN::PredictFromState(const float* readout_input, float* out) const
+{
+    readout_.PredictRaw(readout_input, out);
 }
 
 double ESN::R2(const float* targets, size_t start, size_t count) const

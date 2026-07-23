@@ -263,6 +263,12 @@ public:
     /// @ref Predict, it never touches the live reservoir.
     [[nodiscard]] std::vector<float> PredictFromState(const float* readout_input) const;
 
+    /// @brief Like @ref PredictFromState, but writes NumOutputs() values into
+    /// caller-provided @p out instead of allocating a vector. For hot loops that
+    /// reuse a buffer (e.g. streaming prequential scoring). @p out must have room
+    /// for NumOutputs() floats.
+    void PredictFromState(const float* readout_input, float* out) const;
+
     /// @brief Coefficient of determination (R²) over recorded timesteps
     /// [@p start, @p start + @p count) — a goodness-of-fit score where 1.0 is a
     /// perfect fit and 0.0 is no better than always guessing the mean.

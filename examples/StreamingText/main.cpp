@@ -85,6 +85,7 @@ int Run()
     std::cerr << "[stext] reservoir: spectral_radius=" << esn_cfg.reservoir.spectral_radius
               << " input_scaling=" << esn_cfg.reservoir.input_scaling
               << " leak_rate=" << esn_cfg.reservoir.leak_rate
+              << " history_depth=" << esn_cfg.reservoir.history_depth
               << " num_inputs=" << esn_cfg.reservoir.num_inputs << "\n";
     if (esn_cfg.reservoir.full_state_feedback)
         std::cerr << "  FSF: ON   fsf_seed=" << esn_cfg.reservoir.fsf_seed
@@ -130,6 +131,8 @@ int Run()
     std::cerr << "[stext] CNN cfg: nl=" << esn_cfg.readout.num_layers
               << " ch=" << esn_cfg.readout.conv_channels
               << " lr_max=" << lr_max << " lr_min=" << lr_min
+              << " active_lr_min_frac=" << cfg.lr_min_frac
+              << " (readout.lr_min_frac unused on streaming path)"
               << " weight_decay=" << esn_cfg.readout.weight_decay
               << " num_outputs=" << esn_cfg.readout.num_outputs << "\n";
     std::cerr << "[stext] stream: warmup=" << cfg.warmup_chars
@@ -148,6 +151,7 @@ int Run()
 
     std::vector<float> accum_states(static_cast<std::size_t>(K) * state_dim);
     std::vector<float> accum_targets(K);  // class indices as floats (unified TrainStepBatch target)
+    std::vector<float> logits(num_outputs);  // reused every step — no per-step heap alloc
     int accum_count = 0;
 
     const std::size_t total_batches =
@@ -180,7 +184,7 @@ int Run()
         // 2. Read live state into the accumulation slot and predict next char.
         float* slot = accum_states.data() + static_cast<std::size_t>(accum_count) * state_dim;
         esn.CopyReservoirState(slot);
-        const std::vector<float> logits = esn.PredictFromState(slot);
+        esn.PredictFromState(slot, logits.data());
 
         const std::size_t next_pos = (pos + 1) % L;
         const char next_ch = corpus.text[next_pos];
