@@ -49,14 +49,14 @@ namespace config
     // power of two, and READOUT_SLICES must not exceed HISTORY_DEPTH. The reservoir is
     // untouched by all of this — the slices are the memory it already computes for its
     // recurrent gather, and which the readout has never been shown.
-    constexpr size_t READOUT_SLICES = 1;//HISTORY_DEPTH;
+    constexpr size_t READOUT_SLICES = 4;//HISTORY_DEPTH;
     constexpr size_t AUX_INPUT_DIM = 0; // 3 = normalized past (x,y,z); 0 = no aux block
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;
 
     // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
     constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
-    constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
     constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
     constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
 

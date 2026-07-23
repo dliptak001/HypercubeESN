@@ -569,8 +569,8 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
 
 int main(int argc, char** argv)
 {
-    uint64_t seed = 2941978990;
-    uint64_t orbit_seed = 2983498;
+    uint64_t seed = 21978990;
+    uint64_t orbit_seed = 72983498;
 
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 

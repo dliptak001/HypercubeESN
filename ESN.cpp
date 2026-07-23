@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -339,7 +340,39 @@ void ESN::LoadReadoutHcnnModel(const std::string& path_stem, ReadoutLoadMode mod
 
 std::string ESN::ReadoutArchSummary() const
 {
-    return readout_.ArchSummary();
+    // Reservoir vtx_weight_ layout: N·DIM·(M + drive_blocks), drive_blocks =
+    // 1 (input) + [ext-fb] + [FSF]. Matches Reservoir construction (docs/Reservoir.md).
+    // These weights are fixed (not trained). M scales the recurrent bank only.
+    // HCNN size is independent of M unless readout_slices / aux grow start-DIM.
+    const ReservoirConfig rc = reservoir_->GetConfig();
+    const size_t n = reservoir_->Size();
+    const size_t dim = reservoir_->Dim();
+    const size_t M = rc.history_depth;
+    const size_t drive_blocks = 1u
+        + (rc.num_external_feedback_channels > 0 ? 1u : 0u)
+        + (rc.full_state_feedback ? 1u : 0u);
+    const size_t res_weights = n * dim * (M + drive_blocks);
+
+    // HCNN start-DIM = reservoir DIM + log2(B), B = readout_slices + [aux].
+    // Not the same number as reservoir DIM when B > 1 (e.g. slices=4 -> +2).
+    const size_t B = readout_blocks_;
+    const size_t hcnn_dim = readout_.GetConfig().dim;
+    const size_t hcnn_N = size_t{1} << hcnn_dim;
+
+    std::ostringstream os;
+    os << "Reservoir: DIM=" << dim << "  N=" << n
+       << "  M=" << M
+       << "  weights(fixed)=" << res_weights
+       << "  [=N*DIM*(M+drives)=" << n << "*" << dim << "*(" << M << "+"
+       << drive_blocks << ")]\n";
+    os << "HCNN input: readout_slices=" << readout_slices_
+       << "  aux=" << (d_aux_ > 0 ? "yes" : "no")
+       << "  B=" << B << " blocks x N=" << n
+       << "  -> start_DIM=" << hcnn_dim << "  N_hcnn=" << hcnn_N << "\n";
+    os << "  (start_DIM = reservoir_DIM + log2(B) = " << dim << " + "
+       << (hcnn_dim - dim) << "; M does not change HCNN size)\n";
+    os << readout_.ArchSummary();
+    return os.str();
 }
 
 // ---------------------------------------------------------------

@@ -678,6 +678,6 @@ std::string Readout::ArchSummary() const
     std::ostringstream os;
     hcnn::print_arch(os, static_cast<int>(config_.dim), config_.num_outputs,
                      /*input_channels=*/1, layers, sum);
-    os << "Live weight_count: " << net_->GetWeightCount() << "\n";
+    os << "HCNN live weight_count: " << net_->GetWeightCount() << "\n";
     return os.str();
 }

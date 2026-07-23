@@ -410,7 +410,9 @@ public:
     void LoadReadoutHcnnModel(const std::string& path_stem,
                               ReadoutLoadMode mode = ReadoutLoadMode::Eval);
 
-    /// @brief Architecture summary of the HCNN readout (param counts, layers).
+    /// @brief Architecture summary: fixed reservoir weight count (scales with M)
+    /// plus HCNN layer stack and trained parameter count (independent of M unless
+    /// @c readout_slices / aux change the readout start-DIM).
     [[nodiscard]] std::string ReadoutArchSummary() const;
 
 private:
