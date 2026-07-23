@@ -32,18 +32,15 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.history_depth = config::HISTORY_DEPTH;
     cfg.reservoir.bias_scaling = 0.01;
     cfg.reservoir.history_floor = 1.0;
-
-    // FSF A/B: set config::FULL_STATE_FEEDBACK in Lorenz.h (independent of external fb).
     cfg.reservoir.full_state_feedback = config::FULL_STATE_FEEDBACK;
     cfg.reservoir.fsf_seed = config::FSF_SEED;
     cfg.reservoir.fsf_scaling = config::FSF_SCALING;
 
+    cfg.aux_input_dim = 0;
+
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
-
-    // Delay-line slices only (no aux block) — readout input; reservoir unchanged.
     cfg.readout_slices = config::READOUT_SLICES;
-    cfg.aux_input_dim = 0;
     cfg.readout.use_pooling = config::USE_POOLING;
     cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9;
