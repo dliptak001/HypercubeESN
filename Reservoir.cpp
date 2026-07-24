@@ -214,7 +214,7 @@ void Reservoir::Initialize()
     // A/B input rows (N × dim) — uncomment at most one:
     // NormalizeRowsL2(input_base, n_, dim_);
     // NormalizeRowsLinf(input_base, n_, dim_);
-    NormalizeRowsDavid(input_base, n_, dim_);
+    //NormalizeRowsDavid(input_base, n_, dim_);
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
         input_base[i] *= in_scaling;
@@ -227,7 +227,7 @@ void Reservoir::Initialize()
         // A/B external-feedback rows (N × dim) — uncomment at most one:
         // NormalizeRowsL2(ext_base, n_, dim_);
         // NormalizeRowsLinf(ext_base, n_, dim_);
-        NormalizeRowsDavid(ext_base, n_, dim_);
+        //NormalizeRowsDavid(ext_base, n_, dim_);
         const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
             ext_base[i] *= ext_scale;
@@ -248,7 +248,7 @@ void Reservoir::Initialize()
         // A/B FSF B rows (N × dim) — uncomment at most one; never equalize V:
         // NormalizeRowsL2(fsf_b_base, n_, dim_);
         // NormalizeRowsLinf(fsf_b_base, n_, dim_);
-        NormalizeRowsDavid(fsf_b_base, n_, dim_);
+        //NormalizeRowsDavid(fsf_b_base, n_, dim_);
         const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             fsf_b_base[i] *= fsf_scale;

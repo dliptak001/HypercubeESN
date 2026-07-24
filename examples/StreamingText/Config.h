@@ -73,12 +73,12 @@ namespace streaming_text::config
             c.reservoir.seed = 47397376;
             c.reservoir.history_depth = 64;
             c.reservoir.num_inputs = static_cast<int>(kCharEmbedDim);
-            c.reservoir.spectral_radius = 1.0f;
+            c.reservoir.spectral_radius = 0.93f;
             c.reservoir.leak_rate = 1.0f;
-            c.reservoir.input_scaling = 2.5f;
+            c.reservoir.input_scaling = 3.0f;
             c.reservoir.full_state_feedback = true;
             c.reservoir.fsf_seed = 44157563;
-            c.reservoir.fsf_scaling = 0.05f;
+            c.reservoir.fsf_scaling = 0.01f;
             c.reservoir.verbose = false; // avoid duplicate ctor banner; [stext] + ArchSummary cover it
 
             c.readout.seed = 54544;
@@ -89,7 +89,7 @@ namespace streaming_text::config
             c.readout.conv_channels = 16;
             c.readout.weight_decay = 1e-5f;
             c.readout.lr_max = 0.0005f;
-            c.readout.activation = ReadoutActivation::NONE; //NONE beats LEAKY beats TANH
+            c.readout.activation = ReadoutActivation::LEAKY_RELU; //NONE beats LEAKY beats TANH
 
             return c;
         }();
