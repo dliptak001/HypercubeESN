@@ -22,20 +22,14 @@
 
 namespace streaming_text::config
 {
-    inline constexpr std::size_t kDIM = 11;
-
-    /// Number of most-recent characters concatenated into the reservoir's input
-    /// vector per timestep.  Each timestep the reservoir sees the K most recent
-    /// CharEmbedding lookups packed side by side (`K * kCharEmbedDim` channels).
-    /// K=1 is "current char only"; K>1 gives the reservoir a fixed shift-register
-    /// lookback so short-range n-gram patterns are directly readable.
-    inline constexpr std::size_t kInputHistory = 1;
+    /// Stock survey used 11; edit freely — the run banner reports live ESN dim/N.
+    inline constexpr std::size_t kDIM = 9;
 
     /// Sanity guard on the channel-to-vertex distribution: Reservoir routes
-    /// channel c to a contiguous vertex block, which requires num_inputs to
-    /// divide N = 2^kDIM cleanly.
-    static_assert((1ULL << kDIM) % (kCharEmbedDim * kInputHistory) == 0,
-                  "kCharEmbedDim * kInputHistory must divide N = 2^kDIM for even "
+    /// channel c to a contiguous vertex block, which requires num_inputs
+    /// (= kCharEmbedDim) to divide N = 2^kDIM cleanly.
+    static_assert((1ULL << kDIM) % kCharEmbedDim == 0,
+                  "kCharEmbedDim must divide N = 2^kDIM for even "
                   "channel-to-vertex routing in the Reservoir");
 
     /// XOR mask applied to the reservoir seed to derive the CharEmbedding seed.
@@ -54,69 +48,66 @@ namespace streaming_text::config
         // Path is resolved relative to the process working directory (or absolute).
         // Alphabet is the fixed 96-token set (newline + printable ASCII 0x20-0x7E);
         // any other byte is a hard load error. Plain ASCII text only — not free UTF-8.
-        std::string corpus_path = "tinyshakespeare.txt";
+        std::string corpus_path = "C:\\Hypercube\\tinyshakespeare.txt";
 
         // --- Stream budget ---------------------------------------------------
-        // The corpus is treated as a ring buffer of length L = text.size().
+        // The corpus is a ring buffer of length L = text.size().
         // The stream advances pos = (pos + 1) % L; each full traversal is a
-        // "lap" (the analogue of an epoch).  total_steps is the single budget;
-        // there is no per-pass reset — reservoir state flows continuously.
-        std::size_t warmup_chars = 1024; ///< transient reservoir warmup (no training)
-        std::size_t warmup_train_chars = 32768; ///< extra warmup chars to settle the reservoir before training
-        std::size_t total_steps = 45000000; ///< total streamed chars (laps = total_steps / L)
+        // "lap".  total_steps is the single budget; no per-pass reset.
+        //
+        // warmup_chars: reservoir-only drive (no readout forward/train) to wash
+        // out zero-init and fill the delay line before the train loop.
+        std::size_t warmup_chars = 1024; ///reservoir-only washout
+        std::size_t total_steps = 45000000; ///< total streamed train chars (laps ≈ total_steps / L)
 
         // ESN config: struct defaults + StreamingText overrides.  Edit fields
         // here to tune reservoir dynamics or CNN architecture.
+        //
+        // Streaming path does NOT use readout.lr_min_frac or readout.momentum:
+        // LR comes from Cfg::lr_min_frac + CosineLR on TrainStepBatch; optimizer
+        // is Adam (momentum field is SGD-only). Leave those at library defaults.
         ESNConfig esn = []
         {
             ESNConfig c;
             c.reservoir.dim = kDIM;
-            c.reservoir.seed = 7397376;
-            c.reservoir.history_depth = 1;
-            c.reservoir.num_inputs = static_cast<int>(kCharEmbedDim * kInputHistory);
-            c.reservoir.spectral_radius = 1.3f;
+            c.reservoir.seed = 47397376;
+            c.reservoir.history_depth = 64;
+            c.reservoir.num_inputs = static_cast<int>(kCharEmbedDim);
+            c.reservoir.spectral_radius = 1.0f;
             c.reservoir.leak_rate = 1.0f;
             c.reservoir.input_scaling = 2.5f;
-            // Full-state linear feedback (internal). Edit these three for A/B.
-            c.reservoir.full_state_feedback = false;
-            c.reservoir.fsf_seed = 4415756;
-            c.reservoir.fsf_scaling = 0.003f;
+            c.reservoir.full_state_feedback = true;
+            c.reservoir.fsf_seed = 44157563;
+            c.reservoir.fsf_scaling = 0.05f;
+            c.reservoir.verbose = false; // avoid duplicate ctor banner; [stext] + ArchSummary cover it
 
             c.readout.seed = 54544;
+            c.readout_slices = 4;
             c.readout.task = ReadoutTask::Classification;
             c.readout.num_outputs = static_cast<int>(kVocabSize);
             c.readout.num_layers = 1;
             c.readout.conv_channels = 16;
             c.readout.weight_decay = 1e-5f;
-            c.readout.lr_max = 0.001f;
-            c.readout.lr_min_frac = 0.02f; // INERT in this example: the streaming path
-                                           // (ReservoirWarmup + TrainStepBatch) takes an explicit
-                                           // per-batch lr; the readout's own cosine (the only
-                                           // consumer of readout.lr_min_frac) is never run.
-                                           // The active LR floor is Cfg::lr_min_frac below.
-            c.readout.momentum = 0.9f; // momentum term for the readout optimizer (ADAM)
-            c.readout.activation = ReadoutActivation::TANH;
+            c.readout.lr_max = 0.0005f;
+            c.readout.activation = ReadoutActivation::NONE; //NONE beats LEAKY beats TANH
 
             return c;
         }();
 
         // --- Streaming knobs not in ESNConfig --------------------------------
         int mini_batch_size = 64; ///< grad-accum chunk for TrainStepBatch
-        float lr_min_frac = 0.2f; ///< cosine schedule floor as fraction of lr_max (1.0 = flat)
+        float lr_min_frac = 0.2f; ///< cosine floor as fraction of readout.lr_max (active path)
 
         // --- Prequential metric reporting ------------------------------------
         std::size_t report_window = 10000; ///< rolling-BPC / top-1 window length (chars)
         std::size_t report_every = 100000; ///< print one live rolling line every N chars (0 = end only)
 
         // --- Teacher-forced sample display -----------------------------------
-        // Every sample_every chars, emit sample_len chars of predicted-vs-actual
-        // text at the stream's current position (no reset, no autoregression).
-        // sample_every should not divide L, so sample positions precess across
-        // laps automatically (any round constant works for a real corpus).
-        std::size_t sample_every = 250000; ///< chars between teacher-forced readouts (0 = off)
-        std::size_t sample_len = 120; ///< chars shown per readout
+        // Once per completed lap (every L train steps), emit sample_len chars of
+        // predicted-vs-actual text starting at the lap boundary. 0 = off.
+        std::size_t sample_len = 120; ///< chars shown at end of each lap (0 = off)
 
-        bool verbose = true;
+        bool verbose = true; ///< gates periodic roll_bpc lines only (not the startup banner)
     };
 
     inline const Cfg kCfg;

@@ -11,6 +11,7 @@
 // (no reset, no autoregression, nothing to restore).  See StreamingText.md.
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -33,12 +34,10 @@ namespace streaming_text {
 
 namespace {
 
-/// Escape control chars so a sample line stays on one row.
+/// Keep sample lines single-row; only newline is in the fixed vocab.
 std::string EscapeChar(char c)
 {
     if (c == '\n') return "\\n";
-    if (c == '\r') return "\\r";
-    if (c == '\t') return "\\t";
     return std::string(1, c);
 }
 
@@ -64,105 +63,88 @@ int Run()
     }
     const std::size_t L = corpus.text.size();
 
-    const std::size_t prefix = cfg.warmup_chars + cfg.warmup_train_chars + 1;
+    const std::size_t prefix = cfg.warmup_chars + 1;
     if (L < prefix) {
         std::cerr << "error: corpus has " << L << " chars, need at least "
-                  << prefix << " for warmup + warmup_train + 1\n";
+                  << prefix << " for warmup + 1\n";
         return 2;
     }
-
-    std::cerr << "[stext] corpus=" << cfg.corpus_path
-              << " chars=" << L
-              << " vocab_size=" << corpus.vocab.size() << "\n";
 
     ESNConfig esn_cfg = cfg.esn;
     const float lr_max = esn_cfg.readout.lr_max;
     const float lr_min = lr_max * cfg.lr_min_frac;
+    const std::uint64_t embed_seed =
+        esn_cfg.reservoir.seed ^ config::kCharEmbedSeedXor;
+
+    std::cerr << "[stext] corpus=" << cfg.corpus_path
+              << " chars=" << L
+              << " vocab=" << corpus.vocab.size() << "\n";
+    std::cerr << "[stext] seeds: reservoir=" << esn_cfg.reservoir.seed
+              << " readout=" << esn_cfg.readout.seed
+              << " char_embed=" << embed_seed
+              << " fsf=" << esn_cfg.reservoir.fsf_seed << "\n";
 
     ESN esn(esn_cfg);
-    // Banner N/DIM come from the live ESN so they cannot drift from kDIM if only
-    // esn.reservoir.dim was edited.
-    std::cerr << "[stext] DIM=" << esn.ReservoirHypercubeDimension()
-              << " N=" << esn.ReservoirNeuronCount()
-              << " kCharEmbedDim=" << kCharEmbedDim
-              << " kInputHistory=" << config::kInputHistory
-              << " reservoir_seed=" << esn_cfg.reservoir.seed << "\n";
-    std::cerr << "[stext] reservoir: spectral_radius=" << esn_cfg.reservoir.spectral_radius
-              << " input_scaling=" << esn_cfg.reservoir.input_scaling
-              << " leak_rate=" << esn_cfg.reservoir.leak_rate
-              << " history_depth=" << esn_cfg.reservoir.history_depth
-              << " num_inputs=" << esn_cfg.reservoir.num_inputs << "\n";
-    if (esn_cfg.reservoir.full_state_feedback)
-        std::cerr << "  FSF: ON   fsf_seed=" << esn_cfg.reservoir.fsf_seed
-                  << "  fsf_scaling=" << esn_cfg.reservoir.fsf_scaling << "\n";
-    else
-        std::cerr << "  FSF: OFF\n";
 
-    // Same banner channel as the rest of [stext] diagnostics.
+    std::cerr << "[stext] reservoir: DIM=" << esn.ReservoirHypercubeDimension()
+              << " N=" << esn.ReservoirNeuronCount()
+              << " embed_dim=" << kCharEmbedDim
+              << " sr=" << esn_cfg.reservoir.spectral_radius
+              << " in_scale=" << esn_cfg.reservoir.input_scaling
+              << " leak=" << esn_cfg.reservoir.leak_rate
+              << " history_depth=" << esn_cfg.reservoir.history_depth
+              << " num_inputs=" << esn_cfg.reservoir.num_inputs;
+    if (esn_cfg.reservoir.full_state_feedback)
+        std::cerr << " FSF=ON fsf_scaling=" << esn_cfg.reservoir.fsf_scaling;
+    else
+        std::cerr << " FSF=OFF";
+    std::cerr << "\n";
+
+    // Arch (reservoir weight count + HCNN stack). Reservoir ctor verbose is off.
     std::cerr << esn.ReadoutArchSummary();
 
-    const std::uint64_t embed_seed = esn_cfg.reservoir.seed ^ config::kCharEmbedSeedXor;
-    CharEmbedding char_embed(corpus, embed_seed);
-    std::cerr << "[stext] char_embed: vocab=" << char_embed.VocabSize()
-              << " seed=" << embed_seed << "\n";
-
-    // Rolling K-char input shift register, continuous across all phases.
-    RollingCharWindow window(char_embed, config::kInputHistory);
-
-    // --- Phase 1: reservoir warmup (no training). ---
-    std::size_t corpus_pos = 0;
-    esn.ReservoirClear();
-    window.Clear();
-    for (std::size_t i = 0; i < cfg.warmup_chars; ++i) {
-        window.Push(corpus.text[corpus_pos++]);
-        esn.ReservoirWarmup(window.Inputs(), 1);
-    }
-
-    // --- Phase 2: drive warmup_train_chars to settle the reservoir before training. ---
-    const std::size_t channels_per_step = window.InputSize();
-    std::vector<float> warmup_embed(cfg.warmup_train_chars * channels_per_step);
-    for (std::size_t i = 0; i < cfg.warmup_train_chars; ++i) {
-        window.Push(corpus.text[corpus_pos + i]);
-        std::memcpy(warmup_embed.data() + i * channels_per_step,
-                    window.Inputs(),
-                    channels_per_step * sizeof(float));
-    }
-    esn.ReservoirWarmup(warmup_embed.data(), cfg.warmup_train_chars);
-    warmup_embed.clear();
-    warmup_embed.shrink_to_fit();
-    corpus_pos += cfg.warmup_train_chars;  // ReservoirWarmup advanced the reservoir to here
-
-    std::cerr << "[stext] CNN cfg: nl=" << esn_cfg.readout.num_layers
-              << " ch=" << esn_cfg.readout.conv_channels
-              << " lr_max=" << lr_max << " lr_min=" << lr_min
-              << " active_lr_min_frac=" << cfg.lr_min_frac
-              << " (readout.lr_min_frac unused on streaming path)"
-              << " weight_decay=" << esn_cfg.readout.weight_decay
-              << " num_outputs=" << esn_cfg.readout.num_outputs << "\n";
-    std::cerr << "[stext] readout_input: slices=" << esn_cfg.readout_slices
-              << " width=" << esn.ReadoutInputWidth()
-              << " (N=" << esn.ReservoirNeuronCount()
-              << " x B=" << esn.ReadoutBlockCount() << ")\n";
     std::cerr << "[stext] stream: warmup=" << cfg.warmup_chars
-              << " warmup_train=" << cfg.warmup_train_chars
               << " total_steps=" << cfg.total_steps
               << " (~" << (cfg.total_steps / L) << " laps)"
-              << " mini_batch=" << cfg.mini_batch_size << "\n";
+              << " mini_batch=" << cfg.mini_batch_size
+              << " lr_max=" << lr_max << " lr_min=" << lr_min
+              << " lr_min_frac=" << cfg.lr_min_frac
+              << " weight_decay=" << esn_cfg.readout.weight_decay
+              << " readout_width=" << esn.ReadoutInputWidth()
+              << " (B=" << esn.ReadoutBlockCount() << ")\n";
 
-    // --- Phase 3: single continuous ring loop. ---
+    CharEmbedding char_embed(corpus, embed_seed);
+    CharInput drive(char_embed);
+
+    // --- Reservoir-only warmup (no readout forward / no train). ---
+    std::size_t corpus_pos = 0;
+    esn.ReservoirClear();
+    if (cfg.warmup_chars > 0) {
+        constexpr std::size_t channels = CharInput::Size();
+        std::vector<float> warmup_embed(cfg.warmup_chars * channels);
+        for (std::size_t i = 0; i < cfg.warmup_chars; ++i) {
+            drive.Set(corpus.text[corpus_pos + i]);
+            std::memcpy(warmup_embed.data() + i * channels,
+                        drive.Data(),
+                        channels * sizeof(float));
+        }
+        esn.ReservoirWarmup(warmup_embed.data(), cfg.warmup_chars);
+        corpus_pos += cfg.warmup_chars;
+    }
+
+    // --- Ring train loop. ---
     const std::size_t train_start_pos = corpus_pos % L;
     std::size_t pos = train_start_pos;
 
     const int K = cfg.mini_batch_size;
-    // TrainStepBatch / PredictFromState consume the assembled readout input
-    // (B blocks of N), not the raw reservoir state. B = readout_slices (+ aux).
-    // With slices=1 this equals ReservoirNeuronCount(); with slices>1 it is larger.
+    // TrainStepBatch / PredictFromState consume assembled readout input (B×N).
     const std::size_t readout_width = esn.ReadoutInputWidth();
     const std::size_t num_outputs   = esn.NumOutputs();
+    assert(num_outputs > 0);
 
     std::vector<float> accum_states(static_cast<std::size_t>(K) * readout_width);
-    std::vector<float> accum_targets(K);  // class indices as floats (unified TrainStepBatch target)
-    std::vector<float> logits(num_outputs);  // reused every step — no per-step heap alloc
+    std::vector<float> accum_targets(K);  // class indices as floats
+    std::vector<float> logits(num_outputs);
     int accum_count = 0;
 
     const std::size_t total_batches =
@@ -170,15 +152,12 @@ int Run()
     std::size_t batch_index = 0;
     float step_lr = lr_max;
 
-    // Rolling prequential metric: circular buffers over the last report_window
-    // chars, with running sums so each step is O(1).
     const std::size_t W = std::max<std::size_t>(1, cfg.report_window);
     std::vector<double> loss_ring(W, 0.0);
     std::vector<unsigned char> hit_ring(W, 0);
     double loss_sum = 0.0;
     std::size_t hit_sum = 0;
 
-    // Teacher-forced sample window state.
     bool in_sample = false;
     std::size_t sample_left = 0;
     std::size_t sample_origin_pos = 0;
@@ -189,11 +168,10 @@ int Run()
 
     for (std::size_t step = 0; step < cfg.total_steps; ++step) {
         // 1. Advance reservoir one char (true corpus char).
-        window.Push(corpus.text[pos]);
-        esn.ReservoirWarmup(window.Inputs(), 1);
+        drive.Set(corpus.text[pos]);
+        esn.ReservoirWarmup(drive.Data(), 1);
 
-        // 2. Assemble full readout input (all delay-line slices, no aux here)
-        // into the accumulation slot and predict next char from that same vector.
+        // 2. Assemble full readout input; predict next char from that vector.
         float* slot = accum_states.data()
                     + static_cast<std::size_t>(accum_count) * readout_width;
         esn.CopyReadoutInput(slot);
@@ -202,8 +180,9 @@ int Run()
         const std::size_t next_pos = (pos + 1) % L;
         const char next_ch = corpus.text[next_pos];
         const int target = CharToClass(corpus, next_ch);
+        assert(target >= 0 && static_cast<std::size_t>(target) < num_outputs);
 
-        // 3. Prequential metric: softmax cross-entropy (nats) + top-1 hit.
+        // 3. Prequential metric: softmax CE (nats) + top-1 hit.
         float max_logit = logits[0];
         std::size_t argmax = 0;
         for (std::size_t k = 1; k < num_outputs; ++k) {
@@ -212,13 +191,10 @@ int Run()
         double sum_exp = 0.0;
         for (std::size_t k = 0; k < num_outputs; ++k)
             sum_exp += std::exp(static_cast<double>(logits[k]) - max_logit);
-        double loss = 0.0;  // nats
-        if (target >= 0 && static_cast<std::size_t>(target) < num_outputs) {
-            const double log_prob =
-                (static_cast<double>(logits[static_cast<std::size_t>(target)]) - max_logit)
-                - std::log(sum_exp);
-            loss = -log_prob;
-        }
+        const double log_prob =
+            (static_cast<double>(logits[static_cast<std::size_t>(target)]) - max_logit)
+            - std::log(sum_exp);
+        const double loss = -log_prob;
         const unsigned char hit =
             (static_cast<int>(argmax) == target) ? 1u : 0u;
 
@@ -230,12 +206,15 @@ int Run()
         loss_sum += loss;
         hit_sum  += hit;
 
-        // 4. Teacher-forced sample display (reuses the logits above).
-        if (cfg.sample_every && !in_sample && (step % cfg.sample_every == 0)) {
+        // 4. Teacher-forced sample at end of each lap (every L train steps).
+        // When (step+1) is a multiple of L, one full corpus traversal just finished;
+        // sample the next sample_len chars from the lap boundary (next_pos).
+        if (cfg.sample_len && !in_sample && L > 0
+            && ((step + 1) % L == 0)) {
             in_sample = true;
             sample_left = cfg.sample_len;
             sample_origin_pos = next_pos;
-            sample_origin_lap = (train_start_pos + step) / L;
+            sample_origin_lap = (step + 1) / L;  // 1-based count of laps completed
             sample_actual.clear();
             sample_pred.clear();
         }
@@ -267,7 +246,7 @@ int Run()
         // 6. Advance ring position.
         pos = next_pos;
 
-        // 7. Periodic rolling-metric line (live; no interim tables).
+        // 7. Periodic rolling-metric line.
         if (cfg.verbose && cfg.report_every && step
             && (step % cfg.report_every == 0)) {
             const std::size_t n = std::min(step + 1, W);
@@ -284,7 +263,6 @@ int Run()
         }
     }
 
-    // Flush any partial batch.
     if (accum_count > 0) {
         const float frac = static_cast<float>(batch_index)
                          / static_cast<float>(total_batches);

@@ -52,11 +52,12 @@ The metric is computed inline on the training stream — no separate pass, no
 rewind. At each character:
 
 1. Advance the reservoir one char (feed the true corpus char).
-2. Read the live state and **predict** the next char.
+2. Assemble the live **readout input** (all `readout_slices` delay-line ages)
+   and **predict** the next char.
 3. Score that prediction against the **true** next char `text[(pos+1) % L]` —
    softmax cross-entropy, accumulated into a **rolling-window** BPC and a
    rolling top-1 hit rate over the last `report_window` chars.
-4. *Then* fold `(state, target)` into the next online training mini-batch.
+4. *Then* fold `(readout input, target)` into the next online training mini-batch.
 
 Because the prediction in steps 2–3 happens **before** the weight update in
 step 4 lands (updates are applied per `mini_batch_size`-char batch, and the
@@ -67,39 +68,29 @@ to trend steadily downward across laps. A cumulative mean would be dominated by
 early high-loss chars and would mask progress.
 
 ### Teacher-forced sampling (no reset, no restore)
-Every `sample_every` chars the loop emits the next `sample_len` chars as a
-**teacher-forced** readout:
+At the **end of every lap** (every `L` train steps — one full ring over the
+corpus), the loop emits the next `sample_len` chars as a **teacher-forced**
+readout starting at the lap boundary (`sample_len = 0` disables samples):
 
 - Normal streaming continues — the reservoir is *not* reset and *not* re-primed.
 - At each step the model's predicted-next char (argmax of the logits) is shown
   beside the actual next char.
 
-This directly shows how well the model has memorized the section it is currently
-passing over. There is no autoregressive feedback of the model's own output, so
-the sample leaves no synthetic echo in the reservoir, and because nothing is
-reset there is nothing to restore. The sample reuses the same logits already
-computed for the prequential metric — no extra forward pass.
-
-### Sample-position precession
-Sampling fires every `sample_every` chars at whatever position the stream has
-reached. As long as `sample_every` does not divide `L`, sample start positions
-precess around the ring on each successive lap, so the same sections are not
-re-sampled every lap. For any real corpus length this holds for a simple round
-constant; pick one and leave it.
+This shows how well the model has memorized the text at the wrap (and following
+chars). There is no autoregressive feedback of the model's own output, so the
+sample leaves no synthetic echo in the reservoir. The sample reuses the same
+logits already computed for the prequential metric — no extra forward pass.
 
 ## Pipeline
 
 1. **Load + validate corpus** — fixed 96-token vocab (newline + printable ASCII
    `0x20–0x7E`); any out-of-vocab byte is a hard error.
-2. **Phase 1 — warmup** (`warmup_chars`): drive the reservoir, no training,
-   to wash out the zero-init transient.
-3. **Phase 2 — extra warmup** (`warmup_train_chars`): drive the reservoir
-   further with `ReservoirWarmup`. (This window is a holdover from the old standardization
-   era; with standardization removed, and the CNN now built eagerly at
-   construction, it is simply extra reservoir warmup before training.)
-4. **Phase 3 — ring loop** (`total_steps`): the per-char body above (advance →
-   predict → score → teacher-forced display → accumulate → mini-batch update),
-   wrapping `pos = (pos + 1) % L`.
+2. **Warmup** (`warmup_chars`): reservoir-only drive (`ReservoirWarmup`) — no
+   readout forward and no weight updates. Washes out zero-init and fills the
+   delay line before training.
+3. **Ring loop** (`total_steps`): the per-char body above (advance → predict →
+   score → teacher-forced display → accumulate → mini-batch update), wrapping
+   `pos = (pos + 1) % L`.
 
 No states buffer — RAM is constant (reservoir state + CNN weights + optimizer).
 No model file is written: this is a streaming, exploration-only example.
@@ -110,28 +101,28 @@ A single `Cfg` struct (no mode enum):
 
 | Knob | Meaning |
 |------|---------|
-| `corpus_path` | plain-text corpus, not bundled — see [The corpus](#the-corpus-not-bundled) (default `tinyshakespeare.txt`, relative to process CWD; absolute paths OK) |
-| `warmup_chars` | transient reservoir warmup (no training) |
-| `warmup_train_chars` | extra warmup chars to settle the reservoir before training |
-| `total_steps` | single stream budget; laps ≈ `total_steps / L` |
-| `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) + `readout_slices` (delay-line ages fed to the HCNN; must be a power of two when combined with aux, and `<= history_depth`). The stream loop accumulates **full readout inputs** via `CopyReadoutInput` / `ReadoutInputWidth()`, so multi-slice configs work. |
+| `corpus_path` | plain-text corpus, not bundled — see [The corpus](#the-corpus-not-bundled) (default `tinyshakespeare.txt` or an absolute path; relative paths use process CWD) |
+| `warmup_chars` | reservoir-only washout before the train loop (no readout) |
+| `total_steps` | train-stream budget; laps ≈ `total_steps / L` |
+| `esn` | `ESNConfig` — reservoir + readout CNN + `readout_slices` (power-of-two with aux; `<= history_depth`). Loop uses `CopyReadoutInput` / `ReadoutInputWidth()` (multi-slice OK). **Do not rely on** `readout.lr_min_frac` or `readout.momentum` here — streaming LR is `Cfg::lr_min_frac` + `CosineLR`; Adam ignores momentum. |
 | `mini_batch_size` | grad-accum chunk for `TrainStepBatch` |
-| `lr_min_frac` | cosine schedule floor as a fraction of `lr_max` (this is the **active** floor; `esn.readout.lr_min_frac` is inert in the streaming path — the banner prints `active_lr_min_frac`) |
+| `lr_min_frac` | cosine floor as a fraction of `readout.lr_max` (the **active** floor) |
 | `report_window` | rolling-BPC / top-1 window length (chars) |
 | `report_every` | live-line print cadence (0 = end only) |
-| `sample_every` | chars between teacher-forced readouts (0 = off) |
-| `sample_len` | chars shown per readout |
+| `sample_len` | chars of teacher-forced text at **end of each lap** (0 = off) |
+| `verbose` | gates periodic `roll_bpc` lines only (startup banner always prints) |
 
-Compile-time constants (in `Config.h` / `CharEmbedding.h`): `kDIM` (stock
-survey default **11**; edit freely — the run banner reports the live ESN dim/N),
-`kInputHistory` (K-char shift register, default 1), `kCharEmbedDim` (64-d
-random per-char embedding), and `kCharEmbedSeedXor` (the embedding table is
-seeded with `reservoir.seed ^ kCharEmbedSeedXor`). The readout activation is
-set at run time via `esn.readout.activation` (`ReadoutActivation::TANH`).
+Compile-time constants (in `Config.h` / `CharEmbedding.h`): `kDIM` (edit freely;
+banner reports live ESN dim/N — stock survey below used **11**), `kCharEmbedDim`
+(64-d random per-char embedding; one char per step), and `kCharEmbedSeedXor`.
+Readout activation is set via `esn.readout.activation` (`ReadoutActivation::TANH`).
 
-`readout_slices` may be > 1 (power-of-two block count with aux; `<= history_depth`).
-The stream loop uses `CopyReadoutInput` / `ReadoutInputWidth()` so multi-slice
-configs accumulate the full assembled readout input, not only the newest slice.
+`readout_slices` may be > 1. The stream loop always accumulates the full
+assembled readout input, not only the newest slice.
+
+**Lab vs stock:** `Config.h` is often edited for experiments (DIM, FSF, slices,
+paths). The [Results](#results) table is a fixed historical survey, not a mirror
+of whatever is currently in `Config.h`.
 
 The Tiny Shakespeare file is **gitignored** (`tinyshakespeare.txt`); supply it
 locally — see [The corpus](#the-corpus-not-bundled).
@@ -183,14 +174,17 @@ From a shell, either `cd` to the directory that holds `tinyshakespeare.txt` befo
 launching, or set an absolute path in `Config.h`. CLion run configs often use
 `cmake-build-release` as CWD — place the file there or override the path.
 
-Expect: a single continuous stream log (no pass / val / restore lines), a live
-rolling-BPC line trending **downward** across laps, and periodic teacher-forced
-readouts at **precessing** corpus positions. The startup banner includes
-`history_depth` and `active_lr_min_frac` (the streaming cosine floor).
+Expect: a compact startup banner (seeds, reservoir knobs, `ReadoutArchSummary`,
+stream budget / LR), then live rolling-BPC lines and optional teacher-forced
+samples once per completed lap. Reservoir ctor verbose is off so you do not
+get a second architecture dump from the library.
 
 ## Results
 
-### Long run — DIM 11, sr 1.3, input_scaling 2.5 (best-of-survey config)
+### Long run — DIM 11, sr 1.3, input_scaling 2.5 (historical best-of-survey)
+
+> Snapshot of a surveyed peak config (not necessarily current `Config.h`).
+> Single-slice readout, no FSF, `history_depth = 1`.
 
 A single continuous stream of the surveyed peak config, taken far past the
 lap-0 screen to watch the memorization trend settle.
@@ -202,8 +196,7 @@ lap-0 screen to watch the memorization trend settle.
 | input_scaling | 2.5 |
 | leak_rate | 1.0 |
 | history_depth | 1 |
-| kInputHistory (input char shift register) | 1 |
-| char embed | 64-d random, vocab 96 |
+| char embed | 64-d random, one char/step, vocab 96 |
 | CNN readout | 1 layer, 16 ch, lr 1e-3→2e-4 cosine, wd 1e-5 |
 | reservoir_seed | 7397376 |
 | corpus | tinyshakespeare (L = 1,115,394) |
