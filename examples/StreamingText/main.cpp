@@ -3,12 +3,12 @@
 // The corpus is a ring buffer of length L = text.size().  The reservoir is
 // driven through it continuously (pos = (pos + 1) % L); each full traversal is
 // a "lap".  At every character we score the model PREQUENTIALLY — predict the
-// next char from the current live state, score that prediction, and only THEN
-// fold (state, target) into the next online training batch.  Because the
-// prediction precedes the weight update, the rolling loss is a fair online
-// signal.  Progress is also shown via periodic TEACHER-FORCED readouts:
-// predicted-vs-actual characters at the stream's current position (no reset,
-// no autoregression, nothing to restore).  See StreamingText.md.
+// next char from the current live readout input, score that prediction, and
+// only THEN fold (readout input, target) into the next online training batch.
+// Because the prediction precedes the weight update, the rolling loss is a
+// fair online signal.  Progress is also shown via periodic TEACHER-FORCED
+// readouts: predicted-vs-actual characters at the stream's current position
+// (no reset, no autoregression, nothing to restore).  See StreamingText.md.
 
 #include <algorithm>
 #include <chrono>
@@ -31,8 +31,6 @@
  */
 namespace streaming_text {
 
-using config::kDIM;
-
 namespace {
 
 /// Escape control chars so a sample line stays on one row.
@@ -52,6 +50,10 @@ int Run()
 
     if (cfg.corpus_path.empty()) {
         std::cerr << "error: config::kCfg.corpus_path is empty\n";
+        return 1;
+    }
+    if (cfg.mini_batch_size <= 0) {
+        std::cerr << "error: config::kCfg.mini_batch_size must be > 0\n";
         return 1;
     }
 
@@ -77,8 +79,11 @@ int Run()
     const float lr_max = esn_cfg.readout.lr_max;
     const float lr_min = lr_max * cfg.lr_min_frac;
 
-    const std::size_t N = (1ULL << kDIM);
-    std::cerr << "[stext] DIM=" << kDIM << " N=" << N
+    ESN esn(esn_cfg);
+    // Banner N/DIM come from the live ESN so they cannot drift from kDIM if only
+    // esn.reservoir.dim was edited.
+    std::cerr << "[stext] DIM=" << esn.ReservoirHypercubeDimension()
+              << " N=" << esn.ReservoirNeuronCount()
               << " kCharEmbedDim=" << kCharEmbedDim
               << " kInputHistory=" << config::kInputHistory
               << " reservoir_seed=" << esn_cfg.reservoir.seed << "\n";
@@ -93,7 +98,6 @@ int Run()
     else
         std::cerr << "  FSF: OFF\n";
 
-    ESN esn(esn_cfg);
     // Same banner channel as the rest of [stext] diagnostics.
     std::cerr << esn.ReadoutArchSummary();
 
@@ -135,6 +139,10 @@ int Run()
               << " (readout.lr_min_frac unused on streaming path)"
               << " weight_decay=" << esn_cfg.readout.weight_decay
               << " num_outputs=" << esn_cfg.readout.num_outputs << "\n";
+    std::cerr << "[stext] readout_input: slices=" << esn_cfg.readout_slices
+              << " width=" << esn.ReadoutInputWidth()
+              << " (N=" << esn.ReservoirNeuronCount()
+              << " x B=" << esn.ReadoutBlockCount() << ")\n";
     std::cerr << "[stext] stream: warmup=" << cfg.warmup_chars
               << " warmup_train=" << cfg.warmup_train_chars
               << " total_steps=" << cfg.total_steps
@@ -146,10 +154,13 @@ int Run()
     std::size_t pos = train_start_pos;
 
     const int K = cfg.mini_batch_size;
-    const std::size_t state_dim   = esn.ReservoirNeuronCount();
-    const std::size_t num_outputs = esn.NumOutputs();
+    // TrainStepBatch / PredictFromState consume the assembled readout input
+    // (B blocks of N), not the raw reservoir state. B = readout_slices (+ aux).
+    // With slices=1 this equals ReservoirNeuronCount(); with slices>1 it is larger.
+    const std::size_t readout_width = esn.ReadoutInputWidth();
+    const std::size_t num_outputs   = esn.NumOutputs();
 
-    std::vector<float> accum_states(static_cast<std::size_t>(K) * state_dim);
+    std::vector<float> accum_states(static_cast<std::size_t>(K) * readout_width);
     std::vector<float> accum_targets(K);  // class indices as floats (unified TrainStepBatch target)
     std::vector<float> logits(num_outputs);  // reused every step — no per-step heap alloc
     int accum_count = 0;
@@ -181,9 +192,11 @@ int Run()
         window.Push(corpus.text[pos]);
         esn.ReservoirWarmup(window.Inputs(), 1);
 
-        // 2. Read live state into the accumulation slot and predict next char.
-        float* slot = accum_states.data() + static_cast<std::size_t>(accum_count) * state_dim;
-        esn.CopyReservoirState(slot);
+        // 2. Assemble full readout input (all delay-line slices, no aux here)
+        // into the accumulation slot and predict next char from that same vector.
+        float* slot = accum_states.data()
+                    + static_cast<std::size_t>(accum_count) * readout_width;
+        esn.CopyReadoutInput(slot);
         esn.PredictFromState(slot, logits.data());
 
         const std::size_t next_pos = (pos + 1) % L;
@@ -238,8 +251,8 @@ int Run()
             }
         }
 
-        // 5. Online training: accumulate (state, target), flush every K.
-        accum_targets[accum_count] = target;
+        // 5. Online training: accumulate (readout input, target), flush every K.
+        accum_targets[accum_count] = static_cast<float>(target);
         ++accum_count;
         if (accum_count == K) {
             const float frac = static_cast<float>(batch_index)

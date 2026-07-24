@@ -350,9 +350,10 @@ esn.Train(targets, train_size);
 
 // Streaming training (task fixed at construction)
 esn.ReservoirWarmup(warmup_inputs, warmup_count);   // settle the reservoir before streaming
-esn.TrainStep(target, lr, weight_decay);              // one step on the live state
-esn.TrainStepBatch(states, targets, count, lr, weight_decay);  // step over accumulated states
-esn.CopyReservoirState(out);
+esn.TrainStep(target, lr, weight_decay);              // one step on the live readout input
+esn.TrainStepBatch(readout_inputs, targets, count, lr, weight_decay);  // mini-batch
+esn.CopyReadoutInput(out);             // B blocks of N (for TrainStepBatch / PredictFromState)
+esn.CopyReservoirState(out);           // newest slice only (N floats)
 
 // Prediction & evaluation (recorded states)
 esn.PredictFromRecorded(timestep);     // -> std::vector<float> (NumOutputs())
@@ -360,9 +361,9 @@ esn.R2(targets, start, count);
 esn.NRMSE(targets, start, count);
 esn.Accuracy(labels, start, count);
 
-// Prediction (reservoir state)
+// Prediction (live / caller-supplied readout input)
 esn.Predict();                         // -> std::vector<float> (NumOutputs())
-esn.PredictFromState(state);           // run readout on a caller-supplied state
+esn.PredictFromState(readout_input);   // ReadoutInputWidth() floats
 
 // State access & persistence
 esn.CollectedStates();
@@ -504,9 +505,17 @@ void TrainStepBatch(const float* states, const float* targets, size_t count,
                     float lr, float weight_decay = 0.0f);
 ```
 
-One streaming gradient step over a mini-batch of pre-accumulated states (parallelized across threads). `states` is `count` rows of `ReservoirNeuronCount()` floats (from `CopyReservoirState`). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
+One streaming gradient step over a mini-batch of pre-accumulated **readout inputs** (parallelized across threads). `states` is `count` rows of `ReadoutInputWidth()` floats — assemble each row with `CopyReadoutInput` (not `CopyReservoirState`, unless `readout_slices == 1` and there is no aux block, in which case the two widths coincide). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
 
 ---
+
+##### `CopyReadoutInput`
+
+```cpp
+void CopyReadoutInput(float* out, const float* u_raw = nullptr) const;
+```
+
+Assembles and copies the readout's current input into `out` (`ReadoutInputWidth()` floats = `B` blocks of `N`, where `B = readout_slices + (aux ? 1 : 0)`). This is the buffer `TrainStepBatch` / `PredictFromState` expect. `u_raw` follows the same aux contract as `Predict`.
 
 ##### `CopyReservoirState`
 
@@ -514,7 +523,7 @@ One streaming gradient step over a mini-batch of pre-accumulated states (paralle
 void CopyReservoirState(float* out) const;
 ```
 
-Copies the current reservoir state into `out` (`ReservoirNeuronCount()` floats — all N vertices). Use to accumulate states for `TrainStepBatch`.
+Copies the current reservoir state into `out` (`ReservoirNeuronCount()` floats — all N vertices, newest delay-line slice only). This is **not** the full multi-slice readout input; use `CopyReadoutInput` when accumulating for `TrainStepBatch` with `readout_slices > 1` or an aux block.
 
 ---
 
@@ -599,7 +608,7 @@ Returns `NumOutputs()` floats from the reservoir's current state. For autoregres
 [[nodiscard]] std::vector<float> PredictFromState(const float* state) const;
 ```
 
-Runs the readout on a state buffer you pass in (`ReservoirNeuronCount()` floats, e.g. one saved earlier with `CopyReservoirState`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the reservoir — so you can predict from a stored state, or adjust the state before the readout sees it (for example, overwriting the first few entries with an external signal). This is the prequential predict-then-train primitive used by the streaming examples.
+Runs the readout on a readout-input buffer you pass in (`ReadoutInputWidth()` floats, e.g. one saved earlier with `CopyReadoutInput`), returning `NumOutputs()` floats. Unlike `Predict`, it never reads the reservoir — so you can predict from a stored input, or adjust it before the readout sees it. This is the prequential predict-then-train primitive used by the streaming examples.
 
 ---
 

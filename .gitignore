@@ -21,3 +21,7 @@ Thumbs.db
 # Claude Code (development only)
 .claude/
 CLAUDE.md
+
+# StreamingText corpus (not bundled; download Tiny Shakespeare yourself)
+examples/StreamingText/tinyshakespeare.txt
+tinyshakespeare.txt

@@ -114,7 +114,7 @@ A single `Cfg` struct (no mode enum):
 | `warmup_chars` | transient reservoir warmup (no training) |
 | `warmup_train_chars` | extra warmup chars to settle the reservoir before training |
 | `total_steps` | single stream budget; laps ≈ `total_steps / L` |
-| `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) block |
+| `esn` | `ESNConfig` — reservoir (seed, `spectral_radius`, `history_depth`, `leak_rate`, `input_scaling`, `num_inputs`) + readout (CNN) + `readout_slices` (delay-line ages fed to the HCNN; must be a power of two when combined with aux, and `<= history_depth`). The stream loop accumulates **full readout inputs** via `CopyReadoutInput` / `ReadoutInputWidth()`, so multi-slice configs work. |
 | `mini_batch_size` | grad-accum chunk for `TrainStepBatch` |
 | `lr_min_frac` | cosine schedule floor as a fraction of `lr_max` (this is the **active** floor; `esn.readout.lr_min_frac` is inert in the streaming path — the banner prints `active_lr_min_frac`) |
 | `report_window` | rolling-BPC / top-1 window length (chars) |
@@ -122,11 +122,19 @@ A single `Cfg` struct (no mode enum):
 | `sample_every` | chars between teacher-forced readouts (0 = off) |
 | `sample_len` | chars shown per readout |
 
-Compile-time constants (in `Config.h` / `CharEmbedding.h`): `kDIM` (11),
+Compile-time constants (in `Config.h` / `CharEmbedding.h`): `kDIM` (stock
+survey default **11**; edit freely — the run banner reports the live ESN dim/N),
 `kInputHistory` (K-char shift register, default 1), `kCharEmbedDim` (64-d
 random per-char embedding), and `kCharEmbedSeedXor` (the embedding table is
 seeded with `reservoir.seed ^ kCharEmbedSeedXor`). The readout activation is
 set at run time via `esn.readout.activation` (`ReadoutActivation::TANH`).
+
+`readout_slices` may be > 1 (power-of-two block count with aux; `<= history_depth`).
+The stream loop uses `CopyReadoutInput` / `ReadoutInputWidth()` so multi-slice
+configs accumulate the full assembled readout input, not only the newest slice.
+
+The Tiny Shakespeare file is **gitignored** (`tinyshakespeare.txt`); supply it
+locally — see [The corpus](#the-corpus-not-bundled).
 
 ## Design choices (memorization, not prediction)
 
