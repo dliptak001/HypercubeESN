@@ -71,7 +71,7 @@ namespace streaming_text::config
             ESNConfig c;
             c.reservoir.dim = kDIM;
             c.reservoir.seed = 47397376;
-            c.reservoir.history_depth = 64;
+            c.reservoir.history_depth = 32;
             c.reservoir.num_inputs = static_cast<int>(kCharEmbedDim);
             c.reservoir.spectral_radius = 0.93f;
             c.reservoir.leak_rate = 1.0f;

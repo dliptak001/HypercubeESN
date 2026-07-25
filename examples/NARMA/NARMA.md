@@ -1,33 +1,44 @@
 # NARMA-N — Nonlinear System Identification
 
-## Spotlight — NARMA-30 at NRMSE 0.0629
+## Spotlight — NARMA-30 at NRMSE 0.0570
+
+Full write-up: **[NARMA-30.md](NARMA-30.md)** — best seed **0.0570** (R² 0.9968),
+5-seed mean **0.0590** at M=16 / DIM10 / collect 32000 / tanh-wrap. About
+**~5.3×** under the rough literature strong-band floor (0.30); order-30
+protocols are poorly standardized (see [Reading the results](#reading-the-results)).
+The multi-seed M-sweep table later still uses **collect 8000** and an older
+op-point — even there, NARMA-30 reaches **0.09–0.13** mean NRMSE.
+
+## Spotlight — NARMA-50 at NRMSE 0.0797
+
+Full write-up: **[NARMA-50.md](NARMA-50.md)** — best seed **0.0797** (R² 0.9937),
+5-seed mean **0.0882** at M=32 / DIM10 / collect 32000 / tanh-wrap (same drive
+op-point as N30 spotlight). No literature band for order 50.
+
+## Spotlight — NARMA-100 (TBD)
+
+> **Template** — fill NRMSE / R² / knobs after the collect run; leave literature
+> cells as **—** (order 100 is not a standard published RC rung).
 
 | | NRMSE | vs this run |
 |--|------:|------------|
-| **HypercubeESN (best to date)** | **0.0629** | — |
-| Literature “strong / large-N” band (floor) | 0.30 | **~4.8× higher error** |
-| Literature “good” band (floor) | 0.40 | **~6.4× higher error** |
-| Literature “good” band (ceiling) | 0.60 | **~9.5× higher error** |
+| **HypercubeESN (best to date)** | **TBD** | — |
+| Literature “strong / large-N” band | — | *no published band* |
+| Literature “good” band | — | *no published band* |
 
-**Test NRMSE 0.0629** (R² = 0.9960) on **tanh-wrapped NARMA-30** sits about
-**five times below** the bottom of the rough literature **strong / large-N**
-band (0.30–0.50). We have not found a published NARMA-30 result on this metric
-that undercuts that band’s floor, let alone this score — with the usual caveats
-that order-30 setups are poorly standardized (see [Reading the results](#reading-the-results)).
+**Test NRMSE TBD** (R² = TBD) on **tanh-wrapped NARMA-100**. No comparable
+literature NRMSE band — treat this as an internal stress rung against N30
+([NARMA-30.md](NARMA-30.md)) / N50, not a leaderboard claim.
 
 | Knob | Value |
 |------|--------|
 | Variant | tanh-wrapped (α=0.3, β=0.05, γ=1.5, δ=0.1) |
-| Reservoir | DIM=10 (N=1024), M=`history_depth`=16, FSF **off** |
-| Seed | res 73896 (single seed) |
-| Series | warmup 300 · collect 32000 (train 25600 / test 6400) |
-| Drive | sr 0.99 · leak 1 · input_scaling 0.03 |
-| Readout | 600 epochs, batch 128, lr 0.0015 (cosine) |
-| HCNN | Conv(1→16, TANH) → MaxPool → Linear(8192→1) · 8385 params |
-
-Open-loop baseline from Release `NARMA.exe`. The multi-seed M-sweep table later
-in this doc uses **collect 8000** and an older op-point — even there, NARMA-30
-already reaches **0.09–0.13** mean NRMSE, still well under the 0.30 floor.
+| Reservoir | DIM=TBD (N=TBD), M=`history_depth`=TBD, FSF **TBD** |
+| Seed | res TBD (single seed / multi-seed TBD) |
+| Series | warmup TBD · collect TBD (train TBD / test TBD) |
+| Drive | sr TBD · leak TBD · input_scaling TBD |
+| Readout | TBD epochs, batch TBD, lr TBD (cosine) |
+| HCNN | TBD |
 
 ## What this example demonstrates
 
@@ -134,12 +145,15 @@ lands on the hardest row:
 |----------|--------------|------------------|----------|------------------|
 | NARMA-10 | 0.20–0.40    | —                | clean    | see M-sweep table |
 | NARMA-20 | 0.30–0.50    | 0.20–0.35        | rough    | see M-sweep table |
-| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0629** (best; [spotlight](#spotlight--narma-30-at-nrmse-00629)) |
+| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0570** best / 0.0590 mean ([NARMA-30.md](NARMA-30.md)) |
+| NARMA-50 | —            | —                | none     | **0.0797** best / 0.0882 mean ([NARMA-50.md](NARMA-50.md)) |
+| NARMA-100| —            | —                | none     | TBD ([spotlight](#spotlight--narma-100-tbd)) |
 
 **Read the NARMA-30 row carefully.** The strong / large-N floor is **0.30**.
-Our best test NRMSE is **0.0629** — about **5× lower error** than that floor
-(0.30 / 0.0629 ≈ 4.8). Even the older collect-8000 multi-seed means (~0.09–0.13
-at good M) sit well under 0.30. That is the headline result of this example.
+Our best test NRMSE is **0.0570** (5-seed mean **0.0590**) — about **5× lower
+error** than that floor (0.30 / 0.0570 ≈ 5.3). Even the older collect-8000
+multi-seed means (~0.09–0.13 at good M) sit well under 0.30. That is the
+headline result of this example; full seed table in [NARMA-30.md](NARMA-30.md).
 
 NARMA-10 is the only order with a clean, comparable baseline (Jaeger 2001;
 Rodan & Tiňo 2011): your *aligned* task (`y(t)` from `u(t), u(t−10)`) equals the
@@ -150,7 +164,7 @@ differently — so treat their bands as a *sane-regime* check, not exact targets
 your series won't be bit-identical to any specific paper's. The gap above is still
 large enough that protocol mismatch alone is an unlikely full explanation: we
 have not located published NARMA-30 NRMSE numbers that sit below the strong band’s
-floor, much less near 0.06.
+floor, much less near 0.06 (current best **0.0570**).
 
 ## Results: memory-depth (M) sweep
 
@@ -186,11 +200,12 @@ collect 8000 (train 6400 / test 1600).
 **Note — `collect` is a first-class knob.** Longer post-warmup series cut test
 NRMSE on this architecture (Linear ~8k features after pool/flatten): a
 single-seed NARMA-30 / DIM-10 / M=16 ladder went
-`collect 8000 → 0.0787`, `16000 → 0.0713`, `32000 → 0.0629` (warmup 300,
-FSF off) — the **0.0629** entry is the [spotlight](#spotlight--narma-30-at-nrmse-00629)
-result. That is mostly sample count vs readout capacity (at 8k train is
-under-parameterized relative to features), not a change in NARMA dynamics.
-`NARMA.cpp` comments 8000 as the low-res default and 32000 as high-res.
+`collect 8000 → 0.0787`, `16000 → 0.0713`, `32000 → ~0.06` (warmup 300,
+FSF off) — the current multi-seed collect-32000 best is **0.0570**
+([NARMA-30.md](NARMA-30.md)). That is mostly sample count vs readout capacity
+(at 8k train is under-parameterized relative to features), not a change in
+NARMA dynamics. `NARMA.cpp` comments 8000 as the low-res default and 32000 as
+high-res.
 
 Hold `collect` fixed when comparing M / seed / FSF within this repo. Classic
 NARMA-10 protocols often use shorter series (train ~2k–5k); NARMA-30 paper

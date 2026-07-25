@@ -114,11 +114,11 @@ enum class SeedRole : uint64_t {
 // --- Per-vertex row equalizers (A/B from Initialize only) -------------------
 // Contiguous layout: n_rows rows × row_len floats (input/ext/FSF B: row_len=dim;
 // recurrent bank: row_len=dim*M). Degenerate rows left unchanged.
-// L2:    ||row||_2 = 1     — equal gather energy per vertex
-// Linf:  max|w_i| = 1      — equal peak; at least one entry is ±1 (not both)
-// David: min→−1, max→+1   — affine range map; at least one −1 and one +1
-//        when max>min. Interior values are the linear image of the original
-//        draw (same order/ratios), spread across (−1,1) — not re-sampled.
+// L2:     ||row||_2 = 1     — equal gather energy per vertex
+// Linf:   max|w_i| = 1      — equal peak; at least one entry is ±1 (not both)
+// MinMax: min→−1, max→+1   — affine range map; at least one −1 and one +1
+//         when max>min. Interior values are the linear image of the original
+//         draw (same order/ratios), spread across (−1,1) — not re-sampled.
 // Does NOT re-apply block scale — caller multiplies after (drive ports) or
 // leaves SR to set global gain (recurrent). Bias and FSF V are not row banks.
 [[maybe_unused]] static void NormalizeRowsL2(float* base, size_t n_rows, size_t row_len)
@@ -158,7 +158,7 @@ enum class SeedRole : uint64_t {
 // Affine min–max to [-1, +1]: lo→−1, hi→+1. Guarantees both endpoints when
 // the row is non-constant (row_len≥2 and hi>lo). After recurrent SR scale k>0,
 // endpoints become −k and +k.
-[[maybe_unused]] static void NormalizeRowsDavid(float* base, size_t n_rows, size_t row_len)
+[[maybe_unused]] static void NormalizeRowsMinMax(float* base, size_t n_rows, size_t row_len)
 {
     constexpr float kEps = 1e-30f;
     if (row_len < 2)
@@ -203,7 +203,7 @@ void Reservoir::Initialize()
     // Drive / recurrent fill pattern: draw U(-1,1) → optional row equalize (A/B)
     // → apply block scale. Equalize kills baked-in scale, so scale is always last
     // on drive ports. Default: all equalize lines commented = baseline (no row
-    // equalize). Uncomment at most ONE of L2 / Linf / David per block.
+    // equalize). Uncomment at most ONE of L2 / Linf / MinMax per block.
     //
     // Input: 1/sqrt(dim) keeps dim-neighbor fan-in variance from growing with
     // degree (local construction only — not a claim of one optimal input_scaling).
@@ -214,7 +214,7 @@ void Reservoir::Initialize()
     // A/B input rows (N × dim) — uncomment at most one:
     // NormalizeRowsL2(input_base, n_, dim_);
     // NormalizeRowsLinf(input_base, n_, dim_);
-    //NormalizeRowsDavid(input_base, n_, dim_);
+    //NormalizeRowsMinMax(input_base, n_, dim_);
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
         input_base[i] *= in_scaling;
@@ -227,7 +227,7 @@ void Reservoir::Initialize()
         // A/B external-feedback rows (N × dim) — uncomment at most one:
         // NormalizeRowsL2(ext_base, n_, dim_);
         // NormalizeRowsLinf(ext_base, n_, dim_);
-        //NormalizeRowsDavid(ext_base, n_, dim_);
+        //NormalizeRowsMinMax(ext_base, n_, dim_);
         const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
             ext_base[i] *= ext_scale;
@@ -248,7 +248,7 @@ void Reservoir::Initialize()
         // A/B FSF B rows (N × dim) — uncomment at most one; never equalize V:
         // NormalizeRowsL2(fsf_b_base, n_, dim_);
         // NormalizeRowsLinf(fsf_b_base, n_, dim_);
-        //NormalizeRowsDavid(fsf_b_base, n_, dim_);
+        //NormalizeRowsMinMax(fsf_b_base, n_, dim_);
         const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             fsf_b_base[i] *= fsf_scale;
@@ -281,7 +281,7 @@ void Reservoir::Initialize()
     // Uncomment at most one. No re-scale here — SR sets global gain.
     // NormalizeRowsL2(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
     // NormalizeRowsLinf(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
-    NormalizeRowsDavid(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
+    //NormalizeRowsMinMax(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
 
     const float target = spectral_radius_;
     const size_t MN = history_depth_ * n_;

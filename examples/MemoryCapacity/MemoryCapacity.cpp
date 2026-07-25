@@ -651,15 +651,18 @@ int main(int argc, char* argv[])
     // change the *experiment*; edit the ReservoirConfig below for the op-point.
     MCConfig mccfg;
     // mccfg.k_max = 2000;  // (defaults shown in MemoryCapacity.h)
+    mccfg.k_max     = 4000;   // raise until * disappears
+    mccfg.t_warmup  = 4000;   // must be ≥ k_max
+    mccfg.t_collect = 25000;  // must be > k_max
 
     // ---- Base reservoir operating point ----
     // Doc Results table: is=0.06 (weak drive / memory-margin regime).
     // For A_lorentz free-run op-points try ~0.2; retune per activation and task.
-    constexpr std::size_t DIM = 9;
+    constexpr std::size_t DIM = 11;
 
     ReservoirConfig base;
     base.dim = DIM;
-    base.seed = 473973767;//738956;
+    base.seed = 47397376;//473973767;//738956;
     base.num_inputs = 1;
     base.spectral_radius = 0.99f;
     base.leak_rate = 1.0f;
@@ -685,7 +688,7 @@ int main(int argc, char* argv[])
     // --- Mode 2: sr × leak × history-depth grid (hist must be powers of 2) ---
     // Default campaign: matches MemoryCapacity.md Results (leak singleton → M×sr pivot).
     RunGridSweep(meter, base,
-                      {0.9f, 0.95f, 1.0f, 1.01, 1.02, 1.03, 1.04, 1.05, 1.1f}, // spectral radii
+                      {0.9f, 0.95f, 1.0f, 1.05}, // spectral radii
                       {1.00f},                   // leak rates
                       {1, 2, 4, 8, 16, 32, 64}); // history depths (M)
 

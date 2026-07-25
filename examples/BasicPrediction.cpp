@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
 
     ESNConfig cfg;
     cfg.reservoir.dim         = DIM;
-    //cfg.reservoir.seed = 84745874578;
+    cfg.reservoir.seed = 84745874578;
     cfg.reservoir.history_depth = 4;
     cfg.readout_slices = 1;
     cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98

@@ -35,16 +35,16 @@ int main(int argc, char* argv[])
 {
     (void)argc; (void)argv;
 
-    constexpr size_t DIM         = 10;
+    constexpr size_t DIM         = 11;
     constexpr size_t N           = 1ULL << DIM;
-    constexpr size_t narma_order = 30;          // fixed order for the history-depth sweep
+    constexpr size_t narma_order = 100;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 32000;       // states fed to the readout (80/20 split), low res - 8000, hi res - 32000
     constexpr uint64_t data_seed = 1939;        // signal-side RNG seed
 
     // history_depth (M) sweep points: below, around, and beyond the NARMA order,
     // to map where the delay line can finally hold the full lag history (the knee
     // sits near M = order). history_depth is capped at 64 by Reservoir::Create.
-    const std::vector<size_t> sweep_M = {16};//{28, 30, 32, 34, 36};
+    const std::vector<size_t> sweep_M = {64};//{28, 30, 32, 34, 36};
 
     // Second sweep dimension: reservoir-init seed. The target series depends on
     // narma_order + data_seed only (NOT the reservoir / FSF seeds), so every
@@ -99,9 +99,9 @@ int main(int argc, char* argv[])
     base.reservoir.full_state_feedback = false;
     base.reservoir.fsf_scaling = 0.004;
 
-    //base.readout.seed = 3423555;
+    base.readout.seed = 3423555;
     base.readout_slices = 4;
-    base.readout.num_layers = 2;
+    base.readout.num_layers = 1;
     base.readout.use_pooling = true;
     base.readout.pool_type = ReadoutPoolType::Max;
     base.readout.conv_channels = 16;
