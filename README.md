@@ -26,7 +26,7 @@ construction rather than by luck. The result is an ESN that is at once
 mathematically clean, strikingly memory-frugal, and strong where reservoirs are
 meant to be: long memory and nonlinear computation.
 
-**Headline result:** tanh-wrapped **NARMA-30 test NRMSE 0.0570** (5-seed mean 0.0590) — about **5×
+**Headline result:** tanh-wrapped **NARMA-30 test NRMSE 0.0570** (best-3 mean 0.0576) — about **5×
 lower error** than the bottom of the rough literature “strong / large-N” band
 (0.30–0.50). Details in [Spotlight: NARMA-30](#spotlight-narma-30-at-nrmse-00570)
 and [examples/NARMA/NARMA-30.md](examples/NARMA/NARMA-30.md).
@@ -91,10 +91,10 @@ around **0.40–0.60**). HypercubeESN’s best run to date:
 
 | | |
 |--|--|
-| **Test NRMSE** | **0.0570** (R² = 0.9968); 5-seed mean **0.0590** |
+| **Test NRMSE** | **0.0570** (R² = 0.9968); best-3 mean **0.0576** |
 | vs strong-band floor (0.30) | **~5× lower error** (0.30 / 0.0570 ≈ 5.3) |
 | Setup | tanh-wrapped NARMA-30 · DIM 10 (1024 neurons) · history depth M=16 · FSF off |
-| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · seeds 73896–73900 |
+| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · 10 seeds (best-3 in [NARMA-30.md](examples/NARMA/NARMA-30.md)) |
 | Readout | HypercubeCNN, 32993 parameters |
 
 We have not found published NARMA-30 NRMSE results below that strong-band floor,

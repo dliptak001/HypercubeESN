@@ -13,18 +13,16 @@ internal stress test against NARMA-30 only. **tanh-wrapped** fixed coeffs
 Top three of the 10-seed pool below (lowest NRMSE). Full pool: mean 0.0859,
 std 0.0065, range 0.0767–0.0956.
 
-| | NRMSE | vs this run |
-|--|------:|------------|
-| **HypercubeESN (best seed)** | **0.0767** | — |
-| Best-3 mean | **0.0791** | — |
+| | NRMSE | vs literature |
+|--|------:|---------------|
+| **HypercubeESN (best seed)** | **0.0767** | no published band (internal stress rung) |
+| Best-3 mean | **0.0791** | no published band |
 | Best-3 std | 0.0021 | — |
 | Best-3 range | 0.0767–0.0808 | — |
-| Literature “strong / large-N” band | — | *no published band* |
-| Literature “good” band | — | *no published band* |
 
 **Best test NRMSE 0.0767** (R² = 0.9941, res seed 221691) on **tanh-wrapped
 NARMA-50**. Best-3 mean **0.0791** (std 0.0021). No comparable literature
-band — internal stress rung vs NARMA-30 (**0.0570** best / **0.0590** mean in
+band — internal stress rung vs NARMA-30 (**0.0570** best / **0.0576** best-3 mean in
 [NARMA-30.md](NARMA-30.md)).
 
 ### Best-3 seeds

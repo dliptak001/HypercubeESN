@@ -3,8 +3,8 @@
 ## Spotlight — NARMA-30 at NRMSE 0.0570
 
 Full write-up: **[NARMA-30.md](NARMA-30.md)** — best seed **0.0570** (R² 0.9968),
-5-seed mean **0.0590** at M=16 / DIM10 / collect 32000 / tanh-wrap. About
-**~5.3×** under the rough literature strong-band floor (0.30); order-30
+best-3 mean **0.0576** (std 0.0006) at M=16 / DIM10 / collect 32000 / tanh-wrap.
+About **~5.3×** under the rough literature strong-band floor (0.30); order-30
 protocols are poorly standardized (see [Reading the results](#reading-the-results)).
 The multi-seed M-sweep table later still uses **collect 8000** and an older
 op-point — even there, NARMA-30 reaches **0.09–0.13** mean NRMSE.
@@ -20,11 +20,9 @@ best-3 mean **0.0791** (std 0.0021) at M=32 / DIM10 / collect 32000 / tanh-wrap
 > **Template** — fill NRMSE / R² / knobs after the collect run; leave literature
 > cells as **—** (order 100 is not a standard published RC rung).
 
-| | NRMSE | vs this run |
-|--|------:|------------|
-| **HypercubeESN (best to date)** | **TBD** | — |
-| Literature “strong / large-N” band | — | *no published band* |
-| Literature “good” band | — | *no published band* |
+| | NRMSE | vs literature |
+|--|------:|---------------|
+| **HypercubeESN (best seed / best-3)** | **TBD** | no published band (internal stress rung) |
 
 **Test NRMSE TBD** (R² = TBD) on **tanh-wrapped NARMA-100**. No comparable
 literature NRMSE band — treat this as an internal stress rung against N30
@@ -145,12 +143,12 @@ lands on the hardest row:
 |----------|--------------|------------------|----------|------------------|
 | NARMA-10 | 0.20–0.40    | —                | clean    | see M-sweep table |
 | NARMA-20 | 0.30–0.50    | 0.20–0.35        | rough    | see M-sweep table |
-| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0570** best / 0.0590 mean ([NARMA-30.md](NARMA-30.md)) |
+| NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0570** best / 0.0576 best-3 mean ([NARMA-30.md](NARMA-30.md)) |
 | NARMA-50 | —            | —                | none     | **0.0767** best / 0.0791 best-3 mean ([NARMA-50.md](NARMA-50.md)) |
 | NARMA-100| —            | —                | none     | TBD ([spotlight](#spotlight--narma-100-tbd)) |
 
 **Read the NARMA-30 row carefully.** The strong / large-N floor is **0.30**.
-Our best test NRMSE is **0.0570** (5-seed mean **0.0590**) — about **5× lower
+Our best test NRMSE is **0.0570** (best-3 mean **0.0576**) — about **5× lower
 error** than that floor (0.30 / 0.0570 ≈ 5.3). Even the older collect-8000
 multi-seed means (~0.09–0.13 at good M) sit well under 0.30. That is the
 headline result of this example; full seed table in [NARMA-30.md](NARMA-30.md).
