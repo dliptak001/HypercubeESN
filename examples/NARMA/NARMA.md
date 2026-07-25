@@ -9,11 +9,11 @@ protocols are poorly standardized (see [Reading the results](#reading-the-result
 The multi-seed M-sweep table later still uses **collect 8000** and an older
 op-point — even there, NARMA-30 reaches **0.09–0.13** mean NRMSE.
 
-## Spotlight — NARMA-50 at NRMSE 0.0797
+## Spotlight — NARMA-50 at NRMSE 0.0767
 
-Full write-up: **[NARMA-50.md](NARMA-50.md)** — best seed **0.0797** (R² 0.9937),
-5-seed mean **0.0882** at M=32 / DIM10 / collect 32000 / tanh-wrap (same drive
-op-point as N30 spotlight). No literature band for order 50.
+Full write-up: **[NARMA-50.md](NARMA-50.md)** — best seed **0.0767** (R² 0.9941),
+best-3 mean **0.0791** (std 0.0021) at M=32 / DIM10 / collect 32000 / tanh-wrap
+(same drive op-point as N30 spotlight). No literature band for order 50.
 
 ## Spotlight — NARMA-100 (TBD)
 
@@ -146,7 +146,7 @@ lands on the hardest row:
 | NARMA-10 | 0.20–0.40    | —                | clean    | see M-sweep table |
 | NARMA-20 | 0.30–0.50    | 0.20–0.35        | rough    | see M-sweep table |
 | NARMA-30 | 0.40–0.60    | 0.30–0.50        | rough    | **0.0570** best / 0.0590 mean ([NARMA-30.md](NARMA-30.md)) |
-| NARMA-50 | —            | —                | none     | **0.0797** best / 0.0882 mean ([NARMA-50.md](NARMA-50.md)) |
+| NARMA-50 | —            | —                | none     | **0.0767** best / 0.0791 best-3 mean ([NARMA-50.md](NARMA-50.md)) |
 | NARMA-100| —            | —                | none     | TBD ([spotlight](#spotlight--narma-100-tbd)) |
 
 **Read the NARMA-30 row carefully.** The strong / large-N floor is **0.30**.
