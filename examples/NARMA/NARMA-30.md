@@ -99,8 +99,3 @@ Single depth only for this campaign:
 - Seed spread stays very tight after doubling the pool (std ~0.002); all ten
   seeds under 0.064 NRMSE. Batch A mean (0.0590) is slightly better than batch B
   (0.0612); combined mean is **0.0601**. Best three all come from batch A.
-- Supersedes an older single-seed collect-32000 figure of **0.0629** (same M
-  and drive family; that run sits near the high end of this ten-seed range).
-- The multi-seed M-sweep table in [NARMA.md](NARMA.md#results-memory-depth-m-sweep)
-  still uses **collect 8000** and an older op-point (means ~0.09–0.13 at good M).
-- Compare next: NARMA-100 at the same op-point family.

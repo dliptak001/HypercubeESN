@@ -230,11 +230,13 @@ namespace
         const std::size_t cells = nsr * nleak * nhist;
         if (cells == 0) return;
 
+        // Any M in [1, 64] is valid (Reservoir::Create range). Powers of two are
+        // only a common sweep convention, not a requirement.
         for (std::size_t hd : history_depths)
-            if (hd == 0 || (hd & (hd - 1)) != 0)
+            if (hd < 1 || hd > 64)
             {
                 std::cerr << "RunGridSweep: history_depth " << hd
-                          << " is not a positive power of 2 — aborting.\n";
+                          << " is outside [1, 64] — aborting.\n";
                 return;
             }
 
@@ -658,7 +660,7 @@ int main(int argc, char* argv[])
     // ---- Base reservoir operating point ----
     // Doc Results table: is=0.06 (weak drive / memory-margin regime).
     // For A_lorentz free-run op-points try ~0.2; retune per activation and task.
-    constexpr std::size_t DIM = 11;
+    constexpr std::size_t DIM = 10;
 
     ReservoirConfig base;
     base.dim = DIM;
@@ -685,12 +687,12 @@ int main(int argc, char* argv[])
     // --- Mode 3: seed survey at the base op-point (inclusive seed range) ---
     //   RunSeedSurvey(meter, base, 73890, 73890 + 10);
 
-    // --- Mode 2: sr × leak × history-depth grid (hist must be powers of 2) ---
+    // --- Mode 2: sr × leak × history-depth grid (any M in [1, 64]) ---
     // Default campaign: matches MemoryCapacity.md Results (leak singleton → M×sr pivot).
     RunGridSweep(meter, base,
-                      {0.9f, 0.95f, 1.0f, 1.05}, // spectral radii
-                      {1.00f},                   // leak rates
-                      {1, 2, 4, 8, 16, 32, 64}); // history depths (M)
+                      {0.9f, 0.95f, 1.0f}, // spectral radii
+                      {0.6, 0.7, 0.8, 0.9, 1.00f},                   // leak rates
+                      {1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
 
     return 0;
 }
