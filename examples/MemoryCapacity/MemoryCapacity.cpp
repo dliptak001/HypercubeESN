@@ -41,7 +41,7 @@ namespace
     {
         if (base.full_state_feedback)
             std::cout << "FSF: ON   fsf_seed=" << base.fsf_seed
-                      << "  fsf_scaling=" << base.fsf_scaling << "\n";
+                << "  fsf_scaling=" << base.fsf_scaling << "\n";
         else
             std::cout << "FSF: OFF\n";
     }
@@ -59,31 +59,31 @@ namespace
         std::cout << "=== HypercubeESN: " << title << " ===\n";
         PrintFSF(base);
         std::cout << "Meter   : warmup=" << mc.t_warmup
-                  << "  collect=" << mc.t_collect
-                  << "  Kmax=" << mc.k_max
-                  << "  ridge=" << mc.ridge_lambda
-                  << "  train_frac=" << mc.train_frac
-                  << "  input_seed=0x" << std::hex << mc.input_seed << std::dec << "\n";
+            << "  collect=" << mc.t_collect
+            << "  Kmax=" << mc.k_max
+            << "  ridge=" << mc.ridge_lambda
+            << "  train_frac=" << mc.train_frac
+            << "  input_seed=0x" << std::hex << mc.input_seed << std::dec << "\n";
         std::cout << "Layout  : DIM=" << meter.Dim()
-                  << "  N=" << meter.Size()
-                  << "  F=" << meter.Features()
-                  << "  M_usable=" << meter.Samples()
-                  << "  M_train=" << meter.TrainRows()
-                  << "  M_test=" << meter.TestRows()
-                  << "  train/F=" << std::fixed << std::setprecision(2) << train_over_f
-                  << std::defaultfloat << "\n";
+            << "  N=" << meter.Size()
+            << "  F=" << meter.Features()
+            << "  M_usable=" << meter.Samples()
+            << "  M_train=" << meter.TrainRows()
+            << "  M_test=" << meter.TestRows()
+            << "  train/F=" << std::fixed << std::setprecision(2) << train_over_f
+            << std::defaultfloat << "\n";
         std::cout << "Op-point: sr=" << base.spectral_radius
-                  << "  leak=" << base.leak_rate
-                  << "  is=" << base.input_scaling
-                  << "  hist=" << base.history_depth
-                  << "  seed=" << base.seed << "\n";
+            << "  leak=" << base.leak_rate
+            << "  is=" << base.input_scaling
+            << "  hist=" << base.history_depth
+            << "  seed=" << base.seed << "\n";
         // ASCII-only metrics glossary: Windows consoles often mis-decode UTF-8
         // (CP1252/OEM), turning Σ/²/× into garbage in CLion and cmd.
         std::cout << "Metrics : TotalMC = sum r^2(k)  |  MC/F = util. of F features"
-                  << "  |  k>.5/.1/.01 = last lag above threshold"
-                  << "  |  realSR = post-rescale SR\n";
+            << "  |  k>.5/.1/.01 = last lag above threshold"
+            << "  |  realSR = post-rescale SR\n";
         std::cout << "          open tail (*) = r^2 still above decay floor at last scored lag"
-                  << " -> TotalMC is a lower bound\n\n";
+            << " -> TotalMC is a lower bound\n\n";
     }
 
     /// Live progress on stderr (keeps stdout tables clean in IDEs).
@@ -122,14 +122,14 @@ namespace
         }
         const double util = (F > 0) ? (m.total_mc / static_cast<double>(F)) : 0.0;
         std::cout << std::fixed
-                  << std::setw(9) << std::setprecision(3) << m.total_mc
-                  << TailMark(m)
-                  << "  " << std::setw(6) << std::setprecision(3) << util;
+            << std::setw(9) << std::setprecision(3) << m.total_mc
+            << TailMark(m)
+            << "  " << std::setw(6) << std::setprecision(3) << util;
         if (with_horizons)
         {
             std::cout << "  " << std::setw(4) << m.k50
-                      << "  " << std::setw(4) << m.k10
-                      << "  " << std::setw(5) << m.k01;
+                << "  " << std::setw(4) << m.k10
+                << "  " << std::setw(5) << m.k01;
         }
     }
 
@@ -138,18 +138,22 @@ namespace
         std::size_t n_open = 0, n_early = 0, n_full = 0, n_bad = 0;
         for (const MCResult& m : results)
         {
-            if (m.oom || !m.pd) { ++n_bad; continue; }
+            if (m.oom || !m.pd)
+            {
+                ++n_bad;
+                continue;
+            }
             if (m.open_tail) ++n_open;
             else if (m.early_stopped) ++n_early;
             else ++n_full;
         }
         std::cout << "\nTail notes: * = open tail (TotalMC lower bound; r^2 still live at last lag)"
-                  << "  e = early-stop (curve decayed)"
-                  << "  (blank) = full k_max scored, closed tail\n";
+            << "  e = early-stop (curve decayed)"
+            << "  (blank) = full k_max scored, closed tail\n";
         std::cout << "  cells: open*=" << n_open
-                  << "  early-e=" << n_early
-                  << "  full=" << n_full
-                  << "  bad=" << n_bad << "\n";
+            << "  early-e=" << n_early
+            << "  full=" << n_full
+            << "  bad=" << n_bad << "\n";
     }
 
     // Whether to include lag k in a sparse detailed dump.
@@ -172,7 +176,7 @@ namespace
 
         PrintRunHeader("Memory Capacity (detailed)", meter, rcfg);
         std::cout << "Measuring (full " << mc.k_max << "-lag curve, early_stop=off) ... "
-                  << std::flush;
+            << std::flush;
         const MCResult r = meter.Measure(rcfg, MeasureOptions{
                                              /*early_stop=*/false, /*kmax=*/0
                                          });
@@ -187,15 +191,15 @@ namespace
         const double util = r.total_mc / static_cast<double>(F);
         std::cout << "=== Summary ===\n";
         std::cout << std::fixed << std::setprecision(3)
-                  << "Total MC = " << r.total_mc
-                  << "  MC/F = " << util
-                  << "  (F=" << F << ")\n";
+            << "Total MC = " << r.total_mc
+            << "  MC/F = " << util
+            << "  (F=" << F << ")\n";
         std::cout << "realSR   = " << std::setprecision(4) << r.realized_sr << "\n";
         std::cout << "Last lag with r^2 > 0.50 : k=" << r.k50 << "\n";
         std::cout << "Last lag with r^2 > 0.10 : k=" << r.k10 << "\n";
         std::cout << "Last lag with r^2 > 0.01 : k=" << r.k01 << "\n";
         std::cout << "lags scored = " << r.lags_scored
-                  << "  r2_tail = " << std::setprecision(4) << r.r2_tail;
+            << "  r2_tail = " << std::setprecision(4) << r.r2_tail;
         if (r.open_tail)
             std::cout << "  OPEN TAIL (*) - TotalMC is a lower bound (memory still live at k_max)\n";
         else
@@ -209,7 +213,7 @@ namespace
         {
             if (!SparseLag(k, mc.k_max)) continue;
             std::cout << "  " << std::setw(3) << k
-                      << "  " << std::setw(8) << r.r2[k - 1] << "\n";
+                << "  " << std::setw(8) << r.r2[k - 1] << "\n";
         }
         std::cout << std::defaultfloat << std::flush;
     }
@@ -218,10 +222,10 @@ namespace
     // Mode 2: sr × leak × history_depth grid.
     // ---------------------------------------------------------------------------
     [[maybe_unused]] void RunGridSweep(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                      const std::vector<float>& spectral_radii,
-                      const std::vector<float>& leak_rates,
-                      const std::vector<std::size_t>& history_depths,
-                      const SweepOptions& sweep_opts = {})
+                                       const std::vector<float>& spectral_radii,
+                                       const std::vector<float>& leak_rates,
+                                       const std::vector<std::size_t>& history_depths,
+                                       const SweepOptions& sweep_opts = {})
     {
         const std::size_t F = meter.Features();
         const std::size_t nsr = spectral_radii.size();
@@ -236,7 +240,7 @@ namespace
             if (hd < 1 || hd > 64)
             {
                 std::cerr << "RunGridSweep: history_depth " << hd
-                          << " is outside [1, 64] — aborting.\n";
+                    << " is outside [1, 64] — aborting.\n";
                 return;
             }
 
@@ -258,11 +262,11 @@ namespace
 
         PrintRunHeader("MC Profile (grid)", meter, base);
         std::cout << "Grid    : " << nsr << " sr x " << nleak << " leak x " << nhist
-                  << " hist = " << cells << " cells  |  " << workers
-                  << " workers  |  ~" << std::fixed << std::setprecision(2)
-                  << (static_cast<double>(meter.PerCellBytes()) / 1e9) << " GB/cell, est peak ~"
-                  << (static_cast<double>(meter.PerCellBytes() * workers) / 1e9) << " GB\n"
-                  << "Axes    : sr={";
+            << " hist = " << cells << " cells  |  " << workers
+            << " workers  |  ~" << std::fixed << std::setprecision(2)
+            << (static_cast<double>(meter.PerCellBytes()) / 1e9) << " GB/cell, est peak ~"
+            << (static_cast<double>(meter.PerCellBytes() * workers) / 1e9) << " GB\n"
+            << "Axes    : sr={";
         for (std::size_t i = 0; i < nsr; ++i)
             std::cout << (i ? "," : "") << spectral_radii[i];
         std::cout << "}  leak={";
@@ -290,11 +294,11 @@ namespace
                 {
                     const MCResult& m = cell(i, j, k);
                     std::cout << std::fixed << std::setprecision(2)
-                              << "  " << std::setw(5) << spectral_radii[i]
-                              << "  " << std::setw(5) << leak_rates[j]
-                              << "  " << std::setw(4) << history_depths[k]
-                              << "  " << std::setw(6) << std::setprecision(4) << m.realized_sr
-                              << "  ";
+                        << "  " << std::setw(5) << spectral_radii[i]
+                        << "  " << std::setw(5) << leak_rates[j]
+                        << "  " << std::setw(4) << history_depths[k]
+                        << "  " << std::setw(6) << std::setprecision(4) << m.realized_sr
+                        << "  ";
                     PrintMcCell(m, F);
                     std::cout << "\n";
                 }
@@ -312,7 +316,7 @@ namespace
         {
             // Default campaign shape: depth × sr (matches MemoryCapacity.md)
             std::cout << "\n=== TotalMC grid (M x sr, leak=" << leak_rates[0]
-                      << ", is=" << base.input_scaling << ") ===\n";
+                << ", is=" << base.input_scaling << ") ===\n";
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << "M\\sr";
             for (float sr : spectral_radii) std::cout << std::setw(9) << sr;
             std::cout << "\n";
@@ -327,7 +331,7 @@ namespace
         else if (nsr == 1 && nleak >= 1 && nhist >= 1)
         {
             std::cout << "\n=== TotalMC grid (M x leak, sr=" << spectral_radii[0]
-                      << ", is=" << base.input_scaling << ") ===\n";
+                << ", is=" << base.input_scaling << ") ===\n";
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << "M\\leak";
             for (float lk : leak_rates) std::cout << std::setw(9) << lk;
             std::cout << "\n";
@@ -345,14 +349,14 @@ namespace
             for (std::size_t k = 0; k < nhist; ++k)
             {
                 std::cout << "\n=== TotalMC grid (M=" << history_depths[k]
-                          << ", is=" << base.input_scaling << ", rows=sr, cols=leak) ===\n";
+                    << ", is=" << base.input_scaling << ", rows=sr, cols=leak) ===\n";
                 std::cout << std::fixed << std::setprecision(2) << std::setw(9) << "sr\\leak";
                 for (float lk : leak_rates) std::cout << std::setw(9) << lk;
                 std::cout << "\n";
                 for (std::size_t i = 0; i < nsr; ++i)
                 {
                     std::cout << "  " << std::setw(5) << std::setprecision(2) << spectral_radii[i]
-                              << "  ";
+                        << "  ";
                     for (std::size_t j = 0; j < nleak; ++j)
                         print_mc_or_na(cell(i, j, k));
                     std::cout << "\n";
@@ -368,8 +372,8 @@ namespace
     // Mode 3: fixed op-point, sweep the reservoir seed over [seed_start, seed_end].
     // ---------------------------------------------------------------------------
     [[maybe_unused]] void RunSeedSurvey(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                       std::uint64_t seed_start, std::uint64_t seed_end,
-                       const SweepOptions& sweep_opts = {})
+                                        std::uint64_t seed_start, std::uint64_t seed_end,
+                                        const SweepOptions& sweep_opts = {})
     {
         const std::size_t F = meter.Features();
 
@@ -393,10 +397,10 @@ namespace
 
         PrintRunHeader("MC Seed Survey", meter, base);
         std::cout << "Seeds   : [" << seed_start << ".." << seed_end << "] = " << count
-                  << " cells  |  " << workers << " workers  |  ~" << std::fixed << std::setprecision(2)
-                  << (static_cast<double>(meter.PerCellBytes()) / 1e9) << " GB/cell, est peak ~"
-                  << (static_cast<double>(meter.PerCellBytes() * workers) / 1e9) << " GB\n\n"
-                  << std::defaultfloat << std::flush;
+            << " cells  |  " << workers << " workers  |  ~" << std::fixed << std::setprecision(2)
+            << (static_cast<double>(meter.PerCellBytes()) / 1e9) << " GB/cell, est peak ~"
+            << (static_cast<double>(meter.PerCellBytes() * workers) / 1e9) << " GB\n\n"
+            << std::defaultfloat << std::flush;
 
         const std::vector<MCResult> results = RunSweep(meter, configs, sweep_opts, MakeProgress(10));
         std::cout << "\n";
@@ -407,8 +411,8 @@ namespace
         {
             const MCResult& m = results[idx];
             std::cout << "  " << std::setw(10) << (seed_start + idx)
-                      << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
-                      << "  ";
+                << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
+                << "  ";
             PrintMcCell(m, F);
             std::cout << "\n";
         }
@@ -442,7 +446,7 @@ namespace
 
         std::sort(vals.begin(), vals.end());
         const double mean = std::accumulate(vals.begin(), vals.end(), 0.0) /
-                            static_cast<double>(vals.size());
+            static_cast<double>(vals.size());
         double var = 0.0;
         for (double v : vals)
         {
@@ -458,14 +462,14 @@ namespace
         const double mean_k01 = sum_k01 / static_cast<double>(vals.size());
 
         std::cout << std::fixed << std::setprecision(3)
-                  << "  best seed = " << (seed_start + best_idx) << "  TotalMC = " << best_mc
-                  << "  MC/F = " << (best_mc / static_cast<double>(F))
-                  << "  (realSR " << std::setprecision(4) << results[best_idx].realized_sr << ")\n"
-                  << std::setprecision(3)
-                  << "  TotalMC over seeds: mean=" << mean << "  median=" << median
-                  << "  std=" << sd << "  min=" << vals.front() << "  max=" << vals.back() << "\n"
-                  << "  mean k>.01 = " << std::setprecision(1) << mean_k01 << "\n"
-                  << std::defaultfloat << std::flush;
+            << "  best seed = " << (seed_start + best_idx) << "  TotalMC = " << best_mc
+            << "  MC/F = " << (best_mc / static_cast<double>(F))
+            << "  (realSR " << std::setprecision(4) << results[best_idx].realized_sr << ")\n"
+            << std::setprecision(3)
+            << "  TotalMC over seeds: mean=" << mean << "  median=" << median
+            << "  std=" << sd << "  min=" << vals.front() << "  max=" << vals.back() << "\n"
+            << "  mean k>.01 = " << std::setprecision(1) << mean_k01 << "\n"
+            << std::defaultfloat << std::flush;
 
         // ---- Followup: SR-band filtered chart + top-5 ranking ----
         constexpr double kSrBandFrac = 0.0005; // ±0.05% of target sr
@@ -483,11 +487,11 @@ namespace
         }
 
         std::cout << "\n=== Followup: realSR within " << std::fixed << std::setprecision(2)
-                  << (kSrBandFrac * 100.0) << "% of target sr=" << std::setprecision(4) << target_sr
-                  << " (band [" << (target_sr - sr_tol) << ", " << (target_sr + sr_tol) << "]) ===\n"
-                  << std::defaultfloat;
+            << (kSrBandFrac * 100.0) << "% of target sr=" << std::setprecision(4) << target_sr
+            << " (band [" << (target_sr - sr_tol) << ", " << (target_sr + sr_tol) << "]) ===\n"
+            << std::defaultfloat;
         std::cout << "Kept " << kept.size() << "/" << vals.size()
-                  << " valid cells (" << (vals.size() - kept.size()) << " dropped as off-band).\n\n";
+            << " valid cells (" << (vals.size() - kept.size()) << " dropped as off-band).\n\n";
 
         if (kept.empty())
         {
@@ -502,8 +506,8 @@ namespace
         {
             const MCResult& m = results[idx];
             std::cout << "  " << std::setw(10) << (seed_start + idx)
-                      << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
-                      << "  ";
+                << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
+                << "  ";
             PrintMcCell(m, F);
             std::cout << "\n";
         }
@@ -519,7 +523,7 @@ namespace
         }
         std::sort(fvals.begin(), fvals.end());
         const double f_mean = std::accumulate(fvals.begin(), fvals.end(), 0.0) /
-                              static_cast<double>(fvals.size());
+            static_cast<double>(fvals.size());
         double f_var = 0.0;
         for (double v : fvals)
         {
@@ -534,17 +538,19 @@ namespace
                                     : 0.5 * (fvals[fvals.size() / 2 - 1] + fvals[fvals.size() / 2]);
 
         std::cout << std::fixed << std::setprecision(3)
-                  << "\n  TotalMC over band seeds: mean=" << f_mean
-                  << "  median=" << f_median << "  std=" << f_sd
-                  << "  min=" << fvals.front() << "  max=" << fvals.back() << "\n"
-                  << "  mean k>.01 = " << std::setprecision(1)
-                  << (f_sum_k01 / static_cast<double>(kept.size())) << "\n"
-                  << std::defaultfloat;
+            << "\n  TotalMC over band seeds: mean=" << f_mean
+            << "  median=" << f_median << "  std=" << f_sd
+            << "  min=" << fvals.front() << "  max=" << fvals.back() << "\n"
+            << "  mean k>.01 = " << std::setprecision(1)
+            << (f_sum_k01 / static_cast<double>(kept.size())) << "\n"
+            << std::defaultfloat;
 
         std::vector<std::size_t> ranked = kept;
         std::sort(ranked.begin(), ranked.end(),
                   [&](std::size_t a, std::size_t b)
-                  { return results[a].total_mc > results[b].total_mc; });
+                  {
+                      return results[a].total_mc > results[b].total_mc;
+                  });
         const std::size_t top_n = std::min<std::size_t>(5, ranked.size());
 
         std::cout << "\n  Top " << top_n << " (band, by TotalMC):\n";
@@ -555,9 +561,9 @@ namespace
             const std::size_t idx = ranked[r];
             const MCResult& m = results[idx];
             std::cout << "  " << std::setw(4) << (r + 1)
-                      << "  " << std::setw(10) << (seed_start + idx)
-                      << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
-                      << "  ";
+                << "  " << std::setw(10) << (seed_start + idx)
+                << "  " << std::fixed << std::setprecision(4) << std::setw(6) << m.realized_sr
+                << "  ";
             PrintMcCell(m, F);
             std::cout << "\n";
         }
@@ -569,8 +575,8 @@ namespace
     // Mode 4: per-lag r²(k) curves for several depths, side-by-side.
     // ---------------------------------------------------------------------------
     [[maybe_unused]] void RunDepthProbe(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                       float sr, float leak, const std::vector<std::size_t>& depths,
-                       std::size_t kmax_probe)
+                                        float sr, float leak, const std::vector<std::size_t>& depths,
+                                        std::size_t kmax_probe)
     {
         const MCConfig& mc = meter.Config();
         const std::size_t F = meter.Features();
@@ -581,8 +587,8 @@ namespace
 
         PrintRunHeader("Per-lag r2(k) depth probe", meter, base);
         std::cout << "Probe   : sr=" << sr << "  leak=" << leak
-                  << "  kmax_probe=" << kmax_probe
-                  << "  depths={";
+            << "  kmax_probe=" << kmax_probe
+            << "  depths={";
         for (std::size_t d = 0; d < depths.size(); ++d)
             std::cout << (d ? "," : "") << depths[d];
         std::cout << "}  (early_stop=off; same drive/split/ridge)\n\n" << std::flush;
@@ -593,7 +599,7 @@ namespace
             ReservoirConfig c = base;
             c.history_depth = depths[d];
             std::cerr << "  measuring M=" << depths[d] << " (" << (d + 1) << "/"
-                      << depths.size() << ") ...\n";
+                << depths.size() << ") ...\n";
             curves[d] = meter.Measure(c, MeasureOptions{
                                           /*early_stop=*/false, /*kmax=*/kmax_probe
                                       });
@@ -613,13 +619,13 @@ namespace
                 if (!first_below_001 && m.r2[k] < 0.01) first_below_001 = static_cast<int>(k + 1);
             }
             std::cout << std::fixed << std::setprecision(4)
-                      << "  M=" << std::setw(2) << depths[d]
-                      << "  realSR=" << m.realized_sr
-                      << "  r2(1)=" << m.r2[0]
-                      << "  first k<0.5=" << std::setw(3) << first_below_half
-                      << "  first k<0.01=" << std::setw(3) << first_below_001
-                      << "  sum_r2[1.." << kmax_probe << "]=" << std::setprecision(3) << partial
-                      << "  MC/F=" << (partial / static_cast<double>(F));
+                << "  M=" << std::setw(2) << depths[d]
+                << "  realSR=" << m.realized_sr
+                << "  r2(1)=" << m.r2[0]
+                << "  first k<0.5=" << std::setw(3) << first_below_half
+                << "  first k<0.01=" << std::setw(3) << first_below_001
+                << "  sum_r2[1.." << kmax_probe << "]=" << std::setprecision(3) << partial
+                << "  MC/F=" << (partial / static_cast<double>(F));
             if (m.open_tail) std::cout << "  *open";
             std::cout << "\n";
         }
@@ -653,9 +659,9 @@ int main(int argc, char* argv[])
     // change the *experiment*; edit the ReservoirConfig below for the op-point.
     MCConfig mccfg;
     // mccfg.k_max = 2000;  // (defaults shown in MemoryCapacity.h)
-    mccfg.k_max     = 4000;   // raise until * disappears
-    mccfg.t_warmup  = 4000;   // must be ≥ k_max
-    mccfg.t_collect = 25000;  // must be > k_max
+    mccfg.k_max = 4000; // raise until * disappears
+    mccfg.t_warmup = 4000; // must be ≥ k_max
+    mccfg.t_collect = 25000; // must be > k_max
 
     // ---- Base reservoir operating point ----
     // Doc Results table: is=0.06 (weak drive / memory-margin regime).
@@ -664,7 +670,12 @@ int main(int argc, char* argv[])
 
     ReservoirConfig base;
     base.dim = DIM;
-    base.seed = 47397376;//473973767;//738956;
+    //base.seed = 47397376;//473973767;//738956;
+
+
+    //{73896*2, 73897*3, 73898*4, 73899*5, 73900*6, 73901*7, 73902*8, 73903*9, 73904*10, 73905*11}
+    base.seed = 73905*11;
+
     base.num_inputs = 1;
     base.spectral_radius = 0.99f;
     base.leak_rate = 1.0f;
@@ -690,9 +701,10 @@ int main(int argc, char* argv[])
     // --- Mode 2: sr × leak × history-depth grid (any M in [1, 64]) ---
     // Default campaign: matches MemoryCapacity.md Results (leak singleton → M×sr pivot).
     RunGridSweep(meter, base,
-                      {0.9f, 0.95f, 1.0f}, // spectral radii
-                      {0.6, 0.7, 0.8, 0.9, 1.00f},                   // leak rates
-                      {1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
+                 {1.0f}, // spectral radii
+                 {0.95, 0.975, 1.00f}, // leak rates
+                 //{1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
+                 {30, 31, 32, 33, 34}); // history depths (M)
 
     return 0;
 }
