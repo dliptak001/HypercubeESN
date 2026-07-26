@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 
     constexpr size_t DIM         = 10;
     constexpr size_t N           = 1ULL << DIM;
-    constexpr size_t narma_order = 70;          // fixed order for the history-depth sweep
+    constexpr size_t narma_order = 50;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 32000;       // states fed to the readout (80/20 split), low res - 8000, hi res - 32000
     constexpr uint64_t data_seed = 1939;        // signal-side RNG seed
 
@@ -51,7 +51,13 @@ int main(int argc, char* argv[])
     // (seed, fsf_seed, M) cell scores the byte-identical task -- the spread
     // across seeds at a fixed M is the run-to-run variance, which tells us
     // whether the M-curve shape is real.
-    const std::vector<uint64_t> sweep_reservoir_seeds = {73896*2, 73897*3, 73898*4, 73899*5, 73900*6, 73901*7, 73902*8, 73903*9, 73904*10, 73905*11};
+    // (73896+k)*(k+2) for k = 0..19 — same family as the 10-seed NARMA pools, extended.
+    const std::vector<uint64_t> sweep_reservoir_seeds = {
+        73896*2,  73897*3,  73898*4,  73899*5,  73900*6,
+        73901*7,  73902*8,  73903*9,  73904*10, 73905*11,
+        73906*12, 73907*13, 73908*14, 73909*15, 73910*16,
+        73911*17, 73912*18, 73913*19, 73914*20, 73915*21,
+    };
 
     // Third sweep dimension: FSF V / B_fsf draw seed. Independent of reservoir
     // seed. Ignored entirely when full_state_feedback is false (see active
@@ -100,7 +106,7 @@ int main(int argc, char* argv[])
     base.reservoir.fsf_scaling = 0.004;
 
     base.readout.seed = 3423555;
-    base.readout_slices = 4;
+    base.readout_slices = 2;
     base.readout.num_layers = 1;
     base.readout.use_pooling = true;
     base.readout.pool_type = ReadoutPoolType::Max;
