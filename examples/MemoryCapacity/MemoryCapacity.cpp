@@ -666,7 +666,7 @@ int main(int argc, char* argv[])
     // ---- Base reservoir operating point ----
     // Doc Results table: is=0.06 (weak drive / memory-margin regime).
     // For A_lorentz free-run op-points try ~0.2; retune per activation and task.
-    constexpr std::size_t DIM = 10;
+    constexpr std::size_t DIM = 9;
 
     ReservoirConfig base;
     base.dim = DIM;
@@ -674,7 +674,7 @@ int main(int argc, char* argv[])
 
 
     //{73896*2, 73897*3, 73898*4, 73899*5, 73900*6, 73901*7, 73902*8, 73903*9, 73904*10, 73905*11}
-    base.seed = 73905*11;
+    base.seed = 73896*2;
 
     base.num_inputs = 1;
     base.spectral_radius = 0.99f;
@@ -702,9 +702,13 @@ int main(int argc, char* argv[])
     // Default campaign: matches MemoryCapacity.md Results (leak singleton → M×sr pivot).
     RunGridSweep(meter, base,
                  {1.0f}, // spectral radii
-                 {0.95, 0.975, 1.00f}, // leak rates
-                 //{1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
-                 {30, 31, 32, 33, 34}); // history depths (M)
+                 {1.00f}, // leak rates
+                 {
+                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+                     28, 29, 30, 31, 32
+                 });
+    //{1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
+    //{30, 31, 32, 33, 34}); // history depths (M)
 
     return 0;
 }

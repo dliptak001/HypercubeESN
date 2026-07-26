@@ -111,77 +111,6 @@ enum class SeedRole : uint64_t {
     SrProbe = 5
 };
 
-// --- Per-vertex row equalizers (A/B from Initialize only) -------------------
-// Contiguous layout: n_rows rows × row_len floats (input/ext/FSF B: row_len=dim;
-// recurrent bank: row_len=dim*M). Degenerate rows left unchanged.
-// L2:     ||row||_2 = 1     — equal gather energy per vertex
-// Linf:   max|w_i| = 1      — equal peak; at least one entry is ±1 (not both)
-// MinMax: min→−1, max→+1   — affine range map; at least one −1 and one +1
-//         when max>min. Interior values are the linear image of the original
-//         draw (same order/ratios), spread across (−1,1) — not re-sampled.
-// Does NOT re-apply block scale — caller multiplies after (drive ports) or
-// leaves SR to set global gain (recurrent). Bias and FSF V are not row banks.
-[[maybe_unused]] static void NormalizeRowsL2(float* base, size_t n_rows, size_t row_len)
-{
-    constexpr float kEps = 1e-30f;
-    for (size_t r = 0; r < n_rows; ++r)
-    {
-        float* row = base + r * row_len;
-        float sum_sq = 0.0f;
-        for (size_t i = 0; i < row_len; ++i)
-            sum_sq += row[i] * row[i];
-        if (sum_sq <= kEps)
-            continue;
-        const float inv = 1.0f / std::sqrt(sum_sq);
-        for (size_t i = 0; i < row_len; ++i)
-            row[i] *= inv;
-    }
-}
-
-[[maybe_unused]] static void NormalizeRowsLinf(float* base, size_t n_rows, size_t row_len)
-{
-    constexpr float kEps = 1e-30f;
-    for (size_t r = 0; r < n_rows; ++r)
-    {
-        float* row = base + r * row_len;
-        float max_abs = 0.0f;
-        for (size_t i = 0; i < row_len; ++i)
-            max_abs = std::max(max_abs, std::abs(row[i]));
-        if (max_abs <= kEps)
-            continue;
-        const float inv = 1.0f / max_abs;
-        for (size_t i = 0; i < row_len; ++i)
-            row[i] *= inv;
-    }
-}
-
-// Affine min–max to [-1, +1]: lo→−1, hi→+1. Guarantees both endpoints when
-// the row is non-constant (row_len≥2 and hi>lo). After recurrent SR scale k>0,
-// endpoints become −k and +k.
-[[maybe_unused]] static void NormalizeRowsMinMax(float* base, size_t n_rows, size_t row_len)
-{
-    constexpr float kEps = 1e-30f;
-    if (row_len < 2)
-        return;
-    for (size_t r = 0; r < n_rows; ++r)
-    {
-        float* row = base + r * row_len;
-        float lo = row[0];
-        float hi = row[0];
-        for (size_t i = 1; i < row_len; ++i)
-        {
-            lo = std::min(lo, row[i]);
-            hi = std::max(hi, row[i]);
-        }
-        const float span = hi - lo;
-        if (span <= kEps)
-            continue; // constant row — cannot place both ±1
-        const float inv = 2.0f / span;
-        for (size_t i = 0; i < row_len; ++i)
-            row[i] = (row[i] - lo) * inv - 1.0f;
-    }
-}
-
 void Reservoir::Initialize()
 {
     auto seed_for = [this](SeedRole r) {
@@ -211,10 +140,6 @@ void Reservoir::Initialize()
     float* const input_base = pW;
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(in_rng));
-    // A/B input rows (N × dim) — uncomment at most one:
-    // NormalizeRowsL2(input_base, n_, dim_);
-    // NormalizeRowsLinf(input_base, n_, dim_);
-    //NormalizeRowsMinMax(input_base, n_, dim_);
     const float in_scaling = input_scaling_ / std::sqrt(static_cast<float>(dim_));
     for (size_t i = 0; i < num_input_weights_; ++i)
         input_base[i] *= in_scaling;
@@ -224,10 +149,6 @@ void Reservoir::Initialize()
         (*pW++) = static_cast<float>(dist(ext_fb_rng));
     if (num_ext_feedback_weights_ > 0)
     {
-        // A/B external-feedback rows (N × dim) — uncomment at most one:
-        // NormalizeRowsL2(ext_base, n_, dim_);
-        // NormalizeRowsLinf(ext_base, n_, dim_);
-        //NormalizeRowsMinMax(ext_base, n_, dim_);
         const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
             ext_base[i] *= ext_scale;
@@ -245,10 +166,6 @@ void Reservoir::Initialize()
         float* const fsf_b_base = pW;
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             (*pW++) = static_cast<float>(dist(fsf_rng));
-        // A/B FSF B rows (N × dim) — uncomment at most one; never equalize V:
-        // NormalizeRowsL2(fsf_b_base, n_, dim_);
-        // NormalizeRowsLinf(fsf_b_base, n_, dim_);
-        //NormalizeRowsMinMax(fsf_b_base, n_, dim_);
         const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_fsf_weights_; ++i)
             fsf_b_base[i] *= fsf_scale;
@@ -276,12 +193,6 @@ void Reservoir::Initialize()
         for (size_t i = 0; i < history_depth_; ++i)
             for (size_t j = 0; j < dim_; ++j)
                 (*pRec++) *= depth_factor[i];
-
-    // A/B recurrent banks (N × (dim*M)), after taper, before SR.
-    // Uncomment at most one. No re-scale here — SR sets global gain.
-    // NormalizeRowsL2(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
-    // NormalizeRowsLinf(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
-    //NormalizeRowsMinMax(vtx_weight_.get() + rec_base, n_, dim_ * history_depth_);
 
     const float target = spectral_radius_;
     const size_t MN = history_depth_ * n_;
