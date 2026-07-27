@@ -114,8 +114,9 @@ The strong negative verdict from v1 is **retracted** — it was harness-dependen
 **v3 — multi-seed at sr=0.88, runtime activation (2026-06-16):**
 
 Harness change: activation shape is now a **runtime** config field
-(`ReservoirConfig::lorentz_gamma` / `lorentz_inv_sigma2`), consumed in
-`UpdateState` via `A_lorentz(s, γ, 1/σ²)`. γ=0 ⇒ algebraically `std::tanh`,
+(historical `ReservoirConfig::lorentz_gamma` / `lorentz_inv_sigma2` — **removed**
+from the live API; see `docs/ActivationFunctionA.md`). Campaigns used
+`A_lorentz(s, γ, 1/σ²)`. γ=0 ⇒ algebraically `std::tanh`,
 γ=1.1 ⇒ the A arm, γ<0 ⇒ non-monotone "fold". CLI:
 `Lorenz.exe [sr] [is] [seed] [gamma] [inv_sigma2]`. Also: `noise_rng_` is now
 explicitly seeded in `Initialize()`. **Both changes shifted the absolute baseline

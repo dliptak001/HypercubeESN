@@ -14,6 +14,7 @@ order below.
 | [Reservoir.md](Reservoir.md) | Hypercube reservoir — topology, timestep, history depth, SR, drive ports (input / external feedback) |
 | [Readout.md](Readout.md) | HCNN readout architecture, training algorithm, and streaming mode |
 | [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md) | External-feedback port (caller-owned closed loop) |
+| [ActivationFunctionA.md](ActivationFunctionA.md) | **Archive** — central-slope tanh envelope experiments (implementation removed) |
 | [Rotating-input-map-temporalization.md](Rotating-input-map-temporalization.md) | **Design proposal** — RIMT mechanism for **HypercubeMLP** (own product; static/MLP-class tasks atop HypercubeESN) |
 | [HypercubeLSM.md](HypercubeLSM.md) | **Concept** — HypercubeLSM: spiking liquid state machine on the hypercube (ESN’s event-native sibling; own future project) |
 

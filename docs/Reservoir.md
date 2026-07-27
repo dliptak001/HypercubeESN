@@ -57,8 +57,6 @@ Everything that follows serves those two.
 | `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
-| `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
-| `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
 
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
@@ -225,21 +223,13 @@ for j = 0 .. M-1:
     for i = 0 .. DIM-1:
         s += slice_j[v XOR (1<<i)] * W_rec[v][j][i]
 
-activation = A_lorentz(s, gamma, inv_sigma2) + bias[v]
+activation = tanh(s) + bias[v]
 state[v]   = (1 - leak_rate) * slice_0[v] + leak_rate * activation
 ```
 
-`A_lorentz` (default `gamma = 0`) is:
-
-```
-phi  = 1 / (1 + s² · inv_sigma2)
-gain = 1 + gamma · phi
-A(s) = tanh(s · gain)
-```
-
-So the shipped default is **plain `tanh(s)`**. Nonzero `lorentz_gamma` reshapes the
-central slope (see also `docs/ActivationFunctionA.md` for exploration notes). Bias
-is added **after** the nonlinearity, before the leak blend.
+The nonlinearity is plain **`tanh(s)`**. Bias is added **after** the nonlinearity,
+before the leak blend. (An experimental central-slope envelope was studied and
+removed; see the archived notes in [ActivationFunctionA.md](ActivationFunctionA.md).)
 
 For a single input channel the injected field is uniform, so the input gather is
 equivalent to one scalar times the sum of the row of `W_in`; the code still uses

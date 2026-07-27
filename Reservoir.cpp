@@ -23,9 +23,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       history_depth_(cfg.history_depth),
       num_ext_feedback_channels_(cfg.num_external_feedback_channels),
       ext_feedback_scaling_(cfg.external_feedback_scaling),
-      bias_scaling_(cfg.bias_scaling),
-      lorentz_gamma_(cfg.lorentz_gamma),
-      lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
+      bias_scaling_(cfg.bias_scaling)
 
 {
     if (dim_ < 5 || dim_ > 16)
@@ -233,19 +231,6 @@ void Reservoir::Step()
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
 }
 
-// --- Lorentzian envelope (no exp; heavier tails) ---------------------------
-// gamma = 0 reduces to plain tanh(x).
-// gamma > 0 sharpens the central slope;
-// gamma < 0 is the "-gamma*phi" branch and, for |gamma| > 1, drives the central
-// gain negative for a non-monotone fold. The sign is just the sign of gamma.
-// Pass inv_sigma2 = 1/sigma^2.  e.g. sigma=0.05 -> inv_sigma2 = 400.
-inline float A_lorentz(const float x, const float gamma, const float inv_sigma2) noexcept
-{
-    const float phi = 1.0f / (1.0f + x * x * inv_sigma2);
-    const float gain = 1.0f + gamma * phi;
-    return std::tanh(x * gain);
-}
-
 void Reservoir::UpdateState(const size_t v, const float old_output_v)
 {
     float s = 0.0f;
@@ -280,7 +265,7 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
             s += pSlice[v ^ NearestMask(j)] * (*w++);
     }
 
-    const float activation = A_lorentz(s, lorentz_gamma_, lorentz_inv_sigma2_) + vtx_bias_[v];
+    const float activation = std::tanh(s) + vtx_bias_[v];
 
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
@@ -368,8 +353,6 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.num_external_feedback_channels = num_ext_feedback_channels_;
     cfg.external_feedback_scaling = ext_feedback_scaling_;
     cfg.bias_scaling = bias_scaling_;
-    cfg.lorentz_gamma = lorentz_gamma_;
-    cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
     return cfg;
 }
 
