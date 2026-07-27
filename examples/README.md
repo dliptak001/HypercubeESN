@@ -131,9 +131,9 @@ each lag, and report the per-lag squared correlation `r²(k)` and the total
   sweep, a reservoir-seed survey, and a side-by-side depth probe
 
 `main()` selects a run mode (a parallel `RunGridSweep` by default); edit the
-`MCConfig` / `ReservoirConfig` there to probe a different operating point. The
-full walkthrough — protocol, the two-config split, and a worked DIM-11 sweep —
-is in [`MemoryCapacity/MemoryCapacity.md`](MemoryCapacity/MemoryCapacity.md).
+`MCConfig` / `ReservoirConfig` and grid axes there. The walkthrough, four modes,
+and multi-DIM lookup tables (archived reference campaigns) are in
+[`MemoryCapacity/MemoryCapacity.md`](MemoryCapacity/MemoryCapacity.md).
 
 ## NARMA
 
@@ -168,9 +168,10 @@ memory), this is the full ESN pipeline with a trained HCNN readout.
       32   0.0885
 ```
 
-Edit the `constexpr` parameters in `main()` (order, DIM, sweep points) to probe
-a different regime. Full walkthrough — the recurrence, coefficient schedule,
-literature reference bands, and the target-alignment fix — is in
+Optional CLI: `NARMA.exe [order]` (integer ≥ 2; default 50). Edit the other
+`constexpr` / vectors in `main()` (DIM, `sweep_M`, seeds) to probe a different
+regime. Full walkthrough — the recurrence, coefficient schedule, literature
+reference bands, and the target-alignment fix — is in
 [`NARMA/NARMA.md`](NARMA/NARMA.md).
 
 ## Building

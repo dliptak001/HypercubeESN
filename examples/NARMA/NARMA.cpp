@@ -2,6 +2,9 @@
 /// @brief NARMA-N system-identification benchmark on the hypercube reservoir.
 /// See NARMA.md for the walkthrough, the recurrence, and reference bands.
 ///
+/// Usage: NARMA.exe [order]
+///   order — optional NARMA recurrence order N (>= 2); default kDefaultNarmaOrder.
+///
 /// NARMA (Nonlinear Auto-Regressive Moving Average) is the classic reservoir
 /// stress test: reproduce y(t) from a white input u(t) when y depends on a
 /// long nonlinear history of itself and on the delayed input u(t-N). It probes
@@ -11,6 +14,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -31,14 +35,65 @@
 #define NARMA_TANH_WRAP 1
 #endif
 
+// Default order when main is run with no arguments. Override at the command line:
+//   NARMA.exe [order]
+//   NARMA.exe 30
+namespace {
+constexpr size_t kDefaultNarmaOrder = 50;
+
+void PrintUsage(const char* argv0)
+{
+    std::cerr << "Usage: " << (argv0 ? argv0 : "NARMA") << " [order]\n"
+              << "  order  NARMA recurrence order N (integer >= 2).\n"
+              << "         Optional; default is " << kDefaultNarmaOrder << ".\n"
+              << "  -h, --help  Show this message.\n";
+}
+
+// Parse optional order from argv.
+// Returns 0 on success, 0 after --help (caller should exit 0), 1 on bad args.
+// On help/error, usage is already printed; out_order is only valid on success.
+int ParseNarmaOrder(int argc, char* argv[], size_t& out_order, bool& is_help)
+{
+    is_help = false;
+    out_order = kDefaultNarmaOrder;
+    if (argc <= 1)
+        return 0;
+
+    const std::string a1 = argv[1] ? argv[1] : "";
+    if (a1 == "-h" || a1 == "--help" || a1 == "/?") {
+        PrintUsage(argv[0]);
+        is_help = true;
+        return 0;
+    }
+    if (argc > 2) {
+        std::cerr << "NARMA: unexpected extra arguments.\n";
+        PrintUsage(argv[0]);
+        return 1;
+    }
+
+    char* end = nullptr;
+    const unsigned long v = std::strtoul(a1.c_str(), &end, 10);
+    if (end == a1.c_str() || (end && *end != '\0') || v < 2ul) {
+        std::cerr << "NARMA: order must be an integer >= 2 (got \"" << a1 << "\").\n";
+        PrintUsage(argv[0]);
+        return 1;
+    }
+    out_order = static_cast<size_t>(v);
+    return 0;
+}
+} // namespace
 
 int main(int argc, char* argv[])
 {
-    (void)argc; (void)argv;
+    size_t narma_order = kDefaultNarmaOrder;
+    bool help = false;
+    if (const int rc = ParseNarmaOrder(argc, argv, narma_order, help); rc != 0)
+        return rc;
+    if (help)
+        return 0;
 
     constexpr size_t DIM         = 10;
     constexpr size_t N           = 1ULL << DIM;
-    constexpr size_t narma_order = 50;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 32000;       // states fed to the readout (80/20 split), low res - 8000, hi res - 32000
     constexpr uint64_t data_seed = 1939;        // signal-side RNG seed
 
@@ -111,10 +166,10 @@ int main(int argc, char* argv[])
 
     base.readout.seed = 3423555;
     base.readout_slices = 2;
+    base.readout.conv_channels = 16;
     base.readout.num_layers = 1;
     base.readout.use_pooling = true;
     base.readout.pool_type = ReadoutPoolType::Max;
-    base.readout.conv_channels = 16;
     base.readout.lr_min_frac = 0.005f;
     base.readout.momentum = 0.9;
     base.readout.task       = ReadoutTask::Regression;

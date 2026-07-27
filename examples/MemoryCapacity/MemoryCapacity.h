@@ -48,8 +48,8 @@
 /// is always in [0, 1].
 ///
 /// Cost: dominated by building the F×F train Gram and factoring it —
-/// O(M_train·F² + F³). At DIM 12 with F=2048, M_train ~ 10k, one Measure() is
-/// roughly 5–10 s in Release.
+/// O(M_train·F² + F³). At DIM 11 (F=2048) or DIM 12 (F=4096), M_train ~ 10k,
+/// one Measure() is roughly several seconds in Release (scales ~F²–F³).
 
 namespace mc
 {

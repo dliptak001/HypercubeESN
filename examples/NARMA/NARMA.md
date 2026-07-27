@@ -38,6 +38,18 @@ literature NRMSE band — treat this as an internal stress rung against N30
 | Readout | TBD epochs, batch TBD, lr TBD (cosine) |
 | HCNN | TBD |
 
+## How to run
+
+```
+cmake-build-release\NARMA.exe           # default order (50)
+cmake-build-release\NARMA.exe 30        # NARMA-30
+cmake-build-release\NARMA.exe 70        # NARMA-70
+cmake-build-release\NARMA.exe --help
+```
+
+`order` is optional (integer ≥ 2). DIM, `history_depth` sweep, seeds, and
+training knobs stay in `NARMA.cpp` `main()`.
+
 ## What this example demonstrates
 
 NARMA (Nonlinear Auto-Regressive Moving Average) is the classic reservoir

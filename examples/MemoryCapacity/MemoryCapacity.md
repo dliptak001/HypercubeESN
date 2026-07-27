@@ -1,7 +1,8 @@
 # Memory Capacity — Linear Short-Term Memory Diagnostic
 
-Quick reference for HypercubeESN memory-capacity (MC) grids. Methodology first;
-lookup tables below.
+Quick reference for the HypercubeESN MC diagnostic. **Engine + how to run** first;
+**lookup tables** are archived reference campaigns (not auto-synced to whatever
+`main()` currently has checked in).
 
 ---
 
@@ -9,60 +10,82 @@ lookup tables below.
 
 Memory Capacity (MC) is the Jaeger (2001) probe of a reservoir's **linear
 short-term memory**: how many past inputs can be linearly reconstructed from the
-present state. Drive with white noise `u(t)`; for each lag `k` fit a linear
-readout to `u(t-k)` from `x(t)`. Squared Pearson correlation `r²(k)` is the
-retained lag-`k` fraction; the headline is
+present state. Drive with white noise `u(t) ~ U[-1,+1]`; for each lag `k` fit a
+ridge readout to `u(t-k)` from state `x(t)`. Squared **Pearson** correlation
+`r²(k)` on **held-out** rows is the retained lag-`k` fraction; the headline is
 
 ```
 MC = Σ_k r²(k)
 ```
 
-Unlike NARMA (memory + nonlinear mixing), MC isolates memory. The reservoir is
-not trained — only its raw state is read. No HCNN, no ESN coupling.
+Unlike NARMA (memory + nonlinear mixing), MC isolates memory. No HCNN, no ESN
+coupling — only `Reservoir` state (newest delay-line slice / `Outputs()`).
 
 | Symbol | Meaning |
 |--------|---------|
-| **N** | Reservoir state size: `N = 2^DIM` hypercube nodes. |
-| **F** | Feature count used by the MC readout: `F = min(N, feature_cap)`. Full-state runs (default here) have no cap hit, so **`F = N = 2^DIM`**. Theoretical MC ceiling is `F` (one unit per independent feature). |
-| **M** | `history_depth` (delay-line depth). |
-| **TotalMC** | `Σ_k r²(k)` over scored lags. Ceiling is `F`. |
-| **MC/F** | Capacity utilization: `TotalMC / F`. |
-| **k>.5 / .1 / .01** | Last lag with `r²` above that floor (memory horizons). |
-| **realSR** | Realized spectral radius after rescale. |
+| **N** | Reservoir size: `N = 2^DIM` (DIM in **[5, 16]**). |
+| **F** | MC features: `F = min(N, feature_cap)` (default cap 8192). Full-state → **`F = N`**. Theoretical MC ceiling is `F`. |
+| **M** (tables) | `history_depth` — delay-line depth, any integer in **[1, 64]**. |
+| **M_usable** (banner) | Collected state rows = `t_collect - k_max` (train + test). **Not** history_depth. |
+| **TotalMC** | `Σ_k r²(k)` over scored lags. |
+| **MC/F** | Utilization `TotalMC / F`. |
+| **k>.5 / .1 / .01** | Last lag with `r²` above that floor. |
+| **realSR** | Post-rescale spectral radius. |
 
-**Tail marks** (live printer; all cells in the tables below closed early-stop):
+**Tail marks** (grid / seed printers):
 
 | Mark | Meaning |
 |------|---------|
-| `*` | Open tail — `r²` still live at last lag → **TotalMC is a lower bound**. Raise `k_max` / warmup / collect. |
-| `e` | Early-stop — curve decayed; sum is complete for that cell. |
+| `*` | Open tail — last scored `r²` still ≥ early-stop floor → **TotalMC is a lower bound**. Raise `k_max` / warmup / collect. |
+| `e` | Early-stop — sub-threshold streak; curve decayed; sum complete for that cell. |
 | blank | Full `k_max` scored and tail closed. |
+| `n/a` | Cell OOM or train Gram not PD (raise ridge / lower workers). |
 
 ---
 
-## Setup
+## Code layout
 
 | Piece | Role |
 |-------|------|
-| `MCConfig` | The **meter**: warmup, collect, `k_max`, ridge, train split, drive seed. Fixed for a sweep. |
-| `ReservoirConfig` | The **op-point**: `sr`, leak, `M`, seed, `input_scaling`, FSF. Passed into `Measure()` per cell. |
-| `MCLinalg.h` | Double-precision Gram / Cholesky / solve kernels. |
-| `MemoryCapacity.h` | `MemoryCapacityMeter`, `RunSweep`. |
-| `MemoryCapacity.cpp` | Driver modes + table formatting. Edit `main()` to pick mode / grids. |
+| `MCLinalg.h` | Double Gram / Cholesky / solve kernels (no I/O). |
+| `MemoryCapacity.h` | `MCConfig`, `MCResult`, `MemoryCapacityMeter::Measure`, parallel `RunSweep`. |
+| `MemoryCapacity.cpp` | Four run modes + tables. Edit **`main()`** to pick mode / axes. |
 
-**Modes:** `RunDetailed` (one op-point + sparse lag dump) · `RunGridSweep`
-(M × sr × leak, prints M×sr pivot when leak is singleton) · `RunSeedSurvey` ·
-`RunDepthProbe` (per-lag curves across depths).
+### Two configs
 
-One white-noise drive is generated once per meter and reused for every cell, so
-differences are reservoir-only.
+- **`MCConfig`** — the **meter** (fixed for a sweep): `t_warmup`, `t_collect`,
+  `k_max`, `ridge_lambda`, `train_frac`, `feature_cap`, `input_seed`, early-stop
+  knobs. One white-noise drive is generated at meter construction and **reused**
+  for every cell (byte-identical task).
+- **`ReservoirConfig`** — the **op-point** passed into `Measure()` per cell: `sr`,
+  `leak`, `history_depth`, `seed`, `input_scaling`, FSF. `Measure()` forces
+  `dim` / `num_inputs=1` / `verbose=false` so the feature layout cannot desync.
+
+Library defaults on `MCConfig` (header): warmup **2000**, collect **15000**,
+`k_max` **2000**, ridge **1e-4**, train_frac **0.7**. Constraint:
+`k_max ≤ t_warmup` and `k_max < t_collect`.
+
+### Run modes (`MemoryCapacity.cpp`)
+
+| Mode | What it does |
+|------|----------------|
+| **`RunDetailed`** | One op-point; early_stop **off**; summary + sparse `r²(k)` dump. |
+| **`RunGridSweep`** | Parallel `sr × leak × history_depth` via `RunSweep`. Ordered cell table + auto pivot: **M×sr** if leak is a singleton, **M×leak** if sr is a singleton, else one **sr×leak** grid per M. |
+| **`RunSeedSurvey`** | Inclusive seed range `[start, end]` at fixed op-point; mean/median/std; optional realSR band filter + top-5. |
+| **`RunDepthProbe`** | Full curves for several depths side-by-side (early_stop off). |
+
+Progress on **stderr**; tables on **stdout**. Concurrent workers self-schedule
+from an atomic counter; optional RAM budget caps worker count. Banner prints
+live meter + layout. Edit `main()` for DIM / seed / grid axes.
 
 ---
 
-## Protocol (tables below)
+## Reference campaign — multi-DIM TotalMC grids
 
-Single-seed `RunGridSweep` campaign. **FSF off.** Every cell early-stopped (`e`)
-— curves closed inside `Kmax`; no open-tail undercount.
+Archived single-seed `RunGridSweep` results. **FSF off.** Every cell
+early-stopped (`e`); no open-tail undercount. To reproduce: DIM 5…12 in turn,
+seed **47397376**, sr `{0.9, 0.95, 1.0}`, leak `{1.0}`,
+M `{1,2,4,8,16,32,40,48,56,64}`, same extended meter as the table below.
 
 | Knob | Value |
 |------|--------|
@@ -71,17 +94,15 @@ Single-seed `RunGridSweep` campaign. **FSF off.** Every cell early-stopped (`e`)
 | Leak | **1.0** (singleton → M × sr pivot) |
 | `history_depth` M | 1, 2, 4, 8, 16, 32, 40, 48, 56, 64 |
 | `input_scaling` | 0.06 |
-| Reservoir seed | 47397376 |
+| Reservoir seed | **47397376** |
 | Meter | warmup **4000** · collect **25000** · Kmax **4000** · ridge **1e-4** · train_frac **0.7** · `input_seed` **0xc0ffee** |
 | FSF | **OFF** |
 
-There is seed dependence not represented in these single-seed tables. Treat
-peaks as **indicative**, not multi-seed means. Re-run with `RunSeedSurvey` at a
-chosen (DIM, M, sr) before locking an op-point for other tasks.
+Seed dependence is not in these tables — treat peaks as **indicative**. Use
+`RunSeedSurvey` (or Appendix B) before locking an op-point for other tasks.
 
-For **leak ≠ 1** at DIM 10 (same seed/meter), see
-[Appendix A](#appendix-a--dim-10-leak--sr--m). For **seed variance** in the
-M = 30–34 band at sr = 1.00, see
+For **leak ≠ 1** at DIM 10, see [Appendix A](#appendix-a--dim-10-leak--sr--m).
+For **seed variance** at M = 30–34 / sr = 1.00, see
 [Appendix B](#appendix-b--dim-10-seed-survey-m--3034).
 
 ---
@@ -244,19 +265,20 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 
 ## How to re-run
 
-Edit `MemoryCapacity.cpp` `main()`:
-
-1. Set `DIM`, meter knobs (`k_max`, warmup, collect), and base op-point
-   (`seed`, `input_scaling`, FSF).
-2. Enable `RunGridSweep` with the M / sr / leak vectors you want
-   (`history_depth` any integer in **[1, 64]** — not restricted to powers of two).
-3. Build Release and run `MemoryCapacity.exe`. Progress on stderr; tables on stdout.
+1. Edit `MemoryCapacity.cpp` `main()`:
+   - **Meter:** `mccfg.k_max`, `t_warmup` (≥ k_max), `t_collect` (> k_max).
+   - **Base op-point:** `DIM`, `seed`, `input_scaling`, FSF knobs.
+   - **Mode:** uncomment exactly one of `RunDetailed` / `RunGridSweep` /
+     `RunSeedSurvey` / `RunDepthProbe`.
+   - **Grid axes:** `sr`, `leak`, `history_depth` vectors (`M` any in **[1, 64]**).
+2. Build Release (CLion owns `cmake-build-release`; do not reconfigure generators).
+3. Run:
 
 ```
 cmake-build-release\MemoryCapacity.exe
 ```
 
-For seed variance at a fixed (DIM, M, sr): comment out the grid, enable
+Progress on stderr; tables on stdout. For seed variance at fixed (DIM, M, sr):
 `RunSeedSurvey`. For lag-shape diagnostics: `RunDepthProbe`.
 
 ---

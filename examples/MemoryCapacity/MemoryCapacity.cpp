@@ -240,7 +240,7 @@ namespace
             if (hd < 1 || hd > 64)
             {
                 std::cerr << "RunGridSweep: history_depth " << hd
-                    << " is outside [1, 64] — aborting.\n";
+                    << " is outside [1, 64] - aborting.\n";
                 return;
             }
 
@@ -654,61 +654,53 @@ int main(int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    // ---- Experiment definition (the MCConfig fixes drive/split/ridge/lags) ----
-    // Defaults match MemoryCapacity.md Results (DIM 11 grid). Edit fields here to
-    // change the *experiment*; edit the ReservoirConfig below for the op-point.
+    // ---- Experiment (MCConfig): drive / split / ridge / lag window ----
+    // Library defaults in MemoryCapacity.h are 2000 / 15000 / 2000. The reference
+    // lookup tables in MemoryCapacity.md used the extended meter below so open
+    // tails clear. Edit freely; banner prints live knobs.
     MCConfig mccfg;
-    // mccfg.k_max = 2000;  // (defaults shown in MemoryCapacity.h)
-    mccfg.k_max = 4000; // raise until * disappears
-    mccfg.t_warmup = 4000; // must be ≥ k_max
+    mccfg.k_max     = 4000;  // raise until open-tail * disappears on deep cells
+    mccfg.t_warmup  = 4000;  // must be >= k_max
     mccfg.t_collect = 25000; // must be > k_max
 
-    // ---- Base reservoir operating point ----
-    // Doc Results table: is=0.06 (weak drive / memory-margin regime).
-    // For A_lorentz free-run op-points try ~0.2; retune per activation and task.
+    // ---- Base reservoir op-point (seed, is, FSF fixed across a grid cell) ----
+    // Reference multi-DIM tables used seed 47397376, is=0.06, FSF off.
+    // main() knobs below are the local campaign; they need not match the tables.
     constexpr std::size_t DIM = 9;
 
     ReservoirConfig base;
     base.dim = DIM;
-    //base.seed = 47397376;//473973767;//738956;
-
-
-    //{73896*2, 73897*3, 73898*4, 73899*5, 73900*6, 73901*7, 73902*8, 73903*9, 73904*10, 73905*11}
-    base.seed = 73896*2;
-
+    base.seed = 73896 * 2; // alt reference seed: 47397376
     base.num_inputs = 1;
-    base.spectral_radius = 0.99f;
+    base.spectral_radius = 0.99f; // grid axes below override sr / leak / M
     base.leak_rate = 1.0f;
-    base.input_scaling = 0.06f; // tanh baseline (md Results); A(x) often wants ~0.2
+    base.input_scaling = 0.06f; // weak-drive / memory-margin (tanh)
     base.history_depth = 8;
 
-    // Full-state linear feedback (internal). Edit these three for A/B.
     base.full_state_feedback = false;
     base.fsf_seed = 4415756;
     base.fsf_scaling = 0.003f;
 
     MemoryCapacityMeter meter(DIM, mccfg);
 
-    // --- Mode 1: single detailed run (summary + sparse r²) ---
+    // --- Mode 1: one op-point, full curve + sparse lag dump ---
     // RunDetailed(meter, base);
 
-    // --- Mode 4: per-lag r²(k) shape, several depths side-by-side ---
-    //   RunDepthProbe(meter, base, 0.95f, 1.00f, {1, 2, 4}, 80);
+    // --- Mode 4: per-lag r2(k) shape across depths ---
+    // RunDepthProbe(meter, base, 0.95f, 1.00f, {1, 2, 4}, 80);
 
-    // --- Mode 3: seed survey at the base op-point (inclusive seed range) ---
-    //   RunSeedSurvey(meter, base, 73890, 73890 + 10);
+    // --- Mode 3: fixed op-point, inclusive seed range ---
+    // RunSeedSurvey(meter, base, 73890, 73890 + 10);
 
-    // --- Mode 2: sr × leak × history-depth grid (any M in [1, 64]) ---
-    // Default campaign: matches MemoryCapacity.md Results (leak singleton → M×sr pivot).
+    // --- Mode 2: sr x leak x history_depth (any M in [1, 64]) ---
+    // Pivot auto-shape: leak singleton -> M x sr; sr singleton -> M x leak;
+    // else one sr x leak grid per M. Reference multi-DIM tables used
+    // sr={0.9,0.95,1.0}, leak={1.0}, M={1,2,4,8,16,32,40,48,56,64}.
     RunGridSweep(meter, base,
-                 {1.0f}, // spectral radii
-                 {1.00f}, // leak rates
-                 {
-                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-                     28, 29, 30, 31, 32
-                 });
-    //{1, 2, 4, 8, 16, 32, 40, 48, 56, 64}); // history depths (M)
-    //{30, 31, 32, 33, 34}); // history depths (M)
+                 {1.0f},
+                 {1.00f},
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                  17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
 
     return 0;
 }
