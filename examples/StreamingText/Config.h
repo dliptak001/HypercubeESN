@@ -83,11 +83,11 @@ namespace streaming_text::config
 
             //c.readout.seed = 54544;
             c.readout.seed = 3423555;
-            c.readout_slices = 1;
+            c.readout_slices = 2;
             c.readout.task = ReadoutTask::Classification;
             c.readout.num_outputs = static_cast<int>(kVocabSize);
             c.readout.num_layers = 1;
-            c.readout.conv_channels = 1;
+            c.readout.conv_channels = 2;
             c.readout.weight_decay = 1e-5f;
             c.readout.lr_max = 0.0003f;
             c.readout.pool_type = ReadoutPoolType::Max;

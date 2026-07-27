@@ -44,7 +44,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.use_pooling = config::USE_POOLING;
     cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9;
-    cfg.readout.conv_channels = 8;
+    cfg.readout.conv_channels = config::CONV_CHANNELS;
     // One level of parallelism: the seed survey owns outer jthreads. Keep each
     // HCNN single-threaded so we do not spawn (hw−1) idle workers per trial.
     cfg.readout.num_threads = 1;
