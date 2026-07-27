@@ -178,7 +178,7 @@ PYBIND11_MODULE(_core, m)
             auto sbuf = states.request();
             auto tbuf = targets.request();
             // Rows are full readout inputs, not bare reservoir states (they coincide
-            // only for a single-slice, no-aux readout). Validate the width actually read.
+            // only for a single-slice readout). Validate the width actually read.
             const size_t M = self.ReadoutInputWidth();
             const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
             const size_t K = self.NumOutputs();
@@ -219,7 +219,7 @@ PYBIND11_MODULE(_core, m)
         .def("copy_readout_input", [](const ESN& self) {
             size_t W = self.ReadoutInputWidth();
             py::array_t<float> arr(W);
-            self.CopyReadoutInput(arr.mutable_data(), nullptr);
+            self.CopyReadoutInput(arr.mutable_data());
             return arr;
         }, "Copy the readout's current input — the block-structured vector it actually\n"
            "consumes. Returns a (readout_input_width,) float array; this is the row\n"
@@ -251,7 +251,7 @@ PYBIND11_MODULE(_core, m)
             auto buf = state.request();
             // The readout consumes its full block-structured input, not just one
             // reservoir state — these coincide only when the readout was built with a
-            // single slice and no aux block. Validate against the width actually read.
+            // single-slice readout. Validate against the width actually read.
             size_t W = self.ReadoutInputWidth();
             if (static_cast<size_t>(buf.size) != W)
                 throw std::invalid_argument(
@@ -302,7 +302,7 @@ PYBIND11_MODULE(_core, m)
         .def("collected_states", [](const ESN& self) {
             auto vec = self.CollectedStates();
             // Rows are readout inputs (readout_input_width wide), which equals the
-            // neuron count only for a single-slice, no-aux readout. Sizing the array
+            // neuron count only for a single-slice readout. Sizing the array
             // by the neuron count would overflow the memcpy below once they diverge.
             size_t M = self.ReadoutInputWidth();
             size_t T = self.NumCollectedStates();

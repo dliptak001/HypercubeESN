@@ -33,8 +33,6 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.bias_scaling = 0.01;
     cfg.reservoir.history_floor = 1.0;
 
-    cfg.aux_input_dim = 0;
-
     cfg.readout.num_outputs = 3; //[x, y, z]
     cfg.readout.seed = static_cast<unsigned>(seed);
     cfg.readout_slices = config::READOUT_SLICES;
@@ -202,7 +200,7 @@ void Lorenz::Train()
 
             // Prequential (test-then-train) read: the pre-update prediction of this
             // call's own target, read at the unchanged state x(t) before TrainStep.
-            esn_.Predict(outputs); // no readout aux in this harness
+            esn_.Predict(outputs);
             esn_.TrainStep(targets, lr); // fit the readout on x(t)
             esn_.ReservoirStep(past, future); // step to x(t+1)
 

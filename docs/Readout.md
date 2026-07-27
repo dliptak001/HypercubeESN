@@ -101,12 +101,12 @@ ESN inputs expand **DIM**, not channel count (below).
 `ReadoutConfig::dim` is the hypercube dimension of the **readout input**, not
 always the reservoir DIM:
 
-- **Default ESN** (`readout_slices = 1`, no aux): `readout.dim = reservoir.dim`,
+- **Default ESN** (`readout_slices = 1`): `readout.dim = reservoir.dim`,
   `NumFeatures() = N = 2^reservoir.dim` — one float per reservoir vertex.
-- **Multi-block** (`readout_slices > 1` and/or `aux_input_dim > 0`): ESN requires
-  `B = readout_slices + (aux ? 1 : 0)` to be a power of two and sets
-  `readout.dim = reservoir.dim + log2(B)`. Then `NumFeatures() = N × B`. Blocks
-  are packed so Hamming neighbors can mix across the structure the ESN builds.
+- **Multi-block** (`readout_slices > 1`): ESN requires `B = readout_slices` to
+  be a power of two and sets `readout.dim = reservoir.dim + log2(B)`. Then
+  `NumFeatures() = N × B`. Blocks are packed so Hamming neighbors can mix
+  across the structure the ESN builds.
 
 Antipodal pooling mixes **every** bit, including block-index bits when B > 1;
 set `use_pooling = false` to keep block structure intact into the flatten head
@@ -310,7 +310,7 @@ ESN holds `Readout readout_` and delegates. Methods on `Readout` (see also
 ### ESN integration
 
 `ReadoutConfig` lives in `ESNConfig`; the CNN is built in the ESN ctor
-(`MakeReadoutConfig` may rewrite `dim` from slices/aux).
+(`MakeReadoutConfig` may rewrite `dim` from `readout_slices`).
 
 | ESN | Readout |
 |-----|---------|

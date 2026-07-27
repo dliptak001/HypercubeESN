@@ -55,7 +55,6 @@ int main(int argc, char* argv[])
     std::cout << "  Readout in: " << esn.ReadoutBlockCount() << " block(s) x " << N
               << " = " << esn.ReadoutInputWidth() << " values"
               << "  (slices=" << cfg.readout_slices
-              << ", aux=" << cfg.aux_input_dim
               << ", pooling=" << (cfg.readout.use_pooling ? "on" : "off") << ")\n";
     std::cout << "  Training: " << cfg.readout.epochs << " epochs, batch=" << cfg.readout.batch_size
               << ", lr=" << cfg.readout.lr_max

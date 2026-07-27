@@ -21,18 +21,12 @@ ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
             std::to_string(cfg.reservoir.history_depth) +
             "); the delay line does not hold that many slices");
 
-    const size_t blocks = cfg.readout_slices + (cfg.aux_input_dim > 0 ? 1u : 0u);
+    const size_t blocks = cfg.readout_slices;
     if (!std::has_single_bit(blocks))
         throw std::invalid_argument(
-            "ESN: readout_slices + (aux_input_dim > 0) must be a power of two (got " +
+            "ESN: readout_slices must be a power of two (got " +
             std::to_string(blocks) +
             "); the readout input is a hypercube of B blocks of N");
-
-    const size_t n = size_t{1} << cfg.reservoir.dim;
-    if (cfg.aux_input_dim > 0 && std::bit_ceil(cfg.aux_input_dim) > n)
-        throw std::invalid_argument(
-            "ESN: aux_input_dim rounded up to a power of two exceeds N = 2^dim; the aux "
-            "block cannot give each component its own subcube");
 
     // The readout consumes B blocks of N vertices each, so its hypercube dimension is
     // the reservoir's dim plus log2(B).
@@ -74,8 +68,7 @@ ESN::ESN(const ESNConfig& cfg)
     n_              = reservoir_->Size();
     num_inputs_     = cfg.reservoir.num_inputs;
     readout_slices_ = cfg.readout_slices;
-    d_aux_          = cfg.aux_input_dim;
-    readout_blocks_ = readout_slices_ + (d_aux_ > 0 ? 1u : 0u);
+    readout_blocks_ = readout_slices_;
     readout_width_  = n_ * readout_blocks_;
     block_of_       = MakeBlockMap(readout_blocks_);
 
@@ -96,37 +89,14 @@ size_t ESN::ReadoutBlockOf(const size_t slot) const
     return block_of_[slot];
 }
 
-void ESN::AssembleReadoutInput(const float* u_raw) const
+void ESN::AssembleReadoutInput() const
 {
-    // Fail loud either way: an aux block must never be silently zeroed, and a stray
-    // u_raw must never be silently ignored.
-    if (d_aux_ > 0 && u_raw == nullptr)
-        throw std::invalid_argument(
-            "ESN: the readout has an auxiliary block (aux_input_dim > 0) but u_raw is "
-            "null; supply the auxiliary input on every Predict/TrainStep");
-    if (d_aux_ == 0 && u_raw != nullptr)
-        throw std::invalid_argument(
-            "ESN: u_raw supplied but the readout has no auxiliary block "
-            "(aux_input_dim == 0)");
-
     float* const base = readout_input_.data();
 
     // Slice k is the state k steps back. SliceAt indexes by LOGICAL AGE, so this is
     // immune to the delay line's ring rotation — never read the history buffer raw.
     for (size_t k = 0; k < readout_slices_; ++k)
         std::memcpy(base + block_of_[k] * n_, reservoir_->SliceAt(k), n_ * sizeof(float));
-
-    if (d_aux_ == 0) return;
-
-    // Aux block: broadcast each component onto its own contiguous run of N/num_sub
-    // vertices. A contiguous power-of-two run of a hypercube IS a subcube, so each
-    // component occupies a locally constant region that a conv filter reads directly —
-    // unlike a dense random projection, which scatters it incoherently.
-    float* const blk = base + block_of_[readout_slices_] * n_;
-    const size_t num_sub = std::bit_ceil(d_aux_);
-    const size_t sub = n_ / num_sub;
-    for (size_t j = 0; j < num_sub; ++j)
-        std::fill(blk + j * sub, blk + (j + 1) * sub, j < d_aux_ ? u_raw[j] : 0.0f);
 }
 
 void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
@@ -160,12 +130,6 @@ void ESN::ReservoirWarmup(const float* inputs, size_t num_steps)
 
 void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded)
 {
-    if (d_aux_ > 0)
-        throw std::logic_error(
-            "ESN::ReservoirRun: the batch path has nowhere to take a per-step auxiliary "
-            "input from (aux_input_dim > 0); drive this model online via "
-            "TrainStep/Predict instead");
-
     if (clear_recorded)
     {
         states_.clear();        // keep capacity; the resize below refills it
@@ -175,7 +139,7 @@ void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorde
     for (size_t s = 0; s < num_steps; ++s)
     {
         ReservoirStep(inputs + s * num_inputs_);
-        AssembleReadoutInput(nullptr);
+        AssembleReadoutInput();
         std::memcpy(states_.data() + (num_collected_ + s) * readout_width_,
                     readout_input_.data(), readout_width_ * sizeof(float));
     }
@@ -196,9 +160,9 @@ void ESN::Train(const float* targets, size_t train_size)
     readout_.Train(ReadoutInput(0), targets, train_size);
 }
 
-void ESN::TrainStep(const float* target, float lr, float weight_decay, const float* u_raw)
+void ESN::TrainStep(const float* target, float lr, float weight_decay)
 {
-    AssembleReadoutInput(u_raw);
+    AssembleReadoutInput();
     readout_.TrainStep(readout_input_.data(), target, lr, weight_decay);
 }
 
@@ -208,9 +172,9 @@ void ESN::CopyReservoirState(float* out) const
     std::memcpy(out, src, n_ * sizeof(float));
 }
 
-void ESN::CopyReadoutInput(float* out, const float* u_raw) const
+void ESN::CopyReadoutInput(float* out) const
 {
-    AssembleReadoutInput(u_raw);
+    AssembleReadoutInput();
     std::memcpy(out, readout_input_.data(), readout_width_ * sizeof(float));
 }
 
@@ -223,13 +187,13 @@ void ESN::TrainStepBatch(const float* readout_inputs, const float* targets,
 std::vector<float> ESN::Predict() const
 {
     std::vector<float> out(readout_.NumOutputs());
-    Predict(out.data(), nullptr);
+    Predict(out.data());
     return out;
 }
 
-void ESN::Predict(float* out, const float* u_raw) const
+void ESN::Predict(float* out) const
 {
-    AssembleReadoutInput(u_raw);
+    AssembleReadoutInput();
     readout_.PredictRaw(readout_input_.data(), out);
 }
 
@@ -348,7 +312,7 @@ std::string ESN::ReadoutArchSummary() const
     // Reservoir vtx_weight_ layout: N·DIM·(M + drive_blocks), drive_blocks =
     // 1 (input) + [ext-fb]. Matches Reservoir construction (docs/Reservoir.md).
     // These weights are fixed (not trained). M scales the recurrent bank only.
-    // HCNN size is independent of M unless readout_slices / aux grow start-DIM.
+    // HCNN size is independent of M unless readout_slices grow start-DIM.
     const ReservoirConfig rc = reservoir_->GetConfig();
     const size_t n = reservoir_->Size();
     const size_t dim = reservoir_->Dim();
@@ -357,7 +321,7 @@ std::string ESN::ReadoutArchSummary() const
         + (rc.num_external_feedback_channels > 0 ? 1u : 0u);
     const size_t res_weights = n * dim * (M + drive_blocks);
 
-    // HCNN start-DIM = reservoir DIM + log2(B), B = readout_slices + [aux].
+    // HCNN start-DIM = reservoir DIM + log2(B), B = readout_slices.
     // Not the same number as reservoir DIM when B > 1 (e.g. slices=4 -> +2).
     const size_t B = readout_blocks_;
     const size_t hcnn_dim = readout_.GetConfig().dim;
@@ -370,7 +334,6 @@ std::string ESN::ReadoutArchSummary() const
        << "  [=N*DIM*(M+drives)=" << n << "*" << dim << "*(" << M << "+"
        << drive_blocks << ")]\n";
     os << "HCNN input: readout_slices=" << readout_slices_
-       << "  aux=" << (d_aux_ > 0 ? "yes" : "no")
        << "  B=" << B << " blocks x N=" << n
        << "  -> start_DIM=" << hcnn_dim << "  N_hcnn=" << hcnn_N << "\n";
     os << "  (start_DIM = reservoir_DIM + log2(B) = " << dim << " + "

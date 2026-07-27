@@ -186,7 +186,7 @@ directly.
   free-run rebuild is a multiply of predicted channels — no denorm/renorm product bug.
 - Gains are independent: input scaling on past, external-feedback scaling on future
   (separate weight realizations on the two reservoir ports).
-- Readout sees delay-line slices only (`aux_input_dim = 0` in this harness).
+- Readout sees delay-line slices only (`readout_slices` blocks of N).
 
 ---
 

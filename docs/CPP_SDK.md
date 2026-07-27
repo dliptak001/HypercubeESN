@@ -496,17 +496,17 @@ void TrainStepBatch(const float* states, const float* targets, size_t count,
                     float lr, float weight_decay = 0.0f);
 ```
 
-One streaming gradient step over a mini-batch of pre-accumulated **readout inputs** (parallelized across threads). `states` is `count` rows of `ReadoutInputWidth()` floats — assemble each row with `CopyReadoutInput` (not `CopyReservoirState`, unless `readout_slices == 1` and there is no aux block, in which case the two widths coincide). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
+One streaming gradient step over a mini-batch of pre-accumulated **readout inputs** (parallelized across threads). `states` is `count` rows of `ReadoutInputWidth()` floats — assemble each row with `CopyReadoutInput` (not `CopyReservoirState`, unless `readout_slices == 1`, in which case the two widths coincide). For regression, `targets` is `count * NumOutputs()` floats (row-major); for classification, `count` floats (class indices).
 
 ---
 
 ##### `CopyReadoutInput`
 
 ```cpp
-void CopyReadoutInput(float* out, const float* u_raw = nullptr) const;
+void CopyReadoutInput(float* out) const;
 ```
 
-Assembles and copies the readout's current input into `out` (`ReadoutInputWidth()` floats = `B` blocks of `N`, where `B = readout_slices + (aux ? 1 : 0)`). This is the buffer `TrainStepBatch` / `PredictFromState` expect. `u_raw` follows the same aux contract as `Predict`.
+Assembles and copies the readout's current input into `out` (`ReadoutInputWidth()` floats = `B` blocks of `N`, where `B = readout_slices`). This is the buffer `TrainStepBatch` / `PredictFromState` expect.
 
 ##### `CopyReservoirState`
 
@@ -514,7 +514,7 @@ Assembles and copies the readout's current input into `out` (`ReadoutInputWidth(
 void CopyReservoirState(float* out) const;
 ```
 
-Copies the current reservoir state into `out` (`ReservoirNeuronCount()` floats — all N vertices, newest delay-line slice only). This is **not** the full multi-slice readout input; use `CopyReadoutInput` when accumulating for `TrainStepBatch` with `readout_slices > 1` or an aux block.
+Copies the current reservoir state into `out` (`ReservoirNeuronCount()` floats — all N vertices, newest delay-line slice only). This is **not** the full multi-slice readout input; use `CopyReadoutInput` when accumulating for `TrainStepBatch` with `readout_slices > 1`.
 
 ---
 

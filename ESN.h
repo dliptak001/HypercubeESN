@@ -9,30 +9,25 @@
 /// reservoir plus the settings for the trainable readout. The individual fields
 /// are documented on @ref ReservoirConfig and @ref ReadoutConfig.
 ///
-/// The two fields below live here rather than on either sub-config because they
-/// describe the *seam* between the halves — how much of the reservoir's state the
-/// readout is shown. Together they set the readout's input shape: it consumes
-/// B = readout_slices + (aux_input_dim > 0) blocks of N, so @ref ESN derives
+/// The field below lives here rather than on either sub-config because it
+/// describes the *seam* between the halves — how much of the reservoir's state the
+/// readout is shown. It sets the readout's input shape: the readout consumes
+/// B = readout_slices blocks of N, so @ref ESN derives
 /// `readout.dim = reservoir.dim + log2(B)`. Neither the reservoir nor the readout
-/// reads them on its own.
+/// reads it on its own.
 struct ESNConfig
 {
     ReservoirConfig reservoir;
     ReadoutConfig readout;
 
     /// How many reservoir delay-line slices the readout consumes, newest first (>= 1).
+    /// Must be a power of two (the packed readout input is a hypercube of B blocks).
     /// 1 (the default) shows it only the current state. Larger values hand it the
     /// temporal memory the reservoir already computes for its recurrent gather and
     /// otherwise discards; must not exceed `reservoir.history_depth`. Independent of
     /// `history_depth` on purpose: widening the readout's view leaves the reservoir's
     /// own dynamics untouched.
     size_t readout_slices = 1;
-
-    /// Width of the auxiliary input block (0 = no aux block). When > 0 the readout
-    /// input carries one extra N-wide block holding the caller's raw aux vector,
-    /// broadcast onto subcubes, and every Predict/TrainStep must supply that vector.
-    /// The aux input feeds only the readout — it never drives the reservoir.
-    size_t aux_input_dim = 0;   // BUGBUG is this even used?  Is it essential?
 };
 
 
@@ -146,10 +141,6 @@ public:
     /// row-major layout as @ref ReservoirWarmup. External feedback is not injected
     /// (pass it via @ref ReservoirStep if needed).
     ///
-    /// @throws std::logic_error if the readout has an auxiliary block
-    ///         (aux_input_dim > 0). The batch path has nowhere to take a per-step
-    ///         u_raw from — drive such a model online via @ref TrainStep / @ref Predict.
-    ///
     /// By default, successive calls **accumulate** into one growing batch (so you
     /// can build it up from several sequences). Pass @p clear_recorded = true to
     /// first discard everything recorded so far (and reset the timestep count),
@@ -188,10 +179,7 @@ public:
     /// classification, a single float holding the class index.
     /// @param lr           learning rate (the step size of this update).
     /// @param weight_decay optional L2 regularization strength (0 = off).
-    /// @param u_raw        the auxiliary input for this step (aux_input_dim floats),
-    ///                     or nullptr when the readout has no aux block. See @ref Predict.
-    void TrainStep(const float* target, float lr, float weight_decay = 0.0f,
-                   const float* u_raw = nullptr);
+    void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 
     /// @brief Like @ref TrainStep, but takes one gradient step over a mini-batch
     /// of readout inputs you have collected yourself (each ReadoutInputWidth()
@@ -205,18 +193,17 @@ public:
     /// @brief Copy the reservoir's current state (ReservoirNeuronCount() floats —
     /// all N neurons) into @p out. This is the newest delay-line slice only; it is
     /// **not** the readout's input unless the readout was configured with a single
-    /// slice and no aux block (see @ref CopyReadoutInput).
+    /// slice (see @ref CopyReadoutInput).
     void CopyReservoirState(float* out) const;
 
     /// @brief Assemble and copy the readout's current input (ReadoutInputWidth()
     /// floats) into @p out — the block-structured vector the readout actually sees.
     ///
     /// The readout input is B = ReadoutBlockCount() blocks of N, laid out on a
-    /// (dim + log2 B)-hypercube: one block per reservoir delay-line slice, plus an
-    /// optional auxiliary block. @ref ReadoutBlockOf says where each slot lands.
-    /// Use it to accumulate a mini-batch for @ref TrainStepBatch, or to inspect what
-    /// the readout consumes. @p u_raw follows the @ref Predict contract.
-    void CopyReadoutInput(float* out, const float* u_raw = nullptr) const;
+    /// (dim + log2 B)-hypercube: one block per reservoir delay-line slice.
+    /// @ref ReadoutBlockOf says where each slot lands. Use it to accumulate a
+    /// mini-batch for @ref TrainStepBatch, or to inspect what the readout consumes.
+    void CopyReadoutInput(float* out) const;
 
     // ---------------------------------------------------------------
     //  Prediction & evaluation
@@ -224,21 +211,14 @@ public:
 
     /// @brief Run the readout on the reservoir's **current** readout input and return
     /// the prediction (NumOutputs() floats) — typically called right after a
-    /// @ref ReservoirStep. Only valid when the readout has no auxiliary block; with
-    /// one, use the @p u_raw overload.
-    /// @throws std::invalid_argument if the readout was built with aux_input_dim > 0.
+    /// @ref ReservoirStep.
     [[nodiscard]] std::vector<float> Predict() const;
 
     /// @brief Like @ref Predict, but writes the NumOutputs() prediction values
     /// into caller-provided @p out instead of allocating a vector. For hot loops
     /// that reuse a buffer (e.g. an ensemble reading each member every tick).
     /// @p out must have room for NumOutputs() floats.
-    ///
-    /// @param u_raw The auxiliary input for this step — aux_input_dim floats, broadcast
-    ///        onto the readout's aux block. Pass nullptr iff the readout has no aux
-    ///        block. Supplying one without the other throws, so an aux block is never
-    ///        silently zeroed and a stray u_raw is never silently ignored.
-    void Predict(float* out, const float* u_raw = nullptr) const;
+    void Predict(float* out) const;
 
     /// @brief Predict from a **recorded** state instead of the live one: runs the
     /// readout on the state saved at @p timestep during @ref ReservoirRun. Returns
@@ -335,13 +315,12 @@ public:
     /// readout sees a (dim + log2 B)-hypercube built from B blocks of N.
     [[nodiscard]] size_t ReadoutInputWidth() const { return readout_width_; }
 
-    /// @brief Number of N-wide blocks in the readout input, B = readout_slices +
-    /// (aux_input_dim > 0). Always a power of two.
+    /// @brief Number of N-wide blocks in the readout input, B = readout_slices.
+    /// Always a power of two.
     [[nodiscard]] size_t ReadoutBlockCount() const { return readout_blocks_; }
 
-    /// @brief Which block a readout-input **slot** occupies. Slots `[0, readout_slices)`
-    /// are reservoir state ages (0 = newest); slot `readout_slices` is the auxiliary
-    /// block, when present.
+    /// @brief Which block a readout-input **slot** occupies. Slots
+    /// `[0, readout_slices)` are reservoir state ages (0 = newest).
     ///
     /// The mapping is a deliberate permutation, not the identity: an HCNN conv gathers
     /// only single-bit-flip neighbours and has no self term, so a filter can combine
@@ -402,7 +381,7 @@ public:
 
     /// @brief Architecture summary: fixed reservoir weight count (scales with M)
     /// plus HCNN layer stack and trained parameter count (independent of M unless
-    /// @c readout_slices / aux change the readout start-DIM).
+    /// @c readout_slices changes the readout start-DIM).
     [[nodiscard]] std::string ReadoutArchSummary() const;
 
 private:
@@ -414,25 +393,24 @@ private:
     size_t num_inputs_ = 1;
 
     size_t readout_slices_ = 1; // reservoir delay-line slices fed to the readout
-    size_t d_aux_ = 0; // auxiliary-input width (0 = no aux block)
-    size_t readout_blocks_ = 1; // B = readout_slices_ + (d_aux_ > 0); a power of two
+    size_t readout_blocks_ = 1; // B = readout_slices_; a power of two
     size_t readout_width_ = 0; // n_ * readout_blocks_
     std::vector<size_t> block_of_; // slot -> block index (see ReadoutBlockOf)
 
     std::vector<float> states_; // recorded readout inputs, rows of readout_width_
     size_t num_collected_ = 0;
 
-    // Validates the slice/aux/pooling config and derives readout.dim from the
-    // reservoir's dim plus log2(B). Throws on an inconsistent config.
+    // Validates the slice config and derives readout.dim from the reservoir's
+    // dim plus log2(B). Throws on an inconsistent config.
     static ReadoutConfig MakeReadoutConfig(const ESNConfig& cfg);
 
     // slot -> block permutation placing consecutive slots on blocks whose indices
     // differ in two bits (the only pairs one HCNN conv filter can combine).
     static std::vector<size_t> MakeBlockMap(size_t blocks);
 
-    // Gather the delay-line slices (by logical age) and the aux block into
-    // readout_input_, in block_of_ order. The one place the readout's view is built.
-    void AssembleReadoutInput(const float* u_raw) const;
+    // Gather the delay-line slices (by logical age) into readout_input_, in
+    // block_of_ order. The one place the readout's view is built.
+    void AssembleReadoutInput() const;
 
     const float* ReadoutInput(size_t timestep) const;
     [[nodiscard]] std::vector<float> ReadoutStates(size_t start, size_t count) const;

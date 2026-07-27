@@ -263,7 +263,7 @@ inline void print_arch(std::ostream& os,
        << "                   -> Linear(" << sum.flatten_features
        << " -> " << num_outputs << ")\n"
        // Trained HCNN only — independent of reservoir history_depth M unless the
-       // ESN expands readout start-DIM via more readout_slices / aux blocks.
+       // ESN expands readout start-DIM via more readout_slices (power-of-two B).
        << "HCNN parameters (trained): " << sum.total << " (";
     for (size_t i = 0; i < sum.conv_params.size(); ++i) {
         if (i) os << " + ";
