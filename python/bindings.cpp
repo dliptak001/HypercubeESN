@@ -21,7 +21,6 @@ PYBIND11_MODULE(_core, m)
         // per-call config overrides.
         .def(py::init([](size_t reservoir_hypercube_dimension, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
-                         float history_floor,
                          bool verbose,
                          int readout_num_outputs, const char* readout_task,
                          int readout_num_layers, int readout_conv_channels,
@@ -41,7 +40,6 @@ PYBIND11_MODULE(_core, m)
             cfg.reservoir.leak_rate        = leak_rate;
             cfg.reservoir.num_inputs       = num_inputs;
             cfg.reservoir.history_depth    = history_depth;
-            cfg.reservoir.history_floor    = history_floor;
             cfg.reservoir.verbose          = verbose;
             cfg.readout.num_outputs        = readout_num_outputs;
             cfg.readout.task               = (std::strcmp(readout_task, "classification") == 0)
@@ -77,7 +75,6 @@ PYBIND11_MODULE(_core, m)
             py::arg("leak_rate")                = 1.0f,
             py::arg("num_inputs")               = 1ULL,
             py::arg("history_depth")            = 16ULL,
-            py::arg("history_floor")            = 1.0f,
             py::arg("verbose")                  = true,
             py::arg("readout_num_outputs")      = 1,
             py::arg("readout_task")             = "regression",
@@ -332,7 +329,6 @@ PYBIND11_MODULE(_core, m)
         .def_property_readonly("readout_block_count", &ESN::ReadoutBlockCount)
         .def_property_readonly("num_inputs", &ESN::NumInputs)
         .def_property_readonly("history_depth", [](const ESN& self) { return self.GetConfig().reservoir.history_depth; })
-        .def_property_readonly("history_floor", [](const ESN& self) { return self.GetConfig().reservoir.history_floor; })
         .def_property_readonly("seed", [](const ESN& self) { return self.GetConfig().reservoir.seed; })
         .def_property_readonly("spectral_radius", [](const ESN& self) { return self.GetConfig().reservoir.spectral_radius; })
         .def_property_readonly("leak_rate", [](const ESN& self) { return self.GetConfig().reservoir.leak_rate; })

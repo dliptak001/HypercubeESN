@@ -151,7 +151,7 @@ esn.collected_states()              # all collected states as ndarray
 
 ```python
 ESN(reservoir_hypercube_dimension, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
-    leak_rate=1.0, num_inputs=1, history_depth=16, history_floor=1.0,
+    leak_rate=1.0, num_inputs=1, history_depth=16,
     readout_num_outputs=1, readout_task="regression", ...)
 ```
 
@@ -168,7 +168,6 @@ Creates the reservoir; the readout consumes all N reservoir vertices. The reserv
 | `leak_rate` | `float` | `1.0` | Leaky integrator coefficient. 1.0 = full replacement. < 1.0 adds smoothing. |
 | `num_inputs` | `int` | `1` | Number of input channels. Channel k drives the contiguous vertex block `[k·N/num_inputs, (k+1)·N/num_inputs)`. |
 | `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |
-| `history_floor` | `float` | `1.0` | Depth taper K in [0.1, 1.0]. Recurrent weights are linearly scaled from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less; applied before the spectral-radius rescale. `1.0` = no taper; no effect when `history_depth == 1`. |
 | `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. Set `False` to silence it. |
 
 **Readout (HCNN) parameters:**
@@ -401,7 +400,6 @@ Extract all collected states (every reservoir vertex).
 | `num_outputs` | `int` | Number of readout outputs (after training). |
 | `num_inputs` | `int` | Number of input channels. |
 | `history_depth` | `int` | Delay-line depth M (past output slices the readout sees). |
-| `history_floor` | `float` | Depth taper K: deepest-history recurrent weight scale (1.0 = no taper). |
 | `seed` | `int` | RNG seed used to initialize reservoir weights. |
 | `spectral_radius` | `float` | Target spectral radius. |
 | `leak_rate` | `float` | Leaky integrator coefficient. |

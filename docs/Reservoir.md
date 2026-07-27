@@ -53,7 +53,6 @@ Everything that follows serves those two.
 | `input_scaling` | 0.5 | drive strength; weights × `input_scaling`/√dim (fan-in variance; retune per task/DIM) |
 | `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
-| `history_floor` (K) | 1.0 | **[0.1, 1.0]** — deepest-slice taper; 1.0 = no taper |
 | `verbose` | true | construction banner to stderr |
 | `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
@@ -137,7 +136,7 @@ sums over DIM spatial neighbors **and** those M temporal slices.
 At M = 1 each vertex applies a length-DIM weight vector to its neighbors. At depth
 M it applies an **M × DIM weight bank** — one weight per `(slice, axis)`. Recurrent
 weights for that bank are filled at scale `1/√(DIM·M)` (before the spectral-radius
-rescale and optional depth taper).
+rescale).
 
 ### Depth resolves; leak blurs
 
@@ -153,7 +152,7 @@ slices; see [Spectral radius](#spectral-radius-tuning-the-edge-of-chaos).
 Slices live in one `M·N` buffer with M rotating pointers (`slice_ptrs_`). Aging
 costs one pointer rotation + one `memcpy` of N floats per `Step()`, independent of
 M. `history_depth` ∈ **[1, 64]**. At M = 1 the ring is a single slot and dynamics
-match a single-step reservoir (depth taper is absorbed by the SR solve when M = 1).
+match a single-step reservoir.
 
 Depth is a generic recurrent move, orthogonal to XOR topology: the kernel is still
 labelled by axis, so hypercube structure remains readable.
@@ -172,7 +171,7 @@ labelled by axis, so hypercube structure remains readable.
 |-------|------|---------------------|----------------|
 | Input | N·DIM | `input_scaling / √DIM` | **No** |
 | External feedback | N·DIM or 0 | `external_feedback_scaling / √DIM` | **No** |
-| Recurrent | N·DIM·M | `1/√(DIM·M)`, then per-slice depth taper | **Yes** (whole block, one scalar) |
+| Recurrent | N·DIM·M | `1/√(DIM·M)` | **Yes** (whole block, one scalar) |
 
 Total weights:
 
@@ -312,18 +311,16 @@ input/feedback/bias are outside the estimate.
 ### Hitting the target
 
 1. Fill recurrent weights ~ U(−1,1) / √(DIM·M).  
-2. Apply **depth taper** if `history_floor < 1`: slice `i` ×  
-   `1 − (1−K)·(i+1)/M` (newest i=0 almost unscaled, deepest → K).  
-3. **Secant root-find** on a global scale so estimated ρ ≈ target (relative tol
+2. **Secant root-find** on a global scale so estimated ρ ≈ target (relative tol
    0.1%, max 20 secant evals). M = 1 is nearly one-shot; M > 1 is nonlinear in the
    scale.  
-4. `EstimateSpectralRadius` uses power iteration on the companion operator with
+3. `EstimateSpectralRadius` uses power iteration on the companion operator with
    **Gelfand (geometric-mean) growth rates** (complex dominant pairs / rotation),
    burn-in, and stability checks — hard cap **1500** iterations per eval (not a
    fixed 500-step naive power method).
 
-`verbose` prints one line: DIM, M, seed, leak, input_scaling, hist_floor, SR
-target / post, secant iters.
+`verbose` prints one line: DIM, M, seed, leak, input_scaling, SR target / post,
+secant iters.
 
 Input drive and recurrent dynamics still interact through the nonlinearity and
 depth: surveyed spectral radius and M are not fully independent in practice.

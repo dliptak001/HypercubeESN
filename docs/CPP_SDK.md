@@ -224,7 +224,6 @@ struct ReservoirConfig
     float    input_scaling   = 0.5f;   // weights × input_scaling/√dim (fan-in)
     size_t   num_inputs      = 1;
     size_t   history_depth   = 16;
-    float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
     bool     verbose         = true;
 
     // External feedback (caller-owned) — 0 = off, no alloc
@@ -250,8 +249,7 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(−1,1) then scaled by `input_scaling / √DIM` so each vertex’s dim-neighbor input sum has fan-in-normalized variance. That is local weight construction, not a promise that one value is optimal at every DIM or task (not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3); retune when you change size or task. |
 | `num_inputs` | `size_t` | `1` | Number of input channels; must divide N evenly. In multi-input mode (K channels), channel k drives the contiguous vertex block `[k*N/K, (k+1)*N/K)`. |
 | `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
-| `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
-| `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
+| `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… SR target=… post=… (secant iters=…)]`). |
 | `num_external_feedback_channels` | `size_t` | `0` | External-feedback channels D. **0** = path off (no buffer/weights). Else D in **[1, N]** (need not divide N). Caller stages values each step. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
 
