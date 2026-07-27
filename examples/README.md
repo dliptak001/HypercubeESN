@@ -115,26 +115,6 @@ Adjust `normal_noise` to match your signal characteristics. Tune the
 `anomaly_threshold` multiplier (10x is conservative; lower it toward 5x to
 catch subtler changes at the cost of more washout-window flags).
 
-## StreamingText
-
-A streaming character-level memorization task.
-The corpus (Tiny Shakespeare by default) is treated as a ring buffer and
-streamed through the reservoir continuously; at each character the model
-predicts the next one **before** it is folded into the online training batch
-(a prequential metric), and progress is shown via teacher-forced
-predicted-vs-actual samples. There is no held-out split and no serialization —
-the question is pure capacity, not generalization.
-
-**What it shows:**
-- Online (streaming) readout training with a prequential rolling-BPC metric
-- A self-contained `Corpus` + random `CharEmbedding` (no shared library)
-- How reservoir size (DIM), depth, and readout width trade off on a
-  discontinuous-input task
-
-This is a deeper example with its own walkthrough and configuration. See
-[`StreamingText/StreamingText.md`](StreamingText/StreamingText.md). All knobs
-live in `StreamingText/Config.h`; the binary takes no arguments.
-
 ## MemoryCapacity
 
 A reservoir-quality **diagnostic**, not a task demo. It measures the standard
@@ -195,8 +175,8 @@ literature reference bands, and the target-alignment fix — is in
 
 ## Building
 
-All six example targets build automatically alongside the main benchmark; build
-the Release tree with the bundled toolchain (see
+Example targets build automatically alongside the main harness; build the
+Release tree with the bundled toolchain (see
 [Building and Running](../README.md#building-and-running-c) in the project
 README), then run any target from `cmake-build-release`:
 
@@ -206,7 +186,7 @@ cmake-build-release\SignalClassification.exe
 cmake-build-release\StreamingAnomaly.exe
 cmake-build-release\MemoryCapacity.exe
 cmake-build-release\NARMA.exe
-cmake-build-release\StreamingText.exe
+cmake-build-release\Lorenz.exe
 ```
 
 In CLion, select the target from the run configuration dropdown (top toolbar).

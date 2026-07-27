@@ -251,7 +251,7 @@ Batch path uses unified `HCNN::TrainBatch`. For online schedules, hosts often us
 `CosineLR` / `ExponentialDecayLR` from `Readout.h` (batch `Train` uses HCNN’s
 `cosine_lr` instead).
 
-See `examples/StreamingText/` and `examples/StreamingAnomaly.cpp`.
+See `examples/StreamingAnomaly.cpp` for online/streaming training.
 
 ## Serialization
 

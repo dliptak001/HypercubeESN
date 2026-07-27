@@ -234,7 +234,7 @@ cmake --build build
 ./build/HypercubeESN
 ```
 
-The build produces seven executables:
+The build produces these executables:
 
 | Target | Purpose |
 |---|---|
@@ -244,7 +244,7 @@ The build produces seven executables:
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
 | `MemoryCapacity` | Jaeger memory-capacity diagnostic (white-noise MC sweep) |
 | `NARMA` | NARMA-N nonlinear benchmark — **best NARMA-30 NRMSE 0.0570** (~5× under lit. strong-band floor); see [NARMA-30.md](examples/NARMA/NARMA-30.md) |
-| `StreamingText` | Streaming character-level memorization of a text corpus |
+| `Lorenz` | Lorenz attractor tracking / free-run |
 
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
 companion `.md` file with a detailed walkthrough.
@@ -265,7 +265,7 @@ HypercubeESN/
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
     NARMA/                       NARMA-N benchmark (best NARMA-30 NRMSE 0.0570)
-    StreamingText/               Streaming character-level text memorization
+    Lorenz/                      Lorenz attractor tracking / free-run
 
   python/                Python bindings (pybind11 module + pyproject)
   cmake/                 Package config template (find_package support)
