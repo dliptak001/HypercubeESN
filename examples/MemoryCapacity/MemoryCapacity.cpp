@@ -37,16 +37,7 @@ namespace
     // Shared reporting helpers
     // -------------------------------------------------------------------------
 
-    void PrintFSF(const ReservoirConfig& base)
-    {
-        if (base.full_state_feedback)
-            std::cout << "FSF: ON   fsf_seed=" << base.fsf_seed
-                << "  fsf_scaling=" << base.fsf_scaling << "\n";
-        else
-            std::cout << "FSF: OFF\n";
-    }
-
-    /// Self-describing banner used by every mode (meter + op-point + FSF).
+    /// Self-describing banner used by every mode (meter + op-point).
     void PrintRunHeader(const char* title,
                         const MemoryCapacityMeter& meter,
                         const ReservoirConfig& base)
@@ -57,7 +48,6 @@ namespace
             static_cast<double>(std::max<std::size_t>(1, meter.Features()));
 
         std::cout << "=== HypercubeESN: " << title << " ===\n";
-        PrintFSF(base);
         std::cout << "Meter   : warmup=" << mc.t_warmup
             << "  collect=" << mc.t_collect
             << "  Kmax=" << mc.k_max
@@ -663,8 +653,8 @@ int main(int argc, char* argv[])
     mccfg.t_warmup  = 4000;  // must be >= k_max
     mccfg.t_collect = 25000; // must be > k_max
 
-    // ---- Base reservoir op-point (seed, is, FSF fixed across a grid cell) ----
-    // Reference multi-DIM tables used seed 47397376, is=0.06, FSF off.
+    // ---- Base reservoir op-point (seed, is fixed across a grid cell) ----
+    // Reference multi-DIM tables used seed 47397376, is=0.06.
     // main() knobs below are the local campaign; they need not match the tables.
     constexpr std::size_t DIM = 9;
 
@@ -676,10 +666,6 @@ int main(int argc, char* argv[])
     base.leak_rate = 1.0f;
     base.input_scaling = 0.06f; // weak-drive / memory-margin (tanh)
     base.history_depth = 8;
-
-    base.full_state_feedback = false;
-    base.fsf_seed = 4415756;
-    base.fsf_scaling = 0.003f;
 
     MemoryCapacityMeter meter(DIM, mccfg);
 

@@ -31,7 +31,7 @@ literature NRMSE band — treat this as an internal stress rung against N30
 | Knob | Value |
 |------|--------|
 | Variant | tanh-wrapped (α=0.3, β=0.05, γ=1.5, δ=0.1) |
-| Reservoir | DIM=TBD (N=TBD), M=`history_depth`=TBD, FSF **TBD** |
+| Reservoir | DIM=TBD (N=TBD), M=`history_depth`=TBD |
 | Seed | res TBD (single seed / multi-seed TBD) |
 | Series | warmup TBD · collect TBD (train TBD / test TBD) |
 | Drive | sr TBD · leak TBD · input_scaling TBD |
@@ -63,10 +63,6 @@ readout must reconstruct the NARMA output `y(t)`. This is **system
 identification, not forecasting** — `y(t)` is aligned to `u(t)`, so the
 reservoir has already seen everything it needs (see "Target alignment"
 below).
-
-**FSF A/B:** set `base.reservoir.full_state_feedback` / `fsf_scaling` (and the
-`sweep_fsf_seeds` list) in `NARMA.cpp`. Log: `FSF: ON|OFF …`. See
-[examples/README.md](../README.md).
 
 ## The recurrence
 
@@ -210,14 +206,14 @@ collect 8000 (train 6400 / test 1600).
 **Note — `collect` is a first-class knob.** Longer post-warmup series cut test
 NRMSE on this architecture (Linear ~8k features after pool/flatten): a
 single-seed NARMA-30 / DIM-10 / M=16 ladder went
-`collect 8000 → 0.0787`, `16000 → 0.0713`, `32000 → ~0.06` (warmup 300,
-FSF off) — the current multi-seed collect-32000 best is **0.0570**
+`collect 8000 → 0.0787`, `16000 → 0.0713`, `32000 → ~0.06` (warmup 300)
+— the current multi-seed collect-32000 best is **0.0570**
 ([NARMA-30.md](NARMA-30.md)). That is mostly sample count vs readout capacity
 (at 8k train is under-parameterized relative to features), not a change in
 NARMA dynamics. `NARMA.cpp` comments 8000 as the low-res default and 32000 as
 high-res.
 
-Hold `collect` fixed when comparing M / seed / FSF within this repo. Classic
+Hold `collect` fixed when comparing M / seed within this repo. Classic
 NARMA-10 protocols often use shorter series (train ~2k–5k); NARMA-30 paper
 protocols vary widely. For apples-to-apples *internal* tables use **8000**; for
 the absolute best score we report, use the **32000** spotlight config — and note

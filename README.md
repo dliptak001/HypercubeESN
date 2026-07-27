@@ -93,7 +93,7 @@ around **0.40–0.60**). HypercubeESN’s best run to date:
 |--|--|
 | **Test NRMSE** | **0.0570** (R² = 0.9968); best-3 mean **0.0576** |
 | vs strong-band floor (0.30) | **~5× lower error** (0.30 / 0.0570 ≈ 5.3) |
-| Setup | tanh-wrapped NARMA-30 · DIM 10 (1024 neurons) · history depth M=16 · FSF off |
+| Setup | tanh-wrapped NARMA-30 · DIM 10 (1024 neurons) · history depth M=16 |
 | Data | warmup 300 · collect 32000 (train 25600 / test 6400) · 10 seeds (best-3 in [NARMA-30.md](examples/NARMA/NARMA-30.md)) |
 | Readout | HypercubeCNN, 32993 parameters |
 

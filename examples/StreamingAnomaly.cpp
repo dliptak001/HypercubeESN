@@ -98,11 +98,6 @@ int main(int argc, char* argv[])
     cfg.readout.batch_size = 64;
     cfg.readout.activation = ReadoutActivation::TANH;
 
-    // Full-state linear feedback (internal).
-    cfg.reservoir.full_state_feedback = false;
-    cfg.reservoir.fsf_seed = 4415756;
-    cfg.reservoir.fsf_scaling = 0.003f;
-
     cfg.readout_slices = 1;
     cfg.readout.num_layers = 1;
     cfg.readout.conv_channels = 16;
@@ -113,11 +108,6 @@ int main(int argc, char* argv[])
         << "  Leak=" << cfg.reservoir.leak_rate
         << "  Input Scaling=" << cfg.reservoir.input_scaling
         << "  Threshold=" << anomaly_threshold << "x baseline\n";
-    if (cfg.reservoir.full_state_feedback)
-        std::cout << "  FSF: ON   fsf_seed=" << cfg.reservoir.fsf_seed
-                  << "  fsf_scaling=" << cfg.reservoir.fsf_scaling << "\n";
-    else
-        std::cout << "  FSF: OFF\n";
     std::cout << esn.ReadoutArchSummary();
     std::cout << "\n";
 

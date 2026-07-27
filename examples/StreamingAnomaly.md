@@ -14,10 +14,6 @@ Prediction error is the anomaly signal.
 This is the most practical example in the collection: it demonstrates
 how a frozen reservoir model can serve as a real-time process monitor.
 
-**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
-in `StreamingAnomaly.cpp`. Log: `FSF: ON|OFF …`.
-See [examples/README.md](README.md).
-
 ## Conceptual background
 
 The core idea: if a model can predict normal behavior accurately, then
@@ -89,7 +85,7 @@ and to recover gradually when they return to normal.
 DIM=7, 128 neurons, `history_depth = 24` and `spectral_radius = 0.99`
 (realized ~0.99), readout on all 128 vertices, `input_scaling = 0.1`,
 `conv_channels = 16`, `leak_rate = 1.0` (full replacement — the struct
-default, no override), FSF OFF. Trained once in Phase 1 (2,800 samples,
+default, no override). Trained once in Phase 1 (2,800 samples,
 1000 epochs, batch 64, `lr_max = 0.0015` cosine, ~28 s on a typical
 Release build); Phase 2 is frozen prediction. The numbers below come from
 a representative run; exact values track the random seed and HCNN init,

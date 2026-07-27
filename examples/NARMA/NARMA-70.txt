@@ -1,3 +1,5 @@
+# Historical run log (predates FSF removal). Banner lines mentioning FSF are frozen
+# stdout from that campaign; the reservoir no longer has FSF knobs.
 === HypercubeESN: NARMA-70 history_depth (M) x seed sweep ===
 
 Task: reproduce the NARMA-70 output y(t) from its white input u(t),

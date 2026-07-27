@@ -103,10 +103,9 @@ int main(int argc, char* argv[])
     const std::vector<size_t> sweep_M = {32};
 
     // Second sweep dimension: reservoir-init seed. The target series depends on
-    // narma_order + data_seed only (NOT the reservoir / FSF seeds), so every
-    // (seed, fsf_seed, M) cell scores the byte-identical task -- the spread
-    // across seeds at a fixed M is the run-to-run variance, which tells us
-    // whether the M-curve shape is real.
+    // narma_order + data_seed only (NOT the reservoir seed), so every (seed, M)
+    // cell scores the byte-identical task -- the spread across seeds at a fixed M
+    // is the run-to-run variance, which tells us whether the M-curve shape is real.
     // (73896+k)*(k+2) for k = 0..19 — same family as the 10-seed NARMA pools, extended.
     const std::vector<uint64_t> sweep_reservoir_seeds = {
         73896*2,  73897*3,  73898*4,  73899*5,  73900*6,
@@ -117,12 +116,6 @@ int main(int argc, char* argv[])
     // Aggregate "spotlight" size: full raw table always uses every trial; mean/std
     // tables are printed for all trials and for the best-k_best (lowest NRMSE).
     constexpr size_t k_best = 5;
-
-    // Third sweep dimension: FSF V / B_fsf draw seed. Independent of reservoir
-    // seed. Ignored entirely when full_state_feedback is false (see active
-    // list built after base config — sweeping fsf_seed with FSF off would only
-    // multiply identical trials).
-    const std::vector<uint64_t> sweep_fsf_seeds = {4415756, 4415757, 4415758, 4415759, 4415760};
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
               << " history_depth (M) x seed sweep ===\n\n";
@@ -152,17 +145,14 @@ int main(int argc, char* argv[])
               << "  u in [" << task.coeffs.u_low << ", " << task.coeffs.u_high << "]\n";
 
     // ---- Base ESN config -----------------------------------------------------
-    // Shared by every trial; only reservoir.seed, reservoir.fsf_seed, and
-    // reservoir.history_depth change per cell, so any NRMSE difference is
-    // attributable to those alone.
+    // Shared by every trial; only reservoir.seed and reservoir.history_depth
+    // change per cell, so any NRMSE difference is attributable to those alone.
     ESNConfig base;
     base.reservoir.dim = DIM;
     base.reservoir.verbose = false;   // suppress the per-trial SR banner
     base.reservoir.spectral_radius = 0.99;
     base.reservoir.input_scaling = 0.03;
     base.reservoir.leak_rate = 1.0;
-    base.reservoir.full_state_feedback = false;
-    base.reservoir.fsf_scaling = 0.004;
 
     base.readout.seed = 3423555;
     base.readout_slices = 2;
@@ -178,20 +168,10 @@ int main(int argc, char* argv[])
     base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
     base.readout.activation = ReadoutActivation::TANH;
 
-    // When FSF is off, fsf_seed is unused — collapse to one placeholder so the
-    // sweep does not re-run identical trials for every entry in sweep_fsf_seeds.
-    const bool fsf_on = base.reservoir.full_state_feedback;
-    const std::vector<uint64_t> active_fsf_seeds =
-        fsf_on ? sweep_fsf_seeds : std::vector<uint64_t>{0ULL};
-
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
               << "  sr=" << base.reservoir.spectral_radius
               << " leak=" << base.reservoir.leak_rate
               << " input_scaling=" << base.reservoir.input_scaling << "\n";
-    if (fsf_on)
-        std::cout << "  FSF: ON   fsf_scaling=" << base.reservoir.fsf_scaling << "\n";
-    else
-        std::cout << "  FSF: OFF\n";
     std::cout << "  Training: " << base.readout.epochs << " epochs, batch="
               << base.readout.batch_size << ", lr=" << base.readout.lr_max
               << " (cosine, floor=" << (base.readout.lr_max * base.readout.lr_min_frac)
@@ -200,12 +180,6 @@ int main(int argc, char* argv[])
     for (size_t m : sweep_M) std::cout << m << ' ';
     std::cout << "\n  Res seeds:   ";
     for (uint64_t sd : sweep_reservoir_seeds) std::cout << sd << ' ';
-    std::cout << "\n  FSF seeds:   ";
-    if (fsf_on) {
-        for (uint64_t sd : active_fsf_seeds) std::cout << sd << ' ';
-    } else {
-        std::cout << "(skipped -- FSF off)";
-    }
     std::cout << "\n";
 
     // Architecture is shared across the M×seed sweep (only history_depth / seeds
@@ -214,46 +188,36 @@ int main(int argc, char* argv[])
         ESNConfig probe = base;
         probe.reservoir.seed =
             sweep_reservoir_seeds.empty() ? 42ULL : sweep_reservoir_seeds.front();
-        if (fsf_on)
-            probe.reservoir.fsf_seed =
-                active_fsf_seeds.empty() ? 0ULL : active_fsf_seeds.front();
         probe.reservoir.history_depth =
             sweep_M.empty() ? 32ULL : sweep_M.front();
         ESN probe_esn(probe);
         std::cout << probe_esn.ReadoutArchSummary();
     }
 
-    // ---- Run the sweep (reservoir seed x [fsf seed] x M) ---------------------
+    // ---- Run the sweep (reservoir seed x M) ---------------------------------
     const size_t nM = sweep_M.size();
     const size_t nS = sweep_reservoir_seeds.size();
-    const size_t nF = active_fsf_seeds.size();
-    const size_t nTrials = nS * nF;
+    const size_t nTrials = nS;
     std::vector<std::vector<double>> nrmse(nM, std::vector<double>(nTrials, 0.0));
     double target_mean = 0.0;  // identical across every cell (same target series)
 
     for (size_t si = 0; si < nS; ++si) {
-        for (size_t fi = 0; fi < nF; ++fi) {
-            const size_t ti = si * nF + fi;
-            std::cout << "\n  === res_seed " << sweep_reservoir_seeds[si];
-            if (fsf_on)
-                std::cout << "  fsf_seed " << active_fsf_seeds[fi];
-            std::cout << "  (" << (ti + 1) << "/" << nTrials << ") ===\n" << std::flush;
-            for (size_t mi = 0; mi < nM; ++mi) {
-                ESNConfig cfg = base;
-                cfg.reservoir.seed = sweep_reservoir_seeds[si];
-                if (fsf_on)
-                    cfg.reservoir.fsf_seed = active_fsf_seeds[fi];
-                cfg.reservoir.history_depth = sweep_M[mi];
+        const size_t ti = si;
+        std::cout << "\n  === res_seed " << sweep_reservoir_seeds[si]
+                  << "  (" << (ti + 1) << "/" << nTrials << ") ===\n" << std::flush;
+        for (size_t mi = 0; mi < nM; ++mi) {
+            ESNConfig cfg = base;
+            cfg.reservoir.seed = sweep_reservoir_seeds[si];
+            cfg.reservoir.history_depth = sweep_M[mi];
 
-                NARMATrialResult res = RunNARMATrial(cfg, task);
-                target_mean = res.target_mean;
-                nrmse[mi][ti] = res.nrmse;
-                std::cout << std::fixed
-                          << "    M=" << std::setw(2) << sweep_M[mi]
-                          << ": NRMSE=" << std::setprecision(4) << res.nrmse
-                          << "  R2=" << std::setprecision(4) << res.r2
-                          << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
-            }
+            NARMATrialResult res = RunNARMATrial(cfg, task);
+            target_mean = res.target_mean;
+            nrmse[mi][ti] = res.nrmse;
+            std::cout << std::fixed
+                      << "    M=" << std::setw(2) << sweep_M[mi]
+                      << ": NRMSE=" << std::setprecision(4) << res.nrmse
+                      << "  R2=" << std::setprecision(4) << res.r2
+                      << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
         }
     }
 
@@ -313,12 +277,8 @@ int main(int argc, char* argv[])
     std::cout << std::fixed;
     std::cout << "\n=== NARMA-" << narma_order << " history_depth x seed sweep"
               << "  (DIM=" << DIM << ", N=" << N
-              << ", " << nS << " res seeds";
-    if (fsf_on)
-        std::cout << " x " << nF << " fsf seeds";
-    else
-        std::cout << " (FSF off -- no fsf_seed sweep)";
-    std::cout << ", " << nTrials << " trials total"
+              << ", " << nS << " res seeds"
+              << ", " << nTrials << " trials total"
               << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
     std::cout << "  Stats: all-" << nTrials << " pool + best-"
               << std::min(k_best, nTrials) << " of " << nTrials
@@ -351,35 +311,20 @@ int main(int argc, char* argv[])
             std::cout << "    M=" << sweep_M[mi] << ":";
             for (size_t j = 0; j < k; ++j) {
                 const size_t ti = order[j];
-                const size_t si = ti / nF;
-                const size_t fi = ti % nF;
-                std::cout << "  [" << (j + 1) << "] ";
-                if (fsf_on)
-                    std::cout << sweep_reservoir_seeds[si] << "/" << active_fsf_seeds[fi];
-                else
-                    std::cout << sweep_reservoir_seeds[si];
-                std::cout << "=" << std::setprecision(4) << nrmse[mi][ti];
+                std::cout << "  [" << (j + 1) << "] "
+                          << sweep_reservoir_seeds[ti]
+                          << "=" << std::setprecision(4) << nrmse[mi][ti];
             }
             std::cout << "\n";
         }
     }
 
-    // ---- Raw NRMSE matrix (rows = M, cols = res_seed [x fsf_seed]) -----------
-    if (fsf_on)
-        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed/fsf_seed) — all "
-                  << nTrials << " trials:\n";
-    else
-        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed) — all "
-                  << nTrials << " trials:\n";
+    // ---- Raw NRMSE matrix (rows = M, cols = res_seed) -----------------------
+    std::cout << "\n  Raw NRMSE (rows M, cols = res_seed) — all "
+              << nTrials << " trials:\n";
     std::cout << "    " << std::setw(4) << "M";
-    for (size_t si = 0; si < nS; ++si) {
-        for (size_t fi = 0; fi < nF; ++fi) {
-            if (fsf_on)
-                std::cout << "  " << sweep_reservoir_seeds[si] << "/" << active_fsf_seeds[fi];
-            else
-                std::cout << "  " << std::setw(9) << sweep_reservoir_seeds[si];
-        }
-    }
+    for (size_t si = 0; si < nS; ++si)
+        std::cout << "  " << std::setw(9) << sweep_reservoir_seeds[si];
     std::cout << "\n";
     for (size_t mi = 0; mi < nM; ++mi) {
         std::cout << "    " << std::setw(4) << sweep_M[mi];

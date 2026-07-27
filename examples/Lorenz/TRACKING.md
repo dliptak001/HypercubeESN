@@ -8,6 +8,10 @@ This is **not** the historical unassisted A(x)-vs-tanh campaign
 ([`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md)) — different I/O,
 geometry, and free-run policy. Do not mix numbers across those docs.
 
+**Note (API):** full-state linear feedback (FSF) has been **removed** from the
+reservoir. Runs 1–3 below remain as a historical A/B log; new surveys no longer
+have FSF knobs.
+
 ---
 
 ## How to read this log
@@ -15,7 +19,7 @@ geometry, and free-run policy. Do not mix numbers across those docs.
 | Column | Meaning |
 |--------|---------|
 | **#** | Run id (append only; never renumber) |
-| **FSF** | OFF, or ON with `fsf_seed` / `fsf_scaling` |
+| **FSF** | Historical only — OFF, or ON with seed/scaling (feature removed) |
 | **Survey** | `NUM_THREADS × NUM_RUNS` (`Lorenz.exe T R`) |
 | **VPT mean*** | Mean of per-ESN-seed VPT means (lt), unless noted |
 | **RMSE mean*** | Mean of per-ESN-seed free-run RMSE means |
@@ -202,5 +206,5 @@ Monotone-ish **RMSE vs scale** in this set: **OFF (0.440) → 0.003 (0.436) → 
 |-----|------|
 | [`README.md`](README.md) | Protocol, ports, scoring, CLI cost model |
 | [`JanusCursor.md`](JanusCursor.md) | Dual-cursor geometry |
-| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | FSF mechanism |
+
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh (stale harness) |

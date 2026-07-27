@@ -32,7 +32,7 @@ struct ESNConfig
     /// input carries one extra N-wide block holding the caller's raw aux vector,
     /// broadcast onto subcubes, and every Predict/TrainStep must supply that vector.
     /// The aux input feeds only the readout — it never drives the reservoir.
-    size_t aux_input_dim = 0;
+    size_t aux_input_dim = 0;   // BUGBUG is this even used?  Is it essential?
 };
 
 
@@ -111,12 +111,6 @@ public:
     /// **Drive ports.** Task @p inputs always stage on the input port. Optional
     /// @p external_feedback (when non-null) stages caller-owned closed-loop drive
     /// on the external-feedback port (e.g. previous-step prediction for free-run).
-    /// If this ESN was built with @c full_state_feedback, each step **also**
-    /// applies internal full-state feedback automatically inside the reservoir:
-    /// φ = V·x (scalar), then gather φ through B_fsf (equivalent to a uniform
-    /// external-feedback D=1 field, without a length-N staging buffer). V is
-    /// fixed at construction from @c fsf_seed (U(-1,1)); strength via
-    /// @c fsf_scaling on B_fsf. Nothing is passed here for FSF.
     ///
     /// @param inputs              NumInputs() floats — the task input for this step.
     /// @param external_feedback   nullptr to skip external feedback; otherwise
@@ -136,9 +130,8 @@ public:
     ///
     /// @p inputs is row-major: @p num_steps * NumInputs() floats, i.e. NumInputs()
     /// values per timestep laid end to end. Each step calls @ref ReservoirStep
-    /// without external feedback. **If full-state feedback is enabled, FSF still
-    /// applies each step** (internal φ = V·x). For external-feedback warm-up,
-    /// call @ref ReservoirStep yourself with the second argument.
+    /// without external feedback. For external-feedback warm-up, call
+    /// @ref ReservoirStep yourself with the second argument.
     ///
     /// This is also the warm-up for online/streaming training: drive here to
     /// settle the reservoir before your first @ref TrainStep / @ref TrainStepBatch.
@@ -151,8 +144,7 @@ public:
     /// This is the data-collection step: each recorded row (ReadoutInputWidth() floats)
     /// becomes one training row, to be paired with one target. @p inputs has the same
     /// row-major layout as @ref ReservoirWarmup. External feedback is not injected
-    /// (pass it via @ref ReservoirStep if needed). **Full-state feedback, if enabled,
-    /// still applies** so recorded states match the FSF-closed dynamics.
+    /// (pass it via @ref ReservoirStep if needed).
     ///
     /// @throws std::logic_error if the readout has an auxiliary block
     ///         (aux_input_dim > 0). The batch path has nowhere to take a per-step
@@ -369,24 +361,16 @@ public:
         return esn_config_.reservoir.num_external_feedback_channels;
     }
 
-    /// @brief True if built with cfg.reservoir.full_state_feedback.
-    [[nodiscard]] bool FullStateFeedbackEnabled() const
-    {
-        return reservoir_->FullStateFeedbackEnabled();
-    }
-
     // --- Configuration & save/load ---
 
     /// @brief Return the fully-resolved config this ESN was built from — handy for
-    /// rebuilding an identical ESN or for serialization (including FSF knobs;
-    /// V is reconstructed from @c fsf_seed when FSF is on; @c fsf_scaling is in
-    /// config).
+    /// rebuilding an identical ESN or for serialization.
     [[nodiscard]] ESNConfig GetConfig() const;
 
     /// @brief A portable snapshot of the trained readout's weights — everything
     /// that readout learning produces. Save it to disk to reuse a trained model
-    /// later without retraining. Reservoir topology, weights, and FSF gain V are
-    /// determined by config + seeds.
+    /// later without retraining. Reservoir topology and weights are determined by
+    /// config + seed.
     struct ReadoutState
     {
         std::vector<double> weights;

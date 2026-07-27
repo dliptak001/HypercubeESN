@@ -36,7 +36,7 @@ band — internal stress rung vs NARMA-30 (**0.0570** best / **0.0576** best-3 m
 | Knob | Value |
 |------|--------|
 | Variant | tanh-wrapped (α=0.3, β=0.05, γ=1.5, δ=0.1) |
-| Reservoir | DIM=10 (N=1024), M=`history_depth`=32, FSF **off** |
+| Reservoir | DIM=10 (N=1024), M=`history_depth`=32 |
 | Seed | best-3: 221691, 73899, 147792 (from 10-seed pool) |
 | Series | warmup 300 · collect 32000 (train 25600 / test 6400) |
 | Drive | sr 0.99 · leak 1 · input_scaling 0.03 |

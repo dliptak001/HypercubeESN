@@ -1,23 +1,5 @@
 # Examples
 
-## Full-state feedback A/B (all demos)
-
-Every example can enable the optional **full-state linear feedback** port for
-A/B testing against the open-loop baseline. Knobs are **local to each example**
-(no shared header): set `full_state_feedback`, `fsf_seed`, and `fsf_scaling` on
-the `ReservoirConfig` / `ESNConfig` (or `config::` in Lorenz) next to the other
-reservoir fields.
-
-**How to A/B**
-
-1. **Off:** `full_state_feedback = false` (default in the demos).
-2. **On:** `full_state_feedback = true` — V from `fsf_seed`; strength =
-   `fsf_scaling` on B_fsf.
-
-Logs print a NARMA-style line: `FSF: OFF` or
-`FSF: ON   fsf_seed=…  fsf_scaling=…` (NARMA also lists a seed sweep when on).
-Theory/API: [docs/full_state_linear_feedback.md](../docs/full_state_linear_feedback.md).
-
 ## BasicPrediction
 
 The minimal hello-world for HypercubeESN. Demonstrates the complete pipeline on a
@@ -65,7 +47,6 @@ accuracy, softmax confidence, and time-to-lock.
 === HypercubeESN: Signal Classification ===
 
 Config: DIM=8  N=256  History Depth=16  ...  Classes=4
-  FSF: OFF
 
   Blk | True      Pred      | Acc%  Conf  TTL | Status
     6 | Cruise    Cruise   |   82  0.81    6 | SWITCHING
@@ -98,7 +79,6 @@ separated by normal operation to show both detection and recovery.
 === HypercubeESN: Streaming Anomaly Detection ===
 
 Config: DIM=7  N=128  History Depth=24  Leak=1  Input Scaling=0.1  Threshold=10x baseline
-  FSF: OFF
 
 Baseline (prime test, RMSE): ~0.0060   threshold ~0.060
 

@@ -231,10 +231,6 @@ struct ReservoirConfig
     size_t   num_external_feedback_channels = 0;
     float    external_feedback_scaling      = 0.5f;
 
-    // Full-state linear feedback (internal φ = V·x) — false = off, no alloc
-    bool     full_state_feedback = false;
-    uint64_t fsf_seed            = 1;      // V then B_fsf; not derived from seed
-    float    fsf_scaling         = 0.05f;
 };
 
 // Typical:
@@ -258,9 +254,6 @@ cfg.history_depth   = 16;     // per-task recurrent delay-line depth
 | `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
 | `num_external_feedback_channels` | `size_t` | `0` | External-feedback channels D. **0** = path off (no buffer/weights). Else D in **[1, N]** (need not divide N). Caller stages values each step. See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input: weights × `scaling / √DIM` (only if D > 0). Outside spectral-radius rescale. |
-| `full_state_feedback` | `bool` | `false` | Construction-only enable for internal full-state feedback. **false** ⇒ zero FSF allocation. See [full_state_linear_feedback.md](full_state_linear_feedback.md). |
-| `fsf_seed` | `uint64_t` | `1` | Draws V as U(−1,1) (first N) then B_fsf (next N·dim). Standalone — not derived from `seed`. |
-| `fsf_scaling` | `float` | `0.05` | B_fsf: U(−1,1) × `scaling / √DIM` (only FSF strength knob; like `input_scaling`). |
 
 ---
 
@@ -414,9 +407,7 @@ void ReservoirStep(const float* inputs, const float* external_feedback = nullptr
 ```
 
 One timestep: stage task `inputs` (always), optionally stage **external** feedback,
-then `Step`. If `full_state_feedback` was enabled at construction, **FSF applies
-automatically** inside the reservoir (φ = V·x from the current gain V) — do not
-pass φ here.
+then `Step`.
 
 **Parameters:**
 - `inputs` -- `NumInputs()` floats for this step.
@@ -431,7 +422,7 @@ pass φ here.
 void ReservoirWarmup(const float* inputs, size_t num_steps);
 ```
 
-Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training. Calls `ReservoirStep` **without** external feedback. **If FSF is enabled, FSF still applies each step.**
+Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training. Calls `ReservoirStep` **without** external feedback.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Each timestep has `num_inputs` consecutive values (one per channel). When `num_inputs == 1` (default), this is simply `num_steps` scalars. Values are **not** clamped — pass already-bounded signals (the `1/√DIM` input normalization sets the `tanh` operating point via `input_scaling`).
@@ -445,7 +436,7 @@ Drives the reservoir for `num_steps` timesteps without recording state. Use this
 void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
 ```
 
-Drives the reservoir for `num_steps` timesteps, recording the readout input at each step. States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate. External feedback is not injected; **FSF still applies if enabled**.
+Drives the reservoir for `num_steps` timesteps, recording the readout input at each step. States are appended to the internal buffer -- multiple `ReservoirRun()` calls accumulate. External feedback is not injected.
 
 **Parameters:**
 - `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `ReservoirWarmup()`.
@@ -460,7 +451,7 @@ Drives the reservoir for `num_steps` timesteps, recording the readout input at e
 void ReservoirClear();
 ```
 
-Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, FSF gain V (if any), and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
+Clears the reservoir's live state — `vtx_state_` plus every output-history slice — so a new input sequence starts from rest. Recurrent weights, input weights, and all hyperparameters are untouched. Recorded states are **not** cleared. The trained readout is preserved.
 
 Use for episodic tasks where each episode starts from a clean slate (e.g., per-sequence reset).
 
@@ -634,16 +625,13 @@ Returns all collected states: `NumCollectedStates() * ReservoirNeuronCount()` fl
 | `NumExternalFeedbackChannels()` | `size_t` | D from `cfg.reservoir.num_external_feedback_channels` (0 = no external-feedback port). |
 | `ReservoirHypercubeDimension()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
 | `ReservoirNeuronCount()` | `size_t` | Reservoir neuron count N = 2^`ReservoirHypercubeDimension()`. |
-| `FullStateFeedbackEnabled()` | `bool` | True if built with `full_state_feedback`. |
-| `GetConfig()` | `ESNConfig` | Full config (reservoir + readout), including FSF knobs. V is reconstructed from `fsf_seed` / `fsf_scaling`. |
-
-See [full_state_linear_feedback.md](full_state_linear_feedback.md).
+| `GetConfig()` | `ESNConfig` | Full config (reservoir + readout). |
 
 ---
 
 ##### Readout State Serialization
 
-The ESN exposes its trained readout state for save/restore. Reservoir topology, weights, and FSF gain V are deterministic from config + seeds (`seed`, and when FSF is on `fsf_seed` / `fsf_scaling`). Persist config (`GetConfig()`) and readout (`GetReadoutState()`). On restore, construct a fresh `ESN` from the saved `ESNConfig` and call `SetReadoutState`.
+The ESN exposes its trained readout state for save/restore. Reservoir topology and weights are deterministic from config + seed. Persist config (`GetConfig()`) and readout (`GetReadoutState()`). On restore, construct a fresh `ESN` from the saved `ESNConfig` and call `SetReadoutState`.
 
 **`ReadoutState` struct** (nested in `ESN`):
 
@@ -675,7 +663,7 @@ restored.SetReadoutState(state);
 // Ready to predict -- no retraining needed.
 ```
 
-A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig` (including FSF knobs). `Reservoir::Create(reservoir.GetConfig())` rebuilds matching weight blocks and FSF gain V from `seed` / `fsf_seed` and `fsf_scaling`. The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
+A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig`. `Reservoir::Create(reservoir.GetConfig())` rebuilds matching weight blocks from `seed`. The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
 
 ---
 

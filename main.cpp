@@ -1,5 +1,5 @@
 /// @file main.cpp
-/// @brief Reservoir snapshot/restore fidelity + FSF smoke diagnostics.
+/// @brief Reservoir snapshot/restore fidelity diagnostics.
 
 #include <cstdio>
 #include <cstring>
@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "ESN.h"
 #include "Reservoir.h"
 
 namespace
@@ -122,113 +121,39 @@ namespace
         return failures;
     }
 
-    /// F0: FSF off. F1: FSF on differs from off. F2: Create(GetConfig) bit-identical.
-    /// F3: Clear preserves FSF-closed trajectory. F4: ESN warmup under FSF.
-    int TestFsf()
+    /// Create(GetConfig()) must rebuild matching weights: same drive → bit-identical trajectory.
+    int TestCreateGetConfigIdentity()
     {
         int failures = 0;
-        constexpr size_t kSteps = 64;
-        constexpr uint64_t kDriveSeed = 0xA11CE;
+        constexpr size_t kSteps = 48;
 
-        ReservoirConfig base;
-        base.dim = 6;
-        base.history_depth = 4;
-        base.seed = 4242;
-        base.verbose = false;
+        ReservoirConfig cfg;
+        cfg.dim = 6;
+        cfg.history_depth = 4;
+        cfg.seed = 4242;
+        cfg.num_inputs = 2;
+        cfg.leak_rate = 0.85f;
+        cfg.num_external_feedback_channels = 2;
+        cfg.external_feedback_scaling = 0.3f;
+        cfg.verbose = false;
 
-        auto run_trace = [&](Reservoir& r) {
-            const DriveSeries d = MakeDrive(kSteps, r.GetConfig().num_inputs, 0, kDriveSeed);
-            std::vector<float> tr;
-            Drive(r, d, 0, kSteps, r.GetConfig().num_inputs, 0, &tr);
-            return tr;
-        };
+        auto a = Reservoir::Create(cfg);
+        auto b = Reservoir::Create(a->GetConfig());
+        const size_t num_ext_fb = cfg.num_external_feedback_channels;
+        const DriveSeries d = MakeDrive(kSteps, cfg.num_inputs, num_ext_fb, 0xA11CE);
 
-        auto off = Reservoir::Create(base);
-        const std::vector<float> tr_off = run_trace(*off);
+        std::vector<float> tr_a, tr_b;
+        Drive(*a, d, 0, kSteps, cfg.num_inputs, num_ext_fb, &tr_a);
+        Drive(*b, d, 0, kSteps, cfg.num_inputs, num_ext_fb, &tr_b);
 
-        ReservoirConfig on_cfg = base;
-        on_cfg.full_state_feedback = true;
-        on_cfg.fsf_seed = 99;
-        on_cfg.fsf_scaling = 0.5f;
-        auto on_a = Reservoir::Create(on_cfg);
-        if (!on_a->FullStateFeedbackEnabled())
+        if (!BitIdentical(tr_a, tr_b))
         {
-            std::printf("  [FSF] FAIL: FullStateFeedbackEnabled false after enable\n");
-            ++failures;
-        }
-        const std::vector<float> tr_on = run_trace(*on_a);
-        if (BitIdentical(tr_off, tr_on))
-        {
-            std::printf("  [FSF] FAIL: FSF on did not change trajectory vs off (F1)\n");
+            std::printf("  [Create(GetConfig)] FAIL: rebuild trajectory differs from original\n");
             ++failures;
         }
         else
-            std::printf("  [FSF] PASS F0/F1: off vs on differ\n");
-
-        // F2: seed+fsf_scaling rebuild identical V and B_fsf
-        auto on_b = Reservoir::Create(on_a->GetConfig());
-        const std::vector<float> tr_rebuild = run_trace(*on_b);
-        if (!BitIdentical(tr_on, tr_rebuild))
-        {
-            std::printf("  [FSF] FAIL: Create(GetConfig) trajectory mismatch (F2)\n");
-            ++failures;
-        }
-        else
-            std::printf("  [FSF] PASS F2: Create(GetConfig) bit-identical\n");
-
-        // F3: Clear does not wipe construction-time V — same drive after clear matches
-        // a fresh run from zero only if we clear then re-drive from cold; instead check
-        // snapshot restore under FSF still works (Clear leaves V, zeros state).
-        on_a->Clear();
-        const std::vector<float> tr_after_clear = run_trace(*on_a);
-        if (!BitIdentical(tr_on, tr_after_clear))
-        {
-            std::printf("  [FSF] FAIL: Clear changed FSF-closed trajectory (F3)\n");
-            ++failures;
-        }
-        else
-            std::printf("  [FSF] PASS F3: Clear preserves FSF params (same re-drive)\n");
-
-        // F4: ESN warmup under FSF
-        ESNConfig ec;
-        ec.reservoir = on_cfg;
-        ec.reservoir.verbose = false;
-        ec.readout.num_outputs = 1;
-        ESN esn(ec);
-        if (!esn.FullStateFeedbackEnabled())
-        {
-            std::printf("  [FSF] FAIL: ESN FullStateFeedbackEnabled\n");
-            ++failures;
-        }
-        std::vector<float> u(kSteps, 0.3f);
-        esn.ReservoirWarmup(u.data(), kSteps);
-        std::vector<float> state(esn.ReservoirNeuronCount());
-        esn.CopyReservoirState(state.data());
-        double nrm = 0.0;
-        for (float x : state) nrm += static_cast<double>(x) * x;
-        if (nrm <= 0.0)
-        {
-            std::printf("  [FSF] FAIL: ESN warmup under FSF left zero state\n");
-            ++failures;
-        }
-        else
-            std::printf("  [FSF] PASS F4: ESN Warmup under FSF\n");
-
-        // GetConfig round-trip of FSF knobs when disabled
-        ReservoirConfig off_seed = base;
-        off_seed.full_state_feedback = false;
-        off_seed.fsf_seed = 12345;
-        off_seed.fsf_scaling = 0.7f;
-        auto r_off = Reservoir::Create(off_seed);
-        const auto got = r_off->GetConfig();
-        if (got.fsf_seed != 12345 || got.fsf_scaling != 0.7f || got.full_state_feedback)
-        {
-            std::printf("  [FSF] FAIL: GetConfig lost FSF knobs while disabled\n");
-            ++failures;
-        }
-        else
-            std::printf("  [FSF] PASS GetConfig round-trip while FSF off\n");
-
+            std::printf("  [Create(GetConfig)] PASS (bit-identical, %zu steps, N=%zu, M=%zu)\n",
+                        kSteps, a->Size(), cfg.history_depth);
         return failures;
     }
 } // namespace
@@ -257,8 +182,8 @@ int main()
     fb.external_feedback_scaling = 0.4f;
     failures += TestConfig("dim8 M7 +ext-feedback", fb, 37, 50);
 
-    std::printf("=== Full-state feedback smoke ===\n");
-    failures += TestFsf();
+    std::printf("=== Create(GetConfig) identity ===\n");
+    failures += TestCreateGetConfigIdentity();
 
     if (failures == 0)
     {

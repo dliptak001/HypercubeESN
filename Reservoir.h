@@ -28,16 +28,6 @@ struct ReservoirConfig
     size_t num_external_feedback_channels = 0;
     float external_feedback_scaling = 0.5f; // weights × scaling/√dim (fan-in; retune per task/DIM)
 
-    // --- Full-state linear feedback (internal drive; construction-only enable) ---
-    // When false: zero FSF allocation. When true: B_fsf + V (length N). From
-    // standalone fsf_seed (not mixed from `seed`): first N → V as U(-1,1) with no
-    // scale baked in; then N·dim → B_fsf × fsf_scaling/√dim.
-    // Each Step: φ = V·x (scalar), then s += φ · B_fsf[v,i] over dim neighbors.
-    // V only forms φ; loudness is fsf_scaling on B_fsf. See docs/full_state_linear_feedback.md.
-    bool full_state_feedback = false;
-    uint64_t fsf_seed = 1;
-    float fsf_scaling = 0.05f; // B_fsf: U(-1,1) × scaling/√dim (only FSF strength knob)
-
     float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); OFF by default (0 disables)
 
     // --- Lorentzian activation envelope ---
@@ -69,8 +59,7 @@ struct ReservoirConfig
 /// ```
 ///   input ──────────────────┐
 ///   recurrent history ──────┼─▶ Σ (over dim neighbors) ─▶ activation ─▶ leak ─▶ new state
-///   external feedback (opt) ┤                              (+ bias)
-///   full-state feedback (opt)┘
+///   external feedback (opt) ┘                              (+ bias)
 /// ```
 ///   - **input** — your per-step drive (see @ref InjectInput).
 ///   - **recurrent history** — delay line of @c history_depth past slices.
@@ -85,23 +74,15 @@ struct ReservoirConfig
 /// ```
 ///   InjectInput(...)                 // stage task input
 ///   InjectExternalFeedback(...)      // optional — caller-owned closed loop
-///   Step()                           // may also form internal FSF φ = V·x, then
-///                                    // update, age history, clear staged drives
+///   Step()                           // update, age history, clear staged drives
 /// ```
-/// Injected drives are *consumed and cleared* by every @ref Step. Full-state
-/// feedback (when enabled) is formed **inside** @ref Step from the current
-/// published state (scalar φ = V·x) — the caller does not inject it. Newest
+/// Injected drives are *consumed and cleared* by every @ref Step. Newest
 /// state: @ref Outputs.
 ///
 /// ## Optional extras (all off by default)
 ///   - **External feedback** (@c num_external_feedback_channels > 0): caller-owned
 ///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
 ///     Outside the spectral-radius rescale.
-///   - **Full-state linear feedback** (@c full_state_feedback): internal drive
-///     each step: φ = V·x (scalar), then gather φ through B_fsf. Equivalent to
-///     a uniform D=1 external-feedback field without a length-N staging buffer.
-///     V is U(-1,1) from @c fsf_seed; B_fsf from same seed with @c fsf_scaling.
-///     Outside SR. Zero alloc when off.
 ///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
 ///   - **Lorentzian activation** (@c lorentz_gamma != 0); gamma = 0 is plain tanh.
 ///
@@ -132,12 +113,11 @@ public:
 
     /// @brief Advance the reservoir by one timestep.
     ///
-    /// Recomputes every vertex's state from staged input / external feedback /
-    /// (if enabled) full-state feedback and the recurrent history, ages the
-    /// history ring by one slice (the new state becomes slice 0), and clears the
-    /// per-step staged drives. Stage input/external feedback first with
-    /// @ref InjectInput / @ref InjectExternalFeedback — they are consumed here.
-    /// Full-state feedback is staged inside this call when enabled.
+    /// Recomputes every vertex's state from staged input / external feedback and
+    /// the recurrent history, ages the history ring by one slice (the new state
+    /// becomes slice 0), and clears the per-step staged drives. Stage
+    /// input/external feedback first with @ref InjectInput /
+    /// @ref InjectExternalFeedback — they are consumed here.
     void Step();
 
     /// @brief Stage the input for one channel ahead of the next @ref Step.
@@ -149,10 +129,9 @@ public:
     void InjectInput(size_t channel, float input);
 
     /// @brief Reset dynamical state and history to zero and re-home the slice ring
-    /// (undriven live state). Weights, bias, and FSF gain V (if enabled) are left
-    /// unchanged — construction-time parameters, not dynamical state. Staged input /
-    /// external-feedback buffers are cleared (FSF has no staging buffer; φ is
-    /// recomputed each @ref Step).
+    /// (undriven live state). Weights and bias are left unchanged —
+    /// construction-time parameters, not dynamical state. Staged input /
+    /// external-feedback buffers are cleared.
     void Clear();
 
     /// @brief The current reservoir state — the most-recent history slice; this is
@@ -184,11 +163,10 @@ public:
 
     /// @brief Reconstruct the @ref ReservoirConfig this reservoir was built from.
     ///
-    /// Every config field is read back from a stored member (including FSF knobs
-    /// even when FSF is off). @c Create(GetConfig()) rebuilds matching weights and
-    /// FSF gain V from @c seed / @c fsf_seed and @c fsf_scaling. @c spectral_radius
-    /// here is the configured TARGET, not the realized value — use
-    /// @ref GetRealizedSpectralRadius for the post-rescale estimate.
+    /// Every config field is read back from a stored member.
+    /// @c Create(GetConfig()) rebuilds matching weights from @c seed.
+    /// @c spectral_radius here is the configured TARGET, not the realized value —
+    /// use @ref GetRealizedSpectralRadius for the post-rescale estimate.
     [[nodiscard]] ReservoirConfig GetConfig() const;
 
     /// @brief Hypercube dimension; the reservoir has N = 2^Dim() neurons.
@@ -213,20 +191,15 @@ public:
     ///         or if @p values is null when @p count > 0.
     void InjectExternalFeedback(const float* values, size_t count);
 
-    /// @brief True if this reservoir was built with @c full_state_feedback.
-    [[nodiscard]] bool FullStateFeedbackEnabled() const { return fsf_enabled_; }
-
     /// @brief Copyable capture of the reservoir's persistent dynamical state: the
     /// live vertex state plus every history slice in logical age order (slice 0 =
     /// most recent).
     ///
     /// The per-step staged drives (input, external feedback) are NOT captured —
     /// they are consumed and cleared by every @ref Step, so a snapshot taken
-    /// between steps has nothing staged. FSF has no staging buffer (φ is formed
-    /// each step from V and the published state). Weights and FSF gain V are not
-    /// included (both are construction-time params from config + seeds): a
-    /// snapshot is only meaningful for the reservoir it was taken from (or one
-    /// rebuilt from an identical config).
+    /// between steps has nothing staged. Weights are not included (construction-time
+    /// params from config + seed): a snapshot is only meaningful for the reservoir
+    /// it was taken from (or one rebuilt from an identical config).
     struct Snapshot
     {
         std::vector<float> state; ///< live vertex state, N floats
@@ -245,9 +218,8 @@ public:
     ///
     /// Copies the state and history back, re-homes the slice ring to the canonical
     /// rotation, and clears staged input / external feedback — so the post-restore
-    /// trajectory depends on the snapshot, construction-time FSF params (if
-    /// enabled), and subsequent injections. Restoring and replaying the same
-    /// drives on an identically configured reservoir is bit-exact.
+    /// trajectory depends on the snapshot and subsequent injections. Restoring and
+    /// replaying the same drives on an identically configured reservoir is bit-exact.
     /// @throws std::invalid_argument if the snapshot's buffer sizes do not match
     ///         this reservoir's N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
@@ -302,14 +274,6 @@ private:
     size_t num_ext_feedback_weights_ = 0; // n_ * dim_ or 0
     std::unique_ptr<float[], AlignedFree> vtx_ext_feedback_;
 
-    /**** full-state linear feedback (internal; construction-only enable) ****/
-    bool fsf_enabled_ = false;
-    uint64_t fsf_seed_ = 1;
-    float fsf_scaling_ = 0.5f;
-    size_t num_fsf_weights_ = 0; // n_ * dim_ or 0
-    std::vector<float> fsf_v_; // V ∈ U(-1,1)^N when enabled (empty when off); φ only
-    float fsf_phi_ = 0.0f;     // φ = V·x for the current Step (no length-N staging buffer)
-
     /**** per neuron bias ****/
     float bias_scaling_;
 
@@ -321,9 +285,9 @@ private:
     void UpdateState(size_t v, float old_output_v);
     [[nodiscard]] float EstimateSpectralRadius(std::span<float> x, std::span<float> y) const;
 
-    /// Index (in floats) of the recurrent weight block — after input, ext-fb, FSF.
+    /// Index (in floats) of the recurrent weight block — after input and ext-fb.
     [[nodiscard]] size_t RecurrentWeightBase() const
     {
-        return num_input_weights_ + num_ext_feedback_weights_ + num_fsf_weights_;
+        return num_input_weights_ + num_ext_feedback_weights_;
     }
 };

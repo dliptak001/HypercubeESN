@@ -58,7 +58,7 @@ coupling — only `Reservoir` state (newest delay-line slice / `Outputs()`).
   knobs. One white-noise drive is generated at meter construction and **reused**
   for every cell (byte-identical task).
 - **`ReservoirConfig`** — the **op-point** passed into `Measure()` per cell: `sr`,
-  `leak`, `history_depth`, `seed`, `input_scaling`, FSF. `Measure()` forces
+  `leak`, `history_depth`, `seed`, `input_scaling`. `Measure()` forces
   `dim` / `num_inputs=1` / `verbose=false` so the feature layout cannot desync.
 
 Library defaults on `MCConfig` (header): warmup **2000**, collect **15000**,
@@ -82,10 +82,10 @@ live meter + layout. Edit `main()` for DIM / seed / grid axes.
 
 ## Reference campaign — multi-DIM TotalMC grids
 
-Archived single-seed `RunGridSweep` results. **FSF off.** Every cell
-early-stopped (`e`); no open-tail undercount. To reproduce: DIM 5…12 in turn,
-seed **47397376**, sr `{0.9, 0.95, 1.0}`, leak `{1.0}`,
-M `{1,2,4,8,16,32,40,48,56,64}`, same extended meter as the table below.
+Archived single-seed `RunGridSweep` results. Every cell early-stopped (`e`);
+no open-tail undercount. To reproduce: DIM 5…12 in turn, seed **47397376**,
+sr `{0.9, 0.95, 1.0}`, leak `{1.0}`, M `{1,2,4,8,16,32,40,48,56,64}`, same
+extended meter as the table below.
 
 | Knob | Value |
 |------|--------|
@@ -96,7 +96,6 @@ M `{1,2,4,8,16,32,40,48,56,64}`, same extended meter as the table below.
 | `input_scaling` | 0.06 |
 | Reservoir seed | **47397376** |
 | Meter | warmup **4000** · collect **25000** · Kmax **4000** · ridge **1e-4** · train_frac **0.7** · `input_seed` **0xc0ffee** |
-| FSF | **OFF** |
 
 Seed dependence is not in these tables — treat peaks as **indicative**. Use
 `RunSeedSurvey` (or Appendix B) before locking an op-point for other tasks.
@@ -267,7 +266,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 
 1. Edit `MemoryCapacity.cpp` `main()`:
    - **Meter:** `mccfg.k_max`, `t_warmup` (≥ k_max), `t_collect` (> k_max).
-   - **Base op-point:** `DIM`, `seed`, `input_scaling`, FSF knobs.
+   - **Base op-point:** `DIM`, `seed`, `input_scaling`.
    - **Mode:** uncomment exactly one of `RunDetailed` / `RunGridSweep` /
      `RunSeedSurvey` / `RunDepthProbe`.
    - **Grid axes:** `sr`, `leak`, `history_depth` vectors (`M` any in **[1, 64]**).
@@ -285,7 +284,7 @@ Progress on stderr; tables on stdout. For seed variance at fixed (DIM, M, sr):
 
 ## Appendix A — DIM 10 leak × sr × M
 
-Same meter and seed family as the main tables (FSF off, is = 0.06, seed =
+Same meter and seed family as the main tables (is = 0.06, seed =
 47397376, warmup 4000 / collect 25000 / Kmax 4000 / ridge 1e-4). **DIM = 10**
 only (`N = F = 1024`). Grid: 3 sr × 5 leak × 10 M = **150 cells**; all
 early-stopped (`e`), none open-tail.
@@ -406,7 +405,7 @@ Overall peak for this appendix: **819.29** (M = 40, sr = 1.00, leak = 1.00).
 ## Appendix B — DIM 10 seed survey (M = 30–34)
 
 Seed-to-seed variance at **DIM = 10** (`N = F = 1024`), **sr = 1.00**,
-**is = 0.06**, FSF off. Fine M grid around the deep-memory knee (not the coarse
+**is = 0.06**. Fine M grid around the deep-memory knee (not the coarse
 pow2 / M∈{40,48,…} grid of the main tables). Leak near full (0.95 · 0.98 · 1.00).
 Ten reservoir seeds of the form `73896+k` × `(k+2)` for k = 0…9 (same family as
 the NARMA multi-seed pools). All cells early-stopped.

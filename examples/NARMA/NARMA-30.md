@@ -37,7 +37,7 @@ caveats in [NARMA.md](NARMA.md#reading-the-results).
 | Knob | Value |
 |------|--------|
 | Variant | tanh-wrapped (α=0.3, β=0.05, γ=1.5, δ=0.1) |
-| Reservoir | DIM=10 (N=1024), M=`history_depth`=16, FSF **off** |
+| Reservoir | DIM=10 (N=1024), M=`history_depth`=16 |
 | Seed | best-3: 73896, 73898, 73897 (from 10-seed pool) |
 | Series | warmup 300 · collect 32000 (train 25600 / test 6400) |
 | Drive | sr 0.99 · leak 1 · input_scaling 0.03 |

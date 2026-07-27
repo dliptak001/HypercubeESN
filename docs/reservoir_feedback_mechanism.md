@@ -2,10 +2,8 @@
 
 > Status: **landed**. External (caller-owned) drive port.
 >
-> With full-state linear feedback (FSF) also landed as a separate **internal** port,
-> this document covers only the **external** path. See
-> [full_state_linear_feedback.md](full_state_linear_feedback.md) for FSF and
-> [Reservoir.md](Reservoir.md) for the full drive-port picture.
+> This document covers the **external** path. See [Reservoir.md](Reservoir.md)
+> for the full drive-port picture.
 
 ## 1. Source-agnostic by design — external drive only (this port)
 
@@ -13,14 +11,11 @@ The reservoir exposes an **external feedback port**: a buffer the caller stages 
 step, summed into the neurons, then cleared. The reservoir does **not** invent these
 values.
 
-Full-state linear feedback is a **different** port: internal policy φ = V·x, not
-staged via `InjectExternalFeedback`. Do not overload this port for FSF.
-
 ## 2. Mechanism — twin of the input port
 
 ```
  weight layout in vtx_weight_:
-   [ input | external feedback (if D>0) | FSF (if enabled) | recurrent ]
+   [ input | external feedback (if D>0) | recurrent ]
               └ external_feedback_scaling/√dim     └ SR-rescaled only
 ```
 
@@ -46,5 +41,4 @@ ESN::ReservoirStep(inputs, external_feedback = nullptr);
 ```
 
 Non-null `external_feedback` requires `num_external_feedback_channels > 0`. This is
-the only way **caller-owned** closed-loop drive enters at the ESN layer. FSF, if
-enabled, still applies inside `Reservoir::Step` regardless of this argument.
+the only way **caller-owned** closed-loop drive enters at the ESN layer.

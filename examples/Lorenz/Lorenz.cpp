@@ -32,9 +32,6 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.history_depth = config::HISTORY_DEPTH;
     cfg.reservoir.bias_scaling = 0.01;
     cfg.reservoir.history_floor = 1.0;
-    cfg.reservoir.full_state_feedback = config::FULL_STATE_FEEDBACK;
-    cfg.reservoir.fsf_seed = config::FSF_SEED;
-    cfg.reservoir.fsf_scaling = config::FSF_SCALING;
 
     cfg.aux_input_dim = 0;
 
@@ -80,12 +77,6 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     "  external_feedback_scaling=%.4f\n",
                     esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
-        if (config::FULL_STATE_FEEDBACK)
-            std::printf("[Lorenz config] FSF: ON   fsf_seed=%llu  fsf_scaling=%.3f\n",
-                        static_cast<unsigned long long>(config::FSF_SEED),
-                        config::FSF_SCALING);
-        else
-            std::printf("[Lorenz config] FSF: OFF\n");
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",

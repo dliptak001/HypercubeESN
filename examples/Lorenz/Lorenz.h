@@ -29,9 +29,6 @@ namespace config
     constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port
     constexpr float LEAK_RATE = 1.0;
     constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
-    constexpr bool FULL_STATE_FEEDBACK = true;
-    constexpr uint64_t FSF_SEED = 9089361;
-    constexpr float FSF_SCALING = 0.003;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile

@@ -8,9 +8,6 @@ predict the next value without ever seeing the input directly.
 
 If you're new to reservoir computing, start here.
 
-**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
-in `BasicPrediction.cpp`. Log: `FSF: ON|OFF …`. See [examples/README.md](README.md).
-
 ## Conceptual background
 
 In a traditional neural network, you train all the weights. In reservoir

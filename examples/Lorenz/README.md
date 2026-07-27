@@ -40,11 +40,6 @@ Experiment logs and op-point snapshots go in [`TRACKING.md`](TRACKING.md).
         └─ FreeRun() washout → generative self-feedback; VPT + free-run RMSE
 ```
 
-Optional third drive path: **full-state linear feedback** (FSF) on the reservoir,
-independent of the external-feedback future port. Toggle and seed/scaling live in
-`config::` (`FULL_STATE_FEEDBACK`, `FSF_SEED`, `FSF_SCALING`). See
-[`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md).
-
 ---
 
 ## 2. Janus dual-cursor concept
@@ -271,7 +266,6 @@ file. Groups of interest:
 | Diagnostics | `ENABLE_PRINTF` — banner, per-epoch train lines, free-run traces |
 | Reservoir | dim, seed, spectral radius, input / leak / history depth |
 | Ports | input vs external-feedback channel counts (fixed 4+4 in harness) and their scalings |
-| FSF | construction-only full-state feedback enable, seed (V then B_fsf), scaling |
 | Readout | online Adam LR schedule, epochs, delay-line slices, pooling / layers |
 | Stream / Janus | training window (`span`), free-run window, center, stream length, dt |
 | Stage | reservoir warmup steps before train updates |
@@ -351,7 +345,6 @@ temporarily replace the survey body.
 - Online (single-sample) HCNN readout training with prequential monitoring
 - Half-anchored closed loop: past always teacher, future becomes student past `ub`
 - A harness for long rollouts with a restoring tether and multi-seed surveys
-- Optional FSF as an independent internal drive path
 
 **Is not:**
 
@@ -366,7 +359,6 @@ temporarily replace the survey body.
 |-----|------|
 | [`JanusCursor.md`](JanusCursor.md) | Exact cursor API and index geometry |
 | [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
-| [`docs/full_state_linear_feedback.md`](../../docs/full_state_linear_feedback.md) | Internal full-state feedback |
-| [`TRACKING.md`](TRACKING.md) | Live experiment log (op-points, FSF A/B, surveys) |
+| [`TRACKING.md`](TRACKING.md) | Live experiment log (op-points, surveys; historical FSF A/B retained) |
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh free-run campaign (stale harness) |
 | Project [`docs/README.md`](../../docs/README.md) | Library-wide reading order |

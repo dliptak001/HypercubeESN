@@ -228,19 +228,16 @@ This section is a **map**, not a claim that RIMT is already implemented.
 
 ### Drive ports (landed)
 
-HypercubeESN already has three drive concepts (see
-[Reservoir.md](Reservoir.md), [full_state_linear_feedback.md](full_state_linear_feedback.md)):
+HypercubeESN already has two drive concepts (see [Reservoir.md](Reservoir.md)):
 
 | Port | Who stages it | Role |
 |------|---------------|------|
 | **Input** | Caller, each step | Primary external drive (`InjectInput`) |
 | **External feedback** | Caller | Closed-loop / teacher / self-drive path |
-| **FSF** | Internal (`φ = V · x`) | Full-state linear feedback |
 
 RIMT lives on the **input** path (or a dedicated “spatial episode” driver that
-stages the input buffer before each `Step`). It does not require FSF or
-external feedback, though either could be combined later for other
-architectures.
+stages the input buffer before each `Step`). It does not require external
+feedback, though that port could be combined later for other architectures.
 
 ### How input is staged today
 
@@ -564,7 +561,6 @@ Suggested positioning for papers and product docs:
 |----------|-----------|
 | [Reservoir.md](Reservoir.md) | Topology, timestep, input gather, history depth |
 | [Readout.md](Readout.md) | HCNN readout; multi-slice features |
-| [full_state_linear_feedback.md](full_state_linear_feedback.md) | Separate drive port (not RIMT) |
 | [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md) | External feedback port |
 | [docs/README.md](README.md) | Documentation map |
 

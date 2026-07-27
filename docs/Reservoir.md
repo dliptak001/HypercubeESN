@@ -57,17 +57,14 @@ Everything that follows serves those two.
 | `verbose` | true | construction banner to stderr |
 | `num_external_feedback_channels` (D) | 0 | **0** = no external-feedback path; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | like input: × scaling/√dim (only if D > 0) |
-| `full_state_feedback` | false | construction-only FSF enable; false ⇒ zero FSF alloc |
-| `fsf_seed` | 1 | draws V (U(−1,1)) then B_fsf (standalone; not from `seed`) |
-| `fsf_scaling` | 0.05 | B_fsf: U(−1,1)×scale/√dim (only FSF strength knob) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
 | `lorentz_gamma` | 0.0 | **0** ⇒ plain `tanh`; see activation below |
 | `lorentz_inv_sigma2` | 250.0 | 1/σ² for the Lorentzian gain envelope |
 
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
-post-secant value. `Create(GetConfig())` rebuilds matching weight blocks and FSF
-gain V from `seed` / `fsf_seed` and `fsf_scaling`.
+post-secant value. `Create(GetConfig())` rebuilds matching weight blocks from
+`seed`.
 
 ## A topology you don't store
 
@@ -168,7 +165,6 @@ labelled by axis, so hypercube structure remains readable.
 ```
 [ input:  N × DIM ]
 [ external feedback: N × DIM ]  # only if num_external_feedback_channels > 0
-[ FSF: N × DIM ]                # only if full_state_feedback
 [ recurrent: N × M × DIM ]  # layout [vertex][slice][axis], matches UpdateState
 ```
 
@@ -176,13 +172,12 @@ labelled by axis, so hypercube structure remains readable.
 |-------|------|---------------------|----------------|
 | Input | N·DIM | `input_scaling / √DIM` | **No** |
 | External feedback | N·DIM or 0 | `external_feedback_scaling / √DIM` | **No** |
-| FSF | N·DIM or 0 | `fsf_scaling / √DIM` (from `fsf_seed`) | **No** |
 | Recurrent | N·DIM·M | `1/√(DIM·M)`, then per-slice depth taper | **Yes** (whole block, one scalar) |
 
 Total weights:
 
 ```
-N · DIM · (M + 1 + [ext-fb ? 1 : 0] + [FSF ? 1 : 0])
+N · DIM · (M + 1 + [ext-fb ? 1 : 0])
 ```
 
 Example: DIM 10, M 16, no feedback → 10,240 × 17 ≈ 174K floats.
@@ -196,9 +191,6 @@ Per-step quantities:
   newest (`Outputs()`, recurrent age 0). Slice `j` is age `j`.
 - `vtx_input_[v]` — staged input field; cleared after every `Step()`.
 - `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
-- `fsf_v_` — vector **V** (length N) used only for φ = V·x; not cleared by `Clear`.
-- `fsf_phi_` — scalar φ = V·x for the current `Step` when FSF is on (no length-N
-  staging buffer; recomputed each step, not a snapshot field).
 - `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
   cleared by `Clear` / not in snapshots.
 
@@ -210,13 +202,12 @@ drives, writes only `vtx_state_`.
 ```
 InjectInput(...)       // optional, each channel you need this step
 InjectExternalFeedback(...)  // optional, if D > 0
-// FSF (if enabled): φ = V·x formed automatically inside Step
 Step()                 // update all neurons, age ring, clear staged drives
 // read Outputs() / SliceAt(age)
 ```
 
 Staged input / external-feedback are **consumed and zeroed** by `Step()` — re-stage
-every timestep. FSF needs no injection; φ is formed from the published state.
+every timestep.
 
 ### Phase 1 — compute new states (per vertex `v`)
 
@@ -229,11 +220,6 @@ for i = 0 .. DIM-1:
 # (b) external feedback — same gather (omitted if D == 0)
 for i = 0 .. DIM-1:
     s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
-
-# (b2) FSF — φ = V·x computed once at start of Step (omitted if FSF off)
-#           uniform drive: every "neighbor" carries the same scalar φ
-for i = 0 .. DIM-1:
-    s += φ * W_fsf[v][i]      # ≡ φ · sum_i W_fsf[v][i]
 
 # (c) recurrent — M slices × DIM axes
 for j = 0 .. M-1:
@@ -268,7 +254,6 @@ rotate slice_ptrs_ by one          # oldest physical slot becomes new slice 0
 memcpy(slice_ptrs_[0], state, N)   # publish
 memset(input, 0, N)
 if ext-fb configured: memset(ext_fb, 0, N)
-# FSF: no staging buffer to clear; φ is recomputed next Step from V and slice 0
 ```
 
 Shipped `Step()` runs the vertex loop **serially** (embarrassingly parallel in
@@ -301,20 +286,6 @@ When `num_external_feedback_channels = D > 0`, a second driver path mirrors inpu
 
 Typical closed-loop use: stage last step’s readout-derived signal (y(t−1)), then
 `Step()`.
-
-## Full-state linear feedback (optional)
-
-When `full_state_feedback = true`, a third drive path runs **inside** each `Step`:
-
-1. V is U(−1,1)^N from `fsf_seed` (φ only)
-2. φ = V · x (one scalar for the whole reservoir this step)
-3. Gather through **B_fsf**: `s += φ * B_fsf[v,i]` over dim neighbors
-   (`fsf_scaling`/√dim — only FSF loudness knob)
-
-This is algebraically the same as a uniform external-feedback D=1 field (every
-vertex staged to φ), but there is **no length-N staging buffer** — only the
-scalar `fsf_phi_`. Zero allocation when disabled. No Set/Get of V. See
-[full_state_linear_feedback.md](full_state_linear_feedback.md).
 
 ## Per-neuron bias (optional)
 
@@ -360,13 +331,12 @@ depth: surveyed spectral radius and M are not fully independent in practice.
 ## Snapshots
 
 `TakeSnapshot()` captures `vtx_state_` and the history ring in **logical age
-order** (slice 0 first). Staged input / external feedback / FSF buffers are not
-included (empty between steps). Weights, bias, and FSF gain V are not included —
-restore only onto the same (or identically configured) reservoir with the same V.
+order** (slice 0 first). Staged input / external feedback buffers are not
+included (empty between steps). Weights and bias are not included — restore only
+onto the same (or identically configured) reservoir.
 
 `RestoreSnapshot` copies state + history, re-homes the ring to canonical rotation,
-and clears staged drives. Replaying the same injections under the same V afterward
-is bit-exact.
+and clears staged drives. Replaying the same injections afterward is bit-exact.
 
 `SliceAt(age)` is the live delay-line view (age 0 ≡ `Outputs()`); throws if
 `age ≥ history_depth`. Prefer this over raw buffer layout (ring rotation makes
@@ -375,9 +345,9 @@ physical block order meaningless).
 ## Computational properties
 
 - **Time per step:** O(N · DIM · M) recurrent + O(N · DIM) per enabled drive port
-  (input always; + external feedback; + FSF) — i.e.
-  **O(N · DIM · (M + 1 + [ext] + [FSF]))**, vs O(N²) for a dense ESN.
-- **Weights:** **N · DIM · (M + 1 + [ext] + [FSF])** as above; zero adjacency storage.
+  (input always; + external feedback) — i.e.
+  **O(N · DIM · (M + 1 + [ext]))**, vs O(N²) for a dense ESN.
+- **Weights:** **N · DIM · (M + 1 + [ext])** as above; zero adjacency storage.
 - **Neighbor addresses** are arithmetic (`v XOR (1<<i)`); weight rows are contiguous.
   Neighbor *state* gathers are still strided (high-bit flips jump by N/2).
 - **Parallelism:** vertex updates are independent; the released `Step()` is serial.
@@ -388,7 +358,6 @@ physical block order meaningless).
 |-----|------|
 | `Create(cfg)` | only constructor path |
 | `InjectInput` / `InjectExternalFeedback` | stage drives |
-| `FullStateFeedbackEnabled` | FSF port allocated at construction |
 | `Step` | one timestep |
 | `Outputs` / `SliceAt` | read state / delay line |
 | `Clear` | zero state + history; keep weights & bias |

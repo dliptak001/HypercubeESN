@@ -24,9 +24,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       history_floor_(cfg.history_floor),
       num_ext_feedback_channels_(cfg.num_external_feedback_channels),
       ext_feedback_scaling_(cfg.external_feedback_scaling),
-      fsf_enabled_(cfg.full_state_feedback),
-      fsf_seed_(cfg.fsf_seed),
-      fsf_scaling_(cfg.fsf_scaling),
       bias_scaling_(cfg.bias_scaling),
       lorentz_gamma_(cfg.lorentz_gamma),
       lorentz_inv_sigma2_(cfg.lorentz_inv_sigma2)
@@ -60,8 +57,7 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     // still RECEIVE drive via the neighbor gather. Any D in [1, N] is admissible.
 
     const size_t drive_blocks = 1 /*input*/
-        + (num_ext_feedback_channels_ > 0 ? 1u : 0u)
-        + (fsf_enabled_ ? 1u : 0u);
+        + (num_ext_feedback_channels_ > 0 ? 1u : 0u);
     num_weights_ = n_ * dim_ * (history_depth_ + drive_blocks);
 
     vtx_input_.reset(AllocAligned(n_));
@@ -78,10 +74,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     num_ext_feedback_weights_ = num_ext_feedback_channels_ > 0 ? n_ * dim_ : 0;
     if (num_ext_feedback_channels_ > 0)
         vtx_ext_feedback_.reset(AllocAligned(n_));
-
-    num_fsf_weights_ = fsf_enabled_ ? n_ * dim_ : 0;
-    if (fsf_enabled_)
-        fsf_v_.assign(n_, 0.0f); // filled in Initialize from fsf_seed
 
     Initialize();
 }
@@ -102,7 +94,6 @@ static inline uint64_t mix64(uint64_t x)
 // Named substreams of the reservoir's single master seed. Labelled (not
 // sequential) so adding a role later does not perturb the existing ones.
 // Numeric labels are ABI for reproducibility — do not renumber.
-// Full-state feedback weights use a *standalone* fsf_seed RNG (not listed here).
 enum class SeedRole : uint64_t {
     Recurrent = 1,
     Input = 2,
@@ -152,23 +143,6 @@ void Reservoir::Initialize()
         const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
             ext_base[i] *= ext_scale;
-    }
-
-    // FSF: standalone RNG from fsf_seed — must not touch main seed streams.
-    // Order is part of the ABI: first N draws → V as U(-1,1) (no scale; not a
-    // row bank — do not equalize V), then N·dim → B_fsf, optional equalize, then
-    // × fsf_scaling/√dim (FSF strength knob, like input_scaling).
-    if (fsf_enabled_)
-    {
-        std::mt19937_64 fsf_rng(fsf_seed_);
-        for (size_t i = 0; i < n_; ++i)
-            fsf_v_[i] = static_cast<float>(dist(fsf_rng));
-        float* const fsf_b_base = pW;
-        for (size_t i = 0; i < num_fsf_weights_; ++i)
-            (*pW++) = static_cast<float>(dist(fsf_rng));
-        const float fsf_scale = fsf_scaling_ / std::sqrt(static_cast<float>(dim_));
-        for (size_t i = 0; i < num_fsf_weights_; ++i)
-            fsf_b_base[i] *= fsf_scale;
     }
 
     const size_t rec_base = RecurrentWeightBase();
@@ -253,31 +227,16 @@ void Reservoir::Initialize()
     if (verbose_)
     {
         std::printf("[Reservoir DIM=%zu M=%zu seed=%llu leak=%.3g in_scale=%.3g "
-                    "hist_floor=%.3g SR target=%.4f post=%.4f (secant iters=%d)",
+                    "hist_floor=%.3g SR target=%.4f post=%.4f (secant iters=%d)]\n",
                     dim_, history_depth_,
                     static_cast<unsigned long long>(rng_seed_),
                     leak_rate_, input_scaling_, history_floor_,
                     target, post_sr, sr_iters);
-        if (fsf_enabled_)
-            std::printf(" FSF on fsf_seed=%llu fsf_scaling=%.3g",
-                        static_cast<unsigned long long>(fsf_seed_), fsf_scaling_);
-        std::printf("]\n");
     }
 }
 
 void Reservoir::Step()
 {
-    // FSF: φ = V·x (only use of V). Uniform D=1 external-feedback is equivalent
-    // to this scalar — no length-N staging buffer. B_fsf multiplies in UpdateState.
-    if (fsf_enabled_)
-    {
-        const float* x = slice_ptrs_[0];
-        double acc = 0.0;
-        for (size_t i = 0; i < n_; ++i)
-            acc += static_cast<double>(fsf_v_[i]) * static_cast<double>(x[i]);
-        fsf_phi_ = static_cast<float>(acc);
-    }
-
     const float* p_vtx_prev = slice_ptrs_[0];
     for (size_t v = 0; v < n_; v++)
         UpdateState(v, p_vtx_prev[v]);
@@ -333,14 +292,6 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
         const float* ew = &vtx_weight_[num_input_weights_] + v * dim_;
         for (size_t i = 0; i < dim_; i++)
             s += vtx_ext_feedback_[v ^ NearestMask(i)] * ew[i];
-    }
-
-    if (fsf_enabled_)
-    {
-        // Uniform φ (all "neighbors" carry the same scalar) → φ · row-sum(B_fsf[v]).
-        const float* fsw = &vtx_weight_[num_input_weights_ + num_ext_feedback_weights_] + v * dim_;
-        for (size_t i = 0; i < dim_; i++)
-            s += fsf_phi_ * fsw[i];
     }
 
     for (size_t i = 0; i < history_depth_; i++)
@@ -418,8 +369,7 @@ void Reservoir::RestoreSnapshot(const Snapshot& snap)
         slice_ptrs_[i] = &vtx_output_history_[i * n_];
 
     // Staged drives are not part of a snapshot; clear them so the post-restore
-    // trajectory depends only on the snapshot and subsequent injections (+ FSF
-    // formed inside the next Step from V and the restored published state).
+    // trajectory depends only on the snapshot and subsequent injections.
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
@@ -439,9 +389,6 @@ ReservoirConfig Reservoir::GetConfig() const
     cfg.verbose = verbose_;
     cfg.num_external_feedback_channels = num_ext_feedback_channels_;
     cfg.external_feedback_scaling = ext_feedback_scaling_;
-    cfg.full_state_feedback = fsf_enabled_;
-    cfg.fsf_seed = fsf_seed_;
-    cfg.fsf_scaling = fsf_scaling_;
     cfg.bias_scaling = bias_scaling_;
     cfg.lorentz_gamma = lorentz_gamma_;
     cfg.lorentz_inv_sigma2 = lorentz_inv_sigma2_;
@@ -466,8 +413,6 @@ void Reservoir::Clear()
 
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
-    // fsf_v_ (V) and B_fsf are construction-time parameters — not cleared.
-    // fsf_phi_ is recomputed at the start of each Step when FSF is on.
 
     std::memset(vtx_output_history_.get(), 0, n_ * history_depth_ * sizeof(float));
 

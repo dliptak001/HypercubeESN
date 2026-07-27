@@ -9,10 +9,6 @@ shows multi-class classification with a live block-stream monitor (confidence
 + time-to-lock), a structured confusion matrix, and a residual hard pair
 (Cruise ↔ Spin-up) even when overall accuracy is high.
 
-**FSF A/B:** set `cfg.reservoir.full_state_feedback` / `fsf_seed` / `fsf_scaling`
-in `SignalClassification.cpp`. Log: `FSF: ON|OFF …`.
-See [examples/README.md](README.md).
-
 ## Conceptual background
 
 Reservoir computing is often presented as a time-series prediction tool, but
@@ -75,7 +71,7 @@ delays a stable ID after a switch.
 
 DIM=8, 256 neurons, `history_depth = 16`, `spectral_radius = 0.95`
 (realized ~0.95), `input_scaling = 0.1`, `leak_rate = 1.0` (struct default),
-FSF OFF. Trained 100 epochs (batch 32, `lr_max = 0.0015` cosine, ~23 s on a
+Trained 100 epochs (batch 32, `lr_max = 0.0015` cosine, ~23 s on a
 typical Release build). Exact figures track seed and HCNN init; the
 qualitative pattern is reproducible.
 
@@ -140,7 +136,6 @@ all switch blocks eventually lock under this config.
 - **Epochs.** Default 100. Try 50 for a quicker / slightly weaker readout.
 - **Leak rate.** Struct default 1.0. Try 0.65 for slower washout after switches.
 - **Lock streak `lock_k`.** Default 3. Raise to 5 for a stricter “locked” definition.
-- **FSF.** Toggle full-state feedback and compare overall accuracy / mean TTL.
 
 ## Build and run
 

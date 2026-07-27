@@ -134,7 +134,7 @@ void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
     // External feedback: caller-owned closed-loop drive. Stage on the D channels
     // (raw, no clamp) through the reservoir's external-feedback port (own weights
     // + external_feedback_scaling, outside the SR rescale). The ESN never invents
-    // these values. Full-state feedback (if enabled) is applied inside Reservoir::Step.
+    // these values.
     if (external_feedback != nullptr)
     {
         // Guard: with D == 0 InjectExternalFeedback(ptr, 0) would no-op and silently
@@ -346,7 +346,7 @@ void ESN::LoadReadoutHcnnModel(const std::string& path_stem, ReadoutLoadMode mod
 std::string ESN::ReadoutArchSummary() const
 {
     // Reservoir vtx_weight_ layout: N·DIM·(M + drive_blocks), drive_blocks =
-    // 1 (input) + [ext-fb] + [FSF]. Matches Reservoir construction (docs/Reservoir.md).
+    // 1 (input) + [ext-fb]. Matches Reservoir construction (docs/Reservoir.md).
     // These weights are fixed (not trained). M scales the recurrent bank only.
     // HCNN size is independent of M unless readout_slices / aux grow start-DIM.
     const ReservoirConfig rc = reservoir_->GetConfig();
@@ -354,8 +354,7 @@ std::string ESN::ReadoutArchSummary() const
     const size_t dim = reservoir_->Dim();
     const size_t M = rc.history_depth;
     const size_t drive_blocks = 1u
-        + (rc.num_external_feedback_channels > 0 ? 1u : 0u)
-        + (rc.full_state_feedback ? 1u : 0u);
+        + (rc.num_external_feedback_channels > 0 ? 1u : 0u);
     const size_t res_weights = n * dim * (M + drive_blocks);
 
     // HCNN start-DIM = reservoir DIM + log2(B), B = readout_slices + [aux].
