@@ -17,6 +17,7 @@ order below.
 | [ActivationFunctionA.md](ActivationFunctionA.md) | **Archive** — central-slope tanh envelope experiments (implementation removed) |
 | [Rotating-input-map-temporalization.md](Rotating-input-map-temporalization.md) | **Design proposal** — RIMT mechanism for **HypercubeMLP** (own product; static/MLP-class tasks atop HypercubeESN) |
 | [HypercubeLSM.md](HypercubeLSM.md) | **Concept** — HypercubeLSM: spiking liquid state machine on the hypercube (ESN’s event-native sibling; own future project) |
+| [HypercubeLSM_primer.md](HypercubeLSM_primer.md) | **Concept primer** — clocked LIF equations + multi-τ readout features for Hypercube people |
 
 These documents cover the full pipeline:
 

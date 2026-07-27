@@ -41,13 +41,16 @@ struct ESNConfig
 ///   inputs [+ optional ext-fb]
 ///        │
 ///        ▼
-///   Reservoir (fixed) ──▶ SliceAt(0..B-1) ──▶ pack B blocks of N
-///        │                                      │
-///        │                                      ▼
-///        │                              HCNN readout (trained)
-///        │                                      │
-///        └──────────────────────────────────────┴──▶ y
+///   Reservoir (fixed)
+///        │
+///        ▼
+///   SliceAt(0 .. B-1)  ── pack B blocks of N ──▶  HCNN readout (trained) ──▶ y
 /// ```
+///
+/// Only the readout emits @c y. The reservoir never writes the task output
+/// directly; it only publishes state the readout reads. (Closed-loop
+/// @c external_feedback is an *input* back into the reservoir, supplied by the
+/// caller — e.g. a previous prediction — not a second path to @c y.)
 ///
 /// ## Lifecycle (batch)
 /// ```
