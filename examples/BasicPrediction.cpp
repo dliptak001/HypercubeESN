@@ -42,8 +42,8 @@ int main(int argc, char* argv[])
     cfg.reservoir.seed = 84745874578;
     cfg.reservoir.history_depth = 4;
     cfg.readout_slices = 1;
-    cfg.reservoir.spectral_radius = 0.9; // A(x): 0.9,  tanh(x): 0.98
-    cfg.reservoir.input_scaling = 0.1; // A(x): 0.1,  tanh(x): 0.1
+    cfg.reservoir.spectral_radius = 0.9;
+    cfg.reservoir.input_scaling = 0.1;
     // Full-state linear feedback (internal). Edit these three for A/B.
     cfg.reservoir.full_state_feedback = false;
     cfg.reservoir.fsf_seed = 4415756;

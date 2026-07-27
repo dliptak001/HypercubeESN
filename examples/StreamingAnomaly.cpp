@@ -103,6 +103,7 @@ int main(int argc, char* argv[])
     cfg.reservoir.fsf_seed = 4415756;
     cfg.reservoir.fsf_scaling = 0.003f;
 
+    cfg.readout_slices = 1;
     cfg.readout.num_layers = 1;
     cfg.readout.conv_channels = 16;
     cfg.readout.use_pooling = false;

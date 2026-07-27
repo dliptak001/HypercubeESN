@@ -23,7 +23,7 @@
 namespace streaming_text::config
 {
     /// Stock survey used 11; edit freely — the run banner reports live ESN dim/N.
-    inline constexpr std::size_t kDIM = 9;
+    inline constexpr std::size_t kDIM = 12;
 
     /// Sanity guard on the channel-to-vertex distribution: Reservoir routes
     /// channel c to a contiguous vertex block, which requires num_inputs
@@ -70,26 +70,28 @@ namespace streaming_text::config
         {
             ESNConfig c;
             c.reservoir.dim = kDIM;
-            c.reservoir.seed = 47397376;
-            c.reservoir.history_depth = 32;
+            c.reservoir.seed = 665127;
+            c.reservoir.history_depth = 2;
             c.reservoir.num_inputs = static_cast<int>(kCharEmbedDim);
-            c.reservoir.spectral_radius = 0.93f;
-            c.reservoir.leak_rate = 1.0f;
-            c.reservoir.input_scaling = 3.0f;
-            c.reservoir.full_state_feedback = true;
+            c.reservoir.spectral_radius = 0.8f;
+            c.reservoir.leak_rate = 0.8f;
+            c.reservoir.input_scaling = 2.5f;
+            c.reservoir.full_state_feedback = false;
             c.reservoir.fsf_seed = 44157563;
-            c.reservoir.fsf_scaling = 0.01f;
+            c.reservoir.fsf_scaling = 0.1f;
             c.reservoir.verbose = false; // avoid duplicate ctor banner; [stext] + ArchSummary cover it
 
-            c.readout.seed = 54544;
-            c.readout_slices = 4;
+            //c.readout.seed = 54544;
+            c.readout.seed = 3423555;
+            c.readout_slices = 1;
             c.readout.task = ReadoutTask::Classification;
             c.readout.num_outputs = static_cast<int>(kVocabSize);
             c.readout.num_layers = 1;
-            c.readout.conv_channels = 16;
+            c.readout.conv_channels = 1;
             c.readout.weight_decay = 1e-5f;
-            c.readout.lr_max = 0.0005f;
-            c.readout.activation = ReadoutActivation::LEAKY_RELU; //NONE beats LEAKY beats TANH
+            c.readout.lr_max = 0.0003f;
+            c.readout.pool_type = ReadoutPoolType::Max;
+            c.readout.activation = ReadoutActivation::NONE; //NONE beats LEAKY beats TANH
 
             return c;
         }();
