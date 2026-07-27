@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "ESN.h"
@@ -37,7 +38,7 @@ int main(int argc, char* argv[])
 
     constexpr size_t DIM         = 10;
     constexpr size_t N           = 1ULL << DIM;
-    constexpr size_t narma_order = 50;          // fixed order for the history-depth sweep
+    constexpr size_t narma_order = 70;          // fixed order for the history-depth sweep
     constexpr size_t collect     = 32000;       // states fed to the readout (80/20 split), low res - 8000, hi res - 32000
     constexpr uint64_t data_seed = 1939;        // signal-side RNG seed
 
@@ -58,6 +59,9 @@ int main(int argc, char* argv[])
         73906*12, 73907*13, 73908*14, 73909*15, 73910*16,
         73911*17, 73912*18, 73913*19, 73914*20, 73915*21,
     };
+    // Aggregate "spotlight" size: full raw table always uses every trial; mean/std
+    // tables are printed for all trials and for the best-k_best (lowest NRMSE).
+    constexpr size_t k_best = 5;
 
     // Third sweep dimension: FSF V / B_fsf draw seed. Independent of reservoir
     // seed. Ignored entirely when full_state_feedback is false (see active
@@ -198,7 +202,10 @@ int main(int argc, char* argv[])
         }
     }
 
-    // ---- Aggregate per M across seed trials (mean / sample-std / min / max) --
+    // ---- Aggregate per M (full pool + best-k spotlight) ---------------------
+    // Full raw matrix always reports every trial. Summary tables:
+    //   all-nTrials  — unbiased multi-seed mean / sample-std / min / max
+    //   best-k_best  — lowest-NRMSE trials only (spotlight; optimistic by design)
     auto stats = [](const std::vector<double>& v) {
         double mn = v[0], mx = v[0], sum = 0.0;
         for (double x : v) { sum += x; mn = std::min(mn, x); mx = std::max(mx, x); }
@@ -209,6 +216,45 @@ int main(int argc, char* argv[])
         return std::array<double, 4>{mean, std::sqrt(var), mn, mx};
     };
 
+    auto print_stats_table = [&](const char* title, bool best_only) {
+        std::cout << "\n  " << title << "\n";
+        std::cout << "    " << std::setw(4) << "M"
+                  << "  " << std::setw(7) << "mean"
+                  << "  " << std::setw(7) << "std"
+                  << "  " << std::setw(7) << "min"
+                  << "  " << std::setw(7) << "max" << "\n";
+        std::cout << "    " << std::setw(4) << "----"
+                  << "  " << std::setw(7) << "-------"
+                  << "  " << std::setw(7) << "-------"
+                  << "  " << std::setw(7) << "-------"
+                  << "  " << std::setw(7) << "-------" << "\n";
+        for (size_t mi = 0; mi < nM; ++mi) {
+            std::vector<double> vals;
+            if (!best_only) {
+                vals = nrmse[mi];
+            } else {
+                const size_t k = std::min(k_best, nTrials);
+                std::vector<size_t> order(nTrials);
+                for (size_t ti = 0; ti < nTrials; ++ti) order[ti] = ti;
+                std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(k),
+                                  order.end(),
+                                  [&](size_t a, size_t b) {
+                                      return nrmse[mi][a] < nrmse[mi][b];
+                                  });
+                vals.reserve(k);
+                for (size_t j = 0; j < k; ++j)
+                    vals.push_back(nrmse[mi][order[j]]);
+            }
+            const std::array<double, 4> s = stats(vals);
+            std::cout << "    " << std::setw(4) << sweep_M[mi]
+                      << "  " << std::setw(7) << std::setprecision(4) << s[0]
+                      << "  " << std::setw(7) << std::setprecision(4) << s[1]
+                      << "  " << std::setw(7) << std::setprecision(4) << s[2]
+                      << "  " << std::setw(7) << std::setprecision(4) << s[3]
+                      << "\n";
+        }
+    };
+
     std::cout << std::fixed;
     std::cout << "\n=== NARMA-" << narma_order << " history_depth x seed sweep"
               << "  (DIM=" << DIM << ", N=" << N
@@ -217,32 +263,59 @@ int main(int argc, char* argv[])
         std::cout << " x " << nF << " fsf seeds";
     else
         std::cout << " (FSF off -- no fsf_seed sweep)";
-    std::cout << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
-    std::cout << "    " << std::setw(4) << "M"
-              << "  " << std::setw(7) << "mean"
-              << "  " << std::setw(7) << "std"
-              << "  " << std::setw(7) << "min"
-              << "  " << std::setw(7) << "max" << "\n";
-    std::cout << "    " << std::setw(4) << "----"
-              << "  " << std::setw(7) << "-------"
-              << "  " << std::setw(7) << "-------"
-              << "  " << std::setw(7) << "-------"
-              << "  " << std::setw(7) << "-------" << "\n";
-    for (size_t mi = 0; mi < nM; ++mi) {
-        const std::array<double, 4> s = stats(nrmse[mi]);
-        std::cout << "    " << std::setw(4) << sweep_M[mi]
-                  << "  " << std::setw(7) << std::setprecision(4) << s[0]
-                  << "  " << std::setw(7) << std::setprecision(4) << s[1]
-                  << "  " << std::setw(7) << std::setprecision(4) << s[2]
-                  << "  " << std::setw(7) << std::setprecision(4) << s[3]
-                  << "\n";
+    std::cout << ", " << nTrials << " trials total"
+              << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
+    std::cout << "  Stats: all-" << nTrials << " pool + best-"
+              << std::min(k_best, nTrials) << " of " << nTrials
+              << " (lowest NRMSE; spotlight, not a population estimate).\n";
+
+    {
+        std::string all_title = "All " + std::to_string(nTrials)
+            + " trials (mean/std = multi-seed typical):";
+        print_stats_table(all_title.c_str(), /*best_only=*/false);
+    }
+    {
+        const size_t k = std::min(k_best, nTrials);
+        std::string best_title = "Best " + std::to_string(k) + " of " + std::to_string(nTrials)
+            + " (lowest NRMSE; max column = worst of top-" + std::to_string(k) + "):";
+        print_stats_table(best_title.c_str(), /*best_only=*/true);
+    }
+
+    // Best-k trial list per M (which seeds made the spotlight).
+    {
+        const size_t k = std::min(k_best, nTrials);
+        std::cout << "\n  Best-" << k << " trials per M (lowest NRMSE first):\n";
+        for (size_t mi = 0; mi < nM; ++mi) {
+            std::vector<size_t> order(nTrials);
+            for (size_t ti = 0; ti < nTrials; ++ti) order[ti] = ti;
+            std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(k),
+                              order.end(),
+                              [&](size_t a, size_t b) {
+                                  return nrmse[mi][a] < nrmse[mi][b];
+                              });
+            std::cout << "    M=" << sweep_M[mi] << ":";
+            for (size_t j = 0; j < k; ++j) {
+                const size_t ti = order[j];
+                const size_t si = ti / nF;
+                const size_t fi = ti % nF;
+                std::cout << "  [" << (j + 1) << "] ";
+                if (fsf_on)
+                    std::cout << sweep_reservoir_seeds[si] << "/" << active_fsf_seeds[fi];
+                else
+                    std::cout << sweep_reservoir_seeds[si];
+                std::cout << "=" << std::setprecision(4) << nrmse[mi][ti];
+            }
+            std::cout << "\n";
+        }
     }
 
     // ---- Raw NRMSE matrix (rows = M, cols = res_seed [x fsf_seed]) -----------
     if (fsf_on)
-        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed/fsf_seed):\n";
+        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed/fsf_seed) — all "
+                  << nTrials << " trials:\n";
     else
-        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed):\n";
+        std::cout << "\n  Raw NRMSE (rows M, cols = res_seed) — all "
+                  << nTrials << " trials:\n";
     std::cout << "    " << std::setw(4) << "M";
     for (size_t si = 0; si < nS; ++si) {
         for (size_t fi = 0; fi < nF; ++fi) {
