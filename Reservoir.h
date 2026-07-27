@@ -7,91 +7,107 @@
 #include <span>
 #include <vector>
 
+/// @brief Construction-time parameters for @ref Reservoir.
+///
+/// All fields are fixed at @ref Reservoir::Create; dynamics (state, history,
+/// staged drives) are not part of this struct. @ref Reservoir::GetConfig returns
+/// an equivalent snapshot; @c spectral_radius is the **target** used for the
+/// recurrent rescale, not the realized estimate
+/// (@ref Reservoir::GetRealizedSpectralRadius).
 struct ReservoirConfig
 {
-    size_t dim = 10; // hypercube dimension; reservoir has N = 2^dim neurons (5 <= dim <= 16)
+    /// Hypercube dimension; neuron count N = 2^dim. Valid range **[5, 16]**.
+    size_t dim = 10;
+
+    /// Master RNG seed. Named substreams (recurrent / input / external-feedback /
+    /// bias / SR probe) are derived via SplitMix64 — see Reservoir.cpp.
     uint64_t seed = 73895;
+
+    /// Target spectral radius for the **recurrent** weight block only (> 0).
+    /// Drive-port weights (input, external feedback) are outside this rescale.
     float spectral_radius = 0.99f;
-    float leak_rate = 1.0f; // 1.0 = full replacement, <1.0 = leaky integrator
+
+    /// Leaky-integrator mix: 1 = full replacement each step; in (0, 1) blends with
+    /// previous output. Valid range **(0, 1]**.
+    float leak_rate = 1.0f;
+
+    /// Input drive strength. Input weights are drawn U(-1,1) then scaled by
+    /// @c input_scaling / √dim (fan-in normalization). Retune per task/DIM.
     float input_scaling = 0.5f;
+
+    /// Number of input channels (≥ 1). Must **divide N** evenly so each channel
+    /// owns a contiguous vertex block of size N/num_inputs.
     size_t num_inputs = 1;
+
+    /// Delay-line length M: past published slices in the recurrent gather.
+    /// Valid range **[1, 64]**.
     size_t history_depth = 16;
+
+    /// If true, print one construction banner (DIM, M, seed, leak, scales, SR).
     bool verbose = true;
 
-    // --- External feedback drive port (caller-owned values each step) ---
-    // 0 disables the path entirely (no buffer, no weights). Any D in [1, N] is
-    // admissible — D need NOT divide N (non-dividing D leaves the N mod D tail
-    // vertices at reset-zero: benign zero sources that still receive drive via
-    // the neighbor gather).
+    // --- External feedback (caller-owned closed-loop drive) ---
+    /// 0 = path disabled (no buffer, no weights). Else D in **[1, N]**; D need
+    /// **not** divide N (tail vertices stay zero as sources but still receive
+    /// drive via the neighbor gather).
     size_t num_external_feedback_channels = 0;
-    float external_feedback_scaling = 0.5f; // weights × scaling/√dim (fan-in; retune per task/DIM)
 
-    float bias_scaling = 0.02f; // per-neuron additive bias drawn U(-1,1)*bias_scaling, added to the activation (after the tanh); 0 disables
+    /// External-feedback weight scale: U(-1,1) then × scaling/√dim (like input).
+    /// Only used when @c num_external_feedback_channels > 0.
+    float external_feedback_scaling = 0.5f;
+
+    /// Per-neuron bias: U(-1,1) × bias_scaling, added **after** tanh. **0**
+    /// disables bias. Default is a small nonzero scale (not “off”).
+    float bias_scaling = 0.02f;
 };
 
-/// @brief The **fixed (never-trained) recurrent core of an @ref ESN** — a pool of
-/// N = 2^dim neurons wired together on a Boolean-hypercube graph.
+/// @brief Fixed (never-trained) recurrent core of an @ref ESN: N = 2^dim neurons
+/// on a Boolean hypercube.
 ///
-/// ## Why a hypercube?
-/// Each neuron sits on a vertex of a @c dim-dimensional hypercube and connects
-/// only to its @c dim *nearest neighbors* — the vertices one bit-flip away
-/// (Hamming distance 1). That gives a sparse, regular, well-mixed topology whose
-/// wiring is pure arithmetic: neighbor @c i of vertex @c v is @c v XOR (1<<i),
-/// computed on the fly by @ref NearestMask, so no adjacency list is ever stored.
-/// Because @c dim is a runtime config field, one class serves every size; N and
-/// all weight/state buffers are sized once at construction.
+/// ## Topology
+/// Neuron @c v connects only to its @c dim Hamming-distance-1 neighbors. Neighbor
+/// @c i is @c v XOR (1<<i) (@ref NearestMask) — pure arithmetic, no adjacency list.
+/// @c dim is a runtime field (one class for every legal size).
 ///
-/// ## What one step computes
-/// For each neuron, @ref Step gathers its neighbors' signals through separate
-/// weight blocks, squashes the sum, and blends it with the neuron's old value:
+/// ## One step
+/// For each neuron, @ref Step gathers neighbors through separate weight blocks,
+/// applies plain @c tanh, adds fixed bias, and leak-blends with the previous value:
 /// ```
 ///   input ──────────────────┐
-///   recurrent history ──────┼─▶ Σ (over dim neighbors) ─▶ activation ─▶ leak ─▶ new state
-///   external feedback (opt) ┘                              (+ bias)
+///   recurrent history ──────┼─▶ Σ (dim neighbors) ─▶ tanh ─▶ +bias ─▶ leak ─▶ state
+///   external feedback (opt) ┘
 /// ```
-///   - **input** — your per-step drive (see @ref InjectInput).
-///   - **recurrent history** — delay line of @c history_depth past slices.
-///   - **leak blend** — @c leak_rate mixes the fresh activation with the previous
-///     state (1.0 = full replacement; < 1.0 makes a slower "leaky integrator").
-///
-/// The recurrent weights are rescaled at construction to a target **spectral
-/// radius** (@c spectral_radius). @ref GetRealizedSpectralRadius reports the
-/// value actually achieved. Drive-port weights sit **outside** that rescale.
+/// Recurrent weights are rescaled at construction to target @c spectral_radius
+/// (see @ref GetRealizedSpectralRadius). Input and external-feedback weights sit
+/// **outside** that rescale.
 ///
 /// ## Per-step contract
 /// ```
-///   InjectInput(...)                 // stage task input
-///   InjectExternalFeedback(...)      // optional — caller-owned closed loop
-///   Step()                           // update, age history, clear staged drives
+///   InjectInput(...)                  // stage task input (required when driving)
+///   InjectExternalFeedback(...)       // optional — only if D > 0
+///   Step()                            // update, age delay line, clear stages
+///   // read Outputs() / SliceAt(age)
 /// ```
-/// Injected drives are *consumed and cleared* by every @ref Step. Newest
-/// state: @ref Outputs.
+/// Staged drives are **consumed and zeroed** by every @ref Step.
 ///
-/// ## Optional extras (all off by default)
-///   - **External feedback** (@c num_external_feedback_channels > 0): caller-owned
-///     per-step drive, twin of the input path (@ref InjectExternalFeedback).
-///     Outside the spectral-radius rescale.
-///   - **Per-neuron bias** (@c bias_scaling > 0): fixed additive term per neuron.
-///   - Nonlinearity is plain @c tanh (see archived experiments in
-///     docs/ActivationFunctionA.md for a former central-slope variant).
+/// ## Optional ports
+/// - **External feedback** — when D > 0: caller-owned twin of the input path.
+/// - **Bias** — construction-time per-neuron offset when @c bias_scaling != 0.
 ///
 /// ## Lifetime
-/// Non-copyable and non-movable; obtain instances via @ref Create.
+/// Non-copyable and non-movable; obtain instances only via @ref Create.
 class Reservoir
 {
 public:
-    /// Inline neighbor mask computation — no stored adjacency.
-    /// Mask for neighbor i in [0, dim):  1 << i  →  1, 2, 4, 8, ...
+    /// Neighbor bit mask for axis @p i in [0, dim): @c 1u << i.
     static constexpr uint32_t NearestMask(size_t i) { return 1u << i; }
 
-    /// @brief Construct a reservoir from a fully resolved config — the only way to
-    /// obtain an instance (the type is non-copyable and non-movable).
+    /// @brief Build a reservoir from @p cfg (only construction path).
     ///
-    /// Initializes the weights from @c cfg.seed, rescales the recurrent block to
-    /// the target spectral radius, and leaves the reservoir reset (zero state).
-    /// @throws std::invalid_argument if any config field is out of range (e.g.
-    ///         dim outside [5, 16], num_inputs does not divide N, history_depth
-    ///         outside [1, 64]).
+    /// Draws weights from @c cfg.seed, rescales the recurrent block toward
+    /// @c cfg.spectral_radius, and leaves dynamical state at rest (zero).
+    /// @throws std::invalid_argument if any field is out of range (e.g. dim not in
+    ///         [5, 16], num_inputs does not divide N, history_depth not in [1, 64]).
     static std::unique_ptr<Reservoir> Create(const ReservoirConfig& cfg)
     {
         return std::unique_ptr<Reservoir>(new Reservoir(cfg));
@@ -100,176 +116,145 @@ public:
     Reservoir(const Reservoir&) = delete;
     Reservoir& operator=(const Reservoir&) = delete;
 
-    /// @brief Advance the reservoir by one timestep.
+    /// @brief Advance one timestep: update all vertices, age the delay-line ring
+    /// (new state becomes logical age 0), clear staged input / external feedback.
     ///
-    /// Recomputes every vertex's state from staged input / external feedback and
-    /// the recurrent history, ages the history ring by one slice (the new state
-    /// becomes slice 0), and clears the per-step staged drives. Stage
-    /// input/external feedback first with @ref InjectInput /
-    /// @ref InjectExternalFeedback — they are consumed here.
+    /// Stage drives first with @ref InjectInput / @ref InjectExternalFeedback.
     void Step();
 
-    /// @brief Stage the input for one channel ahead of the next @ref Step.
+    /// @brief Stage one input channel for the next @ref Step.
     ///
-    /// Channel @p channel drives the contiguous vertex block
-    /// [channel * N/num_inputs, (channel+1) * N/num_inputs). Inputs are cleared by
-    /// every @ref Step, so call this each timestep an input is desired.
+    /// Channel @p channel writes @p input onto vertices
+    /// [channel · N/num_inputs, (channel+1) · N/num_inputs). Cleared by @ref Step.
     /// @throws std::invalid_argument if @p channel >= num_inputs.
     void InjectInput(size_t channel, float input);
 
-    /// @brief Reset dynamical state and history to zero and re-home the slice ring
-    /// (undriven live state). Weights and bias are left unchanged —
-    /// construction-time parameters, not dynamical state. Staged input /
-    /// external-feedback buffers are cleared.
+    /// @brief Zero dynamical state and history; re-home the slice ring.
+    ///
+    /// Weights and bias are unchanged (construction-time). Staged drive buffers
+    /// are cleared.
     void Clear();
 
-    /// @brief The current reservoir state — the most-recent history slice; this is
-    /// the feature vector the readout consumes.
-    /// @return Pointer to N floats, valid until the next @ref Step or @ref Clear.
+    /// @brief Newest published state (delay-line age 0) — N floats for the readout.
+    /// @return Valid until the next @ref Step or @ref Clear.
     [[nodiscard]] const float* Outputs() const { return slice_ptrs_[0]; }
 
-    /// @brief The state slice from @p age timesteps ago — a read-only view into the
-    /// delay line. `SliceAt(0)` is the current state (identical to @ref Outputs);
-    /// `SliceAt(1)` is the state one step back, and so on.
+    /// @brief Published state from @p age steps ago (logical age).
     ///
-    /// Indexes by **logical age, not physical position**. @ref Step rotates the slice
-    /// ring, so the history buffer's block order changes every timestep and its raw
-    /// layout is meaningless to a consumer. Always read the delay line through this
-    /// (or @ref TakeSnapshot); never straight out of the underlying buffer.
-    ///
-    /// This exposes the temporal memory the reservoir already computes and stores for
-    /// its recurrent gather — a consumer that reads only @ref Outputs discards the
-    /// other `history_depth - 1` slices.
-    ///
-    /// @return Pointer to N floats, valid until the next @ref Step or @ref Clear.
+    /// @c SliceAt(0) ≡ @ref Outputs. Indexes **logical age**, not physical ring
+    /// position — always use this (or @ref TakeSnapshot), never the raw history
+    /// buffer layout. Ages 1 … history_depth-1 are the rest of the delay line the
+    /// recurrent gather already uses.
+    /// @return N floats; valid until the next @ref Step or @ref Clear.
     /// @throws std::out_of_range if @p age >= history_depth.
     [[nodiscard]] const float* SliceAt(size_t age) const;
 
-    /// @brief The post-rescale spectral radius measured at construction (the secant
-    /// root-find's final estimate), which approximates the configured target
-    /// @c spectral_radius.
+    /// @brief Post-rescale spectral-radius estimate from construction (secant root).
+    /// Approximates the configured target @c spectral_radius.
     [[nodiscard]] float GetRealizedSpectralRadius() const { return realized_spectral_radius_; }
 
-    /// @brief Reconstruct the @ref ReservoirConfig this reservoir was built from.
+    /// @brief Config this instance was built from (all fields).
     ///
-    /// Every config field is read back from a stored member.
     /// @c Create(GetConfig()) rebuilds matching weights from @c seed.
-    /// @c spectral_radius here is the configured TARGET, not the realized value —
-    /// use @ref GetRealizedSpectralRadius for the post-rescale estimate.
+    /// @c spectral_radius is the **target**, not the realized estimate.
     [[nodiscard]] ReservoirConfig GetConfig() const;
 
-    /// @brief Hypercube dimension; the reservoir has N = 2^Dim() neurons.
+    /// @brief Hypercube dimension; N = 2^Dim().
     [[nodiscard]] size_t Dim() const { return dim_; }
 
-    /// @brief Neuron count N = 2^Dim() (the length of the @ref Outputs feature vector).
+    /// @brief Neuron count N = 2^Dim() (length of @ref Outputs).
     [[nodiscard]] size_t Size() const { return n_; }
 
-    /// @brief Stage one external-feedback channel ahead of the next @ref Step.
+    /// @brief Stage one external-feedback channel for the next @ref Step.
     ///
-    /// Caller-owned closed-loop drive (twin of @ref InjectInput). Channel @p channel
-    /// drives the contiguous vertex block
-    /// [channel * floor(N/D), (channel+1) * floor(N/D)) through the external-feedback
-    /// weight block. Cleared by every @ref Step. Requires
-    /// @c num_external_feedback_channels > 0.
+    /// Twin of @ref InjectInput on the external-feedback weight block. Channel
+    /// @p channel drives [channel · floor(N/D), (channel+1) · floor(N/D)). Cleared
+    /// by @ref Step. Requires D = num_external_feedback_channels > 0.
     /// @throws std::invalid_argument if external feedback is not configured or
     ///         @p channel is out of range.
     void InjectExternalFeedback(size_t channel, float value);
 
-    /// @brief Stage all D external-feedback channels at once (@p count must equal D).
-    /// @throws std::invalid_argument if @p count != num_external_feedback_channels,
-    ///         or if @p values is null when @p count > 0.
+    /// @brief Stage all D external-feedback channels at once.
+    /// @throws std::invalid_argument if @p count != D, or @p values is null when
+    ///         count > 0.
     void InjectExternalFeedback(const float* values, size_t count);
 
-    /// @brief Copyable capture of the reservoir's persistent dynamical state: the
-    /// live vertex state plus every history slice in logical age order (slice 0 =
-    /// most recent).
+    /// @brief Persistent dynamical state: live vertex values + full history ring
+    /// in logical age order (slice 0 = most recent).
     ///
-    /// The per-step staged drives (input, external feedback) are NOT captured —
-    /// they are consumed and cleared by every @ref Step, so a snapshot taken
-    /// between steps has nothing staged. Weights are not included (construction-time
-    /// params from config + seed): a snapshot is only meaningful for the reservoir
-    /// it was taken from (or one rebuilt from an identical config).
+    /// Staged drives are **not** included (empty between steps). Weights and bias
+    /// are not included — a snapshot is only meaningful for this reservoir or one
+    /// rebuilt from an identical config.
     struct Snapshot
     {
-        std::vector<float> state; ///< live vertex state, N floats
-        std::vector<float> history; ///< N * history_depth floats, slice-major, most recent slice first
+        std::vector<float> state;   ///< N floats (live vtx_state_)
+        std::vector<float> history; ///< N * history_depth, slice-major, newest first
     };
 
-    /// @brief Capture the persistent dynamical state (state + history ring).
-    ///
-    /// Call between steps (staged drives are not captured). History slices are
-    /// stored in logical age order regardless of the ring's current rotation, so
-    /// the snapshot is canonical: snapshots of identical dynamics compare equal
-    /// even when taken at different ring phases.
+    /// @brief Capture state + history (logical age order; ring-phase independent).
+    /// Call between steps.
     [[nodiscard]] Snapshot TakeSnapshot() const;
 
-    /// @brief Bit-exact restore of a state captured by @ref TakeSnapshot.
-    ///
-    /// Copies the state and history back, re-homes the slice ring to the canonical
-    /// rotation, and clears staged input / external feedback — so the post-restore
-    /// trajectory depends on the snapshot and subsequent injections. Restoring and
-    /// replaying the same drives on an identically configured reservoir is bit-exact.
-    /// @throws std::invalid_argument if the snapshot's buffer sizes do not match
-    ///         this reservoir's N and history_depth.
+    /// @brief Restore a @ref TakeSnapshot capture: state, history, canonical ring
+    /// home, cleared staged drives. Same drives afterward → bit-exact replay on an
+    /// identically configured reservoir.
+    /// @throws std::invalid_argument if buffer sizes do not match N and history_depth.
     void RestoreSnapshot(const Snapshot& snap);
 
 private:
     explicit Reservoir(const ReservoirConfig& cfg);
 
-    /// Deleter for buffers from @ref AllocAligned. Must mirror that allocation
-    /// exactly: the raw `::operator new[]`/`delete[]` pair (NOT a `new float[]`
-    /// expression) carries no array cookie, and the over-aligned form takes the
-    /// `align_val_t` overload — so a plain `delete[]`/`delete` here would mismatch
-    /// the allocation and corrupt the heap. Keep the 64-byte alignment in sync.
+    /// Deleter for @ref AllocAligned: must use the matching aligned
+    /// @c ::operator delete[] (no array cookie; 64-byte alignment).
     struct AlignedFree
     {
-        void operator()(float* p) const noexcept { ::operator delete[](p, std::align_val_t{64}); }
+        void operator()(float* p) const noexcept
+        {
+            ::operator delete[](p, std::align_val_t{64});
+        }
     };
 
-    /// Allocate @p count floats on a 64-byte (cache-line) boundary, uninitialized.
-    /// Uses the raw aligned `::operator new[]` (no array cookie, no construction);
-    /// every buffer so allocated MUST be freed through @ref AlignedFree.
+    /// Uninitialized @p count floats, 64-byte aligned. Free only via @ref AlignedFree.
     static float* AllocAligned(size_t count)
     {
-        return static_cast<float*>(::operator new[](count * sizeof(float), std::align_val_t{64}));
+        return static_cast<float*>(
+            ::operator new[](count * sizeof(float), std::align_val_t{64}));
     }
 
-    uint64_t rng_seed_;
+    uint64_t rng_seed_ = 0;
 
-    size_t dim_ = 0; // hypercube dimension (ReservoirConfig::dim)
-    size_t n_ = 0; // neuron count N = 2^dim_
-    size_t num_input_weights_ = 0; // n_ * dim_ — size of the input-weight block
+    size_t dim_ = 0;              ///< Hypercube dimension
+    size_t n_ = 0;                ///< N = 2^dim_
+    size_t num_input_weights_ = 0; ///< n_ * dim_ (input weight block size)
 
-    std::unique_ptr<float[], AlignedFree> vtx_input_;
-    std::unique_ptr<float[], AlignedFree> vtx_state_;
-    std::unique_ptr<float[], AlignedFree> vtx_output_history_;
-    std::unique_ptr<float[], AlignedFree> vtx_weight_;
-    std::unique_ptr<float*[]> slice_ptrs_;
-    std::unique_ptr<float[], AlignedFree> vtx_bias_;
+    std::unique_ptr<float[], AlignedFree> vtx_input_;           ///< Staged input field
+    std::unique_ptr<float[], AlignedFree> vtx_state_;           ///< Write target of UpdateState
+    std::unique_ptr<float[], AlignedFree> vtx_output_history_;  ///< Ring storage (M blocks of N)
+    std::unique_ptr<float[], AlignedFree> vtx_weight_;          ///< [in | ext? | rec]
+    std::unique_ptr<float*[]> slice_ptrs_;                      ///< Logical age → history block
+    std::unique_ptr<float[], AlignedFree> vtx_bias_;            ///< Fixed per-neuron bias
 
     size_t num_inputs_ = 1;
-    float spectral_radius_ = 0.99f;
+    float spectral_radius_ = 0.99f;           ///< Configured target
     float leak_rate_ = 1.0f;
-    float input_scaling_ = 1.0f;
-    float realized_spectral_radius_ = 0.0f; // set by Initialize() after rescale
+    float input_scaling_ = 0.5f;
+    float realized_spectral_radius_ = 0.0f; ///< Set in Initialize after secant
     bool verbose_ = true;
     size_t history_depth_ = 1;
-    size_t num_weights_ = 0;
+    size_t num_weights_ = 0; ///< Total floats in vtx_weight_
 
-    /**** external feedback (caller-owned) ****/
     size_t num_ext_feedback_channels_ = 0;
-    float ext_feedback_scaling_ = 1.0f;
-    size_t num_ext_feedback_weights_ = 0; // n_ * dim_ or 0
-    std::unique_ptr<float[], AlignedFree> vtx_ext_feedback_;
+    float ext_feedback_scaling_ = 0.5f;
+    size_t num_ext_feedback_weights_ = 0; ///< n_ * dim_ or 0
+    std::unique_ptr<float[], AlignedFree> vtx_ext_feedback_; ///< Staged ext-fb field
 
-    /**** per neuron bias ****/
-    float bias_scaling_;
+    float bias_scaling_ = 0.0f;
 
     void Initialize();
     void UpdateState(size_t v, float old_output_v);
     [[nodiscard]] float EstimateSpectralRadius(std::span<float> x, std::span<float> y) const;
 
-    /// Index (in floats) of the recurrent weight block — after input and ext-fb.
+    /// Byte index (in floats) of the recurrent block: after input, then ext-fb if any.
     [[nodiscard]] size_t RecurrentWeightBase() const
     {
         return num_input_weights_ + num_ext_feedback_weights_;

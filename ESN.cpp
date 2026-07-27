@@ -1,4 +1,5 @@
 #include "ESN.h"
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -7,6 +8,10 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+
+// ---------------------------------------------------------------------------
+// Seam: readout_slices → HCNN start dim + block packing
+// ---------------------------------------------------------------------------
 
 ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
 {
@@ -28,8 +33,7 @@ ReadoutConfig ESN::MakeReadoutConfig(const ESNConfig& cfg)
             std::to_string(blocks) +
             "); the readout input is a hypercube of B blocks of N");
 
-    // The readout consumes B blocks of N vertices each, so its hypercube dimension is
-    // the reservoir's dim plus log2(B).
+    // B blocks of N vertices → start_DIM = reservoir_DIM + log2(B).
     rc.dim = cfg.reservoir.dim + static_cast<size_t>(std::countr_zero(blocks));
     return rc;
 }
@@ -38,47 +42,52 @@ std::vector<size_t> ESN::MakeBlockMap(const size_t blocks)
 {
     std::vector<size_t> map(blocks);
 
-    // With one or two blocks no pair of indices differs in two bits; order is moot.
+    // B ≤ 2: no 2-bit-apart pair exists; identity is fine.
     if (blocks <= 2)
     {
-        for (size_t s = 0; s < blocks; ++s) map[s] = s;
+        for (size_t s = 0; s < blocks; ++s)
+            map[s] = s;
         return map;
     }
 
-    // A hypercube conv filter gathers only single-bit-flip neighbours and carries no
-    // self term, so it sees the blocks one bit from its own but never its own centre.
-    // Two blocks therefore land in a single filter's reach exactly when their indices
-    // differ in TWO bits. Pair consecutive slots onto (rep, rep ^ 0b11) — always a
-    // two-bit difference — so {age 0, age 1}, the velocity, is one filter away, then
-    // {age 2, age 3}, and so on. `rep` walks the blocks whose low two bits are 00 or
-    // 01, which makes the whole map a permutation of [0, blocks).
+    // HCNN conv: 1-bit neighbors only, no self term. Two blocks fall in one
+    // filter's reach iff their indices differ in two bits. Map consecutive
+    // logical slots onto (rep, rep ^ 0b11) so {age0, age1} share a filter, then
+    // {age2, age3}, …  `rep` walks indices with low bits 00 or 01 → full permutation.
     for (size_t i = 0; i < blocks / 2; ++i)
     {
         const size_t rep = ((i >> 1) << 2) | (i & 1u);
-        map[2 * i]     = rep;
+        map[2 * i] = rep;
         map[2 * i + 1] = rep ^ 3u;
     }
     return map;
 }
 
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
 ESN::ESN(const ESNConfig& cfg)
     : reservoir_(Reservoir::Create(cfg.reservoir)),
       readout_(MakeReadoutConfig(cfg))
 {
-    n_              = reservoir_->Size();
-    num_inputs_     = cfg.reservoir.num_inputs;
+    n_ = reservoir_->Size();
+    num_inputs_ = cfg.reservoir.num_inputs;
     readout_slices_ = cfg.readout_slices;
     readout_blocks_ = readout_slices_;
-    readout_width_  = n_ * readout_blocks_;
-    block_of_       = MakeBlockMap(readout_blocks_);
+    readout_width_ = n_ * readout_blocks_;
+    block_of_ = MakeBlockMap(readout_blocks_);
 
     esn_config_ = cfg;
-    // The user leaves cfg.readout.dim at 0 ("do not set"); reflect the value the
-    // readout was actually built with so GetConfig() doesn't report a stale 0.
+    // Caller leaves readout.dim at 0; store the derived HCNN start dim for GetConfig().
     esn_config_.readout.dim = readout_.GetConfig().dim;
 
     readout_input_.resize(readout_width_);
 }
+
+// ---------------------------------------------------------------------------
+// Readout-input assembly
+// ---------------------------------------------------------------------------
 
 size_t ESN::ReadoutBlockOf(const size_t slot) const
 {
@@ -92,29 +101,30 @@ size_t ESN::ReadoutBlockOf(const size_t slot) const
 void ESN::AssembleReadoutInput() const
 {
     float* const base = readout_input_.data();
-
-    // Slice k is the state k steps back. SliceAt indexes by LOGICAL AGE, so this is
-    // immune to the delay line's ring rotation — never read the history buffer raw.
+    // Logical age k → SliceAt(k); physical placement via block_of_.
     for (size_t k = 0; k < readout_slices_; ++k)
-        std::memcpy(base + block_of_[k] * n_, reservoir_->SliceAt(k), n_ * sizeof(float));
+        std::memcpy(base + block_of_[k] * n_, reservoir_->SliceAt(k),
+                    n_ * sizeof(float));
 }
+
+// ---------------------------------------------------------------------------
+// Reservoir driving
+// ---------------------------------------------------------------------------
 
 void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
 {
-    // External feedback: caller-owned closed-loop drive. Stage on the D channels
-    // (raw, no clamp) through the reservoir's external-feedback port (own weights
-    // + external_feedback_scaling, outside the SR rescale). The ESN never invents
-    // these values.
+    // External feedback is caller-owned (policy lives outside ESN). Stage raw
+    // values on D channels; reservoir scales via external_feedback_scaling (outside SR).
     if (external_feedback != nullptr)
     {
-        // Guard: with D == 0 InjectExternalFeedback(ptr, 0) would no-op and silently
-        // degrade to no external drive. Fail loud instead.
+        // D==0 + non-null must not silently no-op.
         if (esn_config_.reservoir.num_external_feedback_channels == 0)
             throw std::invalid_argument(
                 "ESN::ReservoirStep: external_feedback supplied but not configured "
                 "(num_external_feedback_channels == 0); pass nullptr to skip");
         reservoir_->InjectExternalFeedback(
-            external_feedback, esn_config_.reservoir.num_external_feedback_channels);
+            external_feedback,
+            esn_config_.reservoir.num_external_feedback_channels);
     }
 
     for (size_t ch = 0; ch < num_inputs_; ++ch)
@@ -132,7 +142,7 @@ void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorde
 {
     if (clear_recorded)
     {
-        states_.clear();        // keep capacity; the resize below refills it
+        states_.clear(); // capacity retained; resize below refills
         num_collected_ = 0;
     }
     states_.resize((num_collected_ + num_steps) * readout_width_);
@@ -151,6 +161,10 @@ void ESN::ReservoirClear()
     reservoir_->Clear();
 }
 
+// ---------------------------------------------------------------------------
+// Training
+// ---------------------------------------------------------------------------
+
 void ESN::Train(const float* targets, size_t train_size)
 {
     if (train_size > num_collected_)
@@ -166,6 +180,12 @@ void ESN::TrainStep(const float* target, float lr, float weight_decay)
     readout_.TrainStep(readout_input_.data(), target, lr, weight_decay);
 }
 
+void ESN::TrainStepBatch(const float* readout_inputs, const float* targets,
+                         size_t count, float lr, float weight_decay)
+{
+    readout_.TrainStepBatch(readout_inputs, targets, count, lr, weight_decay);
+}
+
 void ESN::CopyReservoirState(float* out) const
 {
     const float* src = reservoir_->Outputs();
@@ -178,11 +198,9 @@ void ESN::CopyReadoutInput(float* out) const
     std::memcpy(out, readout_input_.data(), readout_width_ * sizeof(float));
 }
 
-void ESN::TrainStepBatch(const float* readout_inputs, const float* targets,
-                         size_t count, float lr, float weight_decay)
-{
-    readout_.TrainStepBatch(readout_inputs, targets, count, lr, weight_decay);
-}
+// ---------------------------------------------------------------------------
+// Prediction & metrics
+// ---------------------------------------------------------------------------
 
 std::vector<float> ESN::Predict() const
 {
@@ -226,7 +244,8 @@ double ESN::R2(const float* targets, size_t start, size_t count) const
         throw std::out_of_range(
             "ESN::R2: start + count (" + std::to_string(start + count) +
             ") > num_collected (" + std::to_string(num_collected_) + ")");
-    return readout_.R2(ReadoutInput(start), targets + start * readout_.NumOutputs(), count);
+    return readout_.R2(ReadoutInput(start),
+                       targets + start * readout_.NumOutputs(), count);
 }
 
 double ESN::NRMSE(const float* targets, size_t start, size_t count) const
@@ -235,7 +254,8 @@ double ESN::NRMSE(const float* targets, size_t start, size_t count) const
         throw std::out_of_range(
             "ESN::NRMSE: start + count (" + std::to_string(start + count) +
             ") > num_collected (" + std::to_string(num_collected_) + ")");
-    if (count == 0) return 0.0;
+    if (count == 0)
+        return 0.0;
 
     const size_t K = readout_.NumOutputs();
     const float* tgt = targets + start * K;
@@ -244,17 +264,20 @@ double ESN::NRMSE(const float* targets, size_t start, size_t count) const
     for (size_t s = 0; s < count; ++s)
         readout_.PredictRaw(ReadoutInput(start + s), preds.data() + s * K);
 
+    // Mean over outputs of (RMSE_k / std_k).
     double nrmse_sum = 0.0;
-    for (size_t k = 0; k < K; ++k) {
+    for (size_t k = 0; k < K; ++k)
+    {
         double mean = 0.0;
         for (size_t s = 0; s < count; ++s)
             mean += tgt[s * K + k];
         mean /= static_cast<double>(count);
 
         double var = 0.0, mse_k = 0.0;
-        for (size_t s = 0; s < count; ++s) {
-            double y  = tgt[s * K + k];
-            double yh = preds[s * K + k];
+        for (size_t s = 0; s < count; ++s)
+        {
+            const double y = tgt[s * K + k];
+            const double yh = preds[s * K + k];
             var += (y - mean) * (y - mean);
             mse_k += (y - yh) * (y - yh);
         }
@@ -275,6 +298,10 @@ double ESN::Accuracy(const float* labels, size_t start, size_t count) const
     return readout_.Accuracy(ReadoutInput(start), labels + start, count);
 }
 
+// ---------------------------------------------------------------------------
+// Config & persistence
+// ---------------------------------------------------------------------------
+
 ESNConfig ESN::GetConfig() const
 {
     return esn_config_;
@@ -283,8 +310,7 @@ ESNConfig ESN::GetConfig() const
 ESN::ReadoutState ESN::GetReadoutState() const
 {
     ReadoutState s;
-    // IsTrained() is set when the readout CNN is built (in the Readout ctor),
-    // so it captures any readout that has weights worth persisting.
+    // IsTrained() is true once the HCNN exists (construction), not “has trained.”
     s.is_trained = readout_.IsTrained();
     const auto& w = readout_.Weights();
     s.weights.assign(w.begin(), w.end());
@@ -293,7 +319,8 @@ ESN::ReadoutState ESN::GetReadoutState() const
 
 void ESN::SetReadoutState(const ReadoutState& state, ReadoutLoadMode mode)
 {
-    if (!state.is_trained) return;
+    if (!state.is_trained)
+        return;
     readout_.SetState(state.weights, mode);
 }
 
@@ -309,42 +336,37 @@ void ESN::LoadReadoutHcnnModel(const std::string& path_stem, ReadoutLoadMode mod
 
 std::string ESN::ReadoutArchSummary() const
 {
-    // Reservoir vtx_weight_ layout: N·DIM·(M + drive_blocks), drive_blocks =
-    // 1 (input) + [ext-fb]. Matches Reservoir construction (docs/Reservoir.md).
-    // These weights are fixed (not trained). M scales the recurrent bank only.
-    // HCNN size is independent of M unless readout_slices grow start-DIM.
+    // Fixed reservoir weights: N·DIM·(M + drive_blocks), drive_blocks = 1 + [ext].
+    // HCNN size depends on start_DIM = dim + log2(B), not on M alone.
     const ReservoirConfig rc = reservoir_->GetConfig();
     const size_t n = reservoir_->Size();
     const size_t dim = reservoir_->Dim();
     const size_t M = rc.history_depth;
-    const size_t drive_blocks = 1u
-        + (rc.num_external_feedback_channels > 0 ? 1u : 0u);
+    const size_t drive_blocks =
+        1u + (rc.num_external_feedback_channels > 0 ? 1u : 0u);
     const size_t res_weights = n * dim * (M + drive_blocks);
 
-    // HCNN start-DIM = reservoir DIM + log2(B), B = readout_slices.
-    // Not the same number as reservoir DIM when B > 1 (e.g. slices=4 -> +2).
     const size_t B = readout_blocks_;
     const size_t hcnn_dim = readout_.GetConfig().dim;
     const size_t hcnn_N = size_t{1} << hcnn_dim;
 
     std::ostringstream os;
-    os << "Reservoir: DIM=" << dim << "  N=" << n
-       << "  M=" << M
+    os << "Reservoir: DIM=" << dim << "  N=" << n << "  M=" << M
        << "  weights(fixed)=" << res_weights
        << "  [=N*DIM*(M+drives)=" << n << "*" << dim << "*(" << M << "+"
        << drive_blocks << ")]\n";
-    os << "HCNN input: readout_slices=" << readout_slices_
-       << "  B=" << B << " blocks x N=" << n
-       << "  -> start_DIM=" << hcnn_dim << "  N_hcnn=" << hcnn_N << "\n";
+    os << "HCNN input: readout_slices=" << readout_slices_ << "  B=" << B
+       << " blocks x N=" << n << "  -> start_DIM=" << hcnn_dim
+       << "  N_hcnn=" << hcnn_N << "\n";
     os << "  (start_DIM = reservoir_DIM + log2(B) = " << dim << " + "
        << (hcnn_dim - dim) << "; M does not change HCNN size)\n";
     os << readout_.ArchSummary();
     return os.str();
 }
 
-// ---------------------------------------------------------------
-//  Collected-state access helpers
-// ---------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Recorded-buffer helpers
+// ---------------------------------------------------------------------------
 
 const float* ESN::ReadoutInput(size_t timestep) const
 {
@@ -354,8 +376,7 @@ const float* ESN::ReadoutInput(size_t timestep) const
 std::vector<float> ESN::ReadoutStates(size_t start, size_t count) const
 {
     std::vector<float> buf(count * readout_width_);
-    std::memcpy(buf.data(),
-                states_.data() + start * readout_width_,
+    std::memcpy(buf.data(), states_.data() + start * readout_width_,
                 count * readout_width_ * sizeof(float));
     return buf;
 }

@@ -1,6 +1,5 @@
 #include "Reservoir.h"
 
-#include <random>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -8,9 +7,14 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
 
 Reservoir::Reservoir(const ReservoirConfig& cfg)
     : rng_seed_(cfg.seed),
@@ -24,7 +28,6 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
       num_ext_feedback_channels_(cfg.num_external_feedback_channels),
       ext_feedback_scaling_(cfg.external_feedback_scaling),
       bias_scaling_(cfg.bias_scaling)
-
 {
     if (dim_ < 5 || dim_ > 16)
         throw std::invalid_argument("dim must be in 5 <= dim <= 16");
@@ -39,7 +42,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     if (num_inputs_ == 0)
         throw std::invalid_argument("num_inputs must be >= 1");
     if (n_ % num_inputs_ != 0)
-        throw std::invalid_argument("num_inputs must divide N = 2^dim evenly "
+        throw std::invalid_argument(
+            "num_inputs must divide N = 2^dim evenly "
             "(otherwise InjectInput drops the remainder vertices)");
     if (history_depth_ < 1 || history_depth_ > 64)
         throw std::invalid_argument("history_depth must be in [1, 64]");
@@ -47,11 +51,11 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
         throw std::invalid_argument(
             "num_external_feedback_channels must not exceed N = 2^dim "
             "(each channel drives a block of floor(N/D) >= 1 vertices)");
-    // D need NOT divide N: with block = floor(N/D), a non-dividing D leaves the
-    // N mod D (<= D-1) tail vertices at reset-zero — benign zero sources that
-    // still RECEIVE drive via the neighbor gather. Any D in [1, N] is admissible.
+    // D need not divide N: block = floor(N/D); the N mod D tail stays at zero as
+    // *sources* but still receives drive via the neighbor gather.
 
-    const size_t drive_blocks = 1 /*input*/
+    // Weight layout: [ input: N·DIM | ext-fb: N·DIM if D>0 | recurrent: N·M·DIM ]
+    const size_t drive_blocks = 1u /*input*/
         + (num_ext_feedback_channels_ > 0 ? 1u : 0u);
     num_weights_ = n_ * dim_ * (history_depth_ + drive_blocks);
 
@@ -59,9 +63,8 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     vtx_state_.reset(AllocAligned(n_));
     vtx_output_history_.reset(AllocAligned(n_ * history_depth_));
     vtx_weight_.reset(AllocAligned(num_weights_));
-    // Value-initialized (the trailing ()): the slices are homed in Clear(), called
-    // from Initialize() below. Null until then, so a premature read faults loudly
-    // instead of dereferencing indeterminate pointers.
+    // Value-initialized (trailing ()): pointers filled in Clear() via Initialize().
+    // Null until then so a premature read faults loudly.
     slice_ptrs_.reset(new float*[history_depth_]());
 
     vtx_bias_.reset(AllocAligned(n_));
@@ -73,11 +76,13 @@ Reservoir::Reservoir(const ReservoirConfig& cfg)
     Initialize();
 }
 
-// SplitMix64 finalizer. Avalanches a 64-bit value so that substreams labelled
-// off one master seed are statistically independent (one input bit flips ~half
-// the output bits). Replaces the old folklore of forking mt19937 by small
-// additive offsets (seed + 0x9E3779B9, seed + 12345), which gave no such
-// guarantee, and the separate bias_seed config field it papered over.
+// ---------------------------------------------------------------------------
+// Seeding
+// ---------------------------------------------------------------------------
+
+// SplitMix64 finalizer: avalanches a 64-bit value so labeled substreams of one
+// master seed are statistically independent. Prefer this over additive offsets
+// on mt19937 seeds.
 static inline uint64_t mix64(uint64_t x)
 {
     x += 0x9E3779B97F4A7C15ULL;
@@ -86,16 +91,19 @@ static inline uint64_t mix64(uint64_t x)
     return x ^ (x >> 31);
 }
 
-// Named substreams of the reservoir's single master seed. Labelled (not
-// sequential) so adding a role later does not perturb the existing ones.
-// Numeric labels are ABI for reproducibility — do not renumber.
+// Named substreams of the master seed (labeled, not sequential — adding a role
+// later must not renumber these; values are part of the weight-draw ABI).
 enum class SeedRole : uint64_t {
     Recurrent = 1,
     Input = 2,
-    ExternalFeedback = 3, // was Feedback; keep value 3 for stream stability
+    ExternalFeedback = 3, // historical name "Feedback"; keep value 3
     Bias = 4,
     SrProbe = 5
 };
+
+// ---------------------------------------------------------------------------
+// Weight draw + spectral-radius rescale
+// ---------------------------------------------------------------------------
 
 void Reservoir::Initialize()
 {
@@ -115,14 +123,9 @@ void Reservoir::Initialize()
 
     float* pW = vtx_weight_.get();
 
-    // Drive / recurrent fill pattern: draw U(-1,1) → optional row equalize (A/B)
-    // → apply block scale. Equalize kills baked-in scale, so scale is always last
-    // on drive ports. Default: all equalize lines commented = baseline (no row
-    // equalize). Uncomment at most ONE of L2 / Linf / MinMax per block.
-    //
-    // Input: 1/sqrt(dim) keeps dim-neighbor fan-in variance from growing with
-    // degree (local construction only — not a claim of one optimal input_scaling).
-    // No history factor: input path has no delay line (UpdateState).
+    // Drive ports: draw U(-1,1), then scale by (port_scaling / √dim). Scaling last
+    // so fan-in of the dim-neighbor gather does not grow with degree. Local
+    // construction only — not a claim that one scaling is optimal across DIM/task.
     float* const input_base = pW;
     for (size_t i = 0; i < num_input_weights_; ++i)
         (*pW++) = static_cast<float>(dist(in_rng));
@@ -135,13 +138,17 @@ void Reservoir::Initialize()
         (*pW++) = static_cast<float>(dist(ext_fb_rng));
     if (num_ext_feedback_weights_ > 0)
     {
-        const float ext_scale = ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
+        const float ext_scale =
+            ext_feedback_scaling_ / std::sqrt(static_cast<float>(dim_));
         for (size_t i = 0; i < num_ext_feedback_weights_; ++i)
             ext_base[i] *= ext_scale;
     }
 
+    // Recurrent: U(-1,1) / √(DIM·M), then global secant rescale to target SR.
+    // Layout [vertex][slice][axis] matches UpdateState.
     const size_t rec_base = RecurrentWeightBase();
-    const float w_scaling = 1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
+    const float w_scaling =
+        1.0f / std::sqrt(static_cast<float>(dim_ * history_depth_));
     for (size_t i = rec_base; i < num_weights_; ++i)
         vtx_weight_[i] = static_cast<float>(dist(rng)) * w_scaling;
 
@@ -158,19 +165,21 @@ void Reservoir::Initialize()
             norm += sr_x[v] * sr_x[v];
         }
         norm = std::sqrt(norm);
-        for (size_t v = 0; v < n_; ++v) sr_x[v] /= norm;
+        for (size_t v = 0; v < n_; ++v)
+            sr_x[v] /= norm;
     }
 
+    // eval_sr(s): multiply recurrent block by s/applied_scale and re-estimate ρ.
     float applied_scale = 1.0f;
-    auto eval_sr = [&](float s)
-    {
+    auto eval_sr = [&](float s) {
         const float rel = s / applied_scale;
-        for (size_t i = rec_base; i < num_weights_; ++i) vtx_weight_[i] *= rel;
+        for (size_t i = rec_base; i < num_weights_; ++i)
+            vtx_weight_[i] *= rel;
         applied_scale = s;
         return EstimateSpectralRadius(sr_x, sr_y);
     };
 
-    const float pre_sr = EstimateSpectralRadius(sr_x, sr_y); // rho at s = 1
+    const float pre_sr = EstimateSpectralRadius(sr_x, sr_y); // ρ at scale 1
     float post_sr = pre_sr;
     int sr_iters = 0;
     if (pre_sr > 1e-6f)
@@ -178,19 +187,18 @@ void Reservoir::Initialize()
         constexpr float kSrTolRel = 0.001f;
         constexpr int kMaxSrIters = 20;
 
-        // Secant on h(s) = rho(s) - target. Seed s0 = 1 (rho = pre_sr) and the
-        // linear guess s1 = target/pre_sr (which is exact for M==1).
+        // Secant on h(s) = ρ(s) - target. s0 = 1; s1 = target/pre_sr (exact if M==1).
         float s0 = 1.0f, h0 = pre_sr - target;
         float s1 = target / pre_sr, h1 = eval_sr(s1) - target;
         ++sr_iters;
         post_sr = h1 + target;
         while (sr_iters < kMaxSrIters &&
-            std::abs(post_sr - target) > target * kSrTolRel)
+               std::abs(post_sr - target) > target * kSrTolRel)
         {
             const float denom = h1 - h0;
             float s2 = (std::abs(denom) < 1e-12f)
-                           ? s1 * (target / std::max(post_sr, 1e-6f)) // fallback (guard /0)
-                           : s1 - h1 * (s1 - s0) / denom; // secant step
+                           ? s1 * (target / std::max(post_sr, 1e-6f))
+                           : s1 - h1 * (s1 - s0) / denom;
             s2 = std::clamp(s2, 0.25f * s1, 4.0f * s1);
             post_sr = eval_sr(s2);
             ++sr_iters;
@@ -206,11 +214,14 @@ void Reservoir::Initialize()
         std::printf("[Reservoir DIM=%zu M=%zu seed=%llu leak=%.3g in_scale=%.3g "
                     "SR target=%.4f post=%.4f (secant iters=%d)]\n",
                     dim_, history_depth_,
-                    static_cast<unsigned long long>(rng_seed_),
-                    leak_rate_, input_scaling_,
-                    target, post_sr, sr_iters);
+                    static_cast<unsigned long long>(rng_seed_), leak_rate_,
+                    input_scaling_, target, post_sr, sr_iters);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Dynamics
+// ---------------------------------------------------------------------------
 
 void Reservoir::Step()
 {
@@ -218,7 +229,7 @@ void Reservoir::Step()
     for (size_t v = 0; v < n_; v++)
         UpdateState(v, p_vtx_prev[v]);
 
-    // Rotate slice pointers
+    // Age the delay line: rotate logical slice pointers, publish vtx_state_ as age 0.
     float* p0 = slice_ptrs_[history_depth_ - 1];
     for (size_t i = history_depth_ - 1; i > 0; --i)
         slice_ptrs_[i] = slice_ptrs_[i - 1];
@@ -234,20 +245,14 @@ void Reservoir::Step()
 void Reservoir::UpdateState(const size_t v, const float old_output_v)
 {
     float s = 0.0f;
-    const float* iw = vtx_weight_.get() + v * dim_; // input block
-    const float* w = &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
+    const float* iw = vtx_weight_.get() + v * dim_; // input row for v
+    const float* w =
+        &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
 
-    /*Input fan-in: sum v's dim Hamming-neighbor inputs, each by its own weight.
-    For a SINGLE input (num_inputs_ == 1) InjectInput writes the same scalar to
-    every vertex, so all dim gathered values are identical and this collapses to
-    input * (sum of iw[0..dim)) — a single multiply against a per-vertex
-    precomputed weight-row-sum would suffice, making the dim-way gather here
-    wasted work. We keep the general form on purpose: with num_inputs_ > 1 the
-    neighbors of a vertex near a channel-block boundary straddle different
-    channels and carry DIFFERENT injected values, so the per-neighbor gather is
-    load-bearing and cannot be collapsed. The single-input waste is dim-1 extra
-    FMAs per vertex per step — negligible against the recurrent block below
-    (dim * history_depth) — so it isn't worth a second specialized code path.*/
+    // Input gather: dim Hamming neighbors of the staged input field.
+    // num_inputs_==1 makes all neighbors identical (could collapse to a row-sum
+    // multiply); we keep the general form so multi-input block boundaries still
+    // mix correctly. Cost is negligible vs the recurrent block (dim·M FMAs).
     for (size_t i = 0; i < dim_; i++)
         s += vtx_input_[v ^ NearestMask(i)] * iw[i];
 
@@ -258,6 +263,7 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
             s += vtx_ext_feedback_[v ^ NearestMask(i)] * ew[i];
     }
 
+    // Recurrent gather: M logical ages × dim axes.
     for (size_t i = 0; i < history_depth_; i++)
     {
         const float* pSlice = slice_ptrs_[i];
@@ -266,14 +272,18 @@ void Reservoir::UpdateState(const size_t v, const float old_output_v)
     }
 
     const float activation = std::tanh(s) + vtx_bias_[v];
-
     vtx_state_[v] = (1.0f - leak_rate_) * old_output_v + leak_rate_ * activation;
 }
+
+// ---------------------------------------------------------------------------
+// Drive injection
+// ---------------------------------------------------------------------------
 
 void Reservoir::InjectInput(const size_t channel, const float input)
 {
     if (channel >= num_inputs_)
-        throw std::invalid_argument("InjectInput: channel out of range [0, num_inputs)");
+        throw std::invalid_argument(
+            "InjectInput: channel out of range [0, num_inputs)");
     const size_t block = n_ / num_inputs_;
     const size_t v_end = (channel + 1) * block;
     for (size_t v = channel * block; v < v_end; ++v)
@@ -284,7 +294,8 @@ void Reservoir::InjectExternalFeedback(const size_t channel, const float value)
 {
     if (channel >= num_ext_feedback_channels_)
         throw std::invalid_argument(
-            "InjectExternalFeedback: channel out of range [0, num_external_feedback_channels)");
+            "InjectExternalFeedback: channel out of range "
+            "[0, num_external_feedback_channels)");
 
     const size_t block = n_ / num_ext_feedback_channels_;
     const size_t v_end = (channel + 1) * block;
@@ -296,7 +307,8 @@ void Reservoir::InjectExternalFeedback(const float* values, const size_t count)
 {
     if (count != num_ext_feedback_channels_)
         throw std::invalid_argument(
-            "InjectExternalFeedback(vector): count must equal num_external_feedback_channels");
+            "InjectExternalFeedback(vector): count must equal "
+            "num_external_feedback_channels");
     if (count > 0 && values == nullptr)
         throw std::invalid_argument(
             "InjectExternalFeedback(vector): values is null but count > 0");
@@ -304,13 +316,16 @@ void Reservoir::InjectExternalFeedback(const float* values, const size_t count)
         InjectExternalFeedback(c, values[c]);
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot / config / clear
+// ---------------------------------------------------------------------------
+
 Reservoir::Snapshot Reservoir::TakeSnapshot() const
 {
     Snapshot s;
     s.state.assign(vtx_state_.get(), vtx_state_.get() + n_);
     s.history.resize(n_ * history_depth_);
-    // Copy slice-by-slice through slice_ptrs_ so the snapshot is in logical
-    // age order (slice 0 first) no matter where the ring rotation stands.
+    // Logical age order via slice_ptrs_ (independent of physical ring phase).
     for (size_t i = 0; i < history_depth_; ++i)
         std::memcpy(s.history.data() + i * n_, slice_ptrs_[i], n_ * sizeof(float));
     return s;
@@ -327,13 +342,10 @@ void Reservoir::RestoreSnapshot(const Snapshot& snap)
     std::memcpy(vtx_output_history_.get(), snap.history.data(),
                 n_ * history_depth_ * sizeof(float));
 
-    // The snapshot is in logical age order, so re-home the ring to the
-    // canonical rotation (slice i at buffer block i).
+    // Snapshot is logical age order → re-home ring to canonical physical layout.
     for (size_t i = 0; i < history_depth_; ++i)
         slice_ptrs_[i] = &vtx_output_history_[i * n_];
 
-    // Staged drives are not part of a snapshot; clear them so the post-restore
-    // trajectory depends only on the snapshot and subsequent injections.
     std::memset(vtx_input_.get(), 0, n_ * sizeof(float));
     if (num_ext_feedback_channels_ > 0)
         std::memset(vtx_ext_feedback_.get(), 0, n_ * sizeof(float));
@@ -344,7 +356,7 @@ ReservoirConfig Reservoir::GetConfig() const
     ReservoirConfig cfg;
     cfg.dim = dim_;
     cfg.seed = rng_seed_;
-    cfg.spectral_radius = spectral_radius_; // configured target, not realized
+    cfg.spectral_radius = spectral_radius_; // target, not realized
     cfg.leak_rate = leak_rate_;
     cfg.input_scaling = input_scaling_;
     cfg.num_inputs = num_inputs_;
@@ -362,8 +374,7 @@ const float* Reservoir::SliceAt(const size_t age) const
         throw std::out_of_range(
             "Reservoir::SliceAt: age (" + std::to_string(age) +
             ") >= history_depth (" + std::to_string(history_depth_) + ")");
-    // slice_ptrs_ is kept in logical age order by Step()'s ring rotation, so this
-    // needs no translation from the history buffer's physical block order.
+    // slice_ptrs_ already in logical age order after Step()'s rotation.
     return slice_ptrs_[age];
 }
 
@@ -381,36 +392,30 @@ void Reservoir::Clear()
         slice_ptrs_[i] = &vtx_output_history_[i * n_];
 }
 
+// ---------------------------------------------------------------------------
+// Spectral radius (companion operator on MN-dimensional delay state)
+// ---------------------------------------------------------------------------
+
 float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) const
 {
     const size_t MN = history_depth_ * n_;
     assert(x.size() >= MN && y.size() >= MN);
 
-    // Power iteration with growth-rate (Gelfand) averaging.
+    // Power iteration with Gelfand (geometric-mean) growth rates.
     //
-    // The augmented operator is a block-companion / delay-line matrix, whose
-    // dominant eigenvalue is generically a COMPLEX conjugate pair sitting in a
-    // cluster of near-modulus neighbours that worsens as history_depth grows.
-    // That breaks naive power iteration two ways: (1) for a complex dominant
-    // pair the iterate ROTATES, so the instantaneous norm |A x| oscillates and
-    // never settles; (2) clustering pushes |lambda_2/lambda_1| -> 1, so
-    // convergence crawls. Returning the instantaneous norm was therefore noisy
-    // at the ~% level -- too noisy for the spectral-radius secant solve to hit
-    // its tolerance at large M (it would cap out at kMaxSrIters off-target).
+    // The augmented operator is a block-companion / delay-line matrix. Its
+    // dominant eigenvalue is often a complex conjugate pair in a tight modulus
+    // cluster as M grows. Instantaneous |A x| then oscillates and converges
+    // slowly — too noisy for the secant SR solve at large M.
     //
-    // Fix: x is renormalized to unit norm each step, so the per-step growth
-    // ratio is exactly |A x|, and these ratios telescope:
-    //   prod_{k=1..n} |A x_k| = |A^n x_0|.
-    // Hence the GEOMETRIC MEAN of the ratios is (|A^n x_0|)^{1/n} -> |lambda_1|
-    // (Gelfand's formula), whether or not lambda_1 is complex. Averaging the
-    // log-ratios cancels the rotation oscillation and damps the subdominant
-    // cluster. We track the running geometric mean and stop when it stops
-    // moving across a spaced check -- the SMOOTHED mean, not the oscillating
-    // instantaneous norm.
-    constexpr int kMaxIters = 1500; // hard cap (warm-started across secant evals)
-    constexpr int kBurnIn = 32; // align x with the dominant subspace first
-    constexpr int kCheckSpacing = 50; // compare the running mean this many steps apart
-    constexpr float kTolRel = 1e-4f; // break when the running mean is this stable
+    // With unit-normalized x each step, growth ratios telescope:
+    //   prod |A x_k| = |A^n x_0|, geometric mean → |λ₁| (Gelfand).
+    // Averaging log-ratios damps rotation and subdominant clustering. Stop when
+    // the running geometric mean is stable over a spaced check.
+    constexpr int kMaxIters = 1500;
+    constexpr int kBurnIn = 32;
+    constexpr int kCheckSpacing = 50;
+    constexpr float kTolRel = 1e-4f;
 
     float rho_ring[kCheckSpacing] = {};
     double sum_log = 0.0;
@@ -419,11 +424,12 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
 
     for (int iter = 0; iter < kMaxIters; ++iter)
     {
-        // y = A x. Top block: y_0[v] = sum_j sum_i W[v,j,i] * x_j[v ^ mask(i)].
+        // Top block: y_0[v] = sum over slices j and axes i of W[v,j,i] * x_j[v^mask].
         for (size_t v = 0; v < n_; v++)
         {
             float s = 0.0f;
-            const float* w = &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
+            const float* w =
+                &vtx_weight_[RecurrentWeightBase()] + v * dim_ * history_depth_;
             for (size_t j = 0; j < history_depth_; j++)
             {
                 const float* x_j = x.data() + j * n_;
@@ -436,26 +442,27 @@ float Reservoir::EstimateSpectralRadius(std::span<float> x, std::span<float> y) 
 
         // Aging blocks: y_j = x_{j-1} for j >= 1.
         for (size_t j = 1; j < history_depth_; j++)
-            std::memcpy(y.data() + j * n_, x.data() + (j - 1) * n_, n_ * sizeof(float));
+            std::memcpy(y.data() + j * n_, x.data() + (j - 1) * n_,
+                        n_ * sizeof(float));
 
         float norm = 0.0f;
-        for (size_t k = 0; k < MN; k++) norm += y[k] * y[k];
+        for (size_t k = 0; k < MN; k++)
+            norm += y[k] * y[k];
         norm = std::sqrt(norm);
-        if (norm <= 1e-30f) return 0.0f; // nilpotent / zeroed operator
+        if (norm <= 1e-30f)
+            return 0.0f; // nilpotent / zeroed operator
 
         const float inv = 1.0f / norm;
-        for (size_t k = 0; k < MN; k++) x[k] = y[k] * inv;
+        for (size_t k = 0; k < MN; k++)
+            x[k] = y[k] * inv;
 
-        // Burn in before accumulating, so the early transient (before x aligns
-        // with the dominant subspace) doesn't bias the geometric mean.
-        if (iter < kBurnIn) continue;
+        if (iter < kBurnIn)
+            continue; // align to dominant subspace before accumulating
 
         sum_log += std::log(static_cast<double>(norm));
         ++n_acc;
         rho = static_cast<float>(std::exp(sum_log / static_cast<double>(n_acc)));
 
-        // rho_ring[slot] holds the running mean from kCheckSpacing steps ago;
-        // break once the smoothed estimate has stopped moving over that span.
         const int slot = n_acc % kCheckSpacing;
         if (n_acc > kCheckSpacing &&
             std::abs(rho - rho_ring[slot]) < rho * kTolRel)
