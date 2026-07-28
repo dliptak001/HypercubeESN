@@ -35,6 +35,8 @@ HypercubeESN / Janus results.
 | Well-tuned (optimized spectral radius, reservoir size N = 100–500, long training, careful input scaling) | **~10–15 LT** |
 | Extreme optimized / noiseless cases | Claims of **>30 LT** appear; they depend heavily on the exact VPT definition, numerical solver consistency for the ground-truth trajectory, and how small the initial one-step error is |
 
+**Papers:** [Doan et al., Physics-Informed ESNs](https://arxiv.org/abs/1906.11122) · [Hurley et al., large VPT on Lorenz](https://arxiv.org/abs/2508.06730) · local PDFs under [`reference/`](reference/)
+
 ---
 
 ## 2. Pipeline at a glance
