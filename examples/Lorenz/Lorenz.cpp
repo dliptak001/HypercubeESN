@@ -5,6 +5,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -249,7 +252,7 @@ void Lorenz::Train()
     }
 }
 
-FreeRunResult Lorenz::FreeRun(bool verbose)
+FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
 {
     float past[4] = {}; // input-port drive: [past x, y, z, x*z]
     float future[4] = {}; // feedback-port drive: [x, y, z, x*z] of the model's prediction
@@ -257,6 +260,20 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     float outputs[3] = {}; // the model's generative prediction each step
 
     RebuildDatastream(false);
+    const uint64_t freerun_orbit_seed = orbit_seed_; // post-mix value used for this free-run
+
+    std::ofstream csv;
+    if (csv_path && csv_path[0])
+    {
+        csv.open(csv_path, std::ios::out | std::ios::trunc);
+        if (csv)
+        {
+            csv << "step,lt,err,locked,pred_x,pred_y,pred_z,true_x,true_y,true_z,"
+                   "past_x,past_y,past_z,past_xz\n";
+        }
+        else if (verbose || config::ENABLE_PRINTF)
+            std::fprintf(stderr, "[FreeRun] failed to open CSV path: %s\n", csv_path);
+    }
 
     // Stage 1: anchored washout. Re-sweep the training window once, teacher-forced
     // but inference-only (no readout updates), so the reservoir crosses into the
@@ -330,6 +347,19 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
         const bool locked = step_err <= static_cast<double>(config::VPT_THRESHOLD);
         if (locked)
             ++locked_steps;
+
+        if (csv)
+        {
+            // past[] is the input-port drive this step (zeros under FORWARD_ONLY).
+            csv << steps << ','
+                << (steps / steps_per_lt) << ','
+                << step_err << ','
+                << (locked ? 1 : 0) << ','
+                << outputs[0] << ',' << outputs[1] << ',' << outputs[2] << ','
+                << targets[0] << ',' << targets[1] << ',' << targets[2] << ','
+                << past[0] << ',' << past[1] << ',' << past[2] << ',' << past[3]
+                << '\n';
+        }
 
         // GS proxies: duty from locked fraction; re-lock only after a prior unlock.
         if (!have_prev)
@@ -416,6 +446,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     FreeRunResult r;
     r.valid = true;
     r.seed = seed_;
+    r.orbit_seed = freerun_orbit_seed;
     r.vpt_steps = vpt_steps;
     r.crossed = crossed;
     r.vpt_lt = vpt_lt;
@@ -426,6 +457,8 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     r.n_unlock = n_unlock;
     r.mean_locked_sojourn = mean_locked;
     r.row = buf;
+    if (csv)
+        csv.close();
     return r;
 }
 
@@ -578,10 +611,102 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     return out;
 }
 
+// Diagnostic mode: train one ESN seed, free-run until max_runs (or until target
+// orbit_seed is hit), write per-step CSV for plot_freerun_trace.py.
+//   Lorenz.exe --trace <esn_seed> [max_freeruns=30] [target_orbit_seed=0]
+// target_orbit_seed 0 = dump every free-run; else dump only matching orbits and stop.
+static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit)
+{
+    constexpr uint64_t kBaseOrbit = 72983498;
+    std::printf("=== HypercubeESN: Lorenz --trace ===\n");
+    std::printf("[trace] arm=%s  esn_seed=%llu  max_freeruns=%d  target_orbit=%llu\n",
+                config::FORWARD_ONLY ? "fwd-only" : "Janus",
+                static_cast<unsigned long long>(esn_seed), max_freeruns,
+                static_cast<unsigned long long>(target_orbit));
+    std::printf("[trace] train %zu epochs then free-run; CSV under examples/Lorenz/traces/\n",
+                config::EPOCHS);
+    std::fflush(stdout);
+
+    config::ENABLE_PRINTF = true; // epoch lines while training
+    Lorenz lorenz(esn_seed, kBaseOrbit);
+    std::cout << lorenz.ReadoutArchSummary();
+    lorenz.Train();
+    config::ENABLE_PRINTF = false;
+
+    namespace fs = std::filesystem;
+    const fs::path trace_dir = fs::path("examples") / "Lorenz" / "traces";
+    std::error_code ec;
+    fs::create_directories(trace_dir, ec);
+    if (ec)
+        std::fprintf(stderr, "[trace] create_directories(%s): %s\n",
+                     trace_dir.string().c_str(), ec.message().c_str());
+
+    int dumped = 0;
+    for (int i = 0; i < max_freeruns; ++i)
+    {
+        // Write to a temp path first; rename only if we keep the free-run.
+        const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
+        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str());
+        if (!r.valid)
+        {
+            std::printf("[trace] free-run %d invalid — stop\n", i);
+            break;
+        }
+        const bool want = (target_orbit == 0) || (r.orbit_seed == target_orbit);
+        std::printf("[trace] freerun %d/%d  orbit=%llu  VPT=%.2f lt  duty=%.3f  "
+                    "relock=%zu unlock=%zu meanLock=%.1f  %s\n",
+                    i + 1, max_freeruns,
+                    static_cast<unsigned long long>(r.orbit_seed),
+                    r.vpt_lt, r.duty, r.n_relock, r.n_unlock, r.mean_locked_sojourn,
+                    want ? "DUMP" : "skip");
+        std::fflush(stdout);
+
+        if (want)
+        {
+            const fs::path out_path = trace_dir /
+                ("seed" + std::to_string(esn_seed) + "_orbit" +
+                 std::to_string(r.orbit_seed) + ".csv");
+            fs::remove(out_path, ec);
+            fs::rename(tmp_path, out_path, ec);
+            if (ec)
+            {
+                std::printf("[trace] rename failed (%s) — CSV left at %s\n",
+                            ec.message().c_str(), tmp_path.string().c_str());
+            }
+            else
+                std::printf("[trace] wrote %s\n", out_path.string().c_str());
+            std::printf("%s", r.row.c_str());
+            ++dumped;
+            if (target_orbit != 0)
+                break; // found requested orbit
+        }
+        else
+        {
+            fs::remove(tmp_path, ec);
+        }
+    }
+    std::printf("[trace] done — %d CSV file(s). Plot:\n"
+                "  python examples/Lorenz/plot_freerun_trace.py "
+                "examples/Lorenz/traces/seed*_orbit*.csv\n",
+                dumped);
+    return dumped > 0 ? 0 : 1;
+}
+
 int main(int argc, char** argv)
 {
     uint64_t seed = 21978990;
     uint64_t orbit_seed = 72983498;
+
+    // Diagnostic path (not the multi-thread survey).
+    if (argc >= 3 && std::strcmp(argv[1], "--trace") == 0)
+    {
+        const uint64_t esn_seed = std::strtoull(argv[2], nullptr, 10);
+        int max_fr = 30;
+        uint64_t target_orbit = 0;
+        if (argc >= 4) max_fr = std::max(1, std::atoi(argv[3]));
+        if (argc >= 5) target_orbit = std::strtoull(argv[4], nullptr, 10);
+        return RunTraceMode(esn_seed, max_fr, target_orbit);
+    }
 
     std::cout << "=== HypercubeESN: Lorenz ===\n";
 
