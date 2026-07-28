@@ -8,21 +8,47 @@ This is **assisted / half-anchored** free-run — continuous partial observation
 on the past — **not** classical unassisted autonomous generation (no true drive
 at all). Report VPT and RMSE with that distinction stated.
 
-**Live knobs** live in `config::` in [`Lorenz.h`](Lorenz.h). This README describes
-mechanisms and protocols; it does **not** pin current numerical defaults.
-Experiment logs and op-point snapshots go in [`TRACKING.md`](TRACKING.md).
+---
 
-| Layer | Files |
-|-------|--------|
-| Index motion | [`JanusCursor.h`](JanusCursor.h) · [`JanusCursor.md`](JanusCursor.md) |
-| Orbit + normalize | [`LorenzAttractor.h`](LorenzAttractor.h), [`LorenzDatastream.{h,cpp}`](LorenzDatastream.h) |
-| Ports, train, free-run, survey | [`Lorenz.{h,cpp}`](Lorenz.h) — all knobs in `config::` |
-| Result log | [`TRACKING.md`](TRACKING.md) |
-| CMake target | `Lorenz` ← `Lorenz.cpp` + `LorenzDatastream.cpp` |
+## 1. Literature context — vanilla ESN free-run on Lorenz-63
+
+Ballpark for **standard (vanilla) Echo State Network** free-run / autonomous /
+generative prediction error on Lorenz-63, scored versus Lyapunov time. This is
+**unassisted** closed loop after teacher-forced training — the network’s own
+predictions are fed back as the only drive. It is **not** this repo’s Janus
+half-anchored protocol (always-real past). Do not quote the ranges below as
+HypercubeESN / Janus results.
+
+### Key definitions used in the literature
+
+| Term | Meaning |
+|------|---------|
+| **Lyapunov time (LT)** | `1 / λ_max`. For classic Lorenz-63 (`σ=10`, `ρ=28`, `β=8/3`), `λ_max ≈ 0.905`–`0.934`, so **1 LT ≈ 1.07–1.10** time units. |
+| **Free-run** | Closed-loop / generative mode: after teacher-forced training, the network’s own predictions are fed back as input. |
+| **VPT / predictability horizon** | First time a chosen error measure crosses a threshold. Common cutoffs: normalized error `E > 0.2`, NRMSE `> 0.5`, or normalized squared error `> 0.4`. |
+
+This harness uses its own θ (`VPT_THRESHOLD`, channel-RMS on the normalized
+orbit) and a fixed `LYAPUNOV_EXPONENT` for step→lt conversion — see `config::` and
+§7. Literature VPT numbers are only comparable after aligning threshold definition,
+integrator, and free-run policy.
+
+### Typical performance of standard ESNs
+
+| Class | Valid prediction horizon (Lyapunov times) |
+|-------|-------------------------------------------|
+| Conventional / baseline ESNs | **~4–8 LT** (most common range in the literature) |
+| Well-tuned (optimized spectral radius, reservoir size N = 100–500, long training, careful input scaling) | **~10–15 LT** |
+| Extreme optimized / noiseless cases | Claims of **>30 LT** appear; they depend heavily on the exact VPT definition, numerical solver consistency for the ground-truth trajectory, and how small the initial one-step error is |
+
+**Claim discipline.** Janus / half-anchored VPT and GS duty in
+[`TRACKING.md`](TRACKING.md) measure a different experiment (continuous past
+anchor). A ~2 LT mean or a ~10 LT ceiling under Janus is **not** the same claim as
+“vanilla ESN free-run on Lorenz.” Use this section only as external context for
+what unassisted ESNs typically report.
 
 ---
 
-## 1. Pipeline at a glance
+## 2. Pipeline at a glance
 
 ```text
  LorenzAttractor (RK4 Lorenz-63; σ, ρ, β, dt as configured)
@@ -42,7 +68,7 @@ Experiment logs and op-point snapshots go in [`TRACKING.md`](TRACKING.md).
 
 ---
 
-## 2. Janus cursor concept
+## 3. Janus cursor concept
 
 The harness is built around a **pair of counter-moving indices** over one forward
 orbit. The index machinery is system-agnostic (`JanusCursor`); Lorenz only maps
@@ -131,7 +157,7 @@ Consequence:
 
 ---
 
-## 3. Stream ownership and orbits
+## 4. Stream ownership and orbits
 
 ```text
  array index n:   0 ······· lb ····· center ····· ub ········· stream end
@@ -171,7 +197,7 @@ directly.
 
 ---
 
-## 4. Eight-channel drive and targets
+## 5. Eight-channel drive and targets
 
 ```text
  input port    (4):  past   [ x_p, y_p, z_p, x_p·z_p ]   ExtractPast
@@ -190,7 +216,7 @@ directly.
 
 ---
 
-## 5. Training protocol (`Lorenz::Train`)
+## 6. Training protocol (`Lorenz::Train`)
 
 Per epoch:
 
@@ -214,7 +240,7 @@ fresh orbit each epoch).
 
 ---
 
-## 6. Free-run protocol (`Lorenz::FreeRun`)
+## 7. Free-run protocol (`Lorenz::FreeRun`)
 
 Self-contained for **cursor phase** (readout weights are whatever `Train` left):
 
@@ -264,44 +290,6 @@ leaderboards for RMSE, VPT, and duty.
 
 Conversion: `steps_per_lt = 1 / (LYAPUNOV_EXPONENT · DT)` (canonical Lorenz-63
 λ_max and the configured RK4 `DT`).
-
----
-
-## 7. Literature context — vanilla ESN free-run on Lorenz-63
-
-Ballpark for **standard (vanilla) Echo State Network** free-run / autonomous /
-generative prediction error on Lorenz-63, scored versus Lyapunov time. This is
-**unassisted** closed loop after teacher-forced training — the network’s own
-predictions are fed back as the only drive. It is **not** this repo’s Janus
-half-anchored protocol (always-real past). Do not quote the ranges below as
-HypercubeESN / Janus results.
-
-### Key definitions used in the literature
-
-| Term | Meaning |
-|------|---------|
-| **Lyapunov time (LT)** | `1 / λ_max`. For classic Lorenz-63 (`σ=10`, `ρ=28`, `β=8/3`), `λ_max ≈ 0.905`–`0.934`, so **1 LT ≈ 1.07–1.10** time units. |
-| **Free-run** | Closed-loop / generative mode: after teacher-forced training, the network’s own predictions are fed back as input. |
-| **VPT / predictability horizon** | First time a chosen error measure crosses a threshold. Common cutoffs: normalized error `E > 0.2`, NRMSE `> 0.5`, or normalized squared error `> 0.4`. |
-
-This harness uses its own θ (`VPT_THRESHOLD`, channel-RMS on the normalized
-orbit) and a fixed `LYAPUNOV_EXPONENT` for step→lt conversion — see `config::` and
-§6. Literature VPT numbers are only comparable after aligning threshold definition,
-integrator, and free-run policy.
-
-### Typical performance of standard ESNs
-
-| Class | Valid prediction horizon (Lyapunov times) |
-|-------|-------------------------------------------|
-| Conventional / baseline ESNs | **~4–8 LT** (most common range in the literature) |
-| Well-tuned (optimized spectral radius, reservoir size N = 100–500, long training, careful input scaling) | **~10–15 LT** |
-| Extreme optimized / noiseless cases | Claims of **>30 LT** appear; they depend heavily on the exact VPT definition, numerical solver consistency for the ground-truth trajectory, and how small the initial one-step error is |
-
-**Claim discipline.** Janus / half-anchored VPT and GS duty in
-[`TRACKING.md`](TRACKING.md) measure a different experiment (continuous past
-anchor). A ~2 LT mean or a ~10 LT ceiling under Janus is **not** the same claim as
-“vanilla ESN free-run on Lorenz.” Use this section only as external context for
-what unassisted ESNs typically report.
 
 ---
 
@@ -399,7 +387,7 @@ temporarily replace the survey body.
 **Is not:**
 
 - Unassisted Pathak-style free-run VPT without an anchor (do not claim that)
-- A literature leaderboard for vanilla ESN free-run — §7 is external context only
+- A literature leaderboard for vanilla ESN free-run — §1 is external context only
 - A frozen hyperparameter sheet — numbers live in `Lorenz.h` / `TRACKING.md`
 
 ---
