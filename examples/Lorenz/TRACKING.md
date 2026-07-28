@@ -282,12 +282,75 @@ fwd 9.33; fwd better VPT mean on 26/30 seeds).
 queue, optional Pathak-style unassisted path) — do not re-run A/B unless op-point
 changes.
 
+### Verify duty (suspected reverse) + err-vs-lt plots
+
+- [x] **Review duty-cycle math** in `Lorenz::FreeRun` (2026-07-28 code audit) —
+  **not reversed.** Definitions and implementation agree:
+  - `locked ⇔ channel-RMS err ≤ θ` (`θ = VPT_THRESHOLD = 0.30`)
+  - `duty = locked_steps / steps` = fraction of generative steps **on-track**
+  - VPT = first step with `err > θ` (complementary at equality: `err == θ` is
+    locked, does **not** fire VPT)
+  - CSV `locked` column, survey label `duty (<=theta)`, README, and
+    `plot_freerun_trace.py` all use the same convention
+  - State machine (relock/unlock/meanLock) reimplemented in Python against
+    synthetic traces: duty matches independent `mean(err≤θ)`; sojourn sum
+    equals locked step count; relock only after a prior unlock
+  - Plausibility: mean VPT ~2 lt on a 1000-step (~18 lt) window would give
+    duty ~0.11 if error never recovered; reported duty ~0.47 implies frequent
+    re-lock after first upcrossing — that is the GS story, not a sign flip
+  - Fixed comment drift only: numerator was documented as `< θ`, code is `≤ θ`
+- [ ] **Plot a few free-runs:** error vs Lyapunov time with horizontal θ line
+  (use `--trace` + `plot_freerun_trace.py`). Visually count fraction of steps
+  above/below threshold vs reported duty / VPT. Suggested: orbit
+  `9333312947715283458` on Janus `21978990` (VPT 10.07) and fwd-only
+  `21978993` (VPT 9.33); plus one median-ish run.
+
 ### Post-FSF (current code — FSF removed)
 
 - [x] **Janus baseline** (`FORWARD_ONLY = false`): Run 4 — `30 × 100`  
 - [x] **Forward-only** (`FORWARD_ONLY = true`): Run 5 — `30 × 100`  
 - [x] Side-by-side VPT + GS (duty/relock) — Run 4 vs 5 both logs complete  
 - [ ] **Lock-in** storefront default = forward-only / unassisted; Janus optional (see note above)
+- [x] **Duty math audit** — not reversed (see note above)  
+- [ ] **err-vs-lt visual plots** still open (see note above)
+- [ ] **Free-run re-lock storefront story** (see “tomorrow” section below)
+
+### Tomorrow (2026-07-29) — free-run re-lock as the demo (not Janus)
+
+Janus vs forward-only is a **wash** (past not load-bearing). The potentially
+compelling result is the free-run **signature**, present on **both** arms:
+
+> Short mean VPT (~2 LT) + high duty (~0.47) + many relocks (~16 / window) —
+> **not** the pure “die after VPT” classical ESN free-run picture
+> (where duty ≈ VPT/T ≈ 0.11 for a 1000-step / ~18 LT window and n_relock ≈ 0).
+
+Hero metric shift: less “max first-upcrossing VPT vs literature 4–15 LT,” more
+**intermittent re-entrant tracking** under closed-loop free-run (same θ as VPT).
+Sell **forward-only / unassisted-style** free-run; Janus optional.
+
+**To do tomorrow:**
+
+- [ ] **err-vs-lt plots** (`--trace` + `plot_freerun_trace.py`): storefront orbit
+  `933331…` on Janus `21978990` and fwd-only `21978993`; plus a median-ish run.
+  Confirm structured re-entries under θ with pred re-aligning to true, not random
+  thrashing around the bar.
+- [ ] **θ sensitivity:** duty / n_relock at θ ∈ {0.1, 0.2, 0.3} (same seeds if cheap).
+  Kill “θ too soft vs climate floor.”
+- [ ] **Climate / null:** late-window or shuffled channel-RMS vs θ; post-VPT locked
+  fraction separately from full-window duty.
+- [ ] **Same-metric weak baseline** (optional but strong): classic ridge ESN or
+  weak op-point under **identical** θ, dt, window, scoring — show die-after-VPT
+  vs HypercubeESN re-lock signature.
+- [ ] **Lock-in narrative:** forward-only default; README/storefront lead with
+  re-lock figure + duty/n_relock; VPT secondary; do **not** claim Janus enables
+  GS or beat literature VPT from current means alone.
+- [ ] **Lock-in code/docs** from decision note above (`FORWARD_ONLY` default /
+  example wording).
+
+**Claim-safe frame (if plots + nulls hold):** HypercubeESN free-run on Lorenz-63
+shows persistent intermittent lock under closed-loop generation — early first
+failure, substantial time still under θ with O(10) re-locks per ~18 LT window —
+unlike textbook die-after-VPT free-run.
 
 ### Historical FSF (feature removed — log only)
 

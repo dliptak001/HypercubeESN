@@ -307,7 +307,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
     double sq_err_sum = 0.0;
     size_t steps = 0;
     size_t vpt_steps = 0; // first step whose error exceeded VPT_THRESHOLD (0 = never)
-    size_t locked_steps = 0; // steps with channel-RMS < θ (GS duty numerator)
+    size_t locked_steps = 0; // steps with channel-RMS ≤ θ (GS duty numerator; on-track)
     size_t n_relock = 0; // unlocked → locked *after* at least one unlock (true re-locks)
     size_t n_unlock = 0; // locked → unlocked transitions
     size_t locked_sojourn_sum = 0; // sum of completed + trailing locked run lengths
