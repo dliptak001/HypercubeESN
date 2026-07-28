@@ -6,20 +6,29 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/dliptak001/HypercubeESN/blob/main/LICENSE)
 
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
-hypercube. Neurons sit on vertices and connect only to Hamming-distance-1
-neighbors via XOR addressing: no adjacency list. **DIM** is the hypercube
-dimension; there are N = 2<sup>DIM</sup> continuous `tanh` units (DIM 5–16 → 32
-to 65,536 neurons). An addressable delay line of depth M gives temporal memory
-by construction. The reservoir state is a *signal on that graph*, not an
-anonymous vector.
+hypercube. Neurons sit on the vertices, wired to their single-bit-flip neighbors
+by XOR. That topology is **never stored, only computed.** **DIM** is the
+hypercube dimension; N = 2<sup>DIM</sup> continuous `tanh` units (DIM 5–16 → 32
+to 65,536 neurons).
 
-What reads it is [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) —
+Three properties follow:
+
+- **A topology you don't store.** Connectivity is implicit in the vertex indices —
+  no adjacency list, at any size.
+- **Hidden multi-scale structure.** Full neighbor connectivity with random weights
+  turns the cube into nested clusters — local, regional, and global at once —
+  that nobody designed in.
+- **Memory you can address.** Each vertex carries a delay line of its own recent
+  past, so the reservoir remembers *specific* lags by construction, not by lucky
+  echoes.
+
+The reservoir state is a *signal on that graph*, not an anonymous vector. What
+reads it is [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) —
 convolutions on the same vertices and XOR neighborhoods, not a ridge fit on a
 flat state and not an image CNN on a fabricated 2D grid. The pairing is
 topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
-never leaves the hypercube it was born on.** Freeze the reservoir; train the
-head.
+never leaves the hypercube it was born on.**
 
 **Headline result** — one fixed config, tanh-wrapped NARMA, **best 5 of 20**
 seeds (test NRMSE):
@@ -31,6 +40,7 @@ seeds (test NRMSE):
 | 70 | **0.1251** |
 
 Same op-point for all three orders; only the NARMA order changes.
+
 [Campaign write-up](https://github.com/dliptak001/HypercubeESN/blob/main/examples/NARMA/NARMA.md)
 · [project README](https://github.com/dliptak001/HypercubeESN#headline-result--one-fixed-config-tanh-wrapped-narma-best-5-of-20-seeds-test-nrmse)
 

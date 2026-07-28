@@ -6,25 +6,29 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 
-HypercubeESN reimagines the echo-state reservoir as a signal living on a Boolean
-hypercube. Its neurons live on the vertices of the hypercube and connect only to
-their Hamming-distance-1 neighbors, with every adjacency resolved by a single XOR
-on the vertex's binary index — a deterministic O(1) lookup that stores nothing at
-all. There is no adjacency list to build, store, or serialize; the entire
-connectivity is implicit in the indices themselves.
+**HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
+vertices, wired to their single-bit-flip neighbors by XOR. That topology is
+**never stored, only computed.** **DIM** is the hypercube dimension; N =
+2<sup>DIM</sup> continuous `tanh` units (DIM 5–16 → 32 to 65,536 neurons).
 
-In contrast to the arbitrary sparse graph of a conventional ESN, the structure is
-symmetric, deterministic, and reproducible across any two implementations at the
-same dimension — while the neurons themselves stay familiar continuous tanh
-units. Only the addressing is binary; the dynamics are fully real-valued.
+Three properties follow:
 
-That same implicit addressing extends into time. Each vertex update reaches not
-only across its neighbors' current states but back through an addressable delay
-line of each neighbor's last M states — one XOR-addressed gather spanning space
-and time together. Temporal memory is intrinsic to the topology: memory by
-construction rather than by luck. The result is an ESN that is at once
-mathematically clean, strikingly memory-frugal, and strong where reservoirs are
-meant to be: long memory and nonlinear computation.
+- **A topology you don't store.** Connectivity is implicit in the vertex indices —
+  no adjacency list, at any size.
+- **Hidden multi-scale structure.** Full neighbor connectivity with random weights
+  turns the cube into nested clusters — local, regional, and global at once —
+  that nobody designed in.
+- **Memory you can address.** Each vertex carries a delay line of its own recent
+  past, so the reservoir remembers *specific* lags by construction, not by lucky
+  echoes.
+
+The reservoir state is a *signal on that graph*, not an anonymous vector. What
+reads it is [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) —
+convolutions on the same vertices and XOR neighborhoods, not a ridge fit on a
+flat state and not an image CNN on a fabricated 2D grid. The pairing is
+topology-native: the readout consumes the reservoir with zero distortion, and
+the learned kernels exploit the locality that generated the dynamics. **The data
+never leaves the hypercube it was born on.**
 
 **Headline result** — one fixed config, tanh-wrapped NARMA, **best 5 of 20** seeds
 (test NRMSE):
@@ -34,6 +38,8 @@ meant to be: long memory and nonlinear computation.
 | 30 | **0.0441** |
 | 50 | **0.0751** |
 | 70 | **0.1251** |
+
+Same op-point for all three orders; only the NARMA order changes.
 
 [Spotlight](#spotlight-narma) · [full write-up](examples/NARMA/NARMA.md)
 
@@ -63,30 +69,22 @@ memory and nonlinear computation.
 
 ## What is HypercubeESN?
 
-HypercubeESN is a reservoir computing architecture in which the reservoir's wiring
-*is* the Boolean hypercube. Each neuron sits on a vertex and receives only from
-its Hamming-distance-1 neighbors — the vertices one bit-flip away — every address
-computed by XOR, no adjacency list stored. The reservoir state is therefore not
-an abstract vector; it is a *signal on a hypercube graph*, a field of activations
-laid out on vertices and shaped by XOR-addressed dynamics.
+The reservoir’s wiring *is* the Boolean hypercube (see the three properties
+above). The state is a *signal on that graph* — a field of activations on vertices
+shaped by XOR-addressed dynamics — not an abstract length-N vector.
 
-The question, then, is what reads that signal. A conventional reservoir flattens
-its state into a vector and fits a line through it, discarding the geometry that
-produced it. A spatial CNN would force the activations onto a 2D grid they never
-lived on. HypercubeESN does neither. Its readout is
-[HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) — a convolutional
-network whose kernels are defined on the very same hypercube. Convolutions gather
-over Hamming-distance neighborhoods with weights shared under the hypercube's
-symmetry group; pooling pairs each vertex with its bitwise complement and folds
-DIM down by one, yielding a perfect sub-hypercube. No padding, no borders, no
-reshaping — neighbor lookup is the same single XOR the reservoir already speaks.
+The question is what reads that signal. A conventional reservoir flattens its
+state and fits a line through it, discarding the geometry that produced it. A
+spatial CNN would force the activations onto a 2D grid they never lived on.
+HypercubeESN does neither. Its readout is
+[HypercubeCNN](https://github.com/dliptak001/HypercubeCNN): convolutions over
+Hamming neighborhoods with weights shared under the cube’s symmetry; optional
+antipodal pooling folds DIM by one into a perfect sub-hypercube. No padding, no
+borders — neighbor lookup is the same single XOR the reservoir already speaks.
 
-The pairing is topology-native: the readout consumes the reservoir's output with
-zero distortion, and the learned kernels exploit the very locality that generated
-the dynamics. The data never leaves the hypercube it was born on.
-
-HypercubeESN targets DIM 5–16 (32 to 65,536 neurons), the practical range for
-reservoir computing.
+The pairing is topology-native: zero distortion into the readout; learned kernels
+exploit the locality that generated the dynamics. **The data never leaves the
+hypercube it was born on.** Practical range: DIM 5–16 (32 to 65,536 neurons).
 
 ## Spotlight: NARMA
 
