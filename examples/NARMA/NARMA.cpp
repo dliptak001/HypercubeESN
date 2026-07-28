@@ -1,14 +1,12 @@
 /// @file NARMA.cpp
-/// @brief NARMA-N system-identification benchmark on the hypercube reservoir.
-/// See NARMA.md for the walkthrough, the recurrence, and reference bands.
+/// @brief NARMA-N open-loop system-identification validator on HypercubeESN.
+/// See NARMA.md for the protocol, shared op-point, and campaign results.
 ///
 /// Usage: NARMA.exe [order]
 ///   order — optional NARMA recurrence order N (>= 2); default kDefaultNarmaOrder.
 ///
-/// NARMA (Nonlinear Auto-Regressive Moving Average) is the classic reservoir
-/// stress test: reproduce y(t) from a white input u(t) when y depends on a
-/// long nonlinear history of itself and on the delayed input u(t-N). It probes
-/// memory depth and nonlinear mixing at once.
+/// Default campaign path: tanh-wrapped NARMA, fixed M and knobs, multi-seed
+/// survey (best-5 of 20 featured). Only the CLI order and reservoir.seed vary.
 
 #include <algorithm>
 #include <array>
@@ -117,15 +115,15 @@ int main(int argc, char* argv[])
     constexpr size_t k_best = 5;
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
-              << " history_depth (M) x seed sweep ===\n\n";
-    std::cout << "Task: reproduce the NARMA-" << narma_order
-              << " output y(t) from its white input u(t),\n";
-    std::cout << "sweeping the reservoir delay-line depth M while holding the\n";
-    std::cout << "target series fixed -- an isolated test of memory depth.\n\n";
+              << " multi-seed survey (fixed M) ===\n\n";
+    std::cout << "Task: open-loop system identification — reproduce y(t) from u(t).\n";
+    std::cout << "Fixed op-point; " << sweep_reservoir_seeds.size()
+              << " reservoir seeds; series held fixed (data_seed).\n"
+              << "Featured metric: best-" << k_best
+              << " of those seeds (lowest test NRMSE).\n\n";
 
     // ---- Build the NARMA task ONCE -------------------------------------------
-    // The task does not depend on M, so every trial scores the byte-identical
-    // target series; the only things that vary are history_depth / seeds.
+    // Independent of reservoir seed: every trial scores the byte-identical series.
     NARMATaskConfig tc{narma_order, data_seed};
     tc.tanh_wrap = (NARMA_TANH_WRAP != 0); // campaign: 1 (fixed α β γ δ + outer tanh)
     NARMATask task = MakeNARMATask(DIM, tc, collect, warmup);
@@ -136,7 +134,8 @@ int main(int argc, char* argv[])
               << "\n";
     std::cout << "  Series:  warmup=" << task.warmup
               << "  collect=" << task.collect
-              << "  (train=" << task.tr << ", test=" << task.te << ")\n";
+              << "  (train=" << task.tr << ", test=" << task.te << ")"
+              << "  data_seed=" << data_seed << "\n";
     std::cout << "  Coeffs:  alpha=" << task.coeffs.alpha
               << " beta=" << task.coeffs.beta
               << " gamma=" << task.coeffs.gamma
@@ -144,18 +143,18 @@ int main(int argc, char* argv[])
               << "  u in [" << task.coeffs.u_low << ", " << task.coeffs.u_high << "]\n";
 
     // ---- Base ESN config (NARMA.md shared configuration) --------------------
-    // Only reservoir.seed and reservoir.history_depth change per trial cell.
+    // Per trial: only reservoir.seed changes (history_depth stays at history_M).
     ESNConfig base;
     base.reservoir.dim = DIM;
     base.reservoir.verbose = false;            // suppress per-trial SR banner
     base.reservoir.spectral_radius = 0.99f;
     base.reservoir.input_scaling = 0.03f;
     base.reservoir.leak_rate = 1.0f;
-    base.reservoir.history_depth = history_M;  // overwritten by sweep_M[mi] in the loop
-    // bias_scaling left at ReservoirConfig default 0.02 (campaign used default)
+    base.reservoir.history_depth = history_M;
+    base.reservoir.bias_scaling = 0.02f;       // pin campaign default
 
     base.readout_slices = 2;                   // B=2 → HCNN start dim 11
-    base.readout.seed = 3423555;
+    base.readout.seed = 3423555;               // fixed HCNN init (isolate res seed)
     base.readout.conv_channels = 16;
     base.readout.num_layers = 1;
     base.readout.use_pooling = true;
@@ -164,27 +163,35 @@ int main(int argc, char* argv[])
     base.readout.activation = ReadoutActivation::TANH;
     base.readout.epochs = 600;
     base.readout.batch_size = 128;
-    base.readout.lr_max = 0.0015f;             // was implicit default; pin to campaign
+    base.readout.lr_max = 0.0015f;
     base.readout.lr_min_frac = 0.005f;         // floor = 0.0015 * 0.005 = 7.5e-06
+    // Best-epoch restore scores the full training set (holdout_frac=0) — train MSE,
+    // not a validation split. Test NRMSE remains a clean held-out metric.
     base.readout.restore_best_epoch = true;
-    base.readout.momentum = 0.9f;              // ignored under Adam (default optimizer)
+    base.readout.best_epoch_holdout_frac = 0.0f;
 
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
+              << "  M=" << history_M
               << "  sr=" << base.reservoir.spectral_radius
               << " leak=" << base.reservoir.leak_rate
-              << " input_scaling=" << base.reservoir.input_scaling << "\n";
+              << " input_scaling=" << base.reservoir.input_scaling
+              << " bias_scaling=" << base.reservoir.bias_scaling << "\n";
+    std::cout << "  Readout: slices=" << base.readout_slices
+              << "  readout.seed=" << base.readout.seed
+              << "  restore_best_epoch="
+              << (base.readout.restore_best_epoch ? "true" : "false")
+              << " (train-MSE; holdout_frac="
+              << base.readout.best_epoch_holdout_frac << ")\n";
     std::cout << "  Training: " << base.readout.epochs << " epochs, batch="
               << base.readout.batch_size << ", lr=" << base.readout.lr_max
               << " (cosine, floor=" << (base.readout.lr_max * base.readout.lr_min_frac)
               << ")\n";
-    std::cout << "  Sweep M:     ";
-    for (size_t m : sweep_M) std::cout << m << ' ';
-    std::cout << "\n  Res seeds:   ";
+    std::cout << "  Res seeds (" << sweep_reservoir_seeds.size() << "): ";
     for (uint64_t sd : sweep_reservoir_seeds) std::cout << sd << ' ';
     std::cout << "\n";
 
-    // Architecture is shared across the M×seed sweep (only history_depth / seeds
-    // change). Probe once so logs show stack + param count without per-trial noise.
+    // Architecture is shared across seeds (only reservoir.seed changes).
+    // Probe once so logs show stack + param count without per-trial noise.
     {
         ESNConfig probe = base;
         probe.reservoir.seed =
@@ -195,7 +202,7 @@ int main(int argc, char* argv[])
         std::cout << probe_esn.ReadoutArchSummary();
     }
 
-    // ---- Run the sweep (reservoir seed x M) ---------------------------------
+    // ---- Multi-seed survey (fixed M; optional multi-M via sweep_M) ----------
     const size_t nM = sweep_M.size();
     const size_t nS = sweep_reservoir_seeds.size();
     const size_t nTrials = nS;
@@ -214,18 +221,21 @@ int main(int argc, char* argv[])
             NARMATrialResult res = RunNARMATrial(cfg, task);
             target_mean = res.target_mean;
             nrmse[mi][ti] = res.nrmse;
-            std::cout << std::fixed
-                      << "    M=" << std::setw(2) << sweep_M[mi]
-                      << ": NRMSE=" << std::setprecision(4) << res.nrmse
+            std::cout << std::fixed;
+            if (nM > 1)
+                std::cout << "    M=" << std::setw(2) << sweep_M[mi] << ": ";
+            else
+                std::cout << "    ";
+            std::cout << "NRMSE=" << std::setprecision(4) << res.nrmse
                       << "  R2=" << std::setprecision(4) << res.r2
                       << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
         }
     }
 
-    // ---- Aggregate per M (full pool + best-k spotlight) ---------------------
-    // Full raw matrix always reports every trial. Summary tables:
-    //   all-nTrials  — unbiased multi-seed mean / sample-std / min / max
-    //   best-k_best  — lowest-NRMSE trials only (spotlight; optimistic by design)
+    // ---- Aggregate (full pool + best-k spotlight) ---------------------------
+    // Full raw table always reports every trial. Summary tables:
+    //   all-nTrials  — multi-seed mean / sample-std / min / max
+    //   best-k_best  — lowest-NRMSE trials (featured in NARMA.md)
     auto stats = [](const std::vector<double>& v) {
         double mn = v[0], mx = v[0], sum = 0.0;
         for (double x : v) { sum += x; mn = std::min(mn, x); mx = std::max(mx, x); }
@@ -276,14 +286,15 @@ int main(int argc, char* argv[])
     };
 
     std::cout << std::fixed;
-    std::cout << "\n=== NARMA-" << narma_order << " history_depth x seed sweep"
+    std::cout << "\n=== NARMA-" << narma_order << " multi-seed survey"
               << "  (DIM=" << DIM << ", N=" << N
+              << ", M=" << history_M
               << ", " << nS << " res seeds"
               << ", " << nTrials << " trials total"
               << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
     std::cout << "  Stats: all-" << nTrials << " pool + best-"
               << std::min(k_best, nTrials) << " of " << nTrials
-              << " (lowest NRMSE; spotlight, not a population estimate).\n";
+              << " (lowest test NRMSE; featured multi-seed band).\n";
 
     {
         std::string all_title = "All " + std::to_string(nTrials)
@@ -297,10 +308,10 @@ int main(int argc, char* argv[])
         print_stats_table(best_title.c_str(), /*best_only=*/true);
     }
 
-    // Best-k trial list per M (which seeds made the spotlight).
+    // Best-k trial list (which seeds made the spotlight).
     {
         const size_t k = std::min(k_best, nTrials);
-        std::cout << "\n  Best-" << k << " trials per M (lowest NRMSE first):\n";
+        std::cout << "\n  Best-" << k << " seeds (lowest test NRMSE first):\n";
         for (size_t mi = 0; mi < nM; ++mi) {
             std::vector<size_t> order(nTrials);
             for (size_t ti = 0; ti < nTrials; ++ti) order[ti] = ti;
@@ -309,7 +320,10 @@ int main(int argc, char* argv[])
                               [&](size_t a, size_t b) {
                                   return nrmse[mi][a] < nrmse[mi][b];
                               });
-            std::cout << "    M=" << sweep_M[mi] << ":";
+            if (nM > 1)
+                std::cout << "    M=" << sweep_M[mi] << ":";
+            else
+                std::cout << "   ";
             for (size_t j = 0; j < k; ++j) {
                 const size_t ti = order[j];
                 std::cout << "  [" << (j + 1) << "] "
@@ -320,22 +334,26 @@ int main(int argc, char* argv[])
         }
     }
 
-    // ---- Raw NRMSE matrix (rows = M, cols = res_seed) -----------------------
-    std::cout << "\n  Raw NRMSE (rows M, cols = res_seed) — all "
-              << nTrials << " trials:\n";
-    std::cout << "    " << std::setw(4) << "M";
+    // ---- Raw NRMSE (cols = res_seed; optional M row label if multi-M) --------
+    std::cout << "\n  Raw NRMSE — all " << nTrials << " trials:\n";
+    std::cout << "    ";
+    if (nM > 1)
+        std::cout << std::setw(4) << "M";
     for (size_t si = 0; si < nS; ++si)
         std::cout << "  " << std::setw(9) << sweep_reservoir_seeds[si];
     std::cout << "\n";
     for (size_t mi = 0; mi < nM; ++mi) {
-        std::cout << "    " << std::setw(4) << sweep_M[mi];
+        std::cout << "    ";
+        if (nM > 1)
+            std::cout << std::setw(4) << sweep_M[mi];
         for (size_t ti = 0; ti < nTrials; ++ti)
             std::cout << "  " << std::setw(9) << std::setprecision(4) << nrmse[mi][ti];
         std::cout << "\n";
     }
 
-    std::cout << "\nReconstruction quality should track memory depth, saturating once\n";
-    std::cout << "M >= the NARMA order (the delay line can then hold the full lag history).\n";
+    std::cout << "\nOpen-loop test NRMSE on the held-out "
+              << task.te << " steps (train " << task.tr
+              << "). Same series for every seed; only reservoir.seed varies.\n";
 
     return 0;
 }

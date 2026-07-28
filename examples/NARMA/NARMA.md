@@ -72,23 +72,33 @@ with best-5 as the representative multi-seed story across 30 / 50 / 70.
 
 ## Shared configuration
 
+Pinned in `NARMA.cpp` `main()` — keep in lockstep with this table.
+
 | Knob | Value |
 |------|--------|
 | Variant | **tanh-wrapped** — fixed coeffs α=0.3, β=0.05, γ=1.5, δ=0.1; `u ∈ [0, 0.5]` |
-| Reservoir | DIM=10 (N=1024), **M = history_depth = 32**, spectral radius 0.99, leak 1.0, input_scaling **0.03** |
+| `data_seed` | **1939** — fixes the entire u/y series (same series for every reservoir seed) |
+| Reservoir | DIM=10 (N=1024), **M = history_depth = 32**, spectral radius 0.99, leak 1.0, input_scaling **0.03**, **bias_scaling 0.02** |
 | Readout input | `readout_slices = 2` (B=2 → HCNN start dim 11, capacity 2048) |
 | HCNN | Conv(1→16, TANH) → MaxPool → Linear(16384→1) · **16593** trained parameters |
+| `readout.seed` | **3423555** — fixed HCNN weight init so multi-seed spread is reservoir-side |
 | Series | warmup 300 · collect **32000** (train 25600 / test 6400) |
 | Training | 600 epochs, batch 128, lr 0.0015 cosine (floor 7.5e-06) |
-| Seeds | **Same 20** reservoir seeds for every order (see tables below) |
+| Best-epoch | `restore_best_epoch = true`, **holdout_frac = 0** — restores min **train** MSE epoch (not a validation split). Test NRMSE is still a clean held-out metric. |
+| Reservoir seeds | **Same 20** for every order (see tables below); formula `(73896+k)×(k+2)`, k = 0…19 |
 
 Metric: **test NRMSE** = RMSE / std(target) on the held-out 6400 steps. The
 campaign **features best-5 of 20** (mean/std/range of the five lowest-NRMSE
 seeds). All 20 trials are logged and tabulated below for transparency. R² and
 wall times are in the raw logs.
 
-Wall time in the logs: roughly **12–14 minutes per seed** (Release, collect
-machine).
+Campaign `.txt` logs may still show older “M sweep” banner wording; numbers match
+this op-point. Current `NARMA.exe` prints a multi-seed / fixed-M banner.
+
+**Cost (doc only — no smoke path):** roughly **12–14 minutes per seed** on the
+collect machine (Release). Full order campaign ≈ 20 seeds → on the order of
+**4–5 hours per NARMA order**, or ~12–15 hours for 30+50+70. Not CI-friendly by
+design; treat as a batch validator, not a unit test.
 
 ---
 
@@ -103,7 +113,9 @@ cmake-build-release\NARMA.exe --help
 ```
 
 `order` is optional (integer ≥ 2). Op-point, seed list, and series length live
-in `NARMA.cpp` `main()` — match those to the table above to reproduce.
+in `NARMA.cpp` `main()` — match those to the table above to reproduce. The
+harness is a **fixed-M multi-seed survey** (not an M-ladder by default);
+`sweep_M` can hold more depths if you re-open an M study.
 
 ---
 
@@ -234,12 +246,16 @@ order-dependent (1108635 at N30; 665127 at N50 and N70).
 
 ---
 
-## Architecture note (M vs HCNN size)
+## Architecture note (M vs HCNN size; M vs NARMA order)
 
 Reservoir **M** sets recurrent delay-line depth and weight count
 (`N · dim · (M + drive blocks)`). The readout sees **B = readout_slices** packed
-ages (here B=2), so HCNN capacity is `2^(dim + log2 B)` — independent of M. In
-this campaign both M=32 and B=2 are fixed; only seed and NARMA order change.
+ages (here B=2), so HCNN capacity is 2<sup>(dim + log2 B)</sup> — independent of
+M. In this campaign both M=32 and B=2 are fixed; only seed and NARMA order change.
+
+**M need not equal the NARMA order.** At NARMA-70, M=32 is shorter than the
+recurrence lag N=70; recurrent dynamics still carry long memory. Do not read
+“M ≥ order” as a hard requirement for this protocol.
 
 ---
 

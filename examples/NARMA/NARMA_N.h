@@ -301,8 +301,8 @@ struct NARMATask
 ///                    onto [-1, +1], centered on 0)
 ///
 /// The NARMA output y has a non-zero mean; the readout no longer centers
-/// targets, so the driver in NARMA.cpp subtracts the train-set mean before
-/// training and adds it back at prediction time.
+/// targets, so RunNARMATrial subtracts the train-set mean before training and
+/// adds it back when filling test_pred.
 inline NARMATask MakeNARMATask(size_t dim,
                                const NARMATaskConfig& tc,
                                size_t collect,

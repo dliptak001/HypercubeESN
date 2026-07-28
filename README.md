@@ -30,8 +30,15 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
-**Headline result** — one fixed config, tanh-wrapped NARMA, **best 5 of 20** seeds
-(test NRMSE):
+## Headline results
+
+Primary validators — open-loop (NARMA, MC) and half-anchored free-run (Lorenz).
+Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md).
+
+### NARMA (open-loop system ID)
+
+One fixed config, tanh-wrapped orders 30 / 50 / 70; **best 5 of 20** seeds
+(test NRMSE). Same op-point for all three orders.
 
 | Order | Best-5 mean |
 |------:|------------:|
@@ -39,9 +46,28 @@ never leaves the hypercube it was born on.**
 | 50 | **0.0751** |
 | 70 | **0.1251** |
 
-Same op-point for all three orders; only the NARMA order changes.
+### Memory capacity (Jaeger MC)
 
-[Spotlight](#spotlight-narma) · [full write-up](examples/NARMA/NARMA.md)
+Linear short-term memory (ridge on reservoir state — not HCNN). **Tunable** via
+DIM, delay-line depth M, and spectral radius: peak TotalMC from about **30**
+(DIM 5) to **1400+** (DIM 12) in the reference grids; small cubes sit near the
+theoretical ceiling (MC/F ≈ 1).
+
+| DIM | N | Peak TotalMC |
+|----:|--:|-------------:|
+| 5 | 32 | ~30 |
+| 8 | 256 | ~250 |
+| 10 | 1024 | ~820 |
+| 12 | 4096 | ~1380 |
+
+### Lorenz (half-anchored free-run)
+
+Janus dual-cursor train; free-run with real past + self-feedback on the future
+port. Report VPT / free-run RMSE with the half-anchored protocol stated.
+
+| Metric | Result |
+|--------|--------|
+| VPT (Lyapunov times) / protocol | **TBD** |
 
 ## What is Reservoir Computing?
 
@@ -85,20 +111,6 @@ borders — neighbor lookup is the same single XOR the reservoir already speaks.
 The pairing is topology-native: zero distortion into the readout; learned kernels
 exploit the locality that generated the dynamics. **The data never leaves the
 hypercube it was born on.** Practical range: DIM 5–16 (32 to 65,536 neurons).
-
-## Spotlight: NARMA
-
-Open-loop system identification under **one fixed** HypercubeESN configuration
-(orders 30 / 50 / 70; only the recurrence order changes). Multi-seed story:
-**best 5 of 20** (test NRMSE).
-
-| Order | Best-5 mean |
-|------:|------------:|
-| 30 | **0.0441** |
-| 50 | **0.0751** |
-| 70 | **0.1251** |
-
-Protocol, seed matrix, full pool: [examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
 
 ## Why a Hypercube?
 
