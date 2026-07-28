@@ -26,10 +26,12 @@ construction rather than by luck. The result is an ESN that is at once
 mathematically clean, strikingly memory-frugal, and strong where reservoirs are
 meant to be: long memory and nonlinear computation.
 
-**Headline result:** tanh-wrapped **NARMA-30 test NRMSE 0.0570** (best-3 mean 0.0576) — about **5×
-lower error** than the bottom of the rough literature “strong / large-N” band
-(0.30–0.50). Details in [Spotlight: NARMA-30](#spotlight-narma-30-at-nrmse-00570)
-and [examples/NARMA/NARMA-30.md](examples/NARMA/NARMA-30.md).
+**Headline result:** **one fixed** HypercubeESN config on tanh-wrapped **NARMA-30 /
+50 / 70** (same knobs, 20 seeds each): N30 **best-5-of-20** mean test NRMSE
+**0.0441** (best **0.0419**), well below the rough literature “strong / large-N”
+floor (~0.30; protocols poorly standardized). Details in
+[Spotlight: NARMA](#spotlight-narma) and
+[examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
 
 ## What is Reservoir Computing?
 
@@ -82,28 +84,28 @@ the dynamics. The data never leaves the hypercube it was born on.
 HypercubeESN targets DIM 5–16 (32 to 65,536 neurons), the practical range for
 reservoir computing.
 
-## Spotlight: NARMA-30 at NRMSE 0.0570
+## Spotlight: NARMA
 
-NARMA-30 is the classic hard reservoir stress test: long nonlinear memory of the
-output history plus a delayed input product. Rough literature bands on test
-**NRMSE** place “strong / large-N” performance around **0.30–0.50** (and “good”
-around **0.40–0.60**). HypercubeESN’s best run to date:
+NARMA is the classic hard open-loop reservoir stress test: long nonlinear memory
+plus a delayed input product. HypercubeESN’s current campaign runs **one fixed
+configuration** on tanh-wrapped orders **30 / 50 / 70** (same knobs, same 20
+seeds — only the order changes). Featured multi-seed story: **best 5 of 20**
+(lowest NRMSE):
+
+| Order | Best-5 mean NRMSE | Best seed |
+|------:|------------------:|----------:|
+| 30 | **0.0441** | **0.0419** |
+| 50 | **0.0751** | **0.0742** |
+| 70 | **0.1251** | **0.1225** |
 
 | | |
 |--|--|
-| **Test NRMSE** | **0.0570** (R² = 0.9968); best-3 mean **0.0576** |
-| vs strong-band floor (0.30) | **~5× lower error** (0.30 / 0.0570 ≈ 5.3) |
-| Setup | tanh-wrapped NARMA-30 · DIM 10 (1024 neurons) · history depth M=16 |
-| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · 10 seeds (best-3 in [NARMA-30.md](examples/NARMA/NARMA-30.md)) |
-| Readout | HypercubeCNN, 32993 parameters |
+| Setup | tanh-wrapped · DIM 10 (N=1024) · M=32 · input_scaling 0.03 · B=2 slices |
+| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · **20** seeds |
+| Readout | HypercubeCNN, 16593 parameters |
 
-We have not found published NARMA-30 NRMSE results below that strong-band floor,
-let alone near **0.06**. Order-30 protocols are poorly standardized, so treat
-cross-paper numbers carefully — but the gap is large, and even this project’s
-older multi-seed tables at shorter collect already sit well under 0.30.
-
-Full protocol, seed table, M-sweep tables, and caveats:
-[examples/NARMA/NARMA-30.md](examples/NARMA/NARMA-30.md) ·
+Rough literature “strong” bands for order 30 sit near **0.30–0.50** NRMSE
+(protocols poorly standardized). Full protocol, seed matrix, and caveats:
 [examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
 
 ## Why a Hypercube?
@@ -243,7 +245,7 @@ The build produces these executables:
 | `SignalClassification` | Multi-class waveform recognition with confusion matrix |
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
 | `MemoryCapacity` | Jaeger memory-capacity diagnostic (white-noise MC sweep) |
-| `NARMA` | NARMA-N nonlinear benchmark — **best NARMA-30 NRMSE 0.0570** (~5× under lit. strong-band floor); see [NARMA-30.md](examples/NARMA/NARMA-30.md) |
+| `NARMA` | NARMA open-loop validator — one config across 30/50/70; N30 best-5 mean **0.0441**; see [NARMA.md](examples/NARMA/NARMA.md) |
 | `Lorenz` | Lorenz attractor tracking / free-run |
 
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
@@ -264,7 +266,7 @@ HypercubeESN/
     SignalClassification.cpp/md  Multi-class waveform recognition
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
-    NARMA/                       NARMA-N benchmark (best NARMA-30 NRMSE 0.0570)
+    NARMA/                       NARMA validator (one config · N30/50/70 · best-5 of 20)
     Lorenz/                      Lorenz attractor tracking / free-run
 
   python/                Python bindings (pybind11 module + pyproject)

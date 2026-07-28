@@ -117,41 +117,19 @@ and multi-DIM lookup tables (archived reference campaigns) are in
 
 ## NARMA
 
-A classic reservoir **benchmark** for nonlinear system identification. The
-reservoir is driven by white noise `u(t)` and the readout must reconstruct the
-NARMA-N output `y(t)`, whose recurrence couples a long nonlinear history of its
-own past with a delayed copy of the input — so it stresses memory depth and
-nonlinear mixing at once. Unlike MemoryCapacity (which isolates *linear*
-memory), this is the full ESN pipeline with a trained HCNN readout.
+Primary **open-loop** validator: white input `u(t)` drives the reservoir; the
+readout reconstructs NARMA-N output `y(t)` (memory depth + nonlinear mixing).
+**One fixed ESN configuration** across tanh-wrapped orders **30 / 50 / 70**
+(same knobs, same 20 seeds) — see [`NARMA/NARMA.md`](NARMA/NARMA.md).
 
 **What it shows:**
-- The canonical NARMA task with correct input/target alignment (system
-  identification, not one-step forecasting)
-- A `history_depth (M) × reservoir-seed` sweep proving the task is
-  memory-bound — reconstruction quality tracks delay-line depth, with the
-  optimum just above the NARMA order (too few taps starve the lag history, too
-  many dilute the readout, so the error curve is U-shaped)
-- A `tanh`-wrapped vs. legacy coefficient-schedule A/B switch
-  (`NARMA_TANH_WRAP`) so difficulty scales honestly with order
+- Correct input/target alignment (system identification, not one-step forecasting)
+- Shared-op-point multi-seed NRMSE (**best 5 of 20**): N30 mean **0.0441**, N50
+  **0.0751**, N70 **0.1251**
+- `tanh`-wrapped fixed coefficients (`NARMA_TANH_WRAP`) so order scales honestly
 
-**Expected output (abbreviated):**
-```
-=== HypercubeESN: NARMA-30 history_depth (M) x seed sweep ===
-
-  Variant: tanh-wrapped (fixed coeffs -- honest order-scaling)
-  Config: DIM=10 N=1024  sr=0.92 leak=1 input_scaling=0.5
-
-    M     mean
-    ----  -------
-       1   0.7824
-      16   0.1257
-      32   0.0885
-```
-
-Optional CLI: `NARMA.exe [order]` (integer ≥ 2; default 50). Edit the other
-`constexpr` / vectors in `main()` (DIM, `sweep_M`, seeds) to probe a different
-regime. Full walkthrough — the recurrence, coefficient schedule, literature
-reference bands, and the target-alignment fix — is in
+Optional CLI: `NARMA.exe [order]` (integer ≥ 2; default 50). Knobs and seed list
+live in `NARMA.cpp` `main()`. Walkthrough and seed tables:
 [`NARMA/NARMA.md`](NARMA/NARMA.md).
 
 ## Building

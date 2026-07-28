@@ -92,29 +92,28 @@ int main(int argc, char* argv[])
     if (help)
         return 0;
 
-    constexpr size_t DIM         = 10;
+    // Shared campaign op-point — keep in lockstep with examples/NARMA/NARMA.md
+    // ("Shared configuration"). Only narma_order (CLI) and reservoir.seed vary.
+    constexpr size_t DIM         = 10;          // N = 1024
     constexpr size_t N           = 1ULL << DIM;
-    constexpr size_t collect     = 32000;       // states fed to the readout (80/20 split), low res - 8000, hi res - 32000
-    constexpr uint64_t data_seed = 1939;        // signal-side RNG seed
+    constexpr size_t collect     = 32000;       // train 25600 / test 6400
+    constexpr size_t warmup      = 300;
+    constexpr uint64_t data_seed = 1939;        // signal-side RNG (series fixed across res seeds)
+    constexpr size_t history_M   = 32;          // history_depth for the campaign
 
-    // history_depth (M) sweep points: below, around, and beyond the NARMA order,
-    // to map where the delay line can finally hold the full lag history (the knee
-    // sits near M = order). history_depth is capped at 64 by Reservoir::Create.
-    const std::vector<size_t> sweep_M = {32};
+    // Single-M "sweep" (campaign is multi-seed at fixed M, not an M ladder).
+    const std::vector<size_t> sweep_M = {history_M};
 
-    // Second sweep dimension: reservoir-init seed. The target series depends on
-    // narma_order + data_seed only (NOT the reservoir seed), so every (seed, M)
-    // cell scores the byte-identical task -- the spread across seeds at a fixed M
-    // is the run-to-run variance, which tells us whether the M-curve shape is real.
-    // (73896+k)*(k+2) for k = 0..19 — same family as the 10-seed NARMA pools, extended.
+    // 20 reservoir seeds (same list for N30/N50/N70). Formula (73896+k)*(k+2), k=0..19.
+    // Values: 147792 221691 295592 369495 443400 517307 591216 665127 739040 812955
+    //         886872 960791 1034712 1108635 1182560 1256487 1330416 1404347 1478280 1552215
     const std::vector<uint64_t> sweep_reservoir_seeds = {
         73896*2,  73897*3,  73898*4,  73899*5,  73900*6,
         73901*7,  73902*8,  73903*9,  73904*10, 73905*11,
         73906*12, 73907*13, 73908*14, 73909*15, 73910*16,
         73911*17, 73912*18, 73913*19, 73914*20, 73915*21,
     };
-    // Aggregate "spotlight" size: full raw table always uses every trial; mean/std
-    // tables are printed for all trials and for the best-k_best (lowest NRMSE).
+    // Spotlight size: best-k of n (featured in NARMA.md); full pool always logged.
     constexpr size_t k_best = 5;
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
@@ -128,8 +127,8 @@ int main(int argc, char* argv[])
     // The task does not depend on M, so every trial scores the byte-identical
     // target series; the only things that vary are history_depth / seeds.
     NARMATaskConfig tc{narma_order, data_seed};
-    tc.tanh_wrap = (NARMA_TANH_WRAP != 0);
-    NARMATask task = MakeNARMATask(DIM, tc, collect, 300);
+    tc.tanh_wrap = (NARMA_TANH_WRAP != 0); // campaign: 1 (fixed α β γ δ + outer tanh)
+    NARMATask task = MakeNARMATask(DIM, tc, collect, warmup);
 
     std::cout << "  Variant: " << (task.tanh_wrap
                   ? "tanh-wrapped (fixed coeffs -- honest order-scaling)"
@@ -144,29 +143,31 @@ int main(int argc, char* argv[])
               << " delta=" << task.coeffs.delta
               << "  u in [" << task.coeffs.u_low << ", " << task.coeffs.u_high << "]\n";
 
-    // ---- Base ESN config -----------------------------------------------------
-    // Shared by every trial; only reservoir.seed and reservoir.history_depth
-    // change per cell, so any NRMSE difference is attributable to those alone.
+    // ---- Base ESN config (NARMA.md shared configuration) --------------------
+    // Only reservoir.seed and reservoir.history_depth change per trial cell.
     ESNConfig base;
     base.reservoir.dim = DIM;
-    base.reservoir.verbose = false;   // suppress the per-trial SR banner
-    base.reservoir.spectral_radius = 0.99;
-    base.reservoir.input_scaling = 0.03;
-    base.reservoir.leak_rate = 1.0;
+    base.reservoir.verbose = false;            // suppress per-trial SR banner
+    base.reservoir.spectral_radius = 0.99f;
+    base.reservoir.input_scaling = 0.03f;
+    base.reservoir.leak_rate = 1.0f;
+    base.reservoir.history_depth = history_M;  // overwritten by sweep_M[mi] in the loop
+    // bias_scaling left at ReservoirConfig default 0.02 (campaign used default)
 
+    base.readout_slices = 2;                   // B=2 → HCNN start dim 11
     base.readout.seed = 3423555;
-    base.readout_slices = 2;
     base.readout.conv_channels = 16;
     base.readout.num_layers = 1;
     base.readout.use_pooling = true;
     base.readout.pool_type = ReadoutPoolType::Max;
-    base.readout.lr_min_frac = 0.005f;
-    base.readout.momentum = 0.9;
-    base.readout.task       = ReadoutTask::Regression;
-    base.readout.restore_best_epoch = true;
-    base.readout.epochs     = 600;
-    base.readout.batch_size = 128;     // CPU cores saturate at batch >= 128
+    base.readout.task = ReadoutTask::Regression;
     base.readout.activation = ReadoutActivation::TANH;
+    base.readout.epochs = 600;
+    base.readout.batch_size = 128;
+    base.readout.lr_max = 0.0015f;             // was implicit default; pin to campaign
+    base.readout.lr_min_frac = 0.005f;         // floor = 0.0015 * 0.005 = 7.5e-06
+    base.readout.restore_best_epoch = true;
+    base.readout.momentum = 0.9f;              // ignored under Adam (default optimizer)
 
     std::cout << "\n  Config: DIM=" << DIM << " N=" << N
               << "  sr=" << base.reservoir.spectral_radius
@@ -189,7 +190,7 @@ int main(int argc, char* argv[])
         probe.reservoir.seed =
             sweep_reservoir_seeds.empty() ? 42ULL : sweep_reservoir_seeds.front();
         probe.reservoir.history_depth =
-            sweep_M.empty() ? 32ULL : sweep_M.front();
+            sweep_M.empty() ? history_M : sweep_M.front();
         ESN probe_esn(probe);
         std::cout << probe_esn.ReadoutArchSummary();
     }

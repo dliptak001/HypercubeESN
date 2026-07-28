@@ -15,11 +15,10 @@ through an addressable delay line of its neighbors' last M states, so temporal
 memory is intrinsic to the topology — memory by construction rather than by luck.
 N = 2^DIM neurons (DIM 5-16, i.e. 32 to 65,536).
 
-**Headline result:** tanh-wrapped **NARMA-30 test NRMSE 0.0570** (best-3 mean 0.0576) — about **5×
-lower error** than the bottom of the rough literature “strong / large-N” band
-(0.30–0.50). Details in
-[Spotlight: NARMA-30](../README.md#spotlight-narma-30-at-nrmse-00570) and
-[examples/NARMA/NARMA-30.md](../examples/NARMA/NARMA-30.md).
+**Headline result:** tanh-wrapped **NARMA** campaign — one fixed config on orders
+30 / 50 / 70; N30 **best-5-of-20** mean NRMSE **0.0441** (best **0.0419**).
+Details in [Spotlight: NARMA](../README.md#spotlight-narma) and
+[examples/NARMA/NARMA.md](../examples/NARMA/NARMA.md).
 
 ## Installation
 
