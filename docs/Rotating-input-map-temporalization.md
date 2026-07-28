@@ -561,7 +561,7 @@ Suggested positioning for papers and product docs:
 |----------|-----------|
 | [Reservoir.md](Reservoir.md) | Topology, timestep, input gather, history depth |
 | [Readout.md](Readout.md) | HCNN readout; multi-slice features |
-| [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md) | External feedback port |
+| [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md) | External feedback port |
 | [docs/README.md](README.md) | Documentation map |
 
 ---

@@ -370,7 +370,7 @@ temporarily replace the survey body.
 | Doc | Role |
 |-----|------|
 | [`JanusCursor.md`](JanusCursor.md) | Exact cursor API and index geometry |
-| [`docs/reservoir_feedback_mechanism.md`](../../docs/reservoir_feedback_mechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
+| [`docs/ReservoirFeedbackMechanism.md`](../../docs/ReservoirFeedbackMechanism.md) | External-feedback **port** (mechanism; this harness supplies the policy) |
 | [`TRACKING.md`](TRACKING.md) | Live experiment log (op-points, surveys; historical FSF A/B retained) |
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh free-run campaign (stale harness) |
 | Project [`docs/README.md`](../../docs/README.md) | Library-wide reading order |

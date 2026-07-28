@@ -308,7 +308,7 @@ When `num_external_feedback_channels = D > 0`, a second driver path mirrors inpu
 
 Typical closed-loop use at the ESN layer: pass the last step's readout-derived
 signal as `external_feedback` to `ESN::ReservoirStep`. Policy lives outside the
-reservoir. Details: [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md).
+reservoir. Details: [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md).
 
 ## Per-neuron bias (optional)
 

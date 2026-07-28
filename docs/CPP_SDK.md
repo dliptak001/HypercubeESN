@@ -302,7 +302,7 @@ struct ReservoirConfig
 | `num_inputs` | `size_t` | `1` | Input channels; must divide N. Channel k drives `[k·N/K, (k+1)·N/K)`. |
 | `history_depth` | `size_t` | `16` | Delay-line depth M **[1, 64]**. Recurrent gather over M published slices. Independent of how many ages the readout packs (B). See [Reservoir.md](Reservoir.md). |
 | `verbose` | `bool` | `false` | One construction banner on stdout. |
-| `num_external_feedback_channels` | `size_t` | `0` | D external-feedback channels. **0** = path off. Else **[1, N]** (need not divide N). See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
+| `num_external_feedback_channels` | `size_t` | `0` | D external-feedback channels. **0** = path off. Else **[1, N]** (need not divide N). See [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input; only if D > 0. Outside SR rescale. |
 | `bias_scaling` | `float` | `0.02` | Per-neuron bias U(−1,1)×scale, **after** tanh. **0** disables. Survives `Clear`; not in snapshots. |
 
