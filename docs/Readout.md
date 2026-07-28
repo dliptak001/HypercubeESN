@@ -90,11 +90,11 @@ Everything upstream is frozen: reservoir weights are random and fixed at init.
 Every trainable parameter lives in the readout — the core reservoir-computing
 bargain.
 
-**Data path** (HCNN start dimension = `readout.dim`):
+**Data path** (HCNN start dimension = `readout.dim`; feature length N = 2<sup>dim</sup>):
 
 ```
-  readout_input[2^dim] ──▶ Embed ──▶ [Conv (+ optional Pool)] × L
-                                      ──▶ Flatten ──▶ Linear ──▶ num_outputs
+  readout_input[N] ──▶ Embed ──▶ [Conv (+ optional Pool)] × L
+                            ──▶ Flatten ──▶ Linear ──▶ num_outputs
 ```
 
 Channels grow by `channel_growth` after each conv (default 16 → 32 → …). Softmax
@@ -231,7 +231,7 @@ Configured via `ReadoutTask` and `num_outputs`.
 
 ```cpp
 struct ReadoutConfig {
-    size_t dim           = 0;        // 2^dim features per sample (set by ESN)
+    size_t dim           = 0;        // features per sample = 1 << dim (set by ESN)
     int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
     int num_layers       = 1;        // 0 = auto min(dim-2, 2)

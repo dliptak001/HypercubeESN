@@ -28,10 +28,10 @@ When A was in-tree, pre-activation `s` went through:
 ```
 A(x) = tanh( x * g(x) )
 g(x) = 1 + gamma * phi(x)
-phi(x) = 1 / (1 + x^2 / sigma^2)     # Lorentzian / Cauchy kernel
+phi(x) = 1 / (1 + x² / sigma²)     # Lorentzian / Cauchy kernel
 ```
 
-Code stored width as `inv_sigma2 = 1/sigma^2`:
+Code stored width as `inv_sigma2 = 1/sigma²`:
 
 ```cpp
 // historical — no longer in Reservoir.cpp
@@ -46,7 +46,7 @@ inline float A_lorentz(float x, float gamma, float inv_sigma2) noexcept
 | Symbol | Historical config field | Role |
 |--------|-------------------------|------|
 | `gamma` | `lorentz_gamma` (default **0**) | Peak central gain; `gamma = 0` ⇒ plain `tanh` |
-| `sigma` | via `lorentz_inv_sigma2 = 1/sigma^2` (default **250** ⇒ sigma ≈ 0.063) | Width of the boosted band |
+| `sigma` | via `lorentz_inv_sigma2 = 1/sigma²` (default **250** ⇒ sigma ≈ 0.063) | Width of the boosted band |
 
 Bias was always **after** the nonlinearity: `activation = A(s) + bias[v]`, then
 the leak blend. Bias path was independent of `gamma`.
@@ -69,7 +69,7 @@ returns to 1 gradually. That is an implementation preference, not a task claim.
 Let `h(x) = x * g(x)`. Then `A(x) = tanh(h(x))` and
 
 ```
-A'(0) = sech^2(0) * h'(0) = h'(0)
+A'(0) = sech²(0) * h'(0) = h'(0)
 ```
 
 At `x = 0`, `phi = 1`, `g = 1 + gamma`, and the `x * g'(x)` contribution to
@@ -78,16 +78,16 @@ At `x = 0`, `phi = 1`, `g = 1 + gamma`, and the `x * g'(x)` contribution to
 
 ### Half-width of phi
 
-`phi(x) = 1/2` when `x^2 = sigma^2`, i.e. `|x| = sigma`. So `sigma` is the
+`phi(x) = 1/2` when `x² = sigma²`, i.e. `|x| = sigma`. So `sigma` is the
 half-width at half-maximum of the gain bump on the pre-activation axis — not a
 guarantee about post-activation `|state|`.
 
 ### Monotonicity for gamma > 0
 
-With `u = x^2 / sigma^2`:
+With `u = x² / sigma²`:
 
 ```
-h'(x) = 1 + gamma * (1 - u) / (1 + u)^2
+h'(x) = 1 + gamma * (1 - u) / (1 + u)²
 ```
 
 For `u ≥ 0` the second term is minimized at `u = 3` with value `-gamma/8`, so

@@ -261,7 +261,7 @@ companion `.md` file with a detailed walkthrough.
 ```
 HypercubeESN/
   CMakeLists.txt         Top-level build (core lib + examples; pulls in HCNN subdir)
-  Reservoir.h/cpp        Hypercube reservoir (N = 2^dim vertices); ReservoirConfig
+  Reservoir.h/cpp        Hypercube reservoir (N = 1<<dim vertices); ReservoirConfig
   Readout.h/cpp          Learned convolutional readout (PIMPL)
   ESN.h/cpp              Unified pipeline: warmup, run, train, predict
   main.cpp               Reservoir snapshot/restore fidelity tests

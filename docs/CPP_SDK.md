@@ -126,7 +126,7 @@ FetchContent-style include (`"ESN.h"`). Installed SDK: `<HypercubeESN/ESN.h>`.
 
 int main()
 {
-    constexpr size_t dim = 7;         // N = 128 (= 2^7) neurons
+    constexpr size_t dim = 7;         // N = 128 (= 2⁷) neurons
     constexpr size_t warmup = 200;
     constexpr size_t collect = 2000;
 
@@ -270,7 +270,7 @@ production callers set dim, seed, spectral radius, and history depth per task
 ```cpp
 struct ReservoirConfig
 {
-    size_t   dim             = 10;     // N = 2^dim; range [5, 16]
+    size_t   dim             = 10;     // N = 1 << dim; range [5, 16]
     uint64_t seed            = 73895;
     float    spectral_radius = 0.99f;  // target for recurrent block only
     float    leak_rate       = 1.0f;   // (0, 1]
