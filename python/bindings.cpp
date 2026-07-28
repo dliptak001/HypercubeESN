@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 #include <cstring>
 #include <memory>
+#include <span>
 #include "../ESN.h"
 
 namespace py = pybind11;
@@ -22,6 +23,10 @@ PYBIND11_MODULE(_core, m)
         .def(py::init([](size_t reservoir_hypercube_dimension, uint64_t seed, float spectral_radius, float input_scaling,
                          float leak_rate, size_t num_inputs, size_t history_depth,
                          bool verbose,
+                         size_t num_external_feedback_channels,
+                         float external_feedback_scaling,
+                         float bias_scaling,
+                         size_t readout_slices,
                          int readout_num_outputs, const char* readout_task,
                          int readout_num_layers, int readout_conv_channels,
                          int readout_epochs, int readout_batch_size,
@@ -41,6 +46,10 @@ PYBIND11_MODULE(_core, m)
             cfg.reservoir.num_inputs       = num_inputs;
             cfg.reservoir.history_depth    = history_depth;
             cfg.reservoir.verbose          = verbose;
+            cfg.reservoir.num_external_feedback_channels = num_external_feedback_channels;
+            cfg.reservoir.external_feedback_scaling = external_feedback_scaling;
+            cfg.reservoir.bias_scaling     = bias_scaling;
+            cfg.readout_slices             = readout_slices;
             cfg.readout.num_outputs        = readout_num_outputs;
             cfg.readout.task               = (std::strcmp(readout_task, "classification") == 0)
                                                  ? ReadoutTask::Classification
@@ -75,10 +84,14 @@ PYBIND11_MODULE(_core, m)
             py::arg("leak_rate")                = 1.0f,
             py::arg("num_inputs")               = 1ULL,
             py::arg("history_depth")            = 16ULL,
-            py::arg("verbose")                  = true,
+            py::arg("verbose")                  = false,
+            py::arg("num_external_feedback_channels") = 0ULL,
+            py::arg("external_feedback_scaling") = 0.5f,
+            py::arg("bias_scaling")             = 0.02f,
+            py::arg("readout_slices")           = 1ULL,
             py::arg("readout_num_outputs")      = 1,
             py::arg("readout_task")             = "regression",
-            py::arg("readout_num_layers")       = 0,
+            py::arg("readout_num_layers")       = 1,
             py::arg("readout_conv_channels")    = 16,
             py::arg("readout_epochs")           = 200,
             py::arg("readout_batch_size")       = 32,
@@ -119,6 +132,37 @@ PYBIND11_MODULE(_core, m)
         .def("reservoir_clear", &ESN::ReservoirClear,
              "Clear the reservoir state so a new sequence starts from rest. "
              "Recorded states and trained readout preserved.")
+
+        .def("reservoir_step", [](ESN& self,
+                                  py::array_t<float, py::array::c_style | py::array::forcecast> inputs,
+                                  py::object external_feedback) {
+            auto ibuf = inputs.request();
+            const size_t K = self.NumInputs();
+            if (static_cast<size_t>(ibuf.size) != K)
+                throw std::invalid_argument(
+                    "inputs size (" + std::to_string(ibuf.size) +
+                    ") must equal num_inputs (" + std::to_string(K) + ") for one step");
+            if (external_feedback.is_none()) {
+                self.ReservoirStep(static_cast<const float*>(ibuf.ptr), nullptr);
+                return;
+            }
+            auto fb = py::array_t<float, py::array::c_style | py::array::forcecast>::ensure(external_feedback);
+            if (!fb)
+                throw std::invalid_argument("external_feedback must be a float array or None");
+            auto fbuf = fb.request();
+            const size_t D = self.NumExternalFeedbackChannels();
+            if (D == 0)
+                throw std::invalid_argument(
+                    "external_feedback provided but num_external_feedback_channels == 0");
+            if (static_cast<size_t>(fbuf.size) != D)
+                throw std::invalid_argument(
+                    "external_feedback size (" + std::to_string(fbuf.size) +
+                    ") must equal num_external_feedback_channels (" + std::to_string(D) + ")");
+            self.ReservoirStep(static_cast<const float*>(ibuf.ptr),
+                               static_cast<const float*>(fbuf.ptr));
+        }, py::arg("inputs"), py::arg("external_feedback") = py::none(),
+           "One reservoir step. inputs: (num_inputs,) float array.\n"
+           "external_feedback: optional (num_external_feedback_channels,) array for closed loop.")
 
         // ── Batch training ──
         .def("train", [](ESN& self,
@@ -259,41 +303,56 @@ PYBIND11_MODULE(_core, m)
             memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
             return arr;
         }, py::arg("state"),
-           "Run the readout on a caller-supplied (readout_input_width,) input.\n"
-           "Returns (num_outputs,) float array.")
+           "Run the readout on a caller-supplied (readout_input_width,) input "
+           "(B·N floats; equals reservoir state only when B=1).\n"
+           "Returns (num_outputs,) float array. Alias: predict_from_readout_input.")
+
+        .def("predict_from_readout_input", [](const ESN& self,
+                                      py::array_t<float, py::array::c_style | py::array::forcecast> state) {
+            auto buf = state.request();
+            size_t W = self.ReadoutInputWidth();
+            if (static_cast<size_t>(buf.size) != W)
+                throw std::invalid_argument(
+                    "readout_input size (" + std::to_string(buf.size) +
+                    ") must equal readout_input_width (" + std::to_string(W) + ")");
+            auto v = self.PredictFromState(static_cast<const float*>(buf.ptr));
+            py::array_t<float> arr(static_cast<py::ssize_t>(v.size()));
+            memcpy(arr.mutable_data(), v.data(), v.size() * sizeof(float));
+            return arr;
+        }, py::arg("readout_input"),
+           "Same as predict_from_state: HCNN forward on a (readout_input_width,) vector.")
 
         .def("r2", [](const ESN& self,
                       py::array_t<float, py::array::c_style | py::array::forcecast> targets,
                       size_t start, size_t count) {
-            if (start + count > self.NumCollectedStates())
-                throw std::out_of_range(
-                    "start + count (" + std::to_string(start + count) +
-                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
-            return self.R2(static_cast<const float*>(targets.request().ptr), start, count);
+            auto buf = targets.request();
+            std::span<const float> sp(static_cast<const float*>(buf.ptr),
+                                      static_cast<size_t>(buf.size));
+            return self.R2(sp, start, count);
         }, py::arg("targets"), py::arg("start"), py::arg("count"),
-           "Compute R-squared on a slice of collected states.")
+           "R² on recorded [start, start+count). targets must cover [0, start+count) "
+           "as (start+count)*num_outputs floats (not a window slice).")
 
         .def("nrmse", [](const ESN& self,
                          py::array_t<float, py::array::c_style | py::array::forcecast> targets,
                          size_t start, size_t count) {
-            if (start + count > self.NumCollectedStates())
-                throw std::out_of_range(
-                    "start + count (" + std::to_string(start + count) +
-                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
-            return self.NRMSE(static_cast<const float*>(targets.request().ptr), start, count);
+            auto buf = targets.request();
+            std::span<const float> sp(static_cast<const float*>(buf.ptr),
+                                      static_cast<size_t>(buf.size));
+            return self.NRMSE(sp, start, count);
         }, py::arg("targets"), py::arg("start"), py::arg("count"),
-           "Compute Normalized RMSE on a slice of collected states.")
+           "NRMSE on recorded [start, start+count). Same full-buffer contract as r2().")
 
         .def("accuracy", [](const ESN& self,
                             py::array_t<float, py::array::c_style | py::array::forcecast> labels,
                             size_t start, size_t count) {
-            if (start + count > self.NumCollectedStates())
-                throw std::out_of_range(
-                    "start + count (" + std::to_string(start + count) +
-                    ") > num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
-            return self.Accuracy(static_cast<const float*>(labels.request().ptr), start, count);
+            auto buf = labels.request();
+            std::span<const float> sp(static_cast<const float*>(buf.ptr),
+                                      static_cast<size_t>(buf.size));
+            return self.Accuracy(sp, start, count);
         }, py::arg("labels"), py::arg("start"), py::arg("count"),
-           "Compute classification accuracy on a slice of collected states.")
+           "Classification accuracy on recorded [start, start+count). "
+           "labels must cover [0, start+count).")
 
         // ── State access ──
         .def("collected_states", [](const ESN& self) {
@@ -324,15 +383,24 @@ PYBIND11_MODULE(_core, m)
         .def_property_readonly("num_collected_states", &ESN::NumCollectedStates)
         .def_property_readonly("num_outputs", &ESN::NumOutputs)
         .def_property_readonly("reservoir_hypercube_dimension", &ESN::ReservoirHypercubeDimension)
+        .def_property_readonly("dim", &ESN::Dim)
         .def_property_readonly("reservoir_neuron_count", &ESN::ReservoirNeuronCount)
         .def_property_readonly("readout_input_width", &ESN::ReadoutInputWidth)
         .def_property_readonly("readout_block_count", &ESN::ReadoutBlockCount)
+        .def_property_readonly("readout_slices", &ESN::ReadoutBlockCount)
         .def_property_readonly("num_inputs", &ESN::NumInputs)
+        .def_property_readonly("num_external_feedback_channels", &ESN::NumExternalFeedbackChannels)
         .def_property_readonly("history_depth", [](const ESN& self) { return self.GetConfig().reservoir.history_depth; })
         .def_property_readonly("seed", [](const ESN& self) { return self.GetConfig().reservoir.seed; })
         .def_property_readonly("spectral_radius", [](const ESN& self) { return self.GetConfig().reservoir.spectral_radius; })
+        .def_property_readonly("target_spectral_radius", &ESN::TargetSpectralRadius)
+        .def_property_readonly("realized_spectral_radius", &ESN::RealizedSpectralRadius)
         .def_property_readonly("leak_rate", [](const ESN& self) { return self.GetConfig().reservoir.leak_rate; })
         .def_property_readonly("input_scaling", [](const ESN& self) { return self.GetConfig().reservoir.input_scaling; })
+        .def_property_readonly("external_feedback_scaling",
+            [](const ESN& self) { return self.GetConfig().reservoir.external_feedback_scaling; })
+        .def_property_readonly("bias_scaling",
+            [](const ESN& self) { return self.GetConfig().reservoir.bias_scaling; })
 
         // ── Persistence ──
         .def("_get_readout_state", [](const ESN& self) -> py::dict {

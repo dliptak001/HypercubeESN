@@ -9,7 +9,7 @@ Quick start::
     import hypercube_esn as he
 
     signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-    esn = he.ESN(reservoir_hypercube_dimension=7)
+    esn = he.ESN(dim=7)
     esn.fit(signal, warmup=200)
     print(f"R² = {esn.r2()}")
 """
@@ -44,15 +44,19 @@ class ESN:
 
     Parameters
     ----------
-    reservoir_hypercube_dimension : int
-        Hypercube dimension (5-16). Determines the number of neurons: N = 2^dim.
+    reservoir_hypercube_dimension : int, optional
+        Hypercube dimension (5-16). N = 2^dim neurons. Prefer the shorter
+        alias ``dim=``; both names are accepted (must agree if both given).
+    dim : int, optional
+        Alias for ``reservoir_hypercube_dimension``.
     seed : int
         RNG seed for weight initialization. Default: 73895 (a surveyed default
         seed; the realization a seed yields measurably affects performance).
     spectral_radius : float
         Target spectral radius for the recurrent weight matrix. Default: 0.99.
         Tune per task (and per dim when you change size); topology alone does
-        not make one value optimal at every dim.
+        not make one value optimal at every dim. See also
+        ``realized_spectral_radius`` after construction.
     input_scaling : float
         Input drive coefficient. Input weights are drawn U(-1,1) then scaled by
         input_scaling/√dim so each vertex's dim-neighbor input sum has
@@ -66,17 +70,29 @@ class ESN:
         Number of input channels. Channel k drives the contiguous vertex block
         [k * N/num_inputs, (k+1) * N/num_inputs). Default: 1.
     history_depth : int
-        Delay-line depth M: how many past output slices the readout sees,
-        in [1, 64]. Deeper lines extend short-range temporal memory. Default: 16.
+        Reservoir delay-line depth **M** ∈ [1, 64]: how many past published
+        slices the **recurrent** gather uses. This is **not** how many ages the
+        readout packs (that is ``readout_slices`` / B). Default: 16.
     verbose : bool
-        Print the one-line reservoir construction banner. Default: True.
+        Print the one-line reservoir construction banner. Default: **False**
+        (library-friendly for multi-seed hosts; demos may set True).
+    num_external_feedback_channels : int
+        D closed-loop drive channels (0 = off). Else in [1, N]. Default: 0.
+    external_feedback_scaling : float
+        Scale for external-feedback weights (like input_scaling). Default: 0.5.
+    bias_scaling : float
+        Per-neuron bias after tanh; 0 disables. Default: 0.02.
+    readout_slices : int
+        B delay-line ages packed into the readout (power of two, 1 ≤ B ≤ M).
+        Default: 1.
     readout_num_outputs : int
         Output dimensionality. Targets for regression, classes for classification.
         Default: 1.
     readout_task : str
         "regression" (default) or "classification".
     readout_num_layers : int
-        Conv+Pool pairs in the HCNN readout. 0 = auto: min(dim-2, 2). Default: 0.
+        Conv+Pool pairs in the HCNN readout. Default: **1** (typical). 0 = auto:
+        min(dim-2, 2).
     readout_conv_channels : int
         Base channel count (doubles per layer). Default: 16.
     readout_epochs : int
@@ -116,7 +132,7 @@ class ESN:
     >>> import numpy as np
     >>> import hypercube_esn as he
     >>> signal = np.sin(np.linspace(0, 20*np.pi, 2000)).astype(np.float32)
-    >>> esn = he.ESN(reservoir_hypercube_dimension=6)
+    >>> esn = he.ESN(dim=6)
     >>> esn.fit(signal, warmup=200)
     ESN(reservoir_hypercube_dimension=6, ...)
     >>> esn.r2()
@@ -124,7 +140,7 @@ class ESN:
 
     Explicit (multi-input, custom targets):
 
-    >>> esn = he.ESN(reservoir_hypercube_dimension=7, num_inputs=2)
+    >>> esn = he.ESN(dim=7, num_inputs=2)
     >>> esn.reservoir_warmup(inputs[:200])
     >>> esn.reservoir_run(inputs[200:])
     >>> esn.train(targets[:1400])
@@ -134,18 +150,23 @@ class ESN:
 
     def __init__(
         self,
-        reservoir_hypercube_dimension: int,
+        reservoir_hypercube_dimension: int | None = None,
         *,
+        dim: int | None = None,
         seed: int = 73895,
         spectral_radius: float = 0.99,
         input_scaling: float = 0.5,
         leak_rate: float = 1.0,
         num_inputs: int = 1,
         history_depth: int = 16,
-        verbose: bool = True,
+        verbose: bool = False,
+        num_external_feedback_channels: int = 0,
+        external_feedback_scaling: float = 0.5,
+        bias_scaling: float = 0.02,
+        readout_slices: int = 1,
         readout_num_outputs: int = 1,
         readout_task: str = "regression",
-        readout_num_layers: int = 0,
+        readout_num_layers: int = 1,
         readout_conv_channels: int = 16,
         readout_epochs: int = 200,
         readout_batch_size: int = 32,
@@ -160,11 +181,27 @@ class ESN:
         readout_restore_best_epoch: bool = True,
         readout_best_epoch_holdout_frac: float = 0.0,
     ):
+        if dim is not None:
+            if (reservoir_hypercube_dimension is not None
+                    and reservoir_hypercube_dimension != dim):
+                raise ValueError(
+                    f"dim={dim} disagrees with "
+                    f"reservoir_hypercube_dimension={reservoir_hypercube_dimension}")
+            reservoir_hypercube_dimension = dim
+        if reservoir_hypercube_dimension is None:
+            raise ValueError(
+                "provide dim= or reservoir_hypercube_dimension= (hypercube size 5–16)")
         if not (_DIM_MIN <= reservoir_hypercube_dimension <= _DIM_MAX):
             raise ValueError(
-                f"reservoir_hypercube_dimension must be {_DIM_MIN}-{_DIM_MAX}, "
+                f"dim / reservoir_hypercube_dimension must be {_DIM_MIN}-{_DIM_MAX}, "
                 f"got {reservoir_hypercube_dimension}")
         self._verbose = verbose
+        self._reservoir_extra = {
+            "num_external_feedback_channels": num_external_feedback_channels,
+            "external_feedback_scaling": external_feedback_scaling,
+            "bias_scaling": bias_scaling,
+            "readout_slices": readout_slices,
+        }
         self._readout_kwargs = {
             "readout_num_outputs": readout_num_outputs,
             "readout_task": readout_task,
@@ -192,6 +229,7 @@ class ESN:
             num_inputs=num_inputs,
             history_depth=history_depth,
             verbose=verbose,
+            **self._reservoir_extra,
             **self._readout_kwargs,
         )
         self._targets: np.ndarray | None = None
@@ -241,6 +279,26 @@ class ESN:
         previously recorded training data.
         """
         self._impl.reservoir_clear()
+
+    def reservoir_step(
+        self,
+        inputs: np.ndarray,
+        external_feedback: np.ndarray | None = None,
+    ) -> None:
+        """One reservoir step (optional closed-loop external feedback).
+
+        Parameters
+        ----------
+        inputs : ndarray
+            Shape ``(num_inputs,)`` for this timestep (float32 preferred).
+        external_feedback : ndarray, optional
+            Shape ``(num_external_feedback_channels,)`` when D > 0; omit or
+            ``None`` when the path is off or unused this step.
+        """
+        self._impl.reservoir_step(
+            _to_float32(inputs),
+            None if external_feedback is None else _to_float32(external_feedback),
+        )
 
     def fit(
         self,
@@ -416,13 +474,14 @@ class ESN:
         return self._impl.predict_from_recorded(timestep)
 
     def predict_from_state(self, state: np.ndarray) -> np.ndarray:
-        """Run the readout on a caller-supplied reservoir state.
+        """Run the HCNN on a caller-supplied **readout input** (historical name).
 
         Parameters
         ----------
         state : ndarray
-            A reservoir state of shape ``(reservoir_neuron_count,)``,
-            e.g. one returned by :meth:`copy_reservoir_state`. Converted to float32.
+            Length ``readout_input_width`` (= B·N). Equals one reservoir slice
+            only when ``readout_slices`` / B = 1. Prefer
+            :meth:`copy_readout_input` / :meth:`predict_from_readout_input`.
 
         Returns
         -------
@@ -430,6 +489,14 @@ class ESN:
             1D array of shape ``(num_outputs,)`` with float32 predictions.
         """
         return self._impl.predict_from_state(_to_float32(state))
+
+    def predict_from_readout_input(self, readout_input: np.ndarray) -> np.ndarray:
+        """HCNN forward on a ``(readout_input_width,)`` vector (clearer name)."""
+        return self._impl.predict_from_readout_input(_to_float32(readout_input))
+
+    def copy_readout_input(self) -> np.ndarray:
+        """Current readout input: ``(readout_input_width,)`` float32 (B·N)."""
+        return self._impl.copy_readout_input()
 
     def predictions(self) -> np.ndarray:
         """Return predictions for all recorded timesteps.
@@ -645,18 +712,23 @@ class ESN:
         return self._impl.reservoir_hypercube_dimension
 
     @property
+    def dim(self) -> int:
+        """Alias for :attr:`reservoir_hypercube_dimension`."""
+        return self._impl.dim
+
+    @property
     def reservoir_neuron_count(self) -> int:
-        """Number of reservoir neurons N = 2^reservoir_hypercube_dimension."""
+        """Number of reservoir neurons N = 2^dim."""
         return self._impl.reservoir_neuron_count
 
     @property
     def num_collected_states(self) -> int:
-        """Number of reservoir-state snapshots recorded by ``reservoir_run()``."""
+        """Number of readout-input rows recorded by ``reservoir_run()``."""
         return self._impl.num_collected_states
 
     @property
     def num_outputs(self) -> int:
-        """Number of readout outputs (after training)."""
+        """Number of readout outputs."""
         return self._impl.num_outputs
 
     @property
@@ -665,9 +737,24 @@ class ESN:
         return self._impl.num_inputs
 
     @property
+    def num_external_feedback_channels(self) -> int:
+        """D external-feedback channels (0 = path off)."""
+        return self._impl.num_external_feedback_channels
+
+    @property
     def history_depth(self) -> int:
-        """Delay-line depth M (past output slices the readout sees)."""
+        """Reservoir delay-line depth M (recurrent gather), not readout B."""
         return self._impl.history_depth
+
+    @property
+    def readout_slices(self) -> int:
+        """B ages packed into the readout (power of two, ≤ M)."""
+        return self._impl.readout_slices
+
+    @property
+    def readout_input_width(self) -> int:
+        """B·N floats per readout input row."""
+        return self._impl.readout_input_width
 
     @property
     def seed(self) -> int:
@@ -676,8 +763,18 @@ class ESN:
 
     @property
     def spectral_radius(self) -> float:
-        """Target spectral radius of the recurrent weight matrix."""
+        """Target spectral radius of the recurrent weight matrix (config)."""
         return self._impl.spectral_radius
+
+    @property
+    def target_spectral_radius(self) -> float:
+        """Same as :attr:`spectral_radius` — explicit name for the target."""
+        return self._impl.target_spectral_radius
+
+    @property
+    def realized_spectral_radius(self) -> float:
+        """Post-rescale realized spectral-radius estimate."""
+        return self._impl.realized_spectral_radius
 
     @property
     def leak_rate(self) -> float:
@@ -688,6 +785,16 @@ class ESN:
     def input_scaling(self) -> float:
         """Input drive coefficient."""
         return self._impl.input_scaling
+
+    @property
+    def external_feedback_scaling(self) -> float:
+        """External-feedback weight scale."""
+        return self._impl.external_feedback_scaling
+
+    @property
+    def bias_scaling(self) -> float:
+        """Per-neuron bias scale (0 = off)."""
+        return self._impl.bias_scaling
 
     @property
     def verbose(self) -> bool:
@@ -735,7 +842,10 @@ class ESN:
     # older (v5) pickle's readout_kwargs are stripped on load.
     # Bumped to 7: depth taper (`history_floor`) was removed; older pickles that
     # still carry the key have it ignored on load (default was no taper).
-    _PERSISTENCE_VERSION = 7
+    # Bumped to 8: closed-loop + multi-slice knobs
+    # (num_external_feedback_channels, external_feedback_scaling, bias_scaling,
+    # readout_slices); default verbose is False.
+    _PERSISTENCE_VERSION = 8
 
     def __getstate__(self) -> dict:
         """Serialize ESN state for pickling.
@@ -754,6 +864,10 @@ class ESN:
             "num_inputs": self.num_inputs,
             "history_depth": self.history_depth,
             "verbose": self._verbose,
+            "num_external_feedback_channels": self.num_external_feedback_channels,
+            "external_feedback_scaling": self.external_feedback_scaling,
+            "bias_scaling": self.bias_scaling,
+            "readout_slices": self.readout_slices,
             "readout_kwargs": dict(self._readout_kwargs),
             "readout_state": self._impl._get_readout_state(),
         }
@@ -781,7 +895,12 @@ class ESN:
             leak_rate=state["leak_rate"],
             num_inputs=state["num_inputs"],
             history_depth=state["history_depth"],
-            verbose=state.get("verbose", True),
+            verbose=state.get("verbose", False),
+            num_external_feedback_channels=state.get(
+                "num_external_feedback_channels", 0),
+            external_feedback_scaling=state.get("external_feedback_scaling", 0.5),
+            bias_scaling=state.get("bias_scaling", 0.02),
+            readout_slices=state.get("readout_slices", 1),
             **readout_kwargs,
         )
         self._impl._set_readout_state(state["readout_state"])

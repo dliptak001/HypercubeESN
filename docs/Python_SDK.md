@@ -72,7 +72,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(reservoir_hypercube_dimension=7)
+esn = he.ESN(dim=7)
 esn.fit(signal, warmup=200)       # warmup, run, train in one call
 
 print(f"R² = {esn.r2():.6f}")     # held-out test R²
@@ -87,7 +87,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(reservoir_hypercube_dimension=7)
+esn = he.ESN(dim=7)
 esn.reservoir_warmup(signal[:200])
 esn.reservoir_run(signal[200:-1])
 
@@ -102,25 +102,25 @@ print(f"R² = {r2:.6f}")
 
 ## Pipeline vocabulary
 
-Same story as the C++ core (Python currently always uses **B = 1** — see below):
+Same story as the C++ core:
 
 ```
-  inputs
+  inputs [+ optional external feedback]
     │
     ▼
   Reservoir (fixed)
     │
     ▼
-  newest slice (N floats)  ──▶  HCNN readout (trained) ──▶ y
+  pack B ages (N each)  ──▶  HCNN readout (trained) ──▶ y
 ```
 
 | Term | Meaning |
 |------|---------|
 | **N** | Reservoir neurons = 2<sup>dim</sup> (`reservoir_neuron_count`) |
 | **M** | `history_depth` — delay-line depth used by the **recurrent** gather |
-| **B** | Delay-line ages packed into the readout. C++: `ESNConfig::readout_slices`. **Python bindings do not expose B; it stays at the C++ default 1.** |
+| **B** | Delay-line ages packed into the readout (`readout_slices`). Power of two, 1 ≤ B ≤ M. Default 1. |
 | **Reservoir state** | Newest published slice (`copy_reservoir_state`) — N floats |
-| **Readout input** | What the HCNN trains/predicts on. With B = 1 this equals the reservoir state |
+| **Readout input** | What the HCNN trains/predicts on (`copy_readout_input`) — B·N floats |
 
 Only the readout is trained. The reservoir is frozen after construction.
 
@@ -149,8 +149,8 @@ Owns the full Reservoir → Readout pipeline.
 ```python
 import hypercube_esn as he
 
-esn = he.ESN(reservoir_hypercube_dimension=7)
-esn = he.ESN(reservoir_hypercube_dimension=7, leak_rate=0.3, history_depth=8)
+esn = he.ESN(dim=7)  # or reservoir_hypercube_dimension=7
+esn = he.ESN(dim=7, leak_rate=0.3, history_depth=8, readout_slices=2)
 
 # High-level
 esn.fit(signal, warmup=200)
@@ -181,7 +181,7 @@ esn.copy_reservoir_state()
 
 ```python
 ESN(
-    reservoir_hypercube_dimension,
+    dim=7,                         # or reservoir_hypercube_dimension=7
     *,
     seed=73895,
     spectral_radius=0.99,
@@ -189,10 +189,14 @@ ESN(
     leak_rate=1.0,
     num_inputs=1,
     history_depth=16,
-    verbose=True,
+    verbose=False,
+    num_external_feedback_channels=0,
+    external_feedback_scaling=0.5,
+    bias_scaling=0.02,
+    readout_slices=1,              # B; power of two ≤ history_depth
     readout_num_outputs=1,
     readout_task="regression",
-    readout_num_layers=0,          # 0 = auto min(dim-2, 2)  [C++ default is 1]
+    readout_num_layers=1,          # house default; 0 = auto min(dim-2, 2)
     readout_conv_channels=16,
     readout_epochs=200,
     readout_batch_size=32,
@@ -213,23 +217,28 @@ Reservoir weights are drawn and spectral-radius-rescaled at construction. The
 HCNN is built eagerly from the `readout_*` kwargs and is ready before the first
 `train` / `train_step`.
 
-**Not exposed in Python** (C++ only for now): `bias_scaling`, external-feedback
-ports, `readout_slices` (B > 1), `use_pooling` / pool type / batch-norm /
-optimizer / channel growth. Those stay at C++ struct defaults (`bias_scaling =
-0.02`, D = 0, B = 1, pooling on, Adam, …).
+**Still C++-only** (not yet in Python): `use_pooling` / pool type / batch-norm /
+optimizer choice / channel growth (C++ struct defaults: pooling on, Adam, …).
+
+Closed-loop: set `num_external_feedback_channels=D>0`, then
+`esn.reservoir_step(u_t, fb_t)` each step.
 
 ##### Reservoir parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2<sup>dim</sup>. |
+| `dim` / `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2<sup>dim</sup>. Prefer `dim=`. |
 | `seed` | `int` | `73895` | Master reservoir seed (SplitMix64 substreams). Screen per task. |
 | `spectral_radius` | `float` | `0.99` | Target ρ for the **recurrent** block. |
 | `input_scaling` | `float` | `0.5` | Input weights × `input_scaling / √dim`. Local construction only. |
 | `leak_rate` | `float` | `1.0` | Leaky integrator; 1.0 = full replacement. |
 | `num_inputs` | `int` | `1` | Channels; must divide N. Channel k drives block `k·N/K`. |
-| `history_depth` | `int` | `16` | Delay-line depth **M ∈ [1, 64]** used by the recurrent gather — **not** “how many slices the readout sees” (that is B; Python keeps B = 1). |
-| `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. |
+| `history_depth` | `int` | `16` | Delay-line depth **M ∈ [1, 64]** for the **recurrent** gather — not readout B. |
+| `verbose` | `bool` | `False` | Construction banner. |
+| `num_external_feedback_channels` | `int` | `0` | D closed-loop channels; 0 = off. |
+| `external_feedback_scaling` | `float` | `0.5` | Ext-fb weight scale (like input). |
+| `bias_scaling` | `float` | `0.02` | Per-neuron bias after tanh; 0 disables. |
+| `readout_slices` | `int` | `1` | B ages for the HCNN (power of two, ≤ M). |
 
 ##### Readout (HCNN) parameters
 
@@ -237,7 +246,7 @@ optimizer / channel growth. Those stay at C++ struct defaults (`bias_scaling =
 |-----------|------|---------|-------------|
 | `readout_num_outputs` | `int` | `1` | Regression targets or class count. |
 | `readout_task` | `str` | `"regression"` | `"regression"` or `"classification"`. |
-| `readout_num_layers` | `int` | `0` | Conv(+Pool) stages. **`0` = auto** `min(dim−2, 2)`. (C++ `ReadoutConfig` default is `1`.) |
+| `readout_num_layers` | `int` | `1` | Conv(+Pool) stages. Default **1**. **`0` = auto** `min(dim−2, 2)`. |
 | `readout_conv_channels` | `int` | `16` | First-layer channels (then × channel growth in C++ default stack). |
 | `readout_epochs` | `int` | `200` | Batch-train epochs. |
 | `readout_batch_size` | `int` | `32` | Mini-batch size. |
@@ -526,11 +535,11 @@ Portable HCNN-only export (no full ESN pickle): `save_readout_hcnn_model` /
 - **No scikit-learn estimator protocol.** The ESN is a temporal pipeline (order
   matters, warmup required, states accumulate). Row-shuffled CV would destroy
   that structure.
-- **Subset of the C++ surface.** No Python knobs yet for multi-slice readout
-  (`readout_slices`), external feedback, or `bias_scaling`. Defaults match C++
-  (`B = 1`, D = 0, bias 0.02).
-- **Default layer count differs:** Python `readout_num_layers=0` (auto) vs C++
-  `num_layers=1` if you construct via C++ without setting auto.
+- **HCNN shape knobs still partial in Python.** Pooling / BN / optimizer /
+  channel growth stay at C++ defaults (pooling on, Adam). Multi-slice B,
+  external feedback, and bias_scaling **are** exposed.
+- **Scoring buffers:** `r2` / `nrmse` / `accuracy` need a targets array that
+  covers index **0 through start+count−1** (not a window slice alone).
 
 ---
 

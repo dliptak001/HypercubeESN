@@ -79,7 +79,7 @@ Everything that follows serves those two.
 | `input_scaling` | 0.5 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/dim) |
 | `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
-| `verbose` | true | Construction banner to stdout |
+| `verbose` | false | Construction banner to stdout |
 | `num_external_feedback_channels` (D) | 0 | **0** = path off; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | Like input: × scaling / √dim (only if D > 0) |
 | `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |

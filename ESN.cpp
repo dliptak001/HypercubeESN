@@ -132,10 +132,45 @@ void ESN::ReservoirStep(const float* inputs, const float* external_feedback)
     reservoir_->Step();
 }
 
+void ESN::ReservoirStep(std::span<const float> inputs, std::span<const float> external_feedback)
+{
+    if (inputs.size() != num_inputs_)
+        throw std::invalid_argument(
+            "ESN::ReservoirStep: inputs.size() (" + std::to_string(inputs.size()) +
+            ") must equal NumInputs() (" + std::to_string(num_inputs_) + ")");
+    const size_t D = esn_config_.reservoir.num_external_feedback_channels;
+    if (!external_feedback.empty())
+    {
+        if (D == 0)
+            throw std::invalid_argument(
+                "ESN::ReservoirStep: external_feedback provided but "
+                "num_external_feedback_channels == 0");
+        if (external_feedback.size() != D)
+            throw std::invalid_argument(
+                "ESN::ReservoirStep: external_feedback.size() (" +
+                std::to_string(external_feedback.size()) +
+                ") must equal NumExternalFeedbackChannels() (" + std::to_string(D) + ")");
+        ReservoirStep(inputs.data(), external_feedback.data());
+    }
+    else
+    {
+        ReservoirStep(inputs.data(), nullptr);
+    }
+}
+
 void ESN::ReservoirWarmup(const float* inputs, size_t num_steps)
 {
     for (size_t s = 0; s < num_steps; ++s)
         ReservoirStep(inputs + s * num_inputs_);
+}
+
+void ESN::ReservoirWarmup(std::span<const float> inputs)
+{
+    if (num_inputs_ == 0 || inputs.size() % num_inputs_ != 0)
+        throw std::invalid_argument(
+            "ESN::ReservoirWarmup: inputs.size() (" + std::to_string(inputs.size()) +
+            ") must be a multiple of NumInputs() (" + std::to_string(num_inputs_) + ")");
+    ReservoirWarmup(inputs.data(), inputs.size() / num_inputs_);
 }
 
 void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded)
@@ -156,6 +191,15 @@ void ESN::ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorde
     num_collected_ += num_steps;
 }
 
+void ESN::ReservoirRun(std::span<const float> inputs, bool clear_recorded)
+{
+    if (num_inputs_ == 0 || inputs.size() % num_inputs_ != 0)
+        throw std::invalid_argument(
+            "ESN::ReservoirRun: inputs.size() (" + std::to_string(inputs.size()) +
+            ") must be a multiple of NumInputs() (" + std::to_string(num_inputs_) + ")");
+    ReservoirRun(inputs.data(), inputs.size() / num_inputs_, clear_recorded);
+}
+
 void ESN::ReservoirClear()
 {
     reservoir_->Clear();
@@ -174,10 +218,33 @@ void ESN::Train(const float* targets, size_t train_size)
     readout_.Train(ReadoutInput(0), targets, train_size);
 }
 
+void ESN::Train(std::span<const float> targets, size_t train_size)
+{
+    const bool cls = esn_config_.readout.task == ReadoutTask::Classification;
+    const size_t expected = cls ? train_size : train_size * readout_.NumOutputs();
+    if (targets.size() != expected)
+        throw std::invalid_argument(
+            "ESN::Train: targets.size() (" + std::to_string(targets.size()) +
+            ") must equal " + std::to_string(expected) +
+            (cls ? " (train_size class indices)" : " (train_size * NumOutputs())"));
+    Train(targets.data(), train_size);
+}
+
 void ESN::TrainStep(const float* target, float lr, float weight_decay)
 {
     AssembleReadoutInput();
     readout_.TrainStep(readout_input_.data(), target, lr, weight_decay);
+}
+
+void ESN::TrainStep(std::span<const float> target, float lr, float weight_decay)
+{
+    const bool cls = esn_config_.readout.task == ReadoutTask::Classification;
+    const size_t expected = cls ? 1u : readout_.NumOutputs();
+    if (target.size() != expected)
+        throw std::invalid_argument(
+            "ESN::TrainStep: target.size() (" + std::to_string(target.size()) +
+            ") must equal " + std::to_string(expected));
+    TrainStep(target.data(), lr, weight_decay);
 }
 
 void ESN::TrainStepBatch(const float* readout_inputs, const float* targets,
@@ -192,10 +259,28 @@ void ESN::CopyReservoirState(float* out) const
     std::memcpy(out, src, n_ * sizeof(float));
 }
 
+void ESN::CopyReservoirState(std::span<float> out) const
+{
+    if (out.size() != n_)
+        throw std::invalid_argument(
+            "ESN::CopyReservoirState: out.size() (" + std::to_string(out.size()) +
+            ") must equal ReservoirNeuronCount() (" + std::to_string(n_) + ")");
+    CopyReservoirState(out.data());
+}
+
 void ESN::CopyReadoutInput(float* out) const
 {
     AssembleReadoutInput();
     std::memcpy(out, readout_input_.data(), readout_width_ * sizeof(float));
+}
+
+void ESN::CopyReadoutInput(std::span<float> out) const
+{
+    if (out.size() != readout_width_)
+        throw std::invalid_argument(
+            "ESN::CopyReadoutInput: out.size() (" + std::to_string(out.size()) +
+            ") must equal ReadoutInputWidth() (" + std::to_string(readout_width_) + ")");
+    CopyReadoutInput(out.data());
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +298,15 @@ void ESN::Predict(float* out) const
 {
     AssembleReadoutInput();
     readout_.PredictRaw(readout_input_.data(), out);
+}
+
+void ESN::Predict(std::span<float> out) const
+{
+    if (out.size() != readout_.NumOutputs())
+        throw std::invalid_argument(
+            "ESN::Predict: out.size() (" + std::to_string(out.size()) +
+            ") must equal NumOutputs() (" + std::to_string(readout_.NumOutputs()) + ")");
+    Predict(out.data());
 }
 
 std::vector<float> ESN::PredictFromRecorded(size_t timestep) const
@@ -238,6 +332,56 @@ void ESN::PredictFromState(const float* readout_input, float* out) const
     readout_.PredictRaw(readout_input, out);
 }
 
+std::vector<float> ESN::PredictFromReadoutInput(std::span<const float> readout_input) const
+{
+    if (readout_input.size() != readout_width_)
+        throw std::invalid_argument(
+            "ESN::PredictFromReadoutInput: size (" + std::to_string(readout_input.size()) +
+            ") must equal ReadoutInputWidth() (" + std::to_string(readout_width_) + ")");
+    return PredictFromState(readout_input.data());
+}
+
+void ESN::PredictFromReadoutInput(std::span<const float> readout_input, std::span<float> out) const
+{
+    if (readout_input.size() != readout_width_)
+        throw std::invalid_argument(
+            "ESN::PredictFromReadoutInput: input size (" + std::to_string(readout_input.size()) +
+            ") must equal ReadoutInputWidth() (" + std::to_string(readout_width_) + ")");
+    if (out.size() != readout_.NumOutputs())
+        throw std::invalid_argument(
+            "ESN::PredictFromReadoutInput: out.size() (" + std::to_string(out.size()) +
+            ") must equal NumOutputs() (" + std::to_string(readout_.NumOutputs()) + ")");
+    PredictFromState(readout_input.data(), out.data());
+}
+
+namespace
+{
+void RequireFullTargetBuffer(const char* api, std::span<const float> targets,
+                             size_t start, size_t count, size_t stride)
+{
+    const size_t need = (start + count) * stride;
+    if (targets.size() < need)
+        throw std::invalid_argument(
+            std::string(api) + ": targets.size() (" + std::to_string(targets.size()) +
+            ") < (start+count)*stride (" + std::to_string(start) + "+" +
+            std::to_string(count) + ")*" + std::to_string(stride) + " = " +
+            std::to_string(need) +
+            ". Pass a buffer covering [0, start+count), not a window slice "
+            "(or use the FromWindow overload).");
+}
+
+void RequireWindowTargetBuffer(const char* api, std::span<const float> window,
+                               size_t count, size_t stride)
+{
+    const size_t need = count * stride;
+    if (window.size() != need)
+        throw std::invalid_argument(
+            std::string(api) + ": window.size() (" + std::to_string(window.size()) +
+            ") must equal count*stride (" + std::to_string(count) + "*" +
+            std::to_string(stride) + " = " + std::to_string(need) + ")");
+}
+} // namespace
+
 double ESN::R2(const float* targets, size_t start, size_t count) const
 {
     if (start + count > num_collected_)
@@ -246,6 +390,28 @@ double ESN::R2(const float* targets, size_t start, size_t count) const
             ") > num_collected (" + std::to_string(num_collected_) + ")");
     return readout_.R2(ReadoutInput(start),
                        targets + start * readout_.NumOutputs(), count);
+}
+
+double ESN::R2(std::span<const float> targets, size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::R2: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    // R² is multi-output regression layout: stride = NumOutputs() per sample.
+    RequireFullTargetBuffer("ESN::R2", targets, start, count, readout_.NumOutputs());
+    return R2(targets.data(), start, count);
+}
+
+double ESN::R2FromWindow(std::span<const float> targets_window,
+                         size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::R2FromWindow: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    RequireWindowTargetBuffer("ESN::R2FromWindow", targets_window, count, readout_.NumOutputs());
+    return readout_.R2(ReadoutInput(start), targets_window.data(), count);
 }
 
 double ESN::NRMSE(const float* targets, size_t start, size_t count) const
@@ -289,6 +455,58 @@ double ESN::NRMSE(const float* targets, size_t start, size_t count) const
     return nrmse_sum / static_cast<double>(K);
 }
 
+double ESN::NRMSE(std::span<const float> targets, size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::NRMSE: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    RequireFullTargetBuffer("ESN::NRMSE", targets, start, count, readout_.NumOutputs());
+    return NRMSE(targets.data(), start, count);
+}
+
+double ESN::NRMSEFromWindow(std::span<const float> targets_window,
+                            size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::NRMSEFromWindow: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    if (count == 0)
+        return 0.0;
+    const size_t K = readout_.NumOutputs();
+    // NRMSE is regression-oriented (uses K-wide targets). Match pointer NRMSE layout.
+    RequireWindowTargetBuffer("ESN::NRMSEFromWindow", targets_window, count, K);
+    // Reuse core path by presenting a fake "full" buffer that starts at index 0 of window:
+    // pointer NRMSE indexes targets + start*K, so pass window.data() - start*K is UB.
+    // Implement inline with window as tgt base (same loop as NRMSE).
+    const float* tgt = targets_window.data();
+    std::vector<float> preds(count * K);
+    for (size_t s = 0; s < count; ++s)
+        readout_.PredictRaw(ReadoutInput(start + s), preds.data() + s * K);
+    double nrmse_sum = 0.0;
+    for (size_t k = 0; k < K; ++k)
+    {
+        double mean = 0.0;
+        for (size_t s = 0; s < count; ++s)
+            mean += tgt[s * K + k];
+        mean /= static_cast<double>(count);
+        double var = 0.0, mse_k = 0.0;
+        for (size_t s = 0; s < count; ++s)
+        {
+            const double y = tgt[s * K + k];
+            const double yh = preds[s * K + k];
+            var += (y - mean) * (y - mean);
+            mse_k += (y - yh) * (y - yh);
+        }
+        if (var < 1e-12)
+            nrmse_sum += std::numeric_limits<double>::infinity();
+        else
+            nrmse_sum += std::sqrt(mse_k / count) / std::sqrt(var / count);
+    }
+    return nrmse_sum / static_cast<double>(K);
+}
+
 double ESN::Accuracy(const float* labels, size_t start, size_t count) const
 {
     if (start + count > num_collected_)
@@ -296,6 +514,27 @@ double ESN::Accuracy(const float* labels, size_t start, size_t count) const
             "ESN::Accuracy: start + count (" + std::to_string(start + count) +
             ") > num_collected (" + std::to_string(num_collected_) + ")");
     return readout_.Accuracy(ReadoutInput(start), labels + start, count);
+}
+
+double ESN::Accuracy(std::span<const float> labels, size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::Accuracy: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    RequireFullTargetBuffer("ESN::Accuracy", labels, start, count, 1);
+    return Accuracy(labels.data(), start, count);
+}
+
+double ESN::AccuracyFromWindow(std::span<const float> labels_window,
+                               size_t start, size_t count) const
+{
+    if (start + count > num_collected_)
+        throw std::out_of_range(
+            "ESN::AccuracyFromWindow: start + count (" + std::to_string(start + count) +
+            ") > num_collected (" + std::to_string(num_collected_) + ")");
+    RequireWindowTargetBuffer("ESN::AccuracyFromWindow", labels_window, count, 1);
+    return readout_.Accuracy(ReadoutInput(start), labels_window.data(), count);
 }
 
 // ---------------------------------------------------------------------------

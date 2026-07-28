@@ -234,7 +234,7 @@ struct ReadoutConfig {
     size_t dim           = 0;        // features per sample = 1 << dim (set by ESN)
     int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // 0 = auto min(dim-2, 2)
+    int num_layers       = 1;        // house default 1; 0 = auto min(dim-2, 2)
     bool use_pooling     = true;
     ReadoutPoolType pool_type = ReadoutPoolType::Max;
     int conv_channels    = 16;

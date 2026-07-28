@@ -74,7 +74,7 @@ struct ReadoutConfig
     size_t dim = 0; ///< Input feature dim: features per sample = 2^dim.
     int num_outputs = 1; ///< Classes (classification) or targets (regression).
     ReadoutTask task = ReadoutTask::Regression;
-    int num_layers = 1; ///< Conv(+Pool) layers. 0 = auto: min(DIM-2, 2).
+    int num_layers = 1; ///< Conv(+Pool) layers. Default 1 (typical). 0 = auto: min(dim-2, 2).
 
     /// Append an antipodal pool after each Conv (true = the historical behavior).
     /// The pool pairs each vertex with its bitwise complement, so it mixes *every* bit —

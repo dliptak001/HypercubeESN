@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -97,11 +99,20 @@ public:
     /// @throws std::invalid_argument if @p external_feedback is non-null when D = 0.
     void ReservoirStep(const float* inputs, const float* external_feedback = nullptr);
 
+    /// @brief Span form of @ref ReservoirStep — sizes must match NumInputs() and
+    /// (if provided) NumExternalFeedbackChannels().
+    void ReservoirStep(std::span<const float> inputs,
+                       std::span<const float> external_feedback = {});
+
     /// @brief Drive @p num_steps without recording (wash out the zero initial
     /// state). @p inputs is row-major: num_steps × NumInputs(). No external
     /// feedback — use @ref ReservoirStep if you need it. Standard prelude for
     /// batch @ref ReservoirRun and streaming @ref TrainStep.
     void ReservoirWarmup(const float* inputs, size_t num_steps);
+
+    /// @brief Span form of @ref ReservoirWarmup. @p inputs.size() must be a
+    /// multiple of NumInputs(); step count = size / NumInputs().
+    void ReservoirWarmup(std::span<const float> inputs);
 
     /// @brief Drive @p num_steps and **append** each assembled readout input to
     /// the internal buffer (for @ref Train / @ref R2 / @ref NRMSE / @ref Accuracy).
@@ -110,6 +121,9 @@ public:
     /// reservoir state and trained readout weights are left as-is except for the
     /// drive itself.
     void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
+
+    /// @brief Span form of @ref ReservoirRun. Size must be a multiple of NumInputs().
+    void ReservoirRun(std::span<const float> inputs, bool clear_recorded = false);
 
     /// @brief Zero reservoir dynamics (state + history). Recorded rows and readout
     /// weights are preserved.
@@ -122,11 +136,19 @@ public:
     /// @throws std::out_of_range if @p train_size > NumCollectedStates().
     void Train(const float* targets, size_t train_size);
 
+    /// @brief Span form of @ref Train. Validates
+    /// @c targets.size() == train_size * NumOutputs() (regression) or
+    /// @c train_size (classification class indices).
+    void Train(std::span<const float> targets, size_t train_size);
+
     /// @brief One online gradient step on the **current** readout input (after
     /// staging drives and @ref ReservoirStep as you choose). Task is fixed at
     /// construction: regression → NumOutputs() floats; classification → one
     /// class-index float.
     void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
+
+    /// @brief Span form of @ref TrainStep (size must match task layout).
+    void TrainStep(std::span<const float> target, float lr, float weight_decay = 0.0f);
 
     /// @brief One online gradient step on a mini-batch of readout inputs you
     /// supply (each ReadoutInputWidth() floats, e.g. from @ref CopyReadoutInput).
@@ -138,9 +160,15 @@ public:
     /// Not the full multi-slice readout input unless B = 1.
     void CopyReservoirState(float* out) const;
 
+    /// @brief Span form of @ref CopyReservoirState (@p out.size() == N).
+    void CopyReservoirState(std::span<float> out) const;
+
     /// @brief Assemble and copy the current readout input (ReadoutInputWidth()
     /// floats) into @p out — B blocks of N in @ref ReadoutBlockOf order.
     void CopyReadoutInput(float* out) const;
+
+    /// @brief Span form of @ref CopyReadoutInput (@p out.size() == ReadoutInputWidth()).
+    void CopyReadoutInput(std::span<float> out) const;
 
     // --- Prediction & evaluation -------------------------------------------
 
@@ -151,32 +179,76 @@ public:
     /// @brief Predict into caller @p out (NumOutputs() floats). Prefer for hot loops.
     void Predict(float* out) const;
 
+    /// @brief Span form of @ref Predict (@p out.size() == NumOutputs()).
+    void Predict(std::span<float> out) const;
+
     /// @brief Predict from a recorded row at @p timestep (@ref ReservoirRun).
     /// @throws std::out_of_range if @p timestep >= NumCollectedStates().
     [[nodiscard]] std::vector<float> PredictFromRecorded(size_t timestep) const;
 
-    /// @brief Predict from a caller-supplied readout input (ReadoutInputWidth()
-    /// floats). Does not touch the live reservoir.
+    /// @brief Predict from a caller-supplied **readout input** (ReadoutInputWidth()
+    /// floats = B·N). Does not touch the live reservoir. Name is historical;
+    /// prefer @ref PredictFromReadoutInput.
     [[nodiscard]] std::vector<float> PredictFromState(const float* readout_input) const;
 
     /// @brief PredictFromState into @p out (NumOutputs() floats).
     void PredictFromState(const float* readout_input, float* out) const;
 
+    /// @brief Same as @ref PredictFromState — clearer name for B·N readout inputs.
+    [[nodiscard]] std::vector<float> PredictFromReadoutInput(const float* readout_input) const
+    {
+        return PredictFromState(readout_input);
+    }
+    void PredictFromReadoutInput(const float* readout_input, float* out) const
+    {
+        PredictFromState(readout_input, out);
+    }
+
+    /// @brief Span form of @ref PredictFromReadoutInput.
+    [[nodiscard]] std::vector<float> PredictFromReadoutInput(std::span<const float> readout_input) const;
+    void PredictFromReadoutInput(std::span<const float> readout_input, std::span<float> out) const;
+
     /// @brief R² on recorded timesteps [@p start, @p start+@p count).
-    /// @p targets must cover [0, start+count) (regression: row-major
+    /// @p targets must cover **[0, start+count)** (regression: row-major
     /// (start+count)×NumOutputs(); classification: start+count floats). Indexed
     /// from targets[start * NumOutputs()] — pass the full array, not a slice.
+    /// Prefer @ref R2 (span) or @ref R2FromWindow when you want length checks.
     /// @throws std::out_of_range if the window exceeds NumCollectedStates().
     [[nodiscard]] double R2(const float* targets, size_t start, size_t count) const;
+
+    /// @brief Span form of @ref R2. Validates
+    /// @c targets.size() >= (start+count)*stride (regression stride = NumOutputs(),
+    /// classification stride = 1).
+    [[nodiscard]] double R2(std::span<const float> targets, size_t start, size_t count) const;
+
+    /// @brief R² when @p targets_window holds **only** the scored rows
+    /// (length count × NumOutputs() or count class indices) — not a full [0, end)
+    /// buffer. Recorded states still use @p start.
+    [[nodiscard]] double R2FromWindow(std::span<const float> targets_window,
+                                      size_t start, size_t count) const;
 
     /// @brief Mean over outputs of NRMSE = RMSE / std(target) on the same window
     /// contract as @ref R2. Lower is better; 0 = perfect. Degenerate target
     /// variance → +inf on that output.
     [[nodiscard]] double NRMSE(const float* targets, size_t start, size_t count) const;
 
+    /// @brief Span form of @ref NRMSE (same length contract as span @ref R2).
+    [[nodiscard]] double NRMSE(std::span<const float> targets, size_t start, size_t count) const;
+
+    /// @brief NRMSE with a window-only target buffer (see @ref R2FromWindow).
+    [[nodiscard]] double NRMSEFromWindow(std::span<const float> targets_window,
+                                         size_t start, size_t count) const;
+
     /// @brief Classification accuracy on recorded [@p start, @p start+@p count).
     /// @p labels cover [0, start+count) as floats holding class indices.
     [[nodiscard]] double Accuracy(const float* labels, size_t start, size_t count) const;
+
+    /// @brief Span form of @ref Accuracy.
+    [[nodiscard]] double Accuracy(std::span<const float> labels, size_t start, size_t count) const;
+
+    /// @brief Accuracy with a window-only label buffer of length @p count.
+    [[nodiscard]] double AccuracyFromWindow(std::span<const float> labels_window,
+                                            size_t start, size_t count) const;
 
     // --- Recorded buffer ---------------------------------------------------
 
@@ -198,8 +270,23 @@ public:
     /// Reservoir hypercube dimension (cfg.reservoir.dim).
     [[nodiscard]] size_t ReservoirHypercubeDimension() const { return reservoir_->Dim(); }
 
+    /// Alias for @ref ReservoirHypercubeDimension (matches field name `dim`).
+    [[nodiscard]] size_t Dim() const { return ReservoirHypercubeDimension(); }
+
     /// N = 2^ReservoirHypercubeDimension() — length of one block / reservoir state.
     [[nodiscard]] size_t ReservoirNeuronCount() const { return n_; }
+
+    /// Configured spectral-radius **target** (recurrent block only).
+    [[nodiscard]] float TargetSpectralRadius() const
+    {
+        return esn_config_.reservoir.spectral_radius;
+    }
+
+    /// Post-rescale realized spectral-radius estimate from the reservoir.
+    [[nodiscard]] float RealizedSpectralRadius() const
+    {
+        return reservoir_->GetRealizedSpectralRadius();
+    }
 
     /// Full readout input length: B × N.
     [[nodiscard]] size_t ReadoutInputWidth() const { return readout_width_; }

@@ -43,8 +43,9 @@ struct ReservoirConfig
     /// Valid range **[1, 64]**.
     size_t history_depth = 16;
 
-    /// If true, print one construction banner (DIM, M, seed, leak, scales, SR).
-    bool verbose = true;
+    /// If true, print one construction banner (dim, M, seed, leak, scales, SR).
+    /// Default false — library-friendly for multi-seed hosts; demos may enable.
+    bool verbose = false;
 
     // --- External feedback (caller-owned closed-loop drive) ---
     /// 0 = path disabled (no buffer, no weights). Else D in **[1, N]**; D need

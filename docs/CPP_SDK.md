@@ -71,7 +71,7 @@ include(FetchContent)
 FetchContent_Declare(
     HypercubeESN
     GIT_REPOSITORY https://github.com/dliptak001/HypercubeESN.git
-    GIT_TAG        v1.0.0
+    GIT_TAG        v1.4.0   # pin a release tag; check GitHub for latest
 )
 FetchContent_MakeAvailable(HypercubeESN)
 
@@ -277,7 +277,7 @@ struct ReservoirConfig
     float    input_scaling   = 0.5f;   // weights × scaling/√dim
     size_t   num_inputs      = 1;      // must divide N
     size_t   history_depth   = 16;     // M in [1, 64]
-    bool     verbose         = true;
+    bool     verbose         = false;  // construction banner; demos may set true
 
     size_t   num_external_feedback_channels = 0;  // 0 = off; else [1, N]
     float    external_feedback_scaling      = 0.5f;
@@ -295,13 +295,14 @@ struct ReservoirConfig
 | `input_scaling` | `float` | `0.5` | Input weights U(−1,1) then × `input_scaling / √dim` (fan-in variance). Local construction, not a universal optimum. Typical O(0.5–3). |
 | `num_inputs` | `size_t` | `1` | Input channels; must divide N. Channel k drives `[k·N/K, (k+1)·N/K)`. |
 | `history_depth` | `size_t` | `16` | Delay-line depth M **[1, 64]**. Recurrent gather over M published slices. Independent of how many ages the readout packs (B). See [Reservoir.md](Reservoir.md). |
-| `verbose` | `bool` | `true` | One construction banner on stdout. |
+| `verbose` | `bool` | `false` | One construction banner on stdout. |
 | `num_external_feedback_channels` | `size_t` | `0` | D external-feedback channels. **0** = path off. Else **[1, N]** (need not divide N). See [reservoir_feedback_mechanism.md](reservoir_feedback_mechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input; only if D > 0. Outside SR rescale. |
 | `bias_scaling` | `float` | `0.02` | Per-neuron bias U(−1,1)×scale, **after** tanh. **0** disables. Survives `Clear`; not in snapshots. |
 
-`GetConfig().spectral_radius` is the **target**. Post-secant estimate:
-`GetRealizedSpectralRadius()`.
+`GetConfig().spectral_radius` / `ESN::TargetSpectralRadius()` is the **target**.
+Post-secant estimate: `Reservoir::GetRealizedSpectralRadius()` /
+`ESN::RealizedSpectralRadius()`.
 
 ---
 
@@ -315,7 +316,7 @@ struct ReadoutConfig {
     size_t dim           = 0;        // set by ESN — do not set
     int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // 0 = auto min(dim-2, 2)
+    int num_layers       = 1;        // typical; 0 = auto min(dim-2, 2)
     bool use_pooling     = true;
     ReadoutPoolType pool_type = ReadoutPoolType::Max;
     int conv_channels    = 16;
@@ -342,7 +343,7 @@ struct ReadoutConfig {
 | `dim` | `size_t` | `0` | Features per sample = 2<sup>dim</sup>. **Set by ESN** from reservoir dim + log2(B). |
 | `num_outputs` | `int` | `1` | Regression targets or class count. |
 | `task` | `ReadoutTask` | `Regression` | Task head. |
-| `num_layers` | `int` | `1` | Conv(+Pool) stages. `0` → auto `min(dim − 2, 2)`. With pooling: assert `n ≤ dim − 2`. |
+| `num_layers` | `int` | `1` | Conv(+Pool) stages. Default **1** (house default for most tasks). `0` → auto `min(dim − 2, 2)`. With pooling: assert `n ≤ dim − 2`. |
 | `use_pooling` | `bool` | `true` | Antipodal pool after each conv (mixes every bit, including block-index bits when B > 1). |
 | `pool_type` | `ReadoutPoolType` | `Max` | Max or Avg when pooling is on. |
 | `conv_channels` | `int` | `16` | First-layer channels. |
@@ -457,8 +458,12 @@ ESN esn(cfg);
 
 ##### `ReservoirStep`
 
+Pointer and `std::span` overloads (span form validates lengths):
+
 ```cpp
 void ReservoirStep(const float* inputs, const float* external_feedback = nullptr);
+void ReservoirStep(std::span<const float> inputs,
+                   std::span<const float> external_feedback = {});
 ```
 
 One timestep: stage task `inputs` (`NumInputs()` floats), optionally stage

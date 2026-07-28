@@ -70,16 +70,25 @@ class TestConstruction:
         assert esn.num_collected_states == 0
 
     def test_invalid_dim(self):
-        with pytest.raises(ValueError, match="reservoir_hypercube_dimension must be 5-16"):
+        with pytest.raises(ValueError, match="must be 5-16"):
             ESN(reservoir_hypercube_dimension=4)
-        with pytest.raises(ValueError, match="reservoir_hypercube_dimension must be 5-16"):
-            ESN(reservoir_hypercube_dimension=17)
+        with pytest.raises(ValueError, match="must be 5-16"):
+            ESN(dim=17)
 
     def test_defaults(self):
-        esn = ESN(reservoir_hypercube_dimension=5)
+        esn = ESN(dim=5)
         assert esn.num_inputs == 1
         assert esn.history_depth == 16
         assert esn.seed == 73895
+        assert esn.dim == 5
+        assert esn.readout_slices == 1
+        assert esn.num_external_feedback_channels == 0
+        assert esn.verbose is False
+
+    def test_dim_alias(self):
+        a = ESN(reservoir_hypercube_dimension=5)
+        b = ESN(dim=5)
+        assert a.dim == b.reservoir_hypercube_dimension == 5
 
 
 # ── Core regression pipeline (shared trained ESN) ──
