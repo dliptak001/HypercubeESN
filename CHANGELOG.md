@@ -13,6 +13,8 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 **Status:** version numbers bumped to 2.0.0 in-tree; **tag / PyPI / GitHub Release
 pending** after Lorenz half-anchored free-run storefront is filled.
 
+**Upgrading from 1.x?** Jump to [Migration notes](#migration-notes-1x-to-20).
+
 ### Breaking
 
 - **Version alignment.** Project, package, and tags are **2.0.0** (was CMake
@@ -85,7 +87,7 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 | Memory capacity peaks (dim 5…12) | **~30 → ~1400+** (frozen; see MemoryCapacity.md) |
 | Lorenz half-anchored free-run | **TBD** — fill before public tag |
 
-### Migration notes (1.x → 2.0)
+### Migration notes (1.x → 2.0) <a id="migration-notes-1x-to-20"></a>
 
 1. Rebuild / reinstall wheels; do not mix 1.x extension modules with 2.0 headers.
 2. **Retrain HCNN readouts** after the dim → dim+1 self-tap kernel change (or
