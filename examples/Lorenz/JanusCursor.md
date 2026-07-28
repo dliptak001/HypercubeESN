@@ -248,7 +248,7 @@ JanusCursor
 
 **Is:**
 
-- Dual-cursor index motion over one forward index space
+- Janus cursor index motion over one forward index space
 - Opposite-ends seating + counter-walk (one-way pass per `Reset`)
 - Future-over-`ub` as the sole public out-of-window signal
 - A geometry primitive for half-anchored free-run (past may leave the window into history)

@@ -65,8 +65,9 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (half-anchored free-run)
 
-Janus dual-cursor train; free-run with real past on input and self-feedback on
-future (ext-fb) — **half-anchored**, not unassisted Pathak free-run. VPT, RMSE,
+[Janus cursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/JanusCursor.md)
+train; free-run with real past on the input port and self-feedback on the future
+(ext-fb) port — **half-anchored**, not unassisted Pathak free-run. VPT, RMSE,
 and GS duty/re-lock pending for **v2.0**.
 
 | Metric | Result |
@@ -74,6 +75,7 @@ and GS duty/re-lock pending for **v2.0**.
 | VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
 
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
+· [JanusCursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/JanusCursor.md)
 
 ## Installation
 

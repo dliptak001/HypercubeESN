@@ -34,7 +34,7 @@ never leaves the hypercube it was born on.**
 ## Headline results
 
 Primary validators — open-loop (NARMA, MC) and half-anchored free-run (Lorenz).
-Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md).
+Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md).
 
 ### NARMA (open-loop system ID)
 
@@ -63,14 +63,17 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (half-anchored free-run)
 
-Janus dual-cursor train; free-run with real past on the input port and
-self-feedback on the future (ext-fb) port — **half-anchored**, not Pathak-style
-unassisted free-run. Report VPT, free-run RMSE, and GS proxies (duty / re-lock)
-with that protocol stated. Numbers pending A/B survey for **v2.0** storefront.
+[Janus cursor](examples/Lorenz/JanusCursor.md) train; free-run with real past
+on the input port and self-feedback on the future (ext-fb) port —
+**half-anchored**, not Pathak-style unassisted free-run. Report VPT, free-run
+RMSE, and GS proxies (duty / re-lock) with that protocol stated. Numbers pending
+A/B survey for **v2.0** storefront.
 
 | Metric | Result |
 |--------|--------|
 | VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
+
+[Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md)
 
 ## What is Reservoir Computing?
 

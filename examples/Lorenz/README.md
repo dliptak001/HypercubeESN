@@ -1,7 +1,7 @@
 # Lorenz — Janus half-anchored free-run on Lorenz-63
 
 Closed-loop experiment: train a HypercubeESN online on a Lorenz-63 orbit with a
-**Janus dual-cursor** presentation, then free-run with **self-feedback on the
+**Janus cursor** presentation, then free-run with **self-feedback on the
 future port** while the past port stays anchored to real history.
 
 This is **assisted / half-anchored** free-run — continuous partial observation
@@ -42,7 +42,7 @@ Experiment logs and op-point snapshots go in [`TRACKING.md`](TRACKING.md).
 
 ---
 
-## 2. Janus dual-cursor concept
+## 2. Janus cursor concept
 
 The harness is built around a **pair of counter-moving indices** over one forward
 orbit. The index machinery is system-agnostic (`JanusCursor`); Lorenz only maps
@@ -353,7 +353,7 @@ temporarily replace the survey body.
 
 **Is:**
 
-- Dual-cursor, opposite-ends lag curriculum on one forward Lorenz orbit
+- Janus cursor, opposite-ends lag curriculum on one forward Lorenz orbit
 - Online (single-sample) HCNN readout training with prequential monitoring
 - Half-anchored closed loop: past always teacher, future becomes student past `ub`
 - A harness for long rollouts with a restoring tether and multi-seed surveys

@@ -262,6 +262,6 @@ ablation (Run 5 pending).
 | Doc | Role |
 |-----|------|
 | [`README.md`](README.md) | Protocol, ports, scoring, CLI cost model |
-| [`JanusCursor.md`](JanusCursor.md) | Dual-cursor geometry |
+| [`JanusCursor.md`](JanusCursor.md) | Janus cursor geometry |
 
 | [`docs/LorenzFreeRun.md`](../../docs/LorenzFreeRun.md) | Historical A(x) vs tanh (stale harness) |
