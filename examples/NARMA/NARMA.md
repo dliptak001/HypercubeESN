@@ -78,7 +78,7 @@ Pinned in `NARMA.cpp` `main()` — keep in lockstep with this table.
 |------|--------|
 | Variant | **tanh-wrapped** — fixed coeffs α=0.3, β=0.05, γ=1.5, δ=0.1; `u ∈ [0, 0.5]` |
 | `data_seed` | **1939** — fixes the entire u/y series (same series for every reservoir seed) |
-| Reservoir | DIM=10 (N=1024), **M = history_depth = 32**, spectral radius 0.99, leak 1.0, input_scaling **0.03**, **bias_scaling 0.02** |
+| Reservoir | dim=10 (N=1024), **M = history_depth = 32**, spectral radius 0.99, leak 1.0, input_scaling **0.03**, **bias_scaling 0.02** |
 | Readout input | `readout_slices = 2` (B=2 → HCNN start dim 11, capacity 2048) |
 | HCNN | Conv(1→16, TANH) → MaxPool → Linear(16384→1) · **16593** trained parameters |
 | `readout.seed` | **3423555** — fixed HCNN weight init so multi-seed spread is reservoir-side |

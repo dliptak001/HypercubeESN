@@ -23,16 +23,16 @@ This is the place to start if you want to understand how the pieces fit together
 ```
 
 **Make it yours:** Replace the sine wave generation with your own time series data.
-Keep values roughly in [-1, 1] — input weights are `1/√DIM`-normalized and the
+Keep values roughly in [-1, 1] — input weights are `1/√dim`-normalized and the
 `tanh` nonlinearity bounds the state, so larger inputs just push neurons toward
-saturation. Adjust `DIM` to control reservoir size, and `warmup`/`collect` to match
+saturation. Adjust `dim` to control reservoir size, and `warmup`/`collect` to match
 your data volume.
 
 ## SignalClassification
 
 Name which of four industrial process modes is active (Cruise / Chatter / Ramp /
 Spin-up — sine, square, triangle, chirp under the hood) from reservoir state alone.
-DIM=8 gives strong overall ID; residual error clusters on Cruise ↔ Spin-up, with
+dim=8 gives strong overall ID; residual error clusters on Cruise ↔ Spin-up, with
 a short lock-on delay after each mode switch. A live block-stream table reports
 accuracy, softmax confidence, and time-to-lock.
 
@@ -46,7 +46,7 @@ accuracy, softmax confidence, and time-to-lock.
 ```
 === HypercubeESN: Signal Classification ===
 
-Config: DIM=8  N=256  History Depth=16  ...  Classes=4
+Config: dim=8  N=256  History Depth=16  ...  Classes=4
 
   Blk | True      Pred      | Acc%  Conf  TTL | Status
     6 | Cruise    Cruise   |   82  0.81    6 | SWITCHING
@@ -78,7 +78,7 @@ separated by normal operation to show both detection and recovery.
 ```
 === HypercubeESN: Streaming Anomaly Detection ===
 
-Config: DIM=7  N=128  History Depth=24  Leak=1  Input Scaling=0.1  Threshold=10x baseline
+Config: dim=7  N=128  History Depth=24  Leak=1  Input Scaling=0.1  Threshold=10x baseline
 
 Baseline (prime test, RMSE): ~0.0060   threshold ~0.060
 
@@ -105,7 +105,7 @@ each lag, and report the per-lag squared correlation `r²(k)` and the total
 
 **What it shows:**
 - How much short-term linear memory the hypercube reservoir holds, and how it
-  scales with spectral radius, `history_depth`, leak rate, and DIM
+  scales with spectral radius, `history_depth`, leak rate, and dim
 - A held-out ridge readout (the canonical MC protocol), driven through four run
   modes: a single detailed per-lag curve, an `sr × leak × history_depth` grid
   sweep, a reservoir-seed survey, and a side-by-side depth probe

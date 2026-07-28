@@ -7,8 +7,8 @@
 
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
 hypercube. Neurons sit on the vertices, wired to their single-bit-flip neighbors
-by XOR. That topology is **never stored, only computed.** **DIM** is the
-hypercube dimension; N = 2<sup>DIM</sup> continuous `tanh` units (DIM 5–16 → 32
+by XOR. That topology is **never stored, only computed.** **dim** is the
+hypercube dimension; N = 2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32
 to 65,536 neurons).
 
 Three properties follow:
@@ -50,11 +50,11 @@ One fixed config, tanh-wrapped orders 30 / 50 / 70; **best 5 of 20** seeds
 ### Memory capacity (Jaeger MC)
 
 Linear short-term memory (ridge on reservoir state — not HCNN). **Tunable** via
-DIM, delay-line depth M, and spectral radius: peak TotalMC from about **30**
-(DIM 5) to **1400+** (DIM 12) in the reference grids; small cubes sit near the
+dim, delay-line depth M, and spectral radius: peak TotalMC from about **30**
+(dim 5) to **1400+** (dim 12) in the reference grids; small cubes sit near the
 theoretical ceiling (MC/F ≈ 1).
 
-| DIM | N | Peak TotalMC |
+| dim | N | Peak TotalMC |
 |----:|--:|-------------:|
 | 5 | 32 | ~30 |
 | 8 | 256 | ~250 |
@@ -99,7 +99,7 @@ print(f"NRMSE = {esn.nrmse():.6f}")
 ## Features
 
 - **Simple API** — `fit()` runs warmup, collect, and batch train in one call
-- **Hypercube dimension DIM 5–16** — N = 2<sup>DIM</sup> neurons (32 to 65,536); delay-line depth M
+- **Hypercube dimension dim 5–16** — N = 2<sup>dim</sup> neurons (32 to 65,536); delay-line depth M
 - **HCNN readout** — convolutional readout on the hypercube (not ridge alone)
 - **Multi-input** — channels map to contiguous vertex blocks
 - **Streaming** — online `train_step` / `train_step_batch` for continuous data

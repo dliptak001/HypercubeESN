@@ -58,7 +58,7 @@ core. FSF was removed; this port is the general substrate that remains.
 
 | Field | Default | Rule |
 |-------|---------|------|
-| `num_external_feedback_channels` (D) | `0` | **0** = path off (no buffer, no weights). Else **[1, N]** with N = 2^dim. |
+| `num_external_feedback_channels` (D) | `0` | **0** = path off (no buffer, no weights). Else **[1, N]** with N = 2<sup>dim</sup>. |
 | `external_feedback_scaling` | `0.5` | Used only if D > 0. Weights drawn U(−1,1) then × `scaling / √dim`. |
 
 D **need not** divide N (unlike `num_inputs`, which must divide N).

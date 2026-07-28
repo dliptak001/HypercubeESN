@@ -44,7 +44,7 @@ Vocabulary used with ESN:
 
 | Term | Meaning |
 |------|---------|
-| **N** | Neuron count = 2^dim; length of one published slice |
+| **N** | Neuron count = 2<sup>dim</sup>; length of one published slice |
 | **M** | `history_depth` — delay-line length the recurrent gather uses |
 | **Reservoir state** | Newest slice only (`Outputs()` / `SliceAt(0)`) |
 | **Readout input** | B packed blocks of N assembled by ESN (`B = readout_slices`) — equals reservoir state only when B = 1 |
@@ -71,11 +71,11 @@ Everything that follows serves those two.
 
 | Field | Default | Range / rule |
 |-------|---------|----------------|
-| `dim` | 10 | **[5, 16]** → N = 2^dim neurons |
+| `dim` | 10 | **[5, 16]** → N = 2<sup>dim</sup> neurons |
 | `seed` | 73895 | Master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
 | `spectral_radius` | 0.99 | **> 0** — target for recurrent-block rescale only |
 | `leak_rate` | 1.0 | **(0, 1]** — 1 = full replacement each step |
-| `input_scaling` | 0.5 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/DIM) |
+| `input_scaling` | 0.5 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/dim) |
 | `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
 | `verbose` | true | Construction banner to stdout |
@@ -91,7 +91,7 @@ post-secant value. `Create(GetConfig())` rebuilds matching weight blocks from
 ## A topology you don't store
 
 Most echo-state networks wire neurons at random — generate a sparse graph, store
-it, and trust it. HypercubeESN does not store a graph at all. Its N = 2^dim
+it, and trust it. HypercubeESN does not store a graph at all. Its N = 2<sup>dim</sup>
 neurons sit on the vertices of a **Boolean hypercube**: each vertex is addressed
 by a dim-bit binary index, and two vertices are neighbors exactly when their
 indices differ in a single bit.

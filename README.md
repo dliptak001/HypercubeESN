@@ -8,8 +8,8 @@
 
 **HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
 vertices, wired to their single-bit-flip neighbors by XOR. That topology is
-**never stored, only computed.** **DIM** is the hypercube dimension; N =
-2<sup>DIM</sup> continuous `tanh` units (DIM 5–16 → 32 to 65,536 neurons).
+**never stored, only computed.** **dim** is the hypercube dimension; N =
+2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32 to 65,536 neurons).
 
 Three properties follow:
 
@@ -49,11 +49,11 @@ One fixed config, tanh-wrapped orders 30 / 50 / 70; **best 5 of 20** seeds
 ### Memory capacity (Jaeger MC)
 
 Linear short-term memory (ridge on reservoir state — not HCNN). **Tunable** via
-DIM, delay-line depth M, and spectral radius: peak TotalMC from about **30**
-(DIM 5) to **1400+** (DIM 12) in the reference grids; small cubes sit near the
+dim, delay-line depth M, and spectral radius: peak TotalMC from about **30**
+(dim 5) to **1400+** (dim 12) in the reference grids; small cubes sit near the
 theoretical ceiling (MC/F ≈ 1).
 
-| DIM | N | Peak TotalMC |
+| dim | N | Peak TotalMC |
 |----:|--:|-------------:|
 | 5 | 32 | ~30 |
 | 8 | 256 | ~250 |
@@ -105,12 +105,12 @@ spatial CNN would force the activations onto a 2D grid they never lived on.
 HypercubeESN does neither. Its readout is
 [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN): convolutions over
 Hamming neighborhoods with weights shared under the cube’s symmetry; optional
-antipodal pooling folds DIM by one into a perfect sub-hypercube. No padding, no
+antipodal pooling folds dim by one into a perfect sub-hypercube. No padding, no
 borders — neighbor lookup is the same single XOR the reservoir already speaks.
 
 The pairing is topology-native: zero distortion into the readout; learned kernels
 exploit the locality that generated the dynamics. **The data never leaves the
-hypercube it was born on.** Practical range: DIM 5–16 (32 to 65,536 neurons).
+hypercube it was born on.** Practical range: dim 5–16 (32 to 65,536 neurons).
 
 ## Why a Hypercube?
 
@@ -126,34 +126,34 @@ each neighbor is reached by arithmetic (`v XOR (1 << i)`) rather than a pointer
 chased through memory.
 
 **Perfect homogeneity.** The hypercube is vertex-transitive: every neuron has
-exactly DIM neighbors and sees an identical local world. No hubs, no dead ends, no
+exactly dim neighbors and sees an identical local world. No hubs, no dead ends, no
 degree lottery — none of the structural variance a random sparse graph drags in.
 That same uniformity is what lets HypercubeCNN share one set of kernel weights
 across the entire graph.
 
-**Logarithmic reach.** Any two of the neurons are at most DIM = log₂N bit-flips
+**Logarithmic reach.** Any two of the neurons are at most dim = log₂N bit-flips
 apart. A signal's influence can span the whole reservoir in logarithmically few
-hops, even though each neuron wires to only DIM others — sparse local connectivity
+hops, even though each neuron wires to only dim others — sparse local connectivity
 with global reach, exactly the property that makes a reservoir mix.
 
 **Implicit, reproducible structure.** XOR addressing is deterministic: two
-implementations at the same DIM agree on every connection automatically — no
+implementations at the same dim agree on every connection automatically — no
 graph to serialize, exchange, or version. And the reproducibility runs deeper than
 the wiring. Because the weights are drawn from a seeded generator and rescaled to
 a target spectral radius, the *entire* reservoir reconstructs from a handful of
-scalars — DIM, a seed, and a few drive parameters (spectral radius, leak, input
+scalars — dim, a seed, and a few drive parameters (spectral radius, leak, input
 scaling, history depth). A reservoir is *specified*, not stored.
 
 ## Architecture Summary
 
 | Property | Detail |
 |---|---|
-| Neurons | N = 2<sup>DIM</sup> on hypercube vertices; **DIM** = hypercube dimension (5–16 → 32 to 65,536 neurons) |
-| Connectivity | DIM neighbors per neuron: the single-bit-flip (Hamming-distance-1) vertices, addressed `v XOR (1 << i)` |
+| Neurons | N = 2<sup>dim</sup> on hypercube vertices; **dim** = hypercube dimension (5–16 → 32 to 65,536 neurons) |
+| Connectivity | dim neighbors per neuron: the single-bit-flip (Hamming-distance-1) vertices, addressed `v XOR (1 << i)` |
 | Addressing | XOR on vertex indices — O(1), branchless, zero storage (no adjacency list) |
 | Neuron model | Leaky-integrator tanh: `state = (1 − leak)·prev + leak·tanh(drive)` |
 | History depth | M = `history_depth` (default 16, range 1–64) — each update taps the last M states via an addressable delay line; M = 1 is a single-step ESN, M > 1 deepens temporal memory |
-| Step cost | O(N · DIM · M) per timestep — sparse, never O(N²) |
+| Step cost | O(N · dim · M) per timestep — sparse, never O(N²) |
 | Configuration | `ReservoirConfig` (`Reservoir.h`): `seed`, `spectral_radius`, `leak_rate`, `input_scaling`, `history_depth` |
 | Readout | HypercubeCNN; consumes all N reservoir vertices as features |
 
@@ -161,14 +161,14 @@ scaling, history depth). A reservoir is *specified*, not stored.
 
 A fixed hypercube reservoir feeds a trained HypercubeCNN readout. Each reservoir
 vertex updates from an input term plus a recurrent term gathered over the M
-delay-line slices of its DIM neighbors, then publishes through a leaky-integrator
+delay-line slices of its dim neighbors, then publishes through a leaky-integrator
 tanh:
 
 ```
 # drive s: an input term, plus a recurrent term over the M delay-line slices
 s = input_term(v)
 for j in 0..M-1:            # M = history_depth — the delay line
-    for i in 0..DIM-1:      # DIM spatial neighbors per slice
+    for i in 0..dim-1:      # dim spatial neighbors per slice
         s += slice_j[v XOR (1<<i)] * W_rec[v][j][i]
 state[v] = (1 - leak_rate) * slice_0[v] + leak_rate * tanh(s)
 ```
@@ -193,13 +193,14 @@ See [docs/Reservoir.md](docs/Reservoir.md) and
 The hypercube has met reservoir computing before. Katori (2019),
 "[Reservoir Computing Based on Dynamics of Pseudo-Billiard System in
 Hypercube](https://ieeexplore.ieee.org/document/8852329/)" (IJCNN 2019, Best
-Paper Award), drives a reservoir through pseudo-billiard chaotic dynamics in a
-hypercube *state space*, where binary units interact via a Chaotic Boltzmann
-Machine. HypercubeESN uses the hypercube differently — not as the space the state
-moves through, but as the *wiring* between neurons: XOR-addressed connectivity for
-an echo-state network of continuous tanh units. Same structural primitive,
-opposite role — Katori computes *in* the hypercube; HypercubeESN computes *across*
-it.
+Paper Award), builds a reservoir from a Chaotic Boltzmann Machine: continuous
+internal states move as a pseudo-billiard inside the unit hypercube
+[0,1]<sup>N</sup>, with units interacting through binary, time-domain signals.
+HypercubeESN uses the hypercube differently — not as the continuous space the
+state trajectory lives in, but as the *wiring graph* among continuous tanh
+neurons: XOR-addressed Hamming-1 connectivity (N = 2<sup>dim</sup>). Same word,
+different object — Katori’s state moves *in* a cube; HypercubeESN’s activations
+propagate *on* a cube.
 
 ## Python SDK
 
@@ -228,7 +229,7 @@ See [docs/Python_SDK.md](docs/Python_SDK.md) for the full API reference.
 **Requirements:** C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+), CMake 4.1+.
 
 The learned readout is a **vendored** [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN)
-snapshot at **v1.0.0** (facade API: unified train, private Network, `K = DIM + 1`
+snapshot at **v1.0.0** (facade API: unified train, private Network, `K = dim + 1`
 kernels). It lives in `third_party/HypercubeCNN/` and is built automatically as
 `HypercubeCNNCore` — no separate install or network fetch. Do not hand-edit that
 tree; re-vendor from upstream and update
@@ -260,7 +261,7 @@ companion `.md` file with a detailed walkthrough.
 ```
 HypercubeESN/
   CMakeLists.txt         Top-level build (core lib + examples; pulls in HCNN subdir)
-  Reservoir.h/cpp        Hypercube reservoir (N = 2^DIM vertices); ReservoirConfig
+  Reservoir.h/cpp        Hypercube reservoir (N = 2^dim vertices); ReservoirConfig
   Readout.h/cpp          Learned convolutional readout (PIMPL)
   ESN.h/cpp              Unified pipeline: warmup, run, train, predict
   main.cpp               Reservoir snapshot/restore fidelity tests

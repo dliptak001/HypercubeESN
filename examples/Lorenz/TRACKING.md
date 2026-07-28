@@ -32,7 +32,7 @@ have FSF knobs.
 | Knob | Value |
 |------|--------|
 | Architecture | Conv(1→8, TANH) → MaxPool → Linear(8192→3) · 24683 params |
-| Reservoir | DIM=11 (N=2048), M=`HISTORY_DEPTH`=24, leak=1, SR target 0.99 |
+| Reservoir | dim=11 (N=2048), M=`HISTORY_DEPTH`=24, leak=1, SR target 0.99 |
 | Drive | `input_scaling` 0.005 · `feedback_scaling` 0.04 |
 | Train | epochs 100 · window 20000 · online HCNN |
 | Free-run | window 2000 · washout on same window · VPT threshold 0.3 (channel-RMS) |
@@ -98,7 +98,7 @@ win.
 
 **Date:** 2026-07-22 (session)  
 **Command:** `Lorenz.exe 4 10`  
-**Fixed:** FSF ON, `FSF_SEED=9089361`, same ESN seeds / 10 orbits / DIM=11 protocol as Run 1.  
+**Fixed:** FSF ON, `FSF_SEED=9089361`, same ESN seeds / 10 orbits / dim=11 protocol as Run 1.  
 **Only delta:** `FSF_SCALING` **0.005** (weak) vs **0.008** (stronger).  
 Weak arm is the same realization as Run **1b**.
 

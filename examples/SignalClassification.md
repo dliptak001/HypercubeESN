@@ -44,7 +44,7 @@ mode switches rather than a fixed 0→1→2→3 cycle.
 
 ```
 Mode blocks ──> Reservoir ──> HCNN: 4-class softmax ──> Mode label
-  40 steps        256 neurons    (DIM=8)                 + confidence
+  40 steps        256 neurons    (dim=8)                 + confidence
   random order    (fixed)        frozen after Phase 1    + time-to-lock
 ```
 
@@ -69,7 +69,7 @@ delays a stable ID after a switch.
 
 ## What to expect
 
-DIM=8, 256 neurons, `history_depth = 16`, `spectral_radius = 0.95`
+dim=8, 256 neurons, `history_depth = 16`, `spectral_radius = 0.95`
 (realized ~0.95), `input_scaling = 0.1`, `leak_rate = 1.0` (struct default),
 Trained 100 epochs (batch 32, `lr_max = 0.0015` cosine, ~23 s on a
 typical Release build). Exact figures track seed and HCNN init; the
@@ -123,14 +123,14 @@ all switch blocks eventually lock under this config.
 
 - **Easier:** more epochs, lower `NOISE_LEVEL` (e.g. 0.10), or longer
   `block_size` (more steady-state samples per mode).
-- **Harder:** drop DIM to 6 (N=64), `NOISE_LEVEL` 0.25+, `block_size` 15–20,
+- **Harder:** drop dim to 6 (N=64), `NOISE_LEVEL` 0.25+, `block_size` 15–20,
   or `leak_rate < 1.0` so the previous mode hangs longer into the next block.
 - **More memory hangover:** try `cfg.reservoir.leak_rate = 0.5` and watch
   mean TTL and the 0–5 window climb.
 
 ## Things to try
 
-- **DIM.** Default is 8. Try 6 (capacity-starved residual grows) or 5.
+- **dim.** Default is 8. Try 6 (capacity-starved residual grows) or 5.
 - **Noise.** `NOISE_LEVEL` is 0.18. Raise toward 0.25+ or cut to 0.05.
 - **Block size.** Default 40. Short blocks make TTL dominate the score.
 - **Epochs.** Default 100. Try 50 for a quicker / slightly weaker readout.

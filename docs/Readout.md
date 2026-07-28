@@ -31,10 +31,10 @@ Vocabulary (shared with ESN):
 
 | Term | Meaning |
 |------|---------|
-| **N** | Reservoir neurons = 2^reservoir.dim; length of one delay-line slice |
+| **N** | Reservoir neurons = 2<sup>reservoir.dim</sup>; length of one delay-line slice |
 | **B** | `ESNConfig::readout_slices` — power of two, 1 ≤ B ≤ M |
 | **Reservoir state** | Newest slice only (N floats) |
-| **Readout input** | What the HCNN sees: B blocks of N = 2^readout.dim floats. Equals reservoir state only when B = 1 |
+| **Readout input** | What the HCNN sees: B blocks of N = 2<sup>readout.dim</sup> floats. Equals reservoir state only when B = 1 |
 
 ## A readout that speaks the reservoir's language
 
@@ -69,7 +69,7 @@ this host):
   **K = dim + 1**, shared across all vertices. The hypercube is vertex-transitive,
   so sharing is exact under the Z₂ⁿ symmetry; neighbor lookup is XOR, with no
   adjacency list and no image border to pad. (ESN always feeds **full capacity**
-  `input_channels × 2^dim`; short raw vectors would be zero-padded by HCNN, which
+  `input_channels` × 2<sup>dim</sup>; short raw vectors would be zero-padded by HCNN, which
   this host does not rely on.)
 - **Pooling that stays on a cube.** Optional antipodal pool pairs each vertex with
   its bitwise complement, drops dim by one, and leaves a perfect sub-hypercube.
@@ -135,7 +135,7 @@ always the reservoir dim. ESN sets it at construction via `MakeReadoutConfig`
 (do not set `readout.dim` yourself):
 
 - **Default** (`readout_slices = 1`): `readout.dim = reservoir.dim`,
-  `NumFeatures() = N = 2^reservoir.dim` — one float per reservoir vertex.
+  `NumFeatures()` = N = 2<sup>reservoir.dim</sup> — one float per reservoir vertex.
 - **Multi-block** (`readout_slices = B > 1`): B must be a **power of two** and
   ≤ `reservoir.history_depth`. Then
   `readout.dim = reservoir.dim + log2(B)` and `NumFeatures() = N × B`.
@@ -354,7 +354,7 @@ ESN holds `Readout readout_` and delegates. Methods on `Readout` (see also
 | `NumFeatures()` / `NumOutputs()` | size_t |
 | `GetConfig()` / `IsTrained()` | config / always true once constructed |
 
-`NumFeatures()` = `2^dim` for this readout's input cube (reservoir N only when
+`NumFeatures()` = 2<sup>dim</sup> for this readout's input cube (reservoir N only when
 `dim` equals reservoir dim — see multi-block above).
 
 `IsTrained()` means the network exists and has weights worth persisting (true
@@ -381,7 +381,7 @@ from construction on) — **not** “has seen training data.”
 
 - Project root: `Readout.h` / `Readout.cpp`.
 - `std::unique_ptr<hcnn::HCNN>` PIMPL — `#include "HCNN.h"` only in the .cpp.
-- Not templated; capacity is a power of two (`2^dim`), with `dim ≥ 5` asserted at
+- Not templated; capacity is a power of two (2<sup>dim</sup>), with `dim ≥ 5` asserted at
   stack build.
 - Does not store training data — only live weights, config, and best-epoch
   metadata after `Train`.

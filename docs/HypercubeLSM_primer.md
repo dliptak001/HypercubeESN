@@ -18,7 +18,7 @@
 | Spectral radius scales recurrence | Regime protocol scales E/I weights (separate note) |
 | Freeze reservoir → train readout | Freeze **liquid** → train readout |
 
-Same crystal: vertex `v`, neighbors `v XOR (1<<i)`, N = 2^dim. Different phase:
+Same crystal: vertex `v`, neighbors `v XOR (1<<i)`, N = 2<sup>dim</sup>. Different phase:
 **events in time**, not a smooth rate field.
 
 ---
@@ -216,7 +216,7 @@ liquid talks to itself.
 | Synapse | weight draw + E/I balance; optional `tau_s` |
 | Regime | global scale so mean rate under a probe drive sits in a band |
 | Features | `K`, `tau_trace[0..K)` |
-| Size | `dim` → N = 2^dim |
+| Size | `dim` → N = 2<sup>dim</sup> |
 
 ESN analogy: you survey seed / spectral radius / M. LSM: you survey seed /
 **regime scale** / τ’s / trace stack. Same product habit, different knobs.

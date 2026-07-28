@@ -91,7 +91,7 @@ print(f"Sine next-step: R2={r2:.6f}, NRMSE={nrmse:.6f}")
 assert r2 > 0.99, f"R2 too low: {r2}"
 for d in range(5, 13):
     e = he.ESN(reservoir_hypercube_dimension=d, seed=1)
-    print(f"  DIM {d}: N={e.reservoir_neuron_count} OK")
+    print(f"  dim {d}: N={e.reservoir_neuron_count} OK")
 print("Smoke test PASSED")
 ```
 
@@ -141,4 +141,4 @@ Structure the output as:
 [If any — with diagnosis]
 ```
 
-If the smoke test R² drops below 0.99 or any DIM fails to construct, flag it as a regression.
+If the smoke test R² drops below 0.99 or any dim fails to construct, flag it as a regression.

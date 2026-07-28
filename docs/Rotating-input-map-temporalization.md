@@ -78,7 +78,7 @@ domain-specific scan order.
 
 ### Assumptions (canonical form)
 
-1. **Size match.** Let `N = 2^DIM` be the number of hypercube vertices. The
+1. **Size match.** Let N = 2<sup>dim</sup> be the number of hypercube vertices. The
    static input `x` is a real vector of length **N** (or is projected /
    padded to length N *before* this layer — how you get there is out of
    scope for this document).
@@ -182,12 +182,12 @@ frozen tensor, reindexed by `c`, never rewritten.
 | **Hypercube-native** | XOR is the group operation on vertex labels; RIMT speaks the same language as neighbor gather |
 | **O(1) state** | One `uint` per episode (or per running spatial stream) |
 | **No materialization** | `W` is never rotated in memory; only the **lookup address** changes |
-| **Full orbit in N passes** | For `N = 2^DIM`, the low `DIM` bits of `c` run through every residue class mod N. After N increments, `(i XOR c)` has walked a complete translation orbit of the address space (period N in the map alignment, barring extra symmetry in `W` or `x`) |
+| **Full orbit in N passes** | For N = 2<sup>dim</sup>, the low `dim` bits of `c` run through every residue class mod N. After N increments, `(i XOR c)` has walked a complete translation orbit of the address space (period N in the map alignment, barring extra symmetry in `W` or `x`) |
 | **Implementation** | Mask to the address width if needed: `(i XOR c) & (N - 1)` when indices are `0 .. N-1` and `c` may grow past `N` |
 
 When `c` exceeds `N - 1`, either let it run (mask on use) or wrap
 `c = (c + 1) & (N - 1)`. Behavior of the **alignment** is period-N either way
-if only the low `DIM` bits matter for indexing.
+if only the low `dim` bits matter for indexing.
 
 ### Pass vs step
 
@@ -200,7 +200,7 @@ per neuron.
 
 ### Period
 
-With address-width `DIM` and mask `(N - 1)`, the map alignment is **period N**.
+With address-width `dim` and mask `(N - 1)`, the map alignment is **period N**.
 After warmup the reservoir is forced by a structured, reproducible orbit of
 couplings whose period is tied to cube size. That should interact honestly
 with leak rate, spectral radius, and `T_read` (prefer readout windows that
@@ -346,7 +346,7 @@ are how you temporalize it.
 | **Too short warmup** | Readout sees initial-state junk |
 | **T_read ignores period** | Samples only one phase of the period-N `c` orbit and loses diversity |
 | **Increment in the wrong place** | `c++` inside the per-vertex loop (once per neuron) instead of once per pass |
-| **Forgot address mask** | `i XOR c` without `& (N-1)` when `c` or width can exceed DIM bits |
+| **Forgot address mask** | `i XOR c` without `& (N-1)` when `c` or width can exceed dim bits |
 | **Leaky sample protocol** | No clear / no `c` reset between samples → train/test contamination |
 | **\|x\| ≠ N without a defined projection** | Silent padding/truncation policy bugs |
 
@@ -363,7 +363,7 @@ are how you temporalize it.
 | Per-pass reservoir | Same as any HypercubeESN step (neighbor gathers, history, activation) |
 | Per sample | `(T_warmup + T_read)` passes |
 
-`N` is already exponential in DIM for the reservoir. RIMT does not change
+`N` is already exponential in dim for the reservoir. RIMT does not change
 that asymptotics; it multiplies work by the episode length. Episode length
 is a **product hyperparameter**, not a hidden quadratic in a materialized
 weight tower.
@@ -374,7 +374,7 @@ weight tower.
 
 | Knob | Role | Notes |
 |------|------|-------|
-| `DIM` / `N` | Hypercube size; target length of `x` | `N = 2^DIM` |
+| `dim` / `N` | Hypercube size; target length of `x` | N = 2<sup>dim</sup> |
 | Map structure | Vector vs matrix vs neighbor-weight block | Start simple: length-N vector |
 | Rotate | **`c` unsigned; lookup `i XOR c`; `c++` once per pass** | Canonical; not optional for the name RIMT |
 | Address mask | `(i XOR c) & (N - 1)` | Required when `c` may leave `0 .. N-1` |

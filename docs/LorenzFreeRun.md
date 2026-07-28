@@ -26,7 +26,7 @@
   cross-feature, and 4 divides N=256 cleanly (3 does not). `num_outputs=3`,
   predict the next standardized state. The x·y·z channel is rebuilt from each
   prediction during free-run.
-- **Geometry/budgets:** DIM=8 (N=256), discard 5000, warmup 1000, collect 40000
+- **Geometry/budgets:** dim=8 (N=256), discard 5000, warmup 1000, collect 40000
   (train 0.8 / one-step test 0.2), 30 free-run launches spaced 800 apart, 500-step
   teacher-forced resync per launch, horizon 2000.
 - **Metrics:** (1) one-step open-loop R²/NRMSE — the *parity baseline* and the
@@ -59,7 +59,7 @@ one-step map free-running. **Match one-step NRMSE, then compare VPT.**
 ## Results
 
 VPT over 30 launches; λt = Lyapunov times (1 λt = 55.2 steps). Config common
-unless noted: DIM=8, N=256, leak=1.0, readout 600 epochs, batch 64, TANH readout.
+unless noted: dim=8, N=256, leak=1.0, readout 600 epochs, batch 64, TANH readout.
 
 | # | activation | sr | input_scaling | one-step NRMSE | VPT median | VPT mean | VPT max | note |
 |---|---|---|---|---|---|---|---|---|

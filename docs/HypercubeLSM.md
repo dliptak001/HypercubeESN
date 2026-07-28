@@ -88,7 +88,7 @@ Classical references (field context, not Hypercube-specific):
 HypercubeESN already showed that the Boolean hypercube is a strong **implicit
 graph** for reservoirs:
 
-- **N = 2^dim** neurons on vertices
+- **N = 2<sup>dim</sup>** neurons on vertices
 - Neighbors = single bit flips: `v XOR (1 << i)` for `i = 0 .. dim-1`
 - **No adjacency list** — topology is computed, not stored
 - Local fan-in = **dim** (exactly), vertex-transitive, multi-scale bit structure
@@ -245,7 +245,7 @@ aligned with vertex geometry:
 for proof; HypercubeCNN when vertex fields are smooth enough (multi-τ traces).
 
 Feature tensor for HCNN (intent): **channels × vertices** with capacity N =
-2^dim (and optional channel count = number of τ’s) — same full-capacity culture
+2<sup>dim</sup> (and optional channel count = number of τ’s) — same full-capacity culture
 as ESN’s readout input.
 
 ### Lifecycle (API-shaped sketch)

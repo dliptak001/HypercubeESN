@@ -129,7 +129,7 @@ campaign notes; they are not re-run against the current tree.
 
 ### NARMA-30 — parity at lower drive
 
-- Setup: DIM 8, N=256, leak=1, 3 seeds `{73896, 73897, 73898}`, 600 epochs
+- Setup: dim 8, N=256, leak=1, 3 seeds `{73896, 73897, 73898}`, 600 epochs
   (batch 128, cosine LR), M in `{28,…,36}`.
 - A: `gamma=1.1`, `sigma≈0.063`, `sr=0.92`, `input_scaling=0.019`.
 - tanh: `sr=0.95`, `input_scaling=0.1`.
@@ -158,7 +158,7 @@ and slightly lower `sr` (0.92 vs 0.95). Differentiator = operating point, not er
 
 ### Sine next-step — parity (ceiling / floor), lower nominal `sr`
 
-- DIM 8, M=16, leak=1, `input_scaling=0.1`, 1500 epochs, two seeds.
+- dim 8, M=16, leak=1, `input_scaling=0.1`, 1500 epochs, two seeds.
 - A: `gamma=1.4`, `sigma≈0.071`, `sr=0.90`.
 - tanh: `sr=0.98`.
 
@@ -185,7 +185,7 @@ Accuracy is a ceiling metric → no margin to show. Again, OP differs; error doe
 
 ### Linear memory capacity — tanh wins
 
-- DIM 11, N=F=2048, leak=1, warmup 2000 / collect 15000, Kmax 2000, ridge 1e-4.
+- dim 11, N=F=2048, leak=1, warmup 2000 / collect 15000, Kmax 2000, ridge 1e-4.
 - Matched `input_scaling=0.2`, `sr=1.00`; A with `gamma=1.4`, `sigma≈0.071`.
 - TotalMC (higher = more linear memory; ceiling N=2048):
 

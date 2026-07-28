@@ -126,7 +126,7 @@ FetchContent-style include (`"ESN.h"`). Installed SDK: `<HypercubeESN/ESN.h>`.
 
 int main()
 {
-    constexpr size_t DIM = 7;         // 2^7 = 128 neurons
+    constexpr size_t dim = 7;         // N = 128 (= 2^7) neurons
     constexpr size_t warmup = 200;
     constexpr size_t collect = 2000;
 
@@ -135,7 +135,7 @@ int main()
         signal[t] = std::sin(0.1f * static_cast<float>(t));
 
     ESNConfig cfg;
-    cfg.reservoir.dim  = DIM;              // hypercube dimension (5-16)
+    cfg.reservoir.dim  = dim;              // hypercube dimension (5-16)
     cfg.reservoir.seed = 74119;            // per-task surveyed seed
     cfg.readout.epochs     = 25;
     cfg.readout.batch_size = 128;
@@ -182,7 +182,7 @@ Only the readout emits **y**. External feedback is an *input* into the reservoir
 | Term | Meaning |
 |------|---------|
 | **Timestep** | One `ReservoirStep` |
-| **N** | Reservoir neurons = 2^dim (`ReservoirNeuronCount`) |
+| **N** | Reservoir neurons = 2<sup>dim</sup> (`ReservoirNeuronCount`) |
 | **M** | `history_depth` — delay-line depth the recurrent gather uses |
 | **B** | `readout_slices` — power of two, 1 ≤ B ≤ M; ages packed into the readout |
 | **Reservoir state** | Newest slice only (`Outputs` / `CopyReservoirState`) — N floats |
@@ -199,10 +199,10 @@ thread.
 
 ### Hypercube dimension: `dim`
 
-`ReservoirConfig::dim` sets the reservoir hypercube size. N = 2^dim neurons at
+`ReservoirConfig::dim` sets the reservoir hypercube size. N = 2<sup>dim</sup> neurons at
 construction. Valid range **[5, 16]** — out of range throws
 `std::invalid_argument`. One concrete `Reservoir` / `ESN` type serves every
-dimension (no per-DIM templates).
+dimension (no per-dim templates).
 
 | dim   | Neurons     | Typical use |
 |-------|-------------|-------------|
@@ -288,7 +288,7 @@ struct ReservoirConfig
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `10` | Hypercube dimension; N = 2^dim. **[5, 16]**. |
+| `dim` | `size_t` | `10` | Hypercube dimension; N = 2<sup>dim</sup>. **[5, 16]**. |
 | `seed` | `uint64_t` | `73895` | Master RNG seed (SplitMix64 substreams: recurrent / input / external-feedback / bias / SR probe). Screen per dim/task. |
 | `spectral_radius` | `float` | `0.99` | Target ρ of the **recurrent** companion operator (MN×MN when M > 1). Drive ports are outside the rescale. |
 | `leak_rate` | `float` | `1.0` | `state = (1 − leak) * old + leak * (tanh(s) + bias)`. **(0, 1]**. |
@@ -339,7 +339,7 @@ struct ReadoutConfig {
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `0` | Features per sample = 2^dim. **Set by ESN** from reservoir dim + log2(B). |
+| `dim` | `size_t` | `0` | Features per sample = 2<sup>dim</sup>. **Set by ESN** from reservoir dim + log2(B). |
 | `num_outputs` | `int` | `1` | Regression targets or class count. |
 | `task` | `ReadoutTask` | `Regression` | Task head. |
 | `num_layers` | `int` | `1` | Conv(+Pool) stages. `0` → auto `min(dim − 2, 2)`. With pooling: assert `n ≤ dim − 2`. |
@@ -600,7 +600,7 @@ std::vector<float> CollectedStates() const;  // T × ReadoutInputWidth(), row-ma
 | `NumOutputs()` | Readout width (targets or classes) |
 | `NumExternalFeedbackChannels()` | D (0 = no ext-fb port) |
 | `ReservoirHypercubeDimension()` | `cfg.reservoir.dim` |
-| `ReservoirNeuronCount()` | N = 2^dim |
+| `ReservoirNeuronCount()` | N = 2<sup>dim</sup> |
 | `ReadoutInputWidth()` | B × N |
 | `ReadoutBlockCount()` | B |
 | `ReadoutBlockOf(slot)` | Physical block index for logical age `slot` |

@@ -13,7 +13,7 @@ before locking an op-point for other tasks.
 
 | Knob | Value |
 |------|--------|
-| DIM | 5 … 12 (one grid each; N = F = 2<sup>DIM</sup>) |
+| dim | 5 … 12 (one grid each; N = F = 2<sup>dim</sup>) |
 | Spectral radius | 0.90 · 0.95 · 1.00 |
 | Leak | **1.0** (singleton → M × sr pivot) for main grids |
 | `history_depth` M | 1, 2, 4, 8, 16, 32, 40, 48, 56, 64 |
@@ -26,9 +26,9 @@ Every main-grid cell early-stopped (`e`); no open-tail undercount.
 ---
 ## TotalMC grids (M × sr)
 
-Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
+Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that dim table.
 
-### DIM 5 · N = 32
+### dim 5 · N = 32
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -43,7 +43,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 25.98 | 29.99 | 25.44 |
 | 64 | 23.86 | 29.91 | 26.66 |
 
-### DIM 6 · N = 64
+### dim 6 · N = 64
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -58,7 +58,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 47.00 | 61.65 | 59.55 |
 | 64 | 40.90 | 61.54 | 40.24 |
 
-### DIM 7 · N = 128
+### dim 7 · N = 128
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -73,7 +73,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 55.34 | 106.68 | 124.62 |
 | 64 | 54.62 | 106.53 | **124.64** |
 
-### DIM 8 · N = 256
+### dim 8 · N = 256
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -88,7 +88,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 55.92 | 127.95 | 248.86 |
 | 64 | 61.47 | 125.86 | 169.56 |
 
-### DIM 9 · N = 512
+### dim 9 · N = 512
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -103,7 +103,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 56.01 | 143.77 | 424.23 |
 | 64 | 63.76 | 132.22 | **495.00** |
 
-### DIM 10 · N = 1024
+### dim 10 · N = 1024
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -118,7 +118,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 56.26 | 156.23 | 725.92 |
 | 64 | 63.99 | 149.58 | 566.92 |
 
-### DIM 11 · N = 2048
+### dim 11 · N = 2048
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -133,7 +133,7 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 | 56 | 57.34 | 162.10 | 954.07 |
 | 64 | 64.00 | 161.70 | **993.28** |
 
-### DIM 12 · N = 4096
+### dim 12 · N = 4096
 
 | M \ sr | 0.90 | 0.95 | 1.00 |
 |-------:|-----:|-----:|-----:|
@@ -150,10 +150,10 @@ Leak = 1.0, is = 0.06, seed = 47397376. Bold = best cell in that DIM table.
 
 ---
 
-## Appendix A — DIM 10 leak × sr × M
+## Appendix A — dim 10 leak × sr × M
 
 Same meter and seed family as the main tables (is = 0.06, seed =
-47397376, warmup 4000 / collect 25000 / Kmax 4000 / ridge 1e-4). **DIM = 10**
+47397376, warmup 4000 / collect 25000 / Kmax 4000 / ridge 1e-4). **dim = 10**
 only (`N = F = 1024`). Grid: 3 sr × 5 leak × 10 M = **150 cells**; all
 early-stopped (`e`), none open-tail.
 
@@ -163,7 +163,7 @@ early-stopped (`e`), none open-tail.
 | leak | 0.60 · 0.70 · 0.80 · 0.90 · **1.00** |
 | M | 1, 2, 4, 8, 16, 32, 40, 48, 56, 64 |
 
-The **leak = 1.00** column matches the DIM 10 main-grid row for each M (that
+The **leak = 1.00** column matches the dim 10 main-grid row for each M (that
 campaign held leak fixed at 1.0). Bold = best cell **within that M block**.
 
 **Reading tip.** At shallow M, higher leak almost always wins. At deep M and
@@ -171,7 +171,7 @@ sr = 1.00, mid/high leak still dominates through M = 40, but at M = 48 and
 M = 64 the peak shifts off leak = 1.00 (leak 0.90 beats 1.00). Do not assume
 leak = 1 is optimal for every depth.
 
-### Peak by M (DIM 10)
+### Peak by M (dim 10)
 
 | M | Peak TotalMC | at sr | at leak |
 |--:|-------------:|------:|--------:|
@@ -270,9 +270,9 @@ Overall peak for this appendix: **819.29** (M = 40, sr = 1.00, leak = 1.00).
 
 ---
 
-## Appendix B — DIM 10 seed survey (M = 30–34)
+## Appendix B — dim 10 seed survey (M = 30–34)
 
-Seed-to-seed variance at **DIM = 10** (`N = F = 1024`), **sr = 1.00**,
+Seed-to-seed variance at **dim = 10** (`N = F = 1024`), **sr = 1.00**,
 **is = 0.06**. Fine M grid around the deep-memory knee (not the coarse
 pow2 / M∈{40,48,…} grid of the main tables). Leak near full (0.95 · 0.98 · 1.00).
 Ten reservoir seeds of the form `73896+k` × `(k+2)` for k = 0…9 (same family as
@@ -280,7 +280,7 @@ the NARMA multi-seed pools). All cells early-stopped.
 
 | Axis | Values |
 |------|--------|
-| DIM | 10 |
+| dim | 10 |
 | sr | **1.00** (fixed) |
 | leak | 0.95 · 0.98 · 1.00 |
 | M | 30 · 31 · 32 · 33 · 34 |

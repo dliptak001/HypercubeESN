@@ -82,7 +82,7 @@ and to recover gradually when they return to normal.
 
 ## What to expect
 
-DIM=7, 128 neurons, `history_depth = 24` and `spectral_radius = 0.99`
+dim=7, 128 neurons, `history_depth = 24` and `spectral_radius = 0.99`
 (realized ~0.99), readout on all 128 vertices, `input_scaling = 0.1`,
 `conv_channels = 16`, `leak_rate = 1.0` (full replacement — the struct
 default, no override). Trained once in Phase 1 (2,800 samples,

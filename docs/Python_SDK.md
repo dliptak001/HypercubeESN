@@ -116,7 +116,7 @@ Same story as the C++ core (Python currently always uses **B = 1** — see below
 
 | Term | Meaning |
 |------|---------|
-| **N** | Reservoir neurons = 2^dim (`reservoir_neuron_count`) |
+| **N** | Reservoir neurons = 2<sup>dim</sup> (`reservoir_neuron_count`) |
 | **M** | `history_depth` — delay-line depth used by the **recurrent** gather |
 | **B** | Delay-line ages packed into the readout. C++: `ESNConfig::readout_slices`. **Python bindings do not expose B; it stays at the C++ default 1.** |
 | **Reservoir state** | Newest published slice (`copy_reservoir_state`) — N floats |
@@ -130,7 +130,7 @@ Only the readout is trained. The reservoir is frozen after construction.
 
 ### The `reservoir_hypercube_dimension` parameter
 
-Controls reservoir hypercube size. N = 2^dim. Supported: **5–16**.
+Controls reservoir hypercube size. N = 2<sup>dim</sup>. Supported: **5–16**.
 
 | dim  | Neurons   | Typical use |
 |------|-----------|-------------|
@@ -222,7 +222,7 @@ optimizer / channel growth. Those stay at C++ struct defaults (`bias_scaling =
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2^dim. |
+| `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2<sup>dim</sup>. |
 | `seed` | `int` | `73895` | Master reservoir seed (SplitMix64 substreams). Screen per task. |
 | `spectral_radius` | `float` | `0.99` | Target ρ for the **recurrent** block. |
 | `input_scaling` | `float` | `0.5` | Input weights × `input_scaling / √dim`. Local construction only. |
@@ -397,7 +397,7 @@ for `train_step_batch` / `predict_from_state`.
 | Property | Type | Description |
 |----------|------|-------------|
 | `reservoir_hypercube_dimension` | `int` | Reservoir dim |
-| `reservoir_neuron_count` | `int` | N = 2^dim |
+| `reservoir_neuron_count` | `int` | N = 2<sup>dim</sup> |
 | `num_collected_states` | `int` | Rows from `reservoir_run` |
 | `num_outputs` | `int` | Readout width |
 | `num_inputs` | `int` | Input channels |
