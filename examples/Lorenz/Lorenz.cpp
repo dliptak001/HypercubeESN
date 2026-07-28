@@ -521,12 +521,13 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     emit(buf);
     report("VPT (lt)", vpt_lts, 2);
     report("free-run RMSE", rmses, 6);
-    report("duty (<=θ)", duties, 3);
+    // ASCII labels only — Windows consoles often mis-decode UTF-8 Greek theta.
+    report("duty (<=theta)", duties, 3);
     report("n_relock", relocks, 1);
     report("n_unlock", unlocks, 1);
     report("meanLock (steps)", mean_locks, 1);
     std::snprintf(buf, sizeof buf,
-                  "  note: duty/relock/unlock/meanLock use θ=VPT_THRESHOLD=%.2f (GS re-lock proxies; "
+                  "  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=%.2f (GS re-lock proxies; "
                   "VPT is first upcrossing only)\n",
                   config::VPT_THRESHOLD);
     emit(buf);
@@ -567,7 +568,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     for (size_t i = 0; i < top_n; i++)
         emit(valid[i]->row.c_str());
 
-    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest duty (<=θ) ===\n", top_n);
+    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest duty (<=theta) ===\n", top_n);
     emit(buf);
     std::sort(valid.begin(), valid.end(),
               [](const FreeRunResult* a, const FreeRunResult* b) { return a->duty > b->duty; });
