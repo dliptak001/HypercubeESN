@@ -38,6 +38,8 @@ In project language that re-locking is **generalized synchronization (GS)**: a r
 
 House notes (do not lose again): former `examples/Lorenz/recovery.md` (pruned; recover from git if needed — e.g. `05bd00e`, `ca86a76`, `6182a84`) documented anchor dose-response (Goldilocks `INPUT_SCALING`), CLE condition for sync, and prior art (reservoir observers / GS forecasting: Lu et al. 2017; Chaos 2019/2024). **Forward-only** ablation (`config::FORWARD_ONLY`) zeros past every step and removes this GS drive by design — see [`TODO_forward_only_ablation.md`](TODO_forward_only_ablation.md).
 
+**Operational GS proxies** (same θ as VPT; filled by `FreeRun` / survey): **duty** = fraction of free-run steps with channel-RMS error ≤ θ; **n_unlock** = locked→unlocked crossings; **n_relock** = unlocked→locked after a prior unlock (true re-locks only); **mean_locked_sojourn** = mean contiguous locked run length. Prefer these alongside free-run RMSE when comparing arms — VPT alone is first upcrossing only.
+
 During free-run the two cursors sit far apart on the stream (often tens–hundreds of Lyapunov times). The anchor supplies real **climate** / manifold grounding, not a leak of the scored future’s phase — re-lock must still come from learned dynamics + feedback, not from past handing over the answer.
 
 ---

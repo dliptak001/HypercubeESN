@@ -35,7 +35,7 @@ namespace config
     constexpr float LEARNING_RATE_MIN = 0.000002f;// anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 100;
     constexpr size_t READOUT_SLICES = 2;
-    constexpr size_t CONV_CHANNELS = 8;
+    constexpr size_t CONV_CHANNELS = 2;//8;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;
 
@@ -75,6 +75,14 @@ struct FreeRunResult
     double vpt_lt = 0.0; ///< valid-prediction time in Lyapunov times (window floor if never crossed)
     double rmse = 0.0; ///< free-run RMSE over the scored steps (normalized units)
     size_t steps = 0; ///< number of generative steps actually scored
+    /// GS / re-lock proxies (same θ = VPT_THRESHOLD; channel-RMS error):
+    /// duty = fraction of steps with err ≤ θ (VPT uses err > θ);
+    /// n_relock = # unlocked→locked after at least one prior unlock (true re-locks);
+    /// n_unlock = # locked→unlocked; mean_locked_sojourn = mean contiguous locked run length.
+    double duty = 0.0;
+    size_t n_relock = 0;
+    size_t n_unlock = 0;
+    double mean_locked_sojourn = 0.0;
     std::string row; ///< human-readable table line for this seed
 };
 

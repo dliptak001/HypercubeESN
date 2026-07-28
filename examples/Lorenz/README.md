@@ -232,24 +232,35 @@ For up to `FREE_RUN_WINDOW_SIZE` steps (or until eval/anchor runway ends):
 2. `Predict(outputs)` — estimate of `S[f]` at current reservoir state  
 3. Past real → input port; `ExtractFuturePredicted(outputs)` → feedback port  
 4. `ReservoirStep(past, future)`  
-5. Score vs true `S[f]` (normalized channel-RMS); accumulate RMSE; record VPT  
+5. Score vs true `S[f]` (normalized channel-RMS); accumulate RMSE, VPT, and GS proxies  
 6. Stop if past would leave the seed, stream ends, or step budget hit; else `Step()`
 
 **What free-run measures.** Phase-tracking under continuous partial observation
 (always-real past) + self-feedback on the future. Not Pathak-style pure free-run
-without stating the anchor.
+without stating the anchor. Past drive enables **generalized synchronization**
+re-lock (see [`JanusCursor.md`](JanusCursor.md)); VPT alone does not capture that.
 
 ### Metrics (`FreeRunResult`)
+
+θ = `VPT_THRESHOLD` (channel-RMS). **Locked** means `err ≤ θ` (complement of VPT’s
+`err > θ` upcrossing).
 
 | Field | Meaning |
 |-------|---------|
 | `valid` | False if zero generative steps scored (excluded from survey stats) |
-| `vpt_steps` | First step whose channel-RMS error exceeds `VPT_THRESHOLD` (0 = never) |
+| `vpt_steps` | First step with channel-RMS `err > θ` (0 = never) |
 | `vpt_lt` | That horizon in Lyapunov times; if never crossed, window floor (lower bound) |
 | `rmse` | Free-run RMSE over scored steps (normalized units, all 3 channels) |
+| `duty` | Fraction of steps locked (`err ≤ θ`) — primary GS / re-lock proxy |
+| `n_relock` | Unlocked→locked transitions **after** at least one prior unlock (true re-locks; first lock from a cold start is not counted) |
+| `n_unlock` | Locked→unlocked transitions |
+| `mean_locked_sojourn` | Mean length (steps) of contiguous locked runs (includes trailing run) |
 | `crossed` | Whether the threshold was ever crossed |
 | `steps` | Generative steps actually scored |
 | `row` | Pre-formatted table line for surveys |
+
+Survey aggregates report VPT, RMSE, duty, n_relock, n_unlock, meanLock, plus
+leaderboards for RMSE, VPT, and duty.
 
 Conversion: `steps_per_lt = 1 / (LYAPUNOV_EXPONENT · DT)` (canonical Lorenz-63
 λ_max and the configured RK4 `DT`).

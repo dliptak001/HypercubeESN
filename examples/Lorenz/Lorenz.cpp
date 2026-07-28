@@ -290,6 +290,15 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     double sq_err_sum = 0.0;
     size_t steps = 0;
     size_t vpt_steps = 0; // first step whose error exceeded VPT_THRESHOLD (0 = never)
+    size_t locked_steps = 0; // steps with channel-RMS < θ (GS duty numerator)
+    size_t n_relock = 0; // unlocked → locked *after* at least one unlock (true re-locks)
+    size_t n_unlock = 0; // locked → unlocked transitions
+    size_t locked_sojourn_sum = 0; // sum of completed + trailing locked run lengths
+    size_t locked_run_count = 0; // number of locked sojourns (for mean)
+    size_t cur_locked_len = 0;
+    bool have_prev = false;
+    bool prev_locked = false;
+    bool slipped = false; // true after first unlock; next lock is a re-lock
     for (size_t j = 0; j < config::FREE_RUN_WINDOW_SIZE; j++)
     {
         const int32_t f = data_stream_->Indices().second; // this step's held-out truth index
@@ -317,6 +326,42 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
         ++steps;
 
         const double step_err = std::sqrt(step_sq / 3.0);
+        // Match VPT's strict ">" upcrossing: locked ⇔ err ≤ θ  (VPT fires when err > θ).
+        const bool locked = step_err <= static_cast<double>(config::VPT_THRESHOLD);
+        if (locked)
+            ++locked_steps;
+
+        // GS proxies: duty from locked fraction; re-lock only after a prior unlock.
+        if (!have_prev)
+        {
+            have_prev = true;
+            prev_locked = locked;
+            if (locked)
+                cur_locked_len = 1;
+        }
+        else
+        {
+            if (locked && !prev_locked)
+            {
+                if (slipped)
+                    ++n_relock; // unlocked → locked after a slip (GS recovery)
+                cur_locked_len = 1;
+            }
+            else if (!locked && prev_locked)
+            {
+                ++n_unlock; // locked → unlocked
+                slipped = true;
+                locked_sojourn_sum += cur_locked_len;
+                ++locked_run_count;
+                cur_locked_len = 0;
+            }
+            else if (locked)
+            {
+                ++cur_locked_len;
+            }
+            prev_locked = locked;
+        }
+
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
         if (verbose && config::ENABLE_PRINTF && steps % 25 == 0)
@@ -336,24 +381,37 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     if (steps == 0)
         return {}; // valid == false — excluded from the survey stats
 
+    // Close a trailing locked sojourn so mean locked length includes the final run.
+    if (prev_locked && cur_locked_len > 0)
+    {
+        locked_sojourn_sum += cur_locked_len;
+        ++locked_run_count;
+    }
+
     // Per-seed outcome + display row (always built, independent of ENABLE_PRINTF).
-    // VPT is the headline metric: the step at which the channel-RMS error first
-    // crossed VPT_THRESHOLD, or ">= steps" (a lower bound) if it never did.
+    // VPT = first upcrossing of θ. duty / n_relock capture GS-style re-lock that
+    // VPT alone misses (error can recover after the first crossing).
     const bool crossed = vpt_steps > 0;
     const double rmse = std::sqrt(sq_err_sum / (3.0 * steps));
     const double vpt_lt = (crossed ? vpt_steps : steps) / steps_per_lt;
-    char buf[256];
+    const double duty = static_cast<double>(locked_steps) / static_cast<double>(steps);
+    const double mean_locked = locked_run_count > 0
+        ? static_cast<double>(locked_sojourn_sum) / static_cast<double>(locked_run_count)
+        : 0.0;
+    char buf[384];
     const char* arm = config::FORWARD_ONLY ? "fwd-only" : "Janus";
     if (crossed)
         std::snprintf(buf, sizeof buf,
-                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f\n",
+                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  "
+                      "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f\n",
                       arm, static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_),
-                      vpt_steps, vpt_lt, rmse);
+                      vpt_steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked);
     else
         std::snprintf(buf, sizeof buf,
-                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
+                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  "
+                      "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f  (never crossed %.2f)\n",
                       arm, static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_),
-                      steps, vpt_lt, rmse, config::VPT_THRESHOLD);
+                      steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked, config::VPT_THRESHOLD);
 
     FreeRunResult r;
     r.valid = true;
@@ -363,6 +421,10 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     r.vpt_lt = vpt_lt;
     r.rmse = rmse;
     r.steps = steps;
+    r.duty = duty;
+    r.n_relock = n_relock;
+    r.n_unlock = n_unlock;
+    r.mean_locked_sojourn = mean_locked;
     r.row = buf;
     return r;
 }
@@ -402,7 +464,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     }
 
     std::string out;
-    char buf[256];
+    char buf[384]; // long enough for FreeRunResult::row + aggregate note lines
     auto emit = [&](const char* s) { out += s; };
 
     std::snprintf(buf, sizeof buf, "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
@@ -413,7 +475,8 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     // Aggregate stats over the valid runs. VPT is in Lyapunov times; runs that
     // never crossed VPT_THRESHOLD contribute their window floor (a lower bound),
     // so the VPT stats are conservative when any run is censored (noted below).
-    std::vector<double> vpt_lts, rmses;
+    // duty / n_relock are GS re-lock proxies (same θ as VPT).
+    std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
     size_t censored = 0, invalid = 0;
     for (const auto& r : results)
     {
@@ -424,6 +487,10 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
         }
         vpt_lts.push_back(r.vpt_lt);
         rmses.push_back(r.rmse);
+        duties.push_back(r.duty);
+        relocks.push_back(static_cast<double>(r.n_relock));
+        unlocks.push_back(static_cast<double>(r.n_unlock));
+        mean_locks.push_back(r.mean_locked_sojourn);
         if (!r.crossed) ++censored;
     }
 
@@ -431,7 +498,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     {
         if (v.empty())
         {
-            std::snprintf(buf, sizeof buf, "  %-16s (no valid runs)\n", label);
+            std::snprintf(buf, sizeof buf, "  %-20s (no valid runs)\n", label);
             emit(buf);
             return;
         }
@@ -445,7 +512,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
         var = n > 1 ? var / static_cast<double>(n - 1) : 0.0; // sample variance
         const double sd = std::sqrt(var);
         const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::snprintf(buf, sizeof buf, "  %-16s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
+        std::snprintf(buf, sizeof buf, "  %-20s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
                       label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
         emit(buf);
     };
@@ -454,6 +521,15 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     emit(buf);
     report("VPT (lt)", vpt_lts, 2);
     report("free-run RMSE", rmses, 6);
+    report("duty (<=θ)", duties, 3);
+    report("n_relock", relocks, 1);
+    report("n_unlock", unlocks, 1);
+    report("meanLock (steps)", mean_locks, 1);
+    std::snprintf(buf, sizeof buf,
+                  "  note: duty/relock/unlock/meanLock use θ=VPT_THRESHOLD=%.2f (GS re-lock proxies; "
+                  "VPT is first upcrossing only)\n",
+                  config::VPT_THRESHOLD);
+    emit(buf);
     if (censored)
     {
         std::snprintf(buf, sizeof buf,
@@ -468,8 +544,8 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
         emit(buf);
     }
 
-    // Summary tables. Rank the valid runs and print the two leaderboards; each row
-    // is the run's own display line (seed / orbit_seed / VPT / RMSE).
+    // Summary tables. Rank the valid runs and print leaderboards; each row is the
+    // run's own display line (seed / orbit_seed / VPT / RMSE / duty / relock).
     std::vector<const FreeRunResult*> valid;
     valid.reserve(results.size());
     for (const auto& r : results)
@@ -488,6 +564,13 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     emit(buf);
     std::sort(valid.begin(), valid.end(),
               [](const FreeRunResult* a, const FreeRunResult* b) { return a->vpt_lt > b->vpt_lt; });
+    for (size_t i = 0; i < top_n; i++)
+        emit(valid[i]->row.c_str());
+
+    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest duty (<=θ) ===\n", top_n);
+    emit(buf);
+    std::sort(valid.begin(), valid.end(),
+              [](const FreeRunResult* a, const FreeRunResult* b) { return a->duty > b->duty; });
     for (size_t i = 0; i < top_n; i++)
         emit(valid[i]->row.c_str());
 
