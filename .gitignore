@@ -21,3 +21,6 @@ Thumbs.db
 # Claude Code (development only)
 .claude/
 CLAUDE.md
+
+# Local release runbooks (not for the public tree)
+docs/migration_2.0.0.md
