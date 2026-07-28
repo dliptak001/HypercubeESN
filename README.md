@@ -272,7 +272,6 @@ A full `cmake --build build` also produces:
 
 | Target | Purpose |
 |---|---|
-| `HypercubeESN` | Stub entry point |
 | `BasicPrediction` | Minimal example: sine wave prediction |
 | `SignalClassification` | Multi-class waveform recognition with confusion matrix |
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
@@ -283,15 +282,29 @@ A full `cmake --build build` also produces:
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
 companion `.md` file with a detailed walkthrough.
 
+### C++ tests
+
+| Target | Purpose |
+|---|---|
+| `reservoir_snapshot` | Snapshot/restore + `Create(GetConfig)` bit-identical fidelity (`tests/`) |
+
+```bash
+cmake --build build --target reservoir_snapshot
+ctest --test-dir build -R reservoir_snapshot --output-on-failure
+# or:  ./build/reservoir_snapshot
+```
+
 ## Project Structure
 
 ```
 HypercubeESN/
-  CMakeLists.txt         Top-level build (core lib + examples; pulls in HCNN subdir)
+  CMakeLists.txt         Top-level build (core lib + examples + tests; pulls in HCNN)
   Reservoir.h/cpp        Hypercube reservoir (N = 1<<dim vertices); ReservoirConfig
   Readout.h/cpp          Learned convolutional readout (PIMPL)
   ESN.h/cpp              Unified pipeline: warmup, run, train, predict
-  main.cpp               Reservoir snapshot/restore fidelity tests
+
+  tests/
+    reservoir_snapshot.cpp   CTest: snapshot/restore + Create(GetConfig) fidelity
 
   examples/
     BasicPrediction.cpp/md       Minimal sine wave prediction

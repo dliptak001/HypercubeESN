@@ -358,6 +358,8 @@ onto the same (or identically configured) reservoir.
 
 `RestoreSnapshot` copies state + history, re-homes the ring to canonical rotation,
 and clears staged drives. Replaying the same injections afterward is bit-exact.
+Fidelity is covered by the CTest target `reservoir_snapshot`
+(`tests/reservoir_snapshot.cpp`).
 
 `SliceAt(age)` is the live delay-line view (age 0 ≡ `Outputs()`); throws if
 `age ≥ history_depth`. Prefer this over raw buffer layout (ring rotation makes

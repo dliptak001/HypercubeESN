@@ -51,9 +51,14 @@ if(MINGW)
     target_link_options(HypercubeESNCore PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
-# ——— Executables: only when building standalone (not via FetchContent) ———
+# ——— Tests + examples: only when building standalone (not via FetchContent) ———
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    add_executable(HypercubeESN main.cpp)
+    enable_testing()
+
+    # Reservoir snapshot/restore + Create(GetConfig) fidelity (not a product entry point).
+    add_executable(reservoir_snapshot tests/reservoir_snapshot.cpp)
+    add_test(NAME reservoir_snapshot COMMAND reservoir_snapshot)
+
     add_executable(BasicPrediction examples/BasicPrediction.cpp)
     add_executable(SignalClassification examples/SignalClassification.cpp)
     add_executable(StreamingAnomaly examples/StreamingAnomaly.cpp)
@@ -62,7 +67,7 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     add_executable(Lorenz examples/Lorenz/Lorenz.cpp examples/Lorenz/LorenzDatastream.cpp)
 
     set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA Lorenz)
-    set(EXE_TARGETS HypercubeESN ${EXAMPLE_TARGETS})
+    set(EXE_TARGETS reservoir_snapshot ${EXAMPLE_TARGETS})
 
     foreach(tgt IN LISTS EXE_TARGETS)
         target_link_libraries(${tgt} PRIVATE HypercubeESNCore)

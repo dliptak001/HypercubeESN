@@ -1,5 +1,5 @@
-/// @file main.cpp
-/// @brief Reservoir snapshot/restore fidelity diagnostics.
+/// @file reservoir_snapshot.cpp
+/// @brief CTest target: reservoir snapshot/restore fidelity (+ Create(GetConfig)).
 
 #include <cstdio>
 #include <cstring>
