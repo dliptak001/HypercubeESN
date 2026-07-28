@@ -64,6 +64,22 @@ pip install ".[test]"
 pytest python/tests/
 ```
 
+### Examples
+
+Short runnable hosts (public API only) live under
+[`python/examples/`](../python/examples/README.md) in the **git tree**. They are
+**not** installed by the PyPI wheel — clone the repo (or open the files on
+GitHub), install the package, then run from the repository root:
+
+```bash
+pip install hypercube-esn
+python python/examples/basic_prediction.py
+python python/examples/classification.py
+```
+
+These teach the SDK on easy synthetic signals. Paper / release validators remain
+the C++ campaigns under `examples/` (NARMA, MemoryCapacity, Lorenz).
+
 ## Quick start
 
 ### Simple (recommended)

@@ -227,7 +227,8 @@ print(f"R² = {esn.r2():.6f}")
 ```
 
 Full API: [docs/Python_SDK.md](docs/Python_SDK.md) · package README:
-[python/README.md](python/README.md).
+[python/README.md](python/README.md) · runnable hosts (git tree, not in the
+wheel): [python/examples/](python/examples/README.md).
 
 ### C++
 

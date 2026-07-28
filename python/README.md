@@ -97,20 +97,50 @@ print(f"R² = {esn.r2():.6f}")
 print(f"NRMSE = {esn.nrmse():.6f}")
 ```
 
+## Examples
+
+Runnable Python hosts (public API only — no CMake / no C++ example binaries).
+Scripts live in the **git tree** under
+[`python/examples/`](https://github.com/dliptak001/HypercubeESN/tree/main/python/examples);
+they are **not** installed by the PyPI wheel.
+
+| Script | |
+|--------|--|
+| [basic_prediction.py](https://github.com/dliptak001/HypercubeESN/blob/main/python/examples/basic_prediction.py) | Next-step sine prediction (`fit` → R² / NRMSE) |
+| [classification.py](https://github.com/dliptak001/HypercubeESN/blob/main/python/examples/classification.py) | Binary sign classification (`accuracy`) |
+
+```bash
+# clone HypercubeESN, then from the repo root:
+pip install hypercube-esn
+python python/examples/basic_prediction.py
+python python/examples/classification.py
+```
+
+Onboarding demos only — easy synthetic signals, not storefront metrics. Frozen
+NARMA / MemoryCapacity / Lorenz numbers live in the C++
+[`examples/`](https://github.com/dliptak001/HypercubeESN/tree/main/examples)
+campaigns. Index:
+[python/examples/README.md](https://github.com/dliptak001/HypercubeESN/blob/main/python/examples/README.md).
+
 ## Features
 
 - **Simple API** — `fit()` runs warmup, collect, and batch train in one call
-- **Hypercube dimension dim 5–16** — N = 2<sup>dim</sup> neurons (32 to 65,536); delay-line depth M
-- **HCNN readout** — convolutional readout on the hypercube (not ridge alone)
+- **Hypercube dim 5–16** — N = 2<sup>dim</sup> neurons (32…65,536); delay-line depth M
+- **HCNN readout** — convolutions on the hypercube (K = dim+1 self tap), not ridge alone
+- **Multi-slice readout** — optional B ages packed into the readout (`readout_slices`)
 - **Multi-input** — channels map to contiguous vertex blocks
-- **Streaming** — online `train_step` / `train_step_batch` for continuous data
+- **Closed-loop drive** — external feedback channels + `reservoir_step`
+- **Regression & classification** — same `ESN` surface, task-selected head
+- **Streaming** — online `train_step` / `train_step_batch`
 - **Persistence** — pickle, `save` / `load`, optional HCNW export
+- **Wheels** — Python 3.10–3.14 on Windows, Linux, macOS (no local C++ toolchain)
 
 ## Documentation
 
 | Doc | |
 |-----|--|
 | [Python SDK](https://github.com/dliptak001/HypercubeESN/blob/main/docs/Python_SDK.md) | API reference (`fit`, streaming, config, pickle) |
+| [Python examples](https://github.com/dliptak001/HypercubeESN/blob/main/python/examples/README.md) | Runnable hosts (git tree; not in the wheel) |
 | [NARMA campaign](https://github.com/dliptak001/HypercubeESN/blob/main/examples/NARMA/NARMA.md) | Open-loop validator (N30 / N50 / N70) |
 | [Project README](https://github.com/dliptak001/HypercubeESN#readme) | Architecture and C++ side |
 | [C++ SDK](https://github.com/dliptak001/HypercubeESN/blob/main/docs/CPP_SDK.md) | Native library |
