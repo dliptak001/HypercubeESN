@@ -352,6 +352,19 @@ shows persistent intermittent lock under closed-loop generation — early first
 failure, substantial time still under θ with O(10) re-locks per ~18 LT window —
 unlike textbook die-after-VPT free-run.
 
+### Tomorrow — Research Areas split + simplify example Lorenz
+
+- [ ] Create top-level **`Research Areas/`** (or `ResearchAreas/`) folder in the
+  repo and **copy** the full Lorenz project there as the Janus / ablation /
+  research sandbox (history, TRACKING, dual-cursor work preserved).
+- [ ] Keep **`examples/Lorenz/`** as the public example path, but **rip out Janus
+  cursor wiring**: simple, straightforward, forward-only timebase — a single
+  forward-moving “future” cursor (likely **relabel**; drop past/anchor port
+  complexity from the default example).
+- [ ] Example target: clean free-run storefront (literature-comparable story);
+  research tree keeps half-anchored / A/B / curriculum experiments without
+  burdening the example README.
+
 ### Historical FSF (feature removed — log only)
 
 - [ ] Larger A/B: same seeds, `Lorenz.exe 4 50` at OFF vs 0.005 if claiming the RMSE edge  
