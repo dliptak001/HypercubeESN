@@ -31,6 +31,29 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
+---
+
+<p align="center">
+  <strong>HypercubeAI ecosystem</strong><br/>
+  <sub>One geometry. Three libraries. Topology-native intelligence.</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dliptak001/HypercubeESN"><strong>HypercubeESN</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dliptak001/HypercubeCNN"><strong>HypercubeCNN</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dliptak001/HypercubeHopfield"><strong>HypercubeHopfield</strong></a>
+</p>
+
+HypercubeESN is a pillar of **HypercubeAI** — a family of tools that treat the
+Boolean hypercube as a first-class computational medium: dynamical reservoirs
+(**ESN**), convolutional learning on the same graph (**CNN**), and associative
+memory (**Hopfield**). Shared vertices, shared XOR neighborhoods, no bolted-on
+grid.
+
+---
+
 ## Headline results
 
 Primary validators — open-loop (NARMA, MC) and half-anchored free-run (Lorenz).
