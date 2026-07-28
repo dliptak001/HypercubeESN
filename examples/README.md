@@ -111,9 +111,10 @@ each lag, and report the per-lag squared correlation `r²(k)` and the total
   sweep, a reservoir-seed survey, and a side-by-side depth probe
 
 `main()` selects a run mode (a parallel `RunGridSweep` by default); edit the
-`MCConfig` / `ReservoirConfig` and grid axes there. The walkthrough, four modes,
-and multi-DIM lookup tables (archived reference campaigns) are in
-[`MemoryCapacity/MemoryCapacity.md`](MemoryCapacity/MemoryCapacity.md).
+`MCConfig` / `ReservoirConfig` and grid axes there. Walkthrough + at-a-glance:
+[`MemoryCapacity/MemoryCapacity.md`](MemoryCapacity/MemoryCapacity.md). Full
+M×sr / leak / seed grids:
+[`MemoryCapacity/MemoryCapacity_grids.md`](MemoryCapacity/MemoryCapacity_grids.md).
 
 ## NARMA
 

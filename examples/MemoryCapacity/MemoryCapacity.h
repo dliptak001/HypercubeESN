@@ -16,70 +16,78 @@
 #include "MCLinalg.h"
 
 /// @file MemoryCapacity.h
-/// @brief Class-based memory-capacity (MC) diagnostic for the hypercube
-/// reservoir. See MemoryCapacity.md for the walkthrough and method definition.
+/// @brief Jaeger (2001) **linear short-term memory capacity** (MC) on a
+/// HypercubeESN @ref Reservoir — ridge on raw state only (no HCNN, no @ref ESN).
 ///
-/// Implements the standard Jaeger (2001) MC measurement:
-///   1. Drive the reservoir with i.i.d. white noise u(t) ~ Uniform[-1, +1].
-///   2. Collect M state vectors (rows) into the F-column matrix X.
-///   3. Split the rows: first `train_frac` train the ridge readout, rest evaluate.
-///   4. For each lag k in [1, k_max], fit (XᵀX + λI)w = Xᵀy on the train rows,
-///      then score the squared Pearson r²(k) between target and prediction on
-///      the held-out test rows.
-///   5. MC = Σ_k r²(k); also report the last lag crossing r² > {0.5, 0.1, 0.01}.
+/// Walkthrough + archived grids: `examples/MemoryCapacity/MemoryCapacity.md`
+/// (and `MemoryCapacity_grids.md`).
 ///
-/// The reservoir is never modified — only its raw state is read (no HCNN, no
-/// ESN coupling). The two configs are kept deliberately separate:
-///   - MCConfig          : the *experiment* (drive length, lag range, ridge,
-///                         split, feature cap). Fixes a meter; one drive series
-///                         is generated up front and reused across operating
-///                         points so cells stay byte-comparable.
-///   - ReservoirConfig   : the *operating point* (sr, leak, history_depth, seed,
-///                         input_scaling). Passed into Measure() per cell — there
-///                         is no parallel "extended parameter list".
+/// ## What MC is
+/// How much of the recent white-noise input history can be linearly reconstructed
+/// from the present reservoir state. Drive with i.i.d. `u(t) ~ U[-1,+1]`; for each
+/// lag k fit a ridge map from state to `u(t-k)`; score held-out squared Pearson
+/// correlation r²(k); **TotalMC = sum_k r²(k)**. Ceiling is F (feature count),
+/// not unlimited.
 ///
-/// Held-out evaluation matters: in-sample R² on M ~ a few × F samples
-/// overestimates the population r² by a roughly lag-independent margin,
-/// inflating the headline MC and every threshold crossing. We pay one Cholesky
-/// factorization (over the train Gram) and do the per-lag evaluation on the
-/// test split. We use squared Pearson correlation rather than the regression
-/// R² = 1 - SS_res/SS_tot: they agree when the model has an intercept; our
-/// linear readout has none, so the Pearson form is the canonical MC metric and
-/// is always in [0, 1].
+/// ## Protocol (one Measure)
+/// 1. Warm up, then collect usable state rows into X (row-major, usable_rows × F).
+/// 2. Split rows: first train_frac fit the readout; remainder evaluate.
+/// 3. One train Gram factor: (X_train' X_train + λI); per lag k solve for w and
+///    score r²(k) on the test rows.
+/// 4. Report TotalMC, threshold lags (k50/k10/k01), early-stop / open-tail flags.
 ///
-/// Cost: dominated by building the F×F train Gram and factoring it —
-/// O(M_train·F² + F³). At DIM 11 (F=2048) or DIM 12 (F=4096), M_train ~ 10k,
-/// one Measure() is roughly several seconds in Release (scales ~F²–F³).
+/// ## Vocabulary (easy to confuse)
+/// - **history_depth** — reservoir delay-line depth M in @ref ReservoirConfig
+///   (op-point). Not the row count of X.
+/// - **usable rows** (`Samples()`) — t_collect − k_max; train+test rows in X.
+///   Banners may call this M_usable; it is *not* history_depth.
+/// - **F** — features = min(N, feature_cap), N = 2^dim. Full-state → F = N.
+///
+/// ## Two configs (deliberately split)
+/// - @ref MCConfig — the *experiment* / meter (drive length, lags, ridge, split,
+///   feature cap, early-stop). One drive series is generated at meter construction
+///   and reused so every op-point cell sees a byte-identical task.
+/// - @ref ReservoirConfig — the *operating point* (spectral_radius, leak,
+///   history_depth, seed, input_scaling). Passed into @ref MemoryCapacityMeter::Measure
+///   per cell.
+///
+/// ## Metric choices
+/// Held-out Pearson r² (no intercept in the linear map) is the canonical MC score
+/// and stays in [0, 1]. In-sample scores would overestimate. Theoretical ceiling
+/// is F; open_tail means TotalMC is only a lower bound (curve had not decayed).
+///
+/// ## Cost
+/// Dominated by the F×F train Gram and Cholesky — O(usable_train · F² + F³).
+/// DIM 11–12 (F=2048–4096) is seconds per cell in Release. Use @ref RunSweep for
+/// grids; @ref MemoryCapacityMeter::PerCellBytes for RAM-capped workers.
 
 namespace mc
 {
-    /// Measurement parameters for an MC run. These define the *experiment*,
-    /// independent of the reservoir operating point. A meter is built once from
-    /// an MCConfig and reused across many ReservoirConfigs.
+    /// @brief Experiment knobs for MC — independent of reservoir op-point.
+    ///
+    /// Build one @ref MemoryCapacityMeter from this; reuse it across many
+    /// @ref ReservoirConfig cells so the white-noise drive stays fixed.
     struct MCConfig
     {
-        std::size_t   feature_cap = 8192;       ///< cap on # reservoir features used as regressors
-        std::size_t   t_warmup    = 2000;       ///< steps fed before any state is recorded
-        std::size_t   t_collect   = 15000;      ///< post-warmup steps whose state is collected
-        std::size_t   k_max       = 2000;       ///< largest lag tested
-        double        train_frac  = 0.7;        ///< fraction of usable rows used to fit the readout
-        double        ridge_lambda = 1e-4;      ///< Tikhonov regularization on the train Gram diagonal
-        std::uint64_t input_seed  = 0xC0FFEEULL;///< white-noise drive RNG seed
+        std::size_t   feature_cap = 8192;       ///< Max features F = min(N, cap); full-state uses F = N when N ≤ cap
+        std::size_t   t_warmup    = 2000;       ///< Steps before any state is recorded (also ≥ k_max)
+        std::size_t   t_collect   = 15000;      ///< Post-warmup steps considered for collection
+        std::size_t   k_max       = 2000;       ///< Largest lag k tested; usable rows = t_collect − k_max
+        double        train_frac  = 0.7;        ///< Fraction of usable rows for ridge fit (rest = test)
+        double        ridge_lambda = 1e-4;      ///< Tikhonov λ on the train Gram diagonal
+        std::uint64_t input_seed  = 0xC0FFEEULL;///< RNG seed for the shared white-noise drive
 
-        // Per-lag early-stop (Measure with early_stop=true). The memory function
-        // decays with lag, so once r²(k) holds below early_stop_thresh for
-        // early_stop_patience consecutive lags the sweep stops: remaining lags
-        // contribute only noise-floor r² and never revive a decayed curve. The
-        // patience window guards the headline against truncating on a transient
-        // dip. A full-curve run (early_stop=false) ignores these.
-        double        early_stop_thresh   = 0.01; ///< streak threshold on r²(k)
-        std::size_t   early_stop_patience = 20;   ///< consecutive sub-threshold lags that end the sweep
+        /// Early-stop (when @ref MeasureOptions::early_stop is true): stop after
+        /// early_stop_patience consecutive lags with r²(k) < early_stop_thresh.
+        /// Decayed curves do not revive; patience avoids cutting on a transient dip.
+        /// Full-curve runs (early_stop=false) ignore these fields.
+        double        early_stop_thresh   = 0.01; ///< r² streak threshold
+        std::size_t   early_stop_patience = 20;   ///< consecutive sub-threshold lags
 
-        /// k_max may equal t_warmup: the earliest lag-k_max target references
-        /// u[t_warmup] (the first post-warmup input, never a negative index), and
-        /// the first kept state sits at step t_warmup+k_max, so the reservoir has
-        /// had ≥t_warmup steps to forget its initial condition. Testing lags
-        /// longer than the warmup is the only thing this rules out.
+        /// Requires k_max > 0, k_max ≤ t_warmup, k_max < t_collect, train_frac in (0,1),
+        /// feature_cap > 0. k_max may equal t_warmup: the earliest lag-k_max target
+        /// still indexes a non-negative input, and the first kept state sits after
+        /// enough washout.
         void Validate() const
         {
             if (k_max == 0)
@@ -95,49 +103,54 @@ namespace mc
         }
     };
 
-    /// Result of one MC measurement at a single operating point.
+    /// @brief Outcome of one @ref MemoryCapacityMeter::Measure at a single op-point.
     struct MCResult
     {
-        double total_mc    = 0.0;   ///< Σ_k r²(k) over computed lags only
-        float  realized_sr = 0.0f;  ///< realized post-rescale spectral radius
-        int    k50 = 0;             ///< last lag with r² > 0.50
-        int    k10 = 0;             ///< last lag with r² > 0.10
-        int    k01 = 0;             ///< last lag with r² > 0.01
-        bool   pd  = true;          ///< false if the train Gram was not positive-definite
-        bool   oom = false;         ///< true if the cell threw std::bad_alloc (skipped)
-        std::size_t lags_scored = 0; ///< how many lags were actually scored (1..k_max)
-        bool   early_stopped = false; ///< true if the lag loop stopped on a sub-threshold streak
-        double r2_tail = 0.0;       ///< r² at the last scored lag (0 if none)
-        /// True when the last scored r² is still above the early-stop threshold.
-        /// If the window (k_max) ended with an open tail, TotalMC is a lower bound
-        /// (memory had not yet decayed). Early-stop with a closed tail is complete.
+        double total_mc    = 0.0;   ///< Σ r²(k) over scored lags only (lower bound if open_tail)
+        float  realized_sr = 0.0f;  ///< Post-rescale spectral radius from construction
+        int    k50 = 0;             ///< Last lag with r² > 0.50 (0 if none)
+        int    k10 = 0;             ///< Last lag with r² > 0.10
+        int    k01 = 0;             ///< Last lag with r² > 0.01
+        bool   pd  = true;          ///< false → train Gram not PD; no lags scored
+        bool   oom = false;         ///< true if the cell hit bad_alloc (sweep continues)
+        std::size_t lags_scored = 0; ///< Number of lags actually scored (1..k_max)
+        bool   early_stopped = false; ///< Lag loop exited on a sub-threshold streak
+        double r2_tail = 0.0;       ///< r² at the last scored lag
+        /// Last scored r² still ≥ early_stop_thresh: TotalMC is a **lower bound**
+        /// (curve had not decayed by k_max / early exit). Closed tail → complete sum.
         bool   open_tail = false;
-        std::vector<double> r2;     ///< per-lag r²(k) at index k-1; lags past early-stop stay 0
+        std::vector<double> r2;     ///< r²(k) at index k-1; unscored lags remain 0
     };
 
-    /// Options for a single Measure() call.
+    /// Per-call options for @ref MemoryCapacityMeter::Measure.
     struct MeasureOptions
     {
-        bool        early_stop = true; ///< stop after a sub-threshold streak (sweeps); false = full curve
-        std::size_t kmax       = 0;    ///< lags to probe; 0 -> MCConfig::k_max
+        bool        early_stop = true; ///< true for sweeps; false = full curve to kmax
+        std::size_t kmax       = 0;    ///< 0 → use MCConfig::k_max (capped at that value)
     };
 
-    /// Memory-capacity meter for a hypercube reservoir of dimension `dim`.
+    /// @brief Fixed-drive MC meter for hypercube dimension @p dim.
     ///
-    /// Construct once with a dim and an MCConfig: the white-noise drive (which
-    /// depends only on input_seed / t_warmup / t_collect) is generated up front
-    /// and reused by every Measure() call, so a whole sweep over reservoir
-    /// operating points shares one drive sequence. Measure() is const and
-    /// allocates all working buffers locally, so the same meter can be measured
-    /// concurrently from many threads — which is exactly what RunSweep relies on.
+    /// ## Lifecycle
+    /// Construct once with dim + @ref MCConfig (generates the white-noise drive).
+    /// Call @ref Measure for each @ref ReservoirConfig op-point. The drive is
+    /// shared so grid cells are byte-comparable.
+    ///
+    /// ## Thread safety
+    /// Measure is const and allocates working buffers on the stack/heap of the
+    /// caller thread — concurrent Measure on one meter is supported (@ref RunSweep).
+    ///
+    /// ## Layout
+    /// N = 2^dim, F = min(N, feature_cap), usable rows = t_collect − k_max.
+    /// Measure forces rcfg.dim / num_inputs=1 / verbose=false so the feature
+    /// layout cannot desync from the meter.
     class MemoryCapacityMeter
     {
     public:
-        /// @param dim Hypercube dimension; N = 2^dim, and the meter's feature
-        ///        layout (F = min(N, feature_cap)) is fixed from it. Reservoir is
-        ///        the authoritative range check; this mirrors its [5, 16] bound as
-        ///        a fail-fast guard so an out-of-range dim can neither reach the
-        ///        2^dim shift (UB for dim >= 64) nor surface from a sweep worker.
+        /// @param dim Hypercube dimension in **[5, 16]** (N = 2^dim). Fail-fast here
+        ///        so an out-of-range dim never hits a bad shift or a silent sweep cell.
+        /// @param cfg Experiment knobs; copied and validated via MCConfig::Validate.
+        /// @throws std::invalid_argument if dim or cfg is out of range.
         MemoryCapacityMeter(std::size_t dim, const MCConfig& cfg)
             : cfg_(cfg), dim_(dim)
         {
@@ -154,25 +167,25 @@ namespace mc
 
         [[nodiscard]] const MCConfig& Config()   const { return cfg_; }
         [[nodiscard]] std::size_t     Dim()      const { return dim_; }
-        [[nodiscard]] std::size_t     Size()     const { return N_; }
-        [[nodiscard]] std::size_t     Features() const { return F_; }
-        [[nodiscard]] std::size_t     Samples()  const { return M_; }
+        [[nodiscard]] std::size_t     Size()     const { return N_; }       ///< N = 2^dim
+        [[nodiscard]] std::size_t     Features() const { return F_; }       ///< F ≤ N
+        [[nodiscard]] std::size_t     Samples()  const { return M_; }       ///< usable rows (not history_depth)
         [[nodiscard]] std::size_t     TrainRows() const { return M_train_; }
         [[nodiscard]] std::size_t     TestRows()  const { return M_test_; }
 
-        /// Peak per-call working set (X + Gram), in bytes — for RAM-budgeted
-        /// sweep sizing. The reservoir's own history_depth-scaled state is
-        /// negligible beside X and G.
+        /// Peak per-call heap for X + Gram (bytes) — for RAM-budgeted @ref RunSweep.
         [[nodiscard]] std::size_t PerCellBytes() const
         {
             return (M_ * F_ + F_ * F_) * sizeof(double);
         }
 
-        /// Measure MC at one reservoir operating point. `rcfg` carries the
-        /// operating point (sr, leak, history_depth, seed, input_scaling);
-        /// everything about the *experiment* (drive, split, ridge, lag range) is
-        /// fixed by the MCConfig this meter was built with. num_inputs and verbose
-        /// are forced (single-channel probe, silent) regardless of `rcfg`.
+        /// @brief TotalMC (and lag curve) at one reservoir operating point.
+        ///
+        /// @param rcfg Op-point: spectral_radius, leak_rate, history_depth, seed,
+        ///        input_scaling (and any other ReservoirConfig fields). dim /
+        ///        num_inputs / verbose are **overwritten** by the meter.
+        /// @param opts Early-stop and optional kmax cap.
+        /// @return @ref MCResult; pd=false or oom may leave TotalMC at 0.
         MCResult Measure(const ReservoirConfig& rcfg, const MeasureOptions& opts = {}) const
         {
             const std::size_t kmax =
@@ -251,11 +264,8 @@ namespace mc
             for (auto& v : u_) v = dist(rng);
         }
 
-        /// Drive the reservoir over warmup+collect steps, writing post-warmup,
-        /// post-k_max states into X (row-major, M_ rows × F_ features). Returns
-        /// the realized (post-rescale) spectral radius. dim/num_inputs/verbose are
-        /// forced here so a caller's rcfg can't desync the feature layout, break
-        /// the single-channel probe, or garble stdout during concurrent construction.
+        /// Warmup + collect; write usable states into X (row-major, Samples()×F).
+        /// Returns realized spectral radius. Forces dim / num_inputs=1 / verbose.
         float DriveAndCollect(const ReservoirConfig& rcfg_in, double* X) const
         {
             ReservoirConfig rcfg = rcfg_in;
@@ -282,10 +292,7 @@ namespace mc
             return realized;
         }
 
-        /// Squared Pearson correlation between target y and prediction X·w on the
-        /// held-out test rows [M_train_, M_):
-        ///   r² = (n·Σyŷ - Σy·Σŷ)² / ((n·Σy² - (Σy)²)·(n·Σŷ² - (Σŷ)²))
-        /// Always in [0, 1]; the canonical MC metric.
+        /// Held-out squared Pearson r² between y and X·w on test rows — in [0, 1].
         double ScoreR2(const double* X, const double* w, const double* y) const
         {
             double sum_y = 0.0, sum_h = 0.0, sum_y2 = 0.0, sum_h2 = 0.0, sum_yh = 0.0;
@@ -319,20 +326,19 @@ namespace mc
         MCConfig          cfg_;
         std::size_t       dim_ = 0, N_ = 0;
         std::size_t       F_ = 0, M_ = 0, M_train_ = 0, M_test_ = 0;
-        std::vector<float> u_; ///< shared white-noise drive (length t_warmup + t_collect)
+        std::vector<float> u_; ///< Shared white-noise drive (length t_warmup + t_collect)
     };
 
-    /// Options for a parallel sweep.
+    /// Parallel @ref RunSweep knobs.
     struct SweepOptions
     {
-        std::size_t max_workers   = 0;   ///< 0 -> hardware concurrency
-        double      ram_budget_gb = 0.0; ///< 0 -> no RAM cap; else cap workers so peak fits
+        std::size_t max_workers   = 0;   ///< 0 → hardware_concurrency
+        double      ram_budget_gb = 0.0; ///< 0 → no RAM cap; else limit workers by PerCellBytes
     };
 
-    /// Resolve the worker count for a sweep: min(cells, max_workers or hardware),
-    /// optionally further capped so the estimated peak (workers × per_cell_bytes)
-    /// fits ram_budget_gb. Exposed so a driver can print the same count it will
-    /// actually run with.
+    /// Worker count for a sweep: min(cells, max_workers or HW), optionally capped
+    /// so workers × per_cell_bytes ≤ ram_budget_gb. Exposed so banners can print
+    /// the same count RunSweep will use.
     inline std::size_t ResolveWorkerCount(std::size_t cells, std::size_t per_cell_bytes,
                                           const SweepOptions& opts)
     {
@@ -349,14 +355,12 @@ namespace mc
         return workers;
     }
 
-    /// Run meter.Measure(cfg) for every cfg in `configs`, concurrently, returning
-    /// one MCResult per config in input order. Cells are independent (Measure is
-    /// const, all buffers local), so workers self-schedule off a shared atomic
-    /// counter until the list is exhausted — no static partitioning, so uneven
-    /// cell costs (not-PD/early-stop cells finish fast) don't idle a worker. A
-    /// cell that throws std::bad_alloc is caught and flagged oom=true rather than
-    /// aborting the sweep. If supplied, `progress(done, total)` is called under a
-    /// lock after each cell completes.
+    /// @brief Parallel @ref MemoryCapacityMeter::Measure over many op-points.
+    ///
+    /// One @ref MCResult per config, **in input order**. Workers self-schedule from
+    /// an atomic counter (good when early-stop cells finish unevenly).
+    /// std::bad_alloc in a cell → that result has oom=true; the sweep continues.
+    /// Optional progress(done, total) is called under a mutex after each cell.
     std::vector<MCResult> RunSweep(const MemoryCapacityMeter& meter,
                                    const std::vector<ReservoirConfig>& configs,
                                    const SweepOptions& opts = {},

@@ -37,7 +37,8 @@ The `examples/` directory contains worked examples, each with a companion
 | [BasicPrediction](../examples/BasicPrediction.md) | Simplest end-to-end demo — predict a sine wave. Start here. |
 | [SignalClassification](../examples/SignalClassification.md) | Process-mode ID (Cruise/Chatter/Ramp/Spin-up); conf + TTL stream |
 | [StreamingAnomaly](../examples/StreamingAnomaly.md) | Anomaly detection in a simulated industrial process |
-| [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger memory-capacity benchmark — the reservoir's linear short-term memory |
+| [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger linear MC diagnostic — how to run + at-a-glance peaks |
+| [MemoryCapacity_grids](../examples/MemoryCapacity/MemoryCapacity_grids.md) | Archived TotalMC grids (DIM 5–12) + seed/leak appendices |
 | [NARMA](../examples/NARMA/NARMA.md) | Nonlinear system-identification benchmark — memory depth × nonlinear mixing |
 
 ### 3. Build with the SDK
