@@ -267,7 +267,45 @@ Conversion: `steps_per_lt = 1 / (LYAPUNOV_EXPONENT · DT)` (canonical Lorenz-63
 
 ---
 
-## 7. Configuration surface (`config::` in `Lorenz.h`)
+## 7. Literature context — vanilla ESN free-run on Lorenz-63
+
+Ballpark for **standard (vanilla) Echo State Network** free-run / autonomous /
+generative prediction error on Lorenz-63, scored versus Lyapunov time. This is
+**unassisted** closed loop after teacher-forced training — the network’s own
+predictions are fed back as the only drive. It is **not** this repo’s Janus
+half-anchored protocol (always-real past). Do not quote the ranges below as
+HypercubeESN / Janus results.
+
+### Key definitions used in the literature
+
+| Term | Meaning |
+|------|---------|
+| **Lyapunov time (LT)** | `1 / λ_max`. For classic Lorenz-63 (`σ=10`, `ρ=28`, `β=8/3`), `λ_max ≈ 0.905`–`0.934`, so **1 LT ≈ 1.07–1.10** time units. |
+| **Free-run** | Closed-loop / generative mode: after teacher-forced training, the network’s own predictions are fed back as input. |
+| **VPT / predictability horizon** | First time a chosen error measure crosses a threshold. Common cutoffs: normalized error `E > 0.2`, NRMSE `> 0.5`, or normalized squared error `> 0.4`. |
+
+This harness uses its own θ (`VPT_THRESHOLD`, channel-RMS on the normalized
+orbit) and a fixed `LYAPUNOV_EXPONENT` for step→lt conversion — see `config::` and
+§6. Literature VPT numbers are only comparable after aligning threshold definition,
+integrator, and free-run policy.
+
+### Typical performance of standard ESNs
+
+| Class | Valid prediction horizon (Lyapunov times) |
+|-------|-------------------------------------------|
+| Conventional / baseline ESNs | **~4–8 LT** (most common range in the literature) |
+| Well-tuned (optimized spectral radius, reservoir size N = 100–500, long training, careful input scaling) | **~10–15 LT** |
+| Extreme optimized / noiseless cases | Claims of **>30 LT** appear; they depend heavily on the exact VPT definition, numerical solver consistency for the ground-truth trajectory, and how small the initial one-step error is |
+
+**Claim discipline.** Janus / half-anchored VPT and GS duty in
+[`TRACKING.md`](TRACKING.md) measure a different experiment (continuous past
+anchor). A ~2 LT mean or a ~10 LT ceiling under Janus is **not** the same claim as
+“vanilla ESN free-run on Lorenz.” Use this section only as external context for
+what unassisted ESNs typically report.
+
+---
+
+## 8. Configuration surface (`config::` in `Lorenz.h`)
 
 Edit constants there and rebuild the `Lorenz` target. There is no runtime config
 file. Groups of interest:
@@ -288,7 +326,7 @@ and survey outcomes in [`TRACKING.md`](TRACKING.md), not here.
 
 ---
 
-## 8. Building and running
+## 9. Building and running
 
 **Build** (CLion owns `cmake-build-*` on this machine — do not reconfigure those
 dirs with a foreign generator):
@@ -349,7 +387,7 @@ temporarily replace the survey body.
 
 ---
 
-## 9. What this example is (and is not)
+## 10. What this example is (and is not)
 
 **Is:**
 
@@ -361,11 +399,12 @@ temporarily replace the survey body.
 **Is not:**
 
 - Unassisted Pathak-style free-run VPT without an anchor (do not claim that)
+- A literature leaderboard for vanilla ESN free-run — §7 is external context only
 - A frozen hyperparameter sheet — numbers live in `Lorenz.h` / `TRACKING.md`
 
 ---
 
-## 10. Related docs
+## 11. Related docs
 
 | Doc | Role |
 |-----|------|
