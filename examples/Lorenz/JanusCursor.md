@@ -27,6 +27,19 @@ stream:  0 ....... lb =========== center =========== ub ....... N
 
 The class is **system-agnostic**: any array addressable by `int32_t` index can sit under the dual indices. Lorenz-63 is only the in-tree instantiation (see `README.md`).
 
+### Past cursor = continuous drive, not only a lag feature
+
+The past cursor’s job is **dual**:
+
+1. **Horizon / VPT** — real history on the input port can delay first threshold-crossing.  
+2. **Lock / re-lock** — continuous real past is a **drive** signal. While free-run is generative on the future port, the reservoir is still driven by on-attractor truth through the past port, so free-run error need not climb to the climatological floor and stay there: it can spike and **recover** deep into the window.
+
+In project language that re-locking is **generalized synchronization (GS)**: a reservoir continuously driven by a real signal has its state pulled toward a physically consistent region, so the readout can re-lock after a deviation. VPT (first crossing) is often **blind** to this — two arms can share similar VPT while free-run RMSE and late re-collapse differ. Score both.
+
+House notes (do not lose again): former `examples/Lorenz/recovery.md` (pruned; recover from git if needed — e.g. `05bd00e`, `ca86a76`, `6182a84`) documented anchor dose-response (Goldilocks `INPUT_SCALING`), CLE condition for sync, and prior art (reservoir observers / GS forecasting: Lu et al. 2017; Chaos 2019/2024). **Forward-only** ablation (`config::FORWARD_ONLY`) zeros past every step and removes this GS drive by design — see [`TODO_forward_only_ablation.md`](TODO_forward_only_ablation.md).
+
+During free-run the two cursors sit far apart on the stream (often tens–hundreds of Lyapunov times). The anchor supplies real **climate** / manifold grounding, not a leak of the scored future’s phase — re-lock must still come from learned dynamics + feedback, not from past handing over the answer.
+
 ---
 
 ## 2. Window geometry
