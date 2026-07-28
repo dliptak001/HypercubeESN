@@ -186,7 +186,7 @@ Monotone-ish **RMSE vs scale** in this set: **OFF (0.440) → 0.003 (0.436) → 
 **Date:** 2026-07-28  
 **Command:** `Lorenz.exe 30 100` (Release)  
 **Arm:** Janus — real past + future external feedback  
-**Raw log:** `examples/Lorenz/Lorenz.exe-30-100_future_and_past.txt` (local; not committed)
+**Raw log:** `examples/Lorenz/Lorenz.exe-30-100_future_and_past.txt`
 
 **Protocol deltas vs Runs 1–3 defaults:** post-FSF harness; HCNN Conv(1→2) → MaxPool →
 Linear(4096→3) · 12319 params · B=2; free-run window **1000** (not 2000); ESN seeds
