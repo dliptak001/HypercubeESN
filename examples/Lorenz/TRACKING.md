@@ -181,13 +181,62 @@ Monotone-ish **RMSE vs scale** in this set: **OFF (0.440) → 0.003 (0.436) → 
 
 ---
 
+### Run 4 — Janus baseline 30×100 (`FORWARD_ONLY = false`)
+
+**Date:** 2026-07-28  
+**Command:** `Lorenz.exe 30 100` (Release)  
+**Arm:** Janus — real past + future external feedback  
+**Raw log:** `examples/Lorenz/Lorenz.exe-30-100_future_and_past.txt` (local; not committed)
+
+**Protocol deltas vs Runs 1–3 defaults:** post-FSF harness; HCNN Conv(1→2) → MaxPool →
+Linear(4096→3) · 12319 params · B=2; free-run window **1000** (not 2000); ESN seeds
+`21978990`…`21979019` (30 trials); **100** free-runs per trial (not 10). GS proxies
+(duty / n_relock / meanLock) **not present** in this capture.
+
+#### Aggregate (mean of 30 per-ESN-seed stats)
+
+| Arm | Survey | VPT mean (lt) | VPT max (lt) | RMSE mean | Notes |
+|-----|--------|--------------:|-------------:|----------:|-------|
+| **4 Janus** | 30×100 | **1.91** | **10.07** | **0.422** | Across-seed std VPT 0.15, RMSE 0.004 |
+
+Per-seed VPT means: min 1.50 / median 1.93 / max 2.19.  
+Per-seed VPT medians sit lower (~1.56 mean) — right-skewed; long tails exist.  
+Best single free-run RMSE among leaderboards: **0.277** (9.18 lt).
+
+#### Soft / strong ESN seeds (by mean VPT)
+
+| | ESN seed | VPT mean | RMSE mean |
+|--|---------:|---------:|----------:|
+| Soft | 21979018 | 1.50 | 0.437 |
+| Soft | 21979017 | 1.63 | 0.424 |
+| Soft | 21979014 | 1.64 | 0.426 |
+| Strong | 21978997 | 2.19 | 0.420 |
+| Strong | 21979019 | 2.12 | 0.417 |
+| Strong | 21979013 | 2.09 | 0.421 |
+
+#### Peak free-runs
+
+| Orbit seed | ESN seed | VPT | RMSE | Role |
+|------------|---------:|----:|-----:|------|
+| `9333312947715283458` | 21978990 | **10.07 lt** (556 steps) | 0.294 | Survey VPT ceiling |
+| `18109467897393425238` | 21979013 | 9.18 lt | **0.277** | Best RMSE on boards |
+
+#### Verdict (Run 4)
+
+Solid Janus reference at production survey size: **~1.9 lt** typical first-upcrossing,
+**~0.42** free-run RMSE, with rare ceiling runs to **~10 lt**. RMSE is tight across
+seeds; VPT is orbit-lottery. Use this row as the **(A)** anchor for the forward-only
+ablation (Run 5 pending).
+
+---
+
 ## Queue / next experiments
 
 ### Post-FSF (current code — FSF removed)
 
-- [ ] **Janus baseline** (`FORWARD_ONLY = false`): multi-seed × multi-orbit free-run survey  
+- [x] **Janus baseline** (`FORWARD_ONLY = false`): Run 4 — `30 × 100`  
 - [ ] **Forward-only** (`FORWARD_ONLY = true`): matched seeds/orbits; zero past every step  
-- [ ] Side-by-side VPT (lt) + free-run RMSE in a new Run N section  
+- [ ] Side-by-side VPT (lt) + free-run RMSE (and GS duty/relock if binary prints them)
 
 ### Historical FSF (feature removed — log only)
 
