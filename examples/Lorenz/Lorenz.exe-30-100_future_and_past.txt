@@ -1,0 +1,1135 @@
+C:\CLion\HypercubeESN\cmake-build-release\Lorenz.exe 30 100
+=== HypercubeESN: Lorenz ===
+[Reservoir DIM=11 M=24 seed=21978990 leak=1 in_scale=0.005 SR target=0.9900 post=0.9901 (secant iters=6)]
+Reservoir: DIM=11  N=2048  M=24  weights(fixed)=585728  [=N*DIM*(M+drives)=2048*11*(24+2)]
+HCNN input: readout_slices=2  B=2 blocks x N=2048  -> start_DIM=12  N_hcnn=4096
+  (start_DIM = reservoir_DIM + log2(B) = 11 + 1; M does not change HCNN size)
+
+HCNN Architecture: Conv(1->2, TANH, bias)  hcnn_DIM=12  N=4096
+                   -> Pool(MAX)  hcnn_DIM 12->11  N 4096->2048
+                   -> FLATTEN
+                   -> Linear(4096 -> 3)
+HCNN parameters (trained): 12319 (28 conv1 + 12291 readout)
+
+HCNN live weight_count: 12319
+[survey] arm=Janus (real past + future ext-fb)
+[survey] 30 trial(s) x 100 free-run(s)  DIM=11 N=2048  epochs=100  train_window=20000  freerun_window=1000
+[survey] ~2000000 train reservoir-steps/trial + ~2100000 free-run reservoir-steps/trial (washout+score); no stdout until
+ all trials finish (progress on stderr)
+
+[Reservoir DIM=11 M=24 seed=21979018 leak=1 in_scale=0.005 SR target=0.9900 post=0.9903 (secant iters=3)]
+[Reservoir DIM=11 M=24 seed=21979014 leak=1 in_scale=0.005 SR target=0.9900 post=0.9908 (secant iters=3)]
+[Reservoir DIM=11 M=24 seed=21979011 leak=1 in_scale=0.005 SR target=0.9900 post=0.9909 (secant iters=2)]
+[Reservoir DIM=11 M=24 seed=21978993 leak=1 in_scale=0.005 SR target=0.9900 post=0.9896 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21978990 leak=1 in_scale=0.005 SR target=0.9900 post=0.9901 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21979000 leak=1 in_scale=0.005 SR target=0.9900 post=0.9908 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21978992 leak=1 in_scale=0.005 SR target=0.9900 post=0.9898 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979012 leak=1 in_scale=0.005 SR target=0.9900 post=0.9904 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21979017 leak=1 in_scale=0.005 SR target=0.9900 post=0.9902 (secant iters=2)]
+[Reservoir DIM=11 M=24 seed=21979019 leak=1 in_scale=0.005 SR target=0.9900 post=0.9899 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979013 leak=1 in_scale=0.005 SR target=0.9900 post=0.9900 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21978996 leak=1 in_scale=0.005 SR target=0.9900 post=0.9899 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21978994 leak=1 in_scale=0.005 SR target=0.9900 post=0.9897 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21978998 leak=1 in_scale=0.005 SR target=0.9900 post=0.9901 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21979008 leak=1 in_scale=0.005 SR target=0.9900 post=0.9899 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979006 leak=1 in_scale=0.005 SR target=0.9900 post=0.9904 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21979010 leak=1 in_scale=0.005 SR target=0.9900 post=0.9897 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979004 leak=1 in_scale=0.005 SR target=0.9900 post=0.9897 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21978991 leak=1 in_scale=0.005 SR target=0.9900 post=0.9897 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21978999 leak=1 in_scale=0.005 SR target=0.9900 post=0.9902 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21979005 leak=1 in_scale=0.005 SR target=0.9900 post=0.9899 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21978995 leak=1 in_scale=0.005 SR target=0.9900 post=0.9896 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979007 leak=1 in_scale=0.005 SR target=0.9900 post=0.9901 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21979003 leak=1 in_scale=0.005 SR target=0.9900 post=0.9904 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21978997 leak=1 in_scale=0.005 SR target=0.9900 post=0.9898 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21979016 leak=1 in_scale=0.005 SR target=0.9900 post=0.9900 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21979015 leak=1 in_scale=0.005 SR target=0.9900 post=0.9899 (secant iters=4)]
+[Reservoir DIM=11 M=24 seed=21979002 leak=1 in_scale=0.005 SR target=0.9900 post=0.9902 (secant iters=5)]
+[Reservoir DIM=11 M=24 seed=21979001 leak=1 in_scale=0.005 SR target=0.9900 post=0.9890 (secant iters=6)]
+[Reservoir DIM=11 M=24 seed=21979009 leak=1 in_scale=0.005 SR target=0.9900 post=0.9896 (secant iters=6)]
+
+=== ESN seed 21978990 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=10.07  mean=1.98  median=1.46  std=1.72
+  free-run RMSE    n=100  min=0.294089  max=0.517973  mean=0.426147  median=0.424822  std=0.037873
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978990   orbit_seed 9333312947715283458 VPT 556 steps (10.07 lt)  free-run RMSE 0.294089
+arm Janus    seed 21978990   orbit_seed 7658040265663960149 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.317430
+arm Janus    seed 21978990   orbit_seed 16104699420182321933 VPT  56 steps ( 1.01 lt)  free-run RMSE 0.352982
+arm Janus    seed 21978990   orbit_seed 656605956440221769 VPT 302 steps ( 5.47 lt)  free-run RMSE 0.361250
+arm Janus    seed 21978990   orbit_seed 11101717626751391262 VPT  72 steps ( 1.30 lt)  free-run RMSE 0.369706
+arm Janus    seed 21978990   orbit_seed 7401924419259460404 VPT 158 steps ( 2.86 lt)  free-run RMSE 0.372744
+arm Janus    seed 21978990   orbit_seed 14503336125504450378 VPT 298 steps ( 5.40 lt)  free-run RMSE 0.374314
+arm Janus    seed 21978990   orbit_seed 15001926598183616335 VPT 241 steps ( 4.36 lt)  free-run RMSE 0.377066
+arm Janus    seed 21978990   orbit_seed 9515810860901762052 VPT 123 steps ( 2.23 lt)  free-run RMSE 0.378447
+arm Janus    seed 21978990   orbit_seed 8542863739336868721 VPT 141 steps ( 2.55 lt)  free-run RMSE 0.381007
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978990   orbit_seed 9333312947715283458 VPT 556 steps (10.07 lt)  free-run RMSE 0.294089
+arm Janus    seed 21978990   orbit_seed 2696958202838730100 VPT 351 steps ( 6.36 lt)  free-run RMSE 0.398036
+arm Janus    seed 21978990   orbit_seed 11569254123151793499 VPT 331 steps ( 6.00 lt)  free-run RMSE 0.392150
+arm Janus    seed 21978990   orbit_seed 4007931443343602940 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.407925
+arm Janus    seed 21978990   orbit_seed 656605956440221769 VPT 302 steps ( 5.47 lt)  free-run RMSE 0.361250
+arm Janus    seed 21978990   orbit_seed 14503336125504450378 VPT 298 steps ( 5.40 lt)  free-run RMSE 0.374314
+arm Janus    seed 21978990   orbit_seed 14193348660813217918 VPT 292 steps ( 5.29 lt)  free-run RMSE 0.392878
+arm Janus    seed 21978990   orbit_seed 1906335535637589284 VPT 290 steps ( 5.25 lt)  free-run RMSE 0.394732
+arm Janus    seed 21978990   orbit_seed 12735002845385499196 VPT 270 steps ( 4.89 lt)  free-run RMSE 0.422285
+arm Janus    seed 21978990   orbit_seed 6960850931340156210 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.439634
+
+=== ESN seed 21978991 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=5.71  mean=1.71  median=1.45  std=1.25
+  free-run RMSE    n=100  min=0.313293  max=0.506759  mean=0.423990  median=0.432192  std=0.037580
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978991   orbit_seed 14503336125504450378 VPT 109 steps ( 1.97 lt)  free-run RMSE 0.313293
+arm Janus    seed 21978991   orbit_seed 2610235269337149668 VPT 141 steps ( 2.55 lt)  free-run RMSE 0.322258
+arm Janus    seed 21978991   orbit_seed 656605956440221769 VPT 304 steps ( 5.51 lt)  free-run RMSE 0.327404
+arm Janus    seed 21978991   orbit_seed 12661963445150923806 VPT  90 steps ( 1.63 lt)  free-run RMSE 0.350213
+arm Janus    seed 21978991   orbit_seed 9333312947715283458 VPT 262 steps ( 4.75 lt)  free-run RMSE 0.350605
+arm Janus    seed 21978991   orbit_seed 2696958202838730100 VPT 156 steps ( 2.83 lt)  free-run RMSE 0.355414
+arm Janus    seed 21978991   orbit_seed 18001397679514996404 VPT 150 steps ( 2.72 lt)  free-run RMSE 0.356724
+arm Janus    seed 21978991   orbit_seed 10801814468121717024 VPT  21 steps ( 0.38 lt)  free-run RMSE 0.364953
+arm Janus    seed 21978991   orbit_seed 4007931443343602940 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.367889
+arm Janus    seed 21978991   orbit_seed 17224751303681612354 VPT  45 steps ( 0.82 lt)  free-run RMSE 0.371228
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978991   orbit_seed 4007931443343602940 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.367889
+arm Janus    seed 21978991   orbit_seed 656605956440221769 VPT 304 steps ( 5.51 lt)  free-run RMSE 0.327404
+arm Janus    seed 21978991   orbit_seed 13994705457426480036 VPT 277 steps ( 5.02 lt)  free-run RMSE 0.405806
+arm Janus    seed 21978991   orbit_seed 248130967593251468 VPT 269 steps ( 4.87 lt)  free-run RMSE 0.379165
+arm Janus    seed 21978991   orbit_seed 9333312947715283458 VPT 262 steps ( 4.75 lt)  free-run RMSE 0.350605
+arm Janus    seed 21978991   orbit_seed 5237269684808350417 VPT 252 steps ( 4.56 lt)  free-run RMSE 0.399931
+arm Janus    seed 21978991   orbit_seed 7658040265663960149 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.422615
+arm Janus    seed 21978991   orbit_seed 5743361355973698255 VPT 205 steps ( 3.71 lt)  free-run RMSE 0.429692
+arm Janus    seed 21978991   orbit_seed 14719543417854726190 VPT 195 steps ( 3.53 lt)  free-run RMSE 0.436225
+arm Janus    seed 21978991   orbit_seed 110890624606369167 VPT 184 steps ( 3.33 lt)  free-run RMSE 0.407579
+
+=== ESN seed 21978992 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.67  mean=1.88  median=1.67  std=1.42
+  free-run RMSE    n=100  min=0.295260  max=0.485167  mean=0.422533  median=0.425641  std=0.040305
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978992   orbit_seed 6960850931340156210 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.295260
+arm Janus    seed 21978992   orbit_seed 7658040265663960149 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.300976
+arm Janus    seed 21978992   orbit_seed 9333312947715283458 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.320173
+arm Janus    seed 21978992   orbit_seed 18303404106008543196 VPT 197 steps ( 3.57 lt)  free-run RMSE 0.325198
+arm Janus    seed 21978992   orbit_seed 4804985241073930135 VPT 143 steps ( 2.59 lt)  free-run RMSE 0.326948
+arm Janus    seed 21978992   orbit_seed 7401924419259460404 VPT 160 steps ( 2.90 lt)  free-run RMSE 0.342720
+arm Janus    seed 21978992   orbit_seed 656605956440221769 VPT 355 steps ( 6.43 lt)  free-run RMSE 0.348461
+arm Janus    seed 21978992   orbit_seed 7367918243184862287 VPT 134 steps ( 2.43 lt)  free-run RMSE 0.356340
+arm Janus    seed 21978992   orbit_seed 9294122214858465305 VPT 123 steps ( 2.23 lt)  free-run RMSE 0.358287
+arm Janus    seed 21978992   orbit_seed 15001926598183616335 VPT 155 steps ( 2.81 lt)  free-run RMSE 0.362750
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978992   orbit_seed 9333312947715283458 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.320173
+arm Janus    seed 21978992   orbit_seed 6960850931340156210 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.295260
+arm Janus    seed 21978992   orbit_seed 656605956440221769 VPT 355 steps ( 6.43 lt)  free-run RMSE 0.348461
+arm Janus    seed 21978992   orbit_seed 4007931443343602940 VPT 337 steps ( 6.10 lt)  free-run RMSE 0.373702
+arm Janus    seed 21978992   orbit_seed 4364257658748689037 VPT 269 steps ( 4.87 lt)  free-run RMSE 0.398540
+arm Janus    seed 21978992   orbit_seed 7658040265663960149 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.300976
+arm Janus    seed 21978992   orbit_seed 17224751303681612354 VPT 223 steps ( 4.04 lt)  free-run RMSE 0.430877
+arm Janus    seed 21978992   orbit_seed 17774587888087229762 VPT 216 steps ( 3.91 lt)  free-run RMSE 0.415500
+arm Janus    seed 21978992   orbit_seed 18303404106008543196 VPT 197 steps ( 3.57 lt)  free-run RMSE 0.325198
+arm Janus    seed 21978992   orbit_seed 13994705457426480036 VPT 195 steps ( 3.53 lt)  free-run RMSE 0.410380
+
+=== ESN seed 21978993 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.81  mean=2.04  median=1.68  std=1.51
+  free-run RMSE    n=100  min=0.309824  max=0.486471  mean=0.422510  median=0.426231  std=0.034751
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978993   orbit_seed 656605956440221769 VPT 350 steps ( 6.34 lt)  free-run RMSE 0.309824
+arm Janus    seed 21978993   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  free-run RMSE 0.337480
+arm Janus    seed 21978993   orbit_seed 6960850931340156210 VPT 351 steps ( 6.36 lt)  free-run RMSE 0.344478
+arm Janus    seed 21978993   orbit_seed 2696958202838730100 VPT  80 steps ( 1.45 lt)  free-run RMSE 0.346908
+arm Janus    seed 21978993   orbit_seed 1937234734715600964 VPT 134 steps ( 2.43 lt)  free-run RMSE 0.358900
+arm Janus    seed 21978993   orbit_seed 1249439214165998073 VPT  75 steps ( 1.36 lt)  free-run RMSE 0.358978
+arm Janus    seed 21978993   orbit_seed 110890624606369167 VPT 116 steps ( 2.10 lt)  free-run RMSE 0.361849
+arm Janus    seed 21978993   orbit_seed 2610235269337149668 VPT 189 steps ( 3.42 lt)  free-run RMSE 0.362947
+arm Janus    seed 21978993   orbit_seed 16104699420182321933 VPT  53 steps ( 0.96 lt)  free-run RMSE 0.364326
+arm Janus    seed 21978993   orbit_seed 10148093844914609385 VPT 285 steps ( 5.16 lt)  free-run RMSE 0.371069
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978993   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  free-run RMSE 0.337480
+arm Janus    seed 21978993   orbit_seed 6960850931340156210 VPT 351 steps ( 6.36 lt)  free-run RMSE 0.344478
+arm Janus    seed 21978993   orbit_seed 656605956440221769 VPT 350 steps ( 6.34 lt)  free-run RMSE 0.309824
+arm Janus    seed 21978993   orbit_seed 10148093844914609385 VPT 285 steps ( 5.16 lt)  free-run RMSE 0.371069
+arm Janus    seed 21978993   orbit_seed 7658040265663960149 VPT 282 steps ( 5.11 lt)  free-run RMSE 0.390771
+arm Janus    seed 21978993   orbit_seed 13994705457426480036 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.377241
+arm Janus    seed 21978993   orbit_seed 9015661769437736282 VPT 264 steps ( 4.78 lt)  free-run RMSE 0.423538
+arm Janus    seed 21978993   orbit_seed 9333312947715283458 VPT 262 steps ( 4.75 lt)  free-run RMSE 0.373838
+arm Janus    seed 21978993   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.423042
+arm Janus    seed 21978993   orbit_seed 10278487631456564348 VPT 242 steps ( 4.38 lt)  free-run RMSE 0.423058
+
+=== ESN seed 21978994 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.77  mean=1.94  median=1.61  std=1.44
+  free-run RMSE    n=100  min=0.323424  max=0.519760  mean=0.422250  median=0.427221  std=0.036556
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978994   orbit_seed 6960850931340156210 VPT 313 steps ( 5.67 lt)  free-run RMSE 0.323424
+arm Janus    seed 21978994   orbit_seed 5237269684808350417 VPT 333 steps ( 6.03 lt)  free-run RMSE 0.346344
+arm Janus    seed 21978994   orbit_seed 4007931443343602940 VPT 374 steps ( 6.77 lt)  free-run RMSE 0.346941
+arm Janus    seed 21978994   orbit_seed 4416234110371315044 VPT 210 steps ( 3.80 lt)  free-run RMSE 0.353856
+arm Janus    seed 21978994   orbit_seed 12997851309749444307 VPT  30 steps ( 0.54 lt)  free-run RMSE 0.357360
+arm Janus    seed 21978994   orbit_seed 4712281022348717183 VPT 153 steps ( 2.77 lt)  free-run RMSE 0.367012
+arm Janus    seed 21978994   orbit_seed 13994705457426480036 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.368022
+arm Janus    seed 21978994   orbit_seed 1249439214165998073 VPT 218 steps ( 3.95 lt)  free-run RMSE 0.368548
+arm Janus    seed 21978994   orbit_seed 15001926598183616335 VPT 193 steps ( 3.50 lt)  free-run RMSE 0.370392
+arm Janus    seed 21978994   orbit_seed 8542863739336868721 VPT 185 steps ( 3.35 lt)  free-run RMSE 0.372746
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978994   orbit_seed 4007931443343602940 VPT 374 steps ( 6.77 lt)  free-run RMSE 0.346941
+arm Janus    seed 21978994   orbit_seed 9333312947715283458 VPT 356 steps ( 6.45 lt)  free-run RMSE 0.382022
+arm Janus    seed 21978994   orbit_seed 5237269684808350417 VPT 333 steps ( 6.03 lt)  free-run RMSE 0.346344
+arm Janus    seed 21978994   orbit_seed 6960850931340156210 VPT 313 steps ( 5.67 lt)  free-run RMSE 0.323424
+arm Janus    seed 21978994   orbit_seed 11957716583852103447 VPT 296 steps ( 5.36 lt)  free-run RMSE 0.402275
+arm Janus    seed 21978994   orbit_seed 656605956440221769 VPT 280 steps ( 5.07 lt)  free-run RMSE 0.405015
+arm Janus    seed 21978994   orbit_seed 13994705457426480036 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.368022
+arm Janus    seed 21978994   orbit_seed 1249439214165998073 VPT 218 steps ( 3.95 lt)  free-run RMSE 0.368548
+arm Janus    seed 21978994   orbit_seed 4416234110371315044 VPT 210 steps ( 3.80 lt)  free-run RMSE 0.353856
+arm Janus    seed 21978994   orbit_seed 5743361355973698255 VPT 206 steps ( 3.73 lt)  free-run RMSE 0.375000
+
+=== ESN seed 21978995 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.28  mean=1.85  median=1.54  std=1.35
+  free-run RMSE    n=100  min=0.326606  max=0.492837  mean=0.422507  median=0.426706  std=0.037967
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978995   orbit_seed 6960850931340156210 VPT 347 steps ( 6.28 lt)  free-run RMSE 0.326606
+arm Janus    seed 21978995   orbit_seed 4007931443343602940 VPT 343 steps ( 6.21 lt)  free-run RMSE 0.327735
+arm Janus    seed 21978995   orbit_seed 110890624606369167 VPT 115 steps ( 2.08 lt)  free-run RMSE 0.344790
+arm Janus    seed 21978995   orbit_seed 2097179478975684523 VPT  99 steps ( 1.79 lt)  free-run RMSE 0.350990
+arm Janus    seed 21978995   orbit_seed 8425156953022204017 VPT  82 steps ( 1.49 lt)  free-run RMSE 0.353998
+arm Janus    seed 21978995   orbit_seed 9294122214858465305 VPT 306 steps ( 5.54 lt)  free-run RMSE 0.355799
+arm Janus    seed 21978995   orbit_seed 7367918243184862287 VPT 175 steps ( 3.17 lt)  free-run RMSE 0.360506
+arm Janus    seed 21978995   orbit_seed 16826883592623292674 VPT  84 steps ( 1.52 lt)  free-run RMSE 0.362317
+arm Janus    seed 21978995   orbit_seed 14283968312830459669 VPT 123 steps ( 2.23 lt)  free-run RMSE 0.366722
+arm Janus    seed 21978995   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  free-run RMSE 0.370780
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978995   orbit_seed 6960850931340156210 VPT 347 steps ( 6.28 lt)  free-run RMSE 0.326606
+arm Janus    seed 21978995   orbit_seed 4007931443343602940 VPT 343 steps ( 6.21 lt)  free-run RMSE 0.327735
+arm Janus    seed 21978995   orbit_seed 9294122214858465305 VPT 306 steps ( 5.54 lt)  free-run RMSE 0.355799
+arm Janus    seed 21978995   orbit_seed 9333312947715283458 VPT 284 steps ( 5.14 lt)  free-run RMSE 0.394497
+arm Janus    seed 21978995   orbit_seed 2610235269337149668 VPT 258 steps ( 4.67 lt)  free-run RMSE 0.409299
+arm Janus    seed 21978995   orbit_seed 656605956440221769 VPT 246 steps ( 4.46 lt)  free-run RMSE 0.400737
+arm Janus    seed 21978995   orbit_seed 9180653851401757815 VPT 236 steps ( 4.27 lt)  free-run RMSE 0.425012
+arm Janus    seed 21978995   orbit_seed 11569254123151793499 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.450426
+arm Janus    seed 21978995   orbit_seed 9515810860901762052 VPT 205 steps ( 3.71 lt)  free-run RMSE 0.425920
+arm Janus    seed 21978995   orbit_seed 7658040265663960149 VPT 198 steps ( 3.59 lt)  free-run RMSE 0.402263
+
+=== ESN seed 21978996 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.96  mean=1.89  median=1.55  std=1.39
+  free-run RMSE    n=100  min=0.306429  max=0.495166  mean=0.418242  median=0.419314  std=0.037354
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978996   orbit_seed 1937234734715600964 VPT 367 steps ( 6.65 lt)  free-run RMSE 0.306429
+arm Janus    seed 21978996   orbit_seed 4007931443343602940 VPT 384 steps ( 6.96 lt)  free-run RMSE 0.315040
+arm Janus    seed 21978996   orbit_seed 9515810860901762052 VPT  51 steps ( 0.92 lt)  free-run RMSE 0.342781
+arm Janus    seed 21978996   orbit_seed 2610235269337149668 VPT 179 steps ( 3.24 lt)  free-run RMSE 0.351048
+arm Janus    seed 21978996   orbit_seed 10603344179402640566 VPT  50 steps ( 0.91 lt)  free-run RMSE 0.356369
+arm Janus    seed 21978996   orbit_seed 9333312947715283458 VPT 163 steps ( 2.95 lt)  free-run RMSE 0.358255
+arm Janus    seed 21978996   orbit_seed 7401924419259460404 VPT 160 steps ( 2.90 lt)  free-run RMSE 0.361068
+arm Janus    seed 21978996   orbit_seed 11794286179085912200 VPT  14 steps ( 0.25 lt)  free-run RMSE 0.361097
+arm Janus    seed 21978996   orbit_seed 13994705457426480036 VPT 276 steps ( 5.00 lt)  free-run RMSE 0.361382
+arm Janus    seed 21978996   orbit_seed 11569254123151793499 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.363166
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978996   orbit_seed 4007931443343602940 VPT 384 steps ( 6.96 lt)  free-run RMSE 0.315040
+arm Janus    seed 21978996   orbit_seed 1937234734715600964 VPT 367 steps ( 6.65 lt)  free-run RMSE 0.306429
+arm Janus    seed 21978996   orbit_seed 656605956440221769 VPT 308 steps ( 5.58 lt)  free-run RMSE 0.393344
+arm Janus    seed 21978996   orbit_seed 13994705457426480036 VPT 276 steps ( 5.00 lt)  free-run RMSE 0.361382
+arm Janus    seed 21978996   orbit_seed 8425156953022204017 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.364783
+arm Janus    seed 21978996   orbit_seed 15001926598183616335 VPT 230 steps ( 4.17 lt)  free-run RMSE 0.387048
+arm Janus    seed 21978996   orbit_seed 11569254123151793499 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.363166
+arm Janus    seed 21978996   orbit_seed 2097179478975684523 VPT 208 steps ( 3.77 lt)  free-run RMSE 0.379149
+arm Janus    seed 21978996   orbit_seed 5743361355973698255 VPT 203 steps ( 3.68 lt)  free-run RMSE 0.410113
+arm Janus    seed 21978996   orbit_seed 7658040265663960149 VPT 199 steps ( 3.60 lt)  free-run RMSE 0.379908
+
+=== ESN seed 21978997 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.56  mean=2.19  median=1.67  std=1.68
+  free-run RMSE    n=100  min=0.313319  max=0.490089  mean=0.419948  median=0.424719  std=0.037955
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978997   orbit_seed 9515810860901762052 VPT 121 steps ( 2.19 lt)  free-run RMSE 0.313319
+arm Janus    seed 21978997   orbit_seed 14719543417854726190 VPT 303 steps ( 5.49 lt)  free-run RMSE 0.320229
+arm Janus    seed 21978997   orbit_seed 1937234734715600964 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.334953
+arm Janus    seed 21978997   orbit_seed 9717908683336067732 VPT  64 steps ( 1.16 lt)  free-run RMSE 0.349009
+arm Janus    seed 21978997   orbit_seed 5743361355973698255 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.353944
+arm Janus    seed 21978997   orbit_seed 13994705457426480036 VPT 320 steps ( 5.80 lt)  free-run RMSE 0.361733
+arm Janus    seed 21978997   orbit_seed 11957716583852103447 VPT 146 steps ( 2.64 lt)  free-run RMSE 0.361869
+arm Janus    seed 21978997   orbit_seed 656605956440221769 VPT 305 steps ( 5.52 lt)  free-run RMSE 0.365205
+arm Janus    seed 21978997   orbit_seed 9015661769437736282 VPT  92 steps ( 1.67 lt)  free-run RMSE 0.365347
+arm Janus    seed 21978997   orbit_seed 3077346833989813773 VPT 103 steps ( 1.87 lt)  free-run RMSE 0.366914
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978997   orbit_seed 1937234734715600964 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.334953
+arm Janus    seed 21978997   orbit_seed 5743361355973698255 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.353944
+arm Janus    seed 21978997   orbit_seed 14283968312830459669 VPT 329 steps ( 5.96 lt)  free-run RMSE 0.394565
+arm Janus    seed 21978997   orbit_seed 13994705457426480036 VPT 320 steps ( 5.80 lt)  free-run RMSE 0.361733
+arm Janus    seed 21978997   orbit_seed 4007931443343602940 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.402973
+arm Janus    seed 21978997   orbit_seed 656605956440221769 VPT 305 steps ( 5.52 lt)  free-run RMSE 0.365205
+arm Janus    seed 21978997   orbit_seed 14719543417854726190 VPT 303 steps ( 5.49 lt)  free-run RMSE 0.320229
+arm Janus    seed 21978997   orbit_seed 8542863739336868721 VPT 303 steps ( 5.49 lt)  free-run RMSE 0.380848
+arm Janus    seed 21978997   orbit_seed 4416234110371315044 VPT 292 steps ( 5.29 lt)  free-run RMSE 0.379797
+arm Janus    seed 21978997   orbit_seed 6960850931340156210 VPT 278 steps ( 5.04 lt)  free-run RMSE 0.404657
+
+=== ESN seed 21978998 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.46  mean=1.85  median=1.54  std=1.32
+  free-run RMSE    n=100  min=0.348225  max=0.496719  mean=0.425393  median=0.424028  std=0.035350
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978998   orbit_seed 110890624606369167 VPT 264 steps ( 4.78 lt)  free-run RMSE 0.348225
+arm Janus    seed 21978998   orbit_seed 16400381301927481083 VPT  68 steps ( 1.23 lt)  free-run RMSE 0.348667
+arm Janus    seed 21978998   orbit_seed 15001926598183616335 VPT 193 steps ( 3.50 lt)  free-run RMSE 0.352855
+arm Janus    seed 21978998   orbit_seed 7658040265663960149 VPT 279 steps ( 5.05 lt)  free-run RMSE 0.358949
+arm Janus    seed 21978998   orbit_seed 2097179478975684523 VPT  94 steps ( 1.70 lt)  free-run RMSE 0.363375
+arm Janus    seed 21978998   orbit_seed 2610235269337149668 VPT 138 steps ( 2.50 lt)  free-run RMSE 0.365572
+arm Janus    seed 21978998   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.366487
+arm Janus    seed 21978998   orbit_seed 4712281022348717183 VPT 158 steps ( 2.86 lt)  free-run RMSE 0.366523
+arm Janus    seed 21978998   orbit_seed 4804985241073930135 VPT 146 steps ( 2.64 lt)  free-run RMSE 0.373904
+arm Janus    seed 21978998   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  free-run RMSE 0.378235
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978998   orbit_seed 4007931443343602940 VPT 412 steps ( 7.46 lt)  free-run RMSE 0.393683
+arm Janus    seed 21978998   orbit_seed 7658040265663960149 VPT 279 steps ( 5.05 lt)  free-run RMSE 0.358949
+arm Janus    seed 21978998   orbit_seed 110890624606369167 VPT 264 steps ( 4.78 lt)  free-run RMSE 0.348225
+arm Janus    seed 21978998   orbit_seed 656605956440221769 VPT 251 steps ( 4.55 lt)  free-run RMSE 0.410940
+arm Janus    seed 21978998   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.366487
+arm Janus    seed 21978998   orbit_seed 15378080442305734864 VPT 242 steps ( 4.38 lt)  free-run RMSE 0.412456
+arm Janus    seed 21978998   orbit_seed 12735002845385499196 VPT 232 steps ( 4.20 lt)  free-run RMSE 0.408980
+arm Janus    seed 21978998   orbit_seed 9333312947715283458 VPT 228 steps ( 4.13 lt)  free-run RMSE 0.383761
+arm Janus    seed 21978998   orbit_seed 4741737415666583010 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.409673
+arm Janus    seed 21978998   orbit_seed 1249439214165998073 VPT 216 steps ( 3.91 lt)  free-run RMSE 0.437693
+
+=== ESN seed 21978999 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=6.81  mean=1.85  median=1.58  std=1.31
+  free-run RMSE    n=100  min=0.337563  max=0.498701  mean=0.422861  median=0.426516  std=0.031856
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21978999   orbit_seed 9515810860901762052 VPT 123 steps ( 2.23 lt)  free-run RMSE 0.337563
+arm Janus    seed 21978999   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  free-run RMSE 0.343129
+arm Janus    seed 21978999   orbit_seed 110890624606369167 VPT 228 steps ( 4.13 lt)  free-run RMSE 0.355169
+arm Janus    seed 21978999   orbit_seed 14283968312830459669 VPT 126 steps ( 2.28 lt)  free-run RMSE 0.364150
+arm Janus    seed 21978999   orbit_seed 15992716269590395088 VPT 101 steps ( 1.83 lt)  free-run RMSE 0.365880
+arm Janus    seed 21978999   orbit_seed 9136586738710644795 VPT 119 steps ( 2.16 lt)  free-run RMSE 0.373044
+arm Janus    seed 21978999   orbit_seed 16826883592623292674 VPT  75 steps ( 1.36 lt)  free-run RMSE 0.377457
+arm Janus    seed 21978999   orbit_seed 7401924419259460404 VPT 163 steps ( 2.95 lt)  free-run RMSE 0.378351
+arm Janus    seed 21978999   orbit_seed 8425156953022204017 VPT  86 steps ( 1.56 lt)  free-run RMSE 0.378944
+arm Janus    seed 21978999   orbit_seed 2610235269337149668 VPT 189 steps ( 3.42 lt)  free-run RMSE 0.381103
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21978999   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  free-run RMSE 0.343129
+arm Janus    seed 21978999   orbit_seed 9333312947715283458 VPT 357 steps ( 6.47 lt)  free-run RMSE 0.384176
+arm Janus    seed 21978999   orbit_seed 656605956440221769 VPT 310 steps ( 5.61 lt)  free-run RMSE 0.390596
+arm Janus    seed 21978999   orbit_seed 9180653851401757815 VPT 233 steps ( 4.22 lt)  free-run RMSE 0.402049
+arm Janus    seed 21978999   orbit_seed 110890624606369167 VPT 228 steps ( 4.13 lt)  free-run RMSE 0.355169
+arm Janus    seed 21978999   orbit_seed 7658040265663960149 VPT 203 steps ( 3.68 lt)  free-run RMSE 0.406675
+arm Janus    seed 21978999   orbit_seed 18109467897393425238 VPT 199 steps ( 3.60 lt)  free-run RMSE 0.388141
+arm Janus    seed 21978999   orbit_seed 5743361355973698255 VPT 198 steps ( 3.59 lt)  free-run RMSE 0.434310
+arm Janus    seed 21978999   orbit_seed 10278487631456564348 VPT 194 steps ( 3.51 lt)  free-run RMSE 0.428341
+arm Janus    seed 21978999   orbit_seed 2610235269337149668 VPT 189 steps ( 3.42 lt)  free-run RMSE 0.381103
+
+=== ESN seed 21979000 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=5.80  mean=1.81  median=1.59  std=1.25
+  free-run RMSE    n=100  min=0.318336  max=0.486513  mean=0.419731  median=0.419825  std=0.033911
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979000   orbit_seed 9515810860901762052 VPT 320 steps ( 5.80 lt)  free-run RMSE 0.318336
+arm Janus    seed 21979000   orbit_seed 13075496520564732781 VPT  31 steps ( 0.56 lt)  free-run RMSE 0.347032
+arm Janus    seed 21979000   orbit_seed 656605956440221769 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.350470
+arm Janus    seed 21979000   orbit_seed 6960850931340156210 VPT  18 steps ( 0.33 lt)  free-run RMSE 0.352887
+arm Janus    seed 21979000   orbit_seed 11957716583852103447 VPT  75 steps ( 1.36 lt)  free-run RMSE 0.355811
+arm Janus    seed 21979000   orbit_seed 16104699420182321933 VPT  53 steps ( 0.96 lt)  free-run RMSE 0.356672
+arm Janus    seed 21979000   orbit_seed 9015661769437736282 VPT  90 steps ( 1.63 lt)  free-run RMSE 0.362695
+arm Janus    seed 21979000   orbit_seed 4007931443343602940 VPT 154 steps ( 2.79 lt)  free-run RMSE 0.371920
+arm Janus    seed 21979000   orbit_seed 248130967593251468 VPT 148 steps ( 2.68 lt)  free-run RMSE 0.374785
+arm Janus    seed 21979000   orbit_seed 2097179478975684523 VPT 208 steps ( 3.77 lt)  free-run RMSE 0.377963
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979000   orbit_seed 9515810860901762052 VPT 320 steps ( 5.80 lt)  free-run RMSE 0.318336
+arm Janus    seed 21979000   orbit_seed 18303404106008543196 VPT 280 steps ( 5.07 lt)  free-run RMSE 0.384615
+arm Janus    seed 21979000   orbit_seed 656605956440221769 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.350470
+arm Janus    seed 21979000   orbit_seed 11101717626751391262 VPT 248 steps ( 4.49 lt)  free-run RMSE 0.392011
+arm Janus    seed 21979000   orbit_seed 13994705457426480036 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.398503
+arm Janus    seed 21979000   orbit_seed 9333312947715283458 VPT 230 steps ( 4.17 lt)  free-run RMSE 0.420303
+arm Janus    seed 21979000   orbit_seed 7658040265663960149 VPT 211 steps ( 3.82 lt)  free-run RMSE 0.383903
+arm Janus    seed 21979000   orbit_seed 2097179478975684523 VPT 208 steps ( 3.77 lt)  free-run RMSE 0.377963
+arm Janus    seed 21979000   orbit_seed 10278487631456564348 VPT 199 steps ( 3.60 lt)  free-run RMSE 0.390800
+arm Janus    seed 21979000   orbit_seed 5743361355973698255 VPT 196 steps ( 3.55 lt)  free-run RMSE 0.389744
+
+=== ESN seed 21979001 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.64  mean=2.08  median=1.67  std=1.52
+  free-run RMSE    n=100  min=0.334115  max=0.508627  mean=0.416132  median=0.419966  std=0.035875
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979001   orbit_seed 7367918243184862287 VPT 143 steps ( 2.59 lt)  free-run RMSE 0.334115
+arm Janus    seed 21979001   orbit_seed 13095175807113877781 VPT 224 steps ( 4.06 lt)  free-run RMSE 0.346473
+arm Janus    seed 21979001   orbit_seed 15992716269590395088 VPT 177 steps ( 3.21 lt)  free-run RMSE 0.346929
+arm Janus    seed 21979001   orbit_seed 2097179478975684523 VPT 100 steps ( 1.81 lt)  free-run RMSE 0.348392
+arm Janus    seed 21979001   orbit_seed 18109467897393425238 VPT  88 steps ( 1.59 lt)  free-run RMSE 0.351565
+arm Janus    seed 21979001   orbit_seed 5743361355973698255 VPT 204 steps ( 3.69 lt)  free-run RMSE 0.351855
+arm Janus    seed 21979001   orbit_seed 16104699420182321933 VPT  51 steps ( 0.92 lt)  free-run RMSE 0.353539
+arm Janus    seed 21979001   orbit_seed 1006469775667417434 VPT 221 steps ( 4.00 lt)  free-run RMSE 0.356238
+arm Janus    seed 21979001   orbit_seed 7401924419259460404 VPT 159 steps ( 2.88 lt)  free-run RMSE 0.356680
+arm Janus    seed 21979001   orbit_seed 8425156953022204017 VPT  85 steps ( 1.54 lt)  free-run RMSE 0.360463
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979001   orbit_seed 4007931443343602940 VPT 422 steps ( 7.64 lt)  free-run RMSE 0.365607
+arm Janus    seed 21979001   orbit_seed 15001926598183616335 VPT 374 steps ( 6.77 lt)  free-run RMSE 0.380528
+arm Janus    seed 21979001   orbit_seed 12664874877060730678 VPT 324 steps ( 5.87 lt)  free-run RMSE 0.414728
+arm Janus    seed 21979001   orbit_seed 656605956440221769 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.398276
+arm Janus    seed 21979001   orbit_seed 17774587888087229762 VPT 296 steps ( 5.36 lt)  free-run RMSE 0.374340
+arm Janus    seed 21979001   orbit_seed 2696958202838730100 VPT 267 steps ( 4.84 lt)  free-run RMSE 0.400218
+arm Janus    seed 21979001   orbit_seed 9333312947715283458 VPT 260 steps ( 4.71 lt)  free-run RMSE 0.416203
+arm Janus    seed 21979001   orbit_seed 7658040265663960149 VPT 238 steps ( 4.31 lt)  free-run RMSE 0.439770
+arm Janus    seed 21979001   orbit_seed 13095175807113877781 VPT 224 steps ( 4.06 lt)  free-run RMSE 0.346473
+arm Janus    seed 21979001   orbit_seed 1006469775667417434 VPT 221 steps ( 4.00 lt)  free-run RMSE 0.356238
+
+=== ESN seed 21979002 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=7.81  mean=2.02  median=1.53  std=1.61
+  free-run RMSE    n=100  min=0.322608  max=0.499196  mean=0.418186  median=0.417029  std=0.034494
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979002   orbit_seed 8542863739336868721 VPT 179 steps ( 3.24 lt)  free-run RMSE 0.322608
+arm Janus    seed 21979002   orbit_seed 9333312947715283458 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.344666
+arm Janus    seed 21979002   orbit_seed 651436683848788812 VPT 223 steps ( 4.04 lt)  free-run RMSE 0.352770
+arm Janus    seed 21979002   orbit_seed 11957716583852103447 VPT  71 steps ( 1.29 lt)  free-run RMSE 0.361665
+arm Janus    seed 21979002   orbit_seed 2869500753416085466 VPT  50 steps ( 0.91 lt)  free-run RMSE 0.363396
+arm Janus    seed 21979002   orbit_seed 4416234110371315044 VPT 135 steps ( 2.45 lt)  free-run RMSE 0.363725
+arm Janus    seed 21979002   orbit_seed 1249439214165998073 VPT  80 steps ( 1.45 lt)  free-run RMSE 0.365857
+arm Janus    seed 21979002   orbit_seed 2696958202838730100 VPT 192 steps ( 3.48 lt)  free-run RMSE 0.366093
+arm Janus    seed 21979002   orbit_seed 10324059224234835327 VPT 404 steps ( 7.32 lt)  free-run RMSE 0.366214
+arm Janus    seed 21979002   orbit_seed 17609291198829902110 VPT 431 steps ( 7.81 lt)  free-run RMSE 0.371047
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979002   orbit_seed 17609291198829902110 VPT 431 steps ( 7.81 lt)  free-run RMSE 0.371047
+arm Janus    seed 21979002   orbit_seed 10324059224234835327 VPT 404 steps ( 7.32 lt)  free-run RMSE 0.366214
+arm Janus    seed 21979002   orbit_seed 9333312947715283458 VPT 368 steps ( 6.67 lt)  free-run RMSE 0.344666
+arm Janus    seed 21979002   orbit_seed 1937234734715600964 VPT 322 steps ( 5.83 lt)  free-run RMSE 0.392483
+arm Janus    seed 21979002   orbit_seed 4007931443343602940 VPT 318 steps ( 5.76 lt)  free-run RMSE 0.394309
+arm Janus    seed 21979002   orbit_seed 656605956440221769 VPT 273 steps ( 4.94 lt)  free-run RMSE 0.376072
+arm Janus    seed 21979002   orbit_seed 18109467897393425238 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.385282
+arm Janus    seed 21979002   orbit_seed 14645204808822872881 VPT 236 steps ( 4.27 lt)  free-run RMSE 0.420571
+arm Janus    seed 21979002   orbit_seed 15001926598183616335 VPT 233 steps ( 4.22 lt)  free-run RMSE 0.372693
+arm Janus    seed 21979002   orbit_seed 9015661769437736282 VPT 227 steps ( 4.11 lt)  free-run RMSE 0.437376
+
+=== ESN seed 21979003 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=5.71  mean=1.95  median=1.78  std=1.24
+  free-run RMSE    n=100  min=0.293386  max=0.490644  mean=0.412645  median=0.420651  std=0.040297
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979003   orbit_seed 110890624606369167 VPT 120 steps ( 2.17 lt)  free-run RMSE 0.293386
+arm Janus    seed 21979003   orbit_seed 7401924419259460404 VPT 161 steps ( 2.92 lt)  free-run RMSE 0.294884
+arm Janus    seed 21979003   orbit_seed 12284454596439506926 VPT  16 steps ( 0.29 lt)  free-run RMSE 0.297831
+arm Janus    seed 21979003   orbit_seed 248130967593251468 VPT 110 steps ( 1.99 lt)  free-run RMSE 0.304240
+arm Janus    seed 21979003   orbit_seed 16400381301927481083 VPT 103 steps ( 1.87 lt)  free-run RMSE 0.320483
+arm Janus    seed 21979003   orbit_seed 14503336125504450378 VPT 114 steps ( 2.06 lt)  free-run RMSE 0.330281
+arm Janus    seed 21979003   orbit_seed 13075496520564732781 VPT 185 steps ( 3.35 lt)  free-run RMSE 0.339594
+arm Janus    seed 21979003   orbit_seed 7713847214078855622 VPT  64 steps ( 1.16 lt)  free-run RMSE 0.356288
+arm Janus    seed 21979003   orbit_seed 11198218363179429788 VPT  20 steps ( 0.36 lt)  free-run RMSE 0.357705
+arm Janus    seed 21979003   orbit_seed 14193348660813217918 VPT 116 steps ( 2.10 lt)  free-run RMSE 0.362090
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979003   orbit_seed 9333312947715283458 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.388882
+arm Janus    seed 21979003   orbit_seed 9136586738710644795 VPT 309 steps ( 5.60 lt)  free-run RMSE 0.368905
+arm Janus    seed 21979003   orbit_seed 6960850931340156210 VPT 277 steps ( 5.02 lt)  free-run RMSE 0.370807
+arm Janus    seed 21979003   orbit_seed 4007931443343602940 VPT 248 steps ( 4.49 lt)  free-run RMSE 0.411259
+arm Janus    seed 21979003   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.385017
+arm Janus    seed 21979003   orbit_seed 12735002845385499196 VPT 232 steps ( 4.20 lt)  free-run RMSE 0.386058
+arm Janus    seed 21979003   orbit_seed 13994705457426480036 VPT 231 steps ( 4.18 lt)  free-run RMSE 0.388976
+arm Janus    seed 21979003   orbit_seed 17224751303681612354 VPT 220 steps ( 3.98 lt)  free-run RMSE 0.436599
+arm Janus    seed 21979003   orbit_seed 656605956440221769 VPT 216 steps ( 3.91 lt)  free-run RMSE 0.384179
+arm Janus    seed 21979003   orbit_seed 7658040265663960149 VPT 203 steps ( 3.68 lt)  free-run RMSE 0.420698
+
+=== ESN seed 21979004 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.35  mean=2.00  median=1.48  std=1.53
+  free-run RMSE    n=100  min=0.317765  max=0.491343  mean=0.420139  median=0.423577  std=0.038025
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979004   orbit_seed 7658040265663960149 VPT 239 steps ( 4.33 lt)  free-run RMSE 0.317765
+arm Janus    seed 21979004   orbit_seed 5237269684808350417 VPT 258 steps ( 4.67 lt)  free-run RMSE 0.327872
+arm Janus    seed 21979004   orbit_seed 10324059224234835327 VPT 406 steps ( 7.35 lt)  free-run RMSE 0.342999
+arm Janus    seed 21979004   orbit_seed 6960850931340156210 VPT 244 steps ( 4.42 lt)  free-run RMSE 0.345377
+arm Janus    seed 21979004   orbit_seed 9515810860901762052 VPT 157 steps ( 2.84 lt)  free-run RMSE 0.347733
+arm Janus    seed 21979004   orbit_seed 11569254123151793499 VPT 331 steps ( 6.00 lt)  free-run RMSE 0.349423
+arm Janus    seed 21979004   orbit_seed 656605956440221769 VPT 357 steps ( 6.47 lt)  free-run RMSE 0.355232
+arm Janus    seed 21979004   orbit_seed 248130967593251468 VPT 189 steps ( 3.42 lt)  free-run RMSE 0.366579
+arm Janus    seed 21979004   orbit_seed 9015661769437736282 VPT  78 steps ( 1.41 lt)  free-run RMSE 0.368400
+arm Janus    seed 21979004   orbit_seed 9136586738710644795 VPT 119 steps ( 2.16 lt)  free-run RMSE 0.370979
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979004   orbit_seed 10324059224234835327 VPT 406 steps ( 7.35 lt)  free-run RMSE 0.342999
+arm Janus    seed 21979004   orbit_seed 656605956440221769 VPT 357 steps ( 6.47 lt)  free-run RMSE 0.355232
+arm Janus    seed 21979004   orbit_seed 11569254123151793499 VPT 331 steps ( 6.00 lt)  free-run RMSE 0.349423
+arm Janus    seed 21979004   orbit_seed 3077346833989813773 VPT 285 steps ( 5.16 lt)  free-run RMSE 0.391755
+arm Janus    seed 21979004   orbit_seed 4007931443343602940 VPT 282 steps ( 5.11 lt)  free-run RMSE 0.394697
+arm Janus    seed 21979004   orbit_seed 5237269684808350417 VPT 258 steps ( 4.67 lt)  free-run RMSE 0.327872
+arm Janus    seed 21979004   orbit_seed 10278487631456564348 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.427494
+arm Janus    seed 21979004   orbit_seed 6960850931340156210 VPT 244 steps ( 4.42 lt)  free-run RMSE 0.345377
+arm Janus    seed 21979004   orbit_seed 7658040265663960149 VPT 239 steps ( 4.33 lt)  free-run RMSE 0.317765
+arm Janus    seed 21979004   orbit_seed 5743361355973698255 VPT 238 steps ( 4.31 lt)  free-run RMSE 0.424511
+
+=== ESN seed 21979005 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.06  mean=2.01  median=1.70  std=1.41
+  free-run RMSE    n=100  min=0.323687  max=0.484208  mean=0.417676  median=0.418456  std=0.035557
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979005   orbit_seed 13160435873346201919 VPT 123 steps ( 2.23 lt)  free-run RMSE 0.323687
+arm Janus    seed 21979005   orbit_seed 8425156953022204017 VPT 390 steps ( 7.06 lt)  free-run RMSE 0.332628
+arm Janus    seed 21979005   orbit_seed 4741737415666583010 VPT 223 steps ( 4.04 lt)  free-run RMSE 0.334189
+arm Janus    seed 21979005   orbit_seed 11101717626751391262 VPT  81 steps ( 1.47 lt)  free-run RMSE 0.341785
+arm Janus    seed 21979005   orbit_seed 7401924419259460404 VPT 163 steps ( 2.95 lt)  free-run RMSE 0.355038
+arm Janus    seed 21979005   orbit_seed 9294122214858465305 VPT  84 steps ( 1.52 lt)  free-run RMSE 0.360556
+arm Janus    seed 21979005   orbit_seed 110890624606369167 VPT 119 steps ( 2.16 lt)  free-run RMSE 0.361762
+arm Janus    seed 21979005   orbit_seed 11957716583852103447 VPT 182 steps ( 3.30 lt)  free-run RMSE 0.368169
+arm Janus    seed 21979005   orbit_seed 4804985241073930135 VPT 149 steps ( 2.70 lt)  free-run RMSE 0.369005
+arm Janus    seed 21979005   orbit_seed 1249439214165998073 VPT  82 steps ( 1.49 lt)  free-run RMSE 0.371375
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979005   orbit_seed 8425156953022204017 VPT 390 steps ( 7.06 lt)  free-run RMSE 0.332628
+arm Janus    seed 21979005   orbit_seed 656605956440221769 VPT 308 steps ( 5.58 lt)  free-run RMSE 0.391540
+arm Janus    seed 21979005   orbit_seed 2696958202838730100 VPT 273 steps ( 4.94 lt)  free-run RMSE 0.410805
+arm Janus    seed 21979005   orbit_seed 9333312947715283458 VPT 265 steps ( 4.80 lt)  free-run RMSE 0.394032
+arm Janus    seed 21979005   orbit_seed 5237269684808350417 VPT 255 steps ( 4.62 lt)  free-run RMSE 0.377280
+arm Janus    seed 21979005   orbit_seed 9180653851401757815 VPT 242 steps ( 4.38 lt)  free-run RMSE 0.403451
+arm Janus    seed 21979005   orbit_seed 18109467897393425238 VPT 236 steps ( 4.27 lt)  free-run RMSE 0.440737
+arm Janus    seed 21979005   orbit_seed 15001926598183616335 VPT 232 steps ( 4.20 lt)  free-run RMSE 0.419667
+arm Janus    seed 21979005   orbit_seed 9136586738710644795 VPT 229 steps ( 4.15 lt)  free-run RMSE 0.425397
+arm Janus    seed 21979005   orbit_seed 11569254123151793499 VPT 227 steps ( 4.11 lt)  free-run RMSE 0.383356
+
+=== ESN seed 21979006 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.24  max=7.39  mean=2.00  median=1.69  std=1.49
+  free-run RMSE    n=100  min=0.314432  max=0.501381  mean=0.420724  median=0.425878  std=0.038391
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979006   orbit_seed 15001926598183616335 VPT 228 steps ( 4.13 lt)  free-run RMSE 0.314432
+arm Janus    seed 21979006   orbit_seed 13994705457426480036 VPT 229 steps ( 4.15 lt)  free-run RMSE 0.330256
+arm Janus    seed 21979006   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  free-run RMSE 0.336930
+arm Janus    seed 21979006   orbit_seed 5743361355973698255 VPT 242 steps ( 4.38 lt)  free-run RMSE 0.337871
+arm Janus    seed 21979006   orbit_seed 18109467897393425238 VPT  87 steps ( 1.58 lt)  free-run RMSE 0.352023
+arm Janus    seed 21979006   orbit_seed 18001397679514996404 VPT 150 steps ( 2.72 lt)  free-run RMSE 0.354768
+arm Janus    seed 21979006   orbit_seed 11950338288678257378 VPT  59 steps ( 1.07 lt)  free-run RMSE 0.354827
+arm Janus    seed 21979006   orbit_seed 16826883592623292674 VPT  84 steps ( 1.52 lt)  free-run RMSE 0.359835
+arm Janus    seed 21979006   orbit_seed 9015661769437736282 VPT 189 steps ( 3.42 lt)  free-run RMSE 0.361718
+arm Janus    seed 21979006   orbit_seed 6960850931340156210 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.364008
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979006   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  free-run RMSE 0.336930
+arm Janus    seed 21979006   orbit_seed 9333312947715283458 VPT 359 steps ( 6.50 lt)  free-run RMSE 0.369464
+arm Janus    seed 21979006   orbit_seed 656605956440221769 VPT 352 steps ( 6.38 lt)  free-run RMSE 0.375977
+arm Janus    seed 21979006   orbit_seed 7367918243184862287 VPT 330 steps ( 5.98 lt)  free-run RMSE 0.396279
+arm Janus    seed 21979006   orbit_seed 6960850931340156210 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.364008
+arm Janus    seed 21979006   orbit_seed 7401497959599845173 VPT 259 steps ( 4.69 lt)  free-run RMSE 0.372187
+arm Janus    seed 21979006   orbit_seed 15378080442305734864 VPT 244 steps ( 4.42 lt)  free-run RMSE 0.402757
+arm Janus    seed 21979006   orbit_seed 5743361355973698255 VPT 242 steps ( 4.38 lt)  free-run RMSE 0.337871
+arm Janus    seed 21979006   orbit_seed 9180653851401757815 VPT 241 steps ( 4.36 lt)  free-run RMSE 0.431621
+arm Janus    seed 21979006   orbit_seed 13994705457426480036 VPT 229 steps ( 4.15 lt)  free-run RMSE 0.330256
+
+=== ESN seed 21979007 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.56  mean=1.84  median=1.45  std=1.41
+  free-run RMSE    n=100  min=0.325627  max=0.506360  mean=0.422467  median=0.424715  std=0.034431
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979007   orbit_seed 13994705457426480036 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.325627
+arm Janus    seed 21979007   orbit_seed 7658040265663960149 VPT 272 steps ( 4.93 lt)  free-run RMSE 0.335038
+arm Janus    seed 21979007   orbit_seed 11101717626751391262 VPT  70 steps ( 1.27 lt)  free-run RMSE 0.361143
+arm Janus    seed 21979007   orbit_seed 16104699420182321933 VPT  56 steps ( 1.01 lt)  free-run RMSE 0.363698
+arm Janus    seed 21979007   orbit_seed 9180653851401757815 VPT 160 steps ( 2.90 lt)  free-run RMSE 0.368319
+arm Janus    seed 21979007   orbit_seed 10148093844914609385 VPT 110 steps ( 1.99 lt)  free-run RMSE 0.370704
+arm Janus    seed 21979007   orbit_seed 9333312947715283458 VPT 259 steps ( 4.69 lt)  free-run RMSE 0.371913
+arm Janus    seed 21979007   orbit_seed 7401924419259460404 VPT 308 steps ( 5.58 lt)  free-run RMSE 0.372727
+arm Janus    seed 21979007   orbit_seed 12997851309749444307 VPT  66 steps ( 1.20 lt)  free-run RMSE 0.374751
+arm Janus    seed 21979007   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  free-run RMSE 0.376670
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979007   orbit_seed 13994705457426480036 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.325627
+arm Janus    seed 21979007   orbit_seed 7401924419259460404 VPT 308 steps ( 5.58 lt)  free-run RMSE 0.372727
+arm Janus    seed 21979007   orbit_seed 9515810860901762052 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.397322
+arm Janus    seed 21979007   orbit_seed 7658040265663960149 VPT 272 steps ( 4.93 lt)  free-run RMSE 0.335038
+arm Janus    seed 21979007   orbit_seed 9333312947715283458 VPT 259 steps ( 4.69 lt)  free-run RMSE 0.371913
+arm Janus    seed 21979007   orbit_seed 14193348660813217918 VPT 257 steps ( 4.65 lt)  free-run RMSE 0.414951
+arm Janus    seed 21979007   orbit_seed 4007931443343602940 VPT 248 steps ( 4.49 lt)  free-run RMSE 0.407080
+arm Janus    seed 21979007   orbit_seed 6960850931340156210 VPT 243 steps ( 4.40 lt)  free-run RMSE 0.416746
+arm Janus    seed 21979007   orbit_seed 248130967593251468 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.413890
+arm Janus    seed 21979007   orbit_seed 4804985241073930135 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.401541
+
+=== ESN seed 21979008 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.24  max=7.88  mean=1.83  median=1.42  std=1.36
+  free-run RMSE    n=100  min=0.314162  max=0.510032  mean=0.424168  median=0.426929  std=0.034547
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979008   orbit_seed 7401924419259460404 VPT 157 steps ( 2.84 lt)  free-run RMSE 0.314162
+arm Janus    seed 21979008   orbit_seed 12661963445150923806 VPT  59 steps ( 1.07 lt)  free-run RMSE 0.339987
+arm Janus    seed 21979008   orbit_seed 14645204808822872881 VPT 238 steps ( 4.31 lt)  free-run RMSE 0.340920
+arm Janus    seed 21979008   orbit_seed 2097179478975684523 VPT  96 steps ( 1.74 lt)  free-run RMSE 0.348071
+arm Janus    seed 21979008   orbit_seed 15992716269590395088 VPT 145 steps ( 2.63 lt)  free-run RMSE 0.350818
+arm Janus    seed 21979008   orbit_seed 17609291198829902110 VPT  63 steps ( 1.14 lt)  free-run RMSE 0.362340
+arm Janus    seed 21979008   orbit_seed 14283968312830459669 VPT 121 steps ( 2.19 lt)  free-run RMSE 0.368404
+arm Janus    seed 21979008   orbit_seed 9333312947715283458 VPT 195 steps ( 3.53 lt)  free-run RMSE 0.374727
+arm Janus    seed 21979008   orbit_seed 13994705457426480036 VPT 435 steps ( 7.88 lt)  free-run RMSE 0.376256
+arm Janus    seed 21979008   orbit_seed 9180653851401757815 VPT 159 steps ( 2.88 lt)  free-run RMSE 0.378831
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979008   orbit_seed 13994705457426480036 VPT 435 steps ( 7.88 lt)  free-run RMSE 0.376256
+arm Janus    seed 21979008   orbit_seed 4007931443343602940 VPT 348 steps ( 6.30 lt)  free-run RMSE 0.393778
+arm Janus    seed 21979008   orbit_seed 656605956440221769 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.413683
+arm Janus    seed 21979008   orbit_seed 14645204808822872881 VPT 238 steps ( 4.31 lt)  free-run RMSE 0.340920
+arm Janus    seed 21979008   orbit_seed 15001926598183616335 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.406611
+arm Janus    seed 21979008   orbit_seed 11569254123151793499 VPT 224 steps ( 4.06 lt)  free-run RMSE 0.414505
+arm Janus    seed 21979008   orbit_seed 4416234110371315044 VPT 216 steps ( 3.91 lt)  free-run RMSE 0.393059
+arm Janus    seed 21979008   orbit_seed 17224751303681612354 VPT 212 steps ( 3.84 lt)  free-run RMSE 0.393668
+arm Janus    seed 21979008   orbit_seed 7658040265663960149 VPT 203 steps ( 3.68 lt)  free-run RMSE 0.382010
+arm Janus    seed 21979008   orbit_seed 5743361355973698255 VPT 201 steps ( 3.64 lt)  free-run RMSE 0.407582
+
+=== ESN seed 21979009 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.53  mean=1.94  median=1.60  std=1.40
+  free-run RMSE    n=100  min=0.299440  max=0.499860  mean=0.419545  median=0.422480  std=0.036178
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979009   orbit_seed 4007931443343602940 VPT 416 steps ( 7.53 lt)  free-run RMSE 0.299440
+arm Janus    seed 21979009   orbit_seed 15992716269590395088 VPT 289 steps ( 5.23 lt)  free-run RMSE 0.345095
+arm Janus    seed 21979009   orbit_seed 13095175807113877781 VPT 217 steps ( 3.93 lt)  free-run RMSE 0.350142
+arm Janus    seed 21979009   orbit_seed 14283968312830459669 VPT 113 steps ( 2.05 lt)  free-run RMSE 0.351535
+arm Janus    seed 21979009   orbit_seed 656605956440221769 VPT 357 steps ( 6.47 lt)  free-run RMSE 0.356237
+arm Janus    seed 21979009   orbit_seed 14719543417854726190 VPT 156 steps ( 2.83 lt)  free-run RMSE 0.356938
+arm Janus    seed 21979009   orbit_seed 11957716583852103447 VPT 143 steps ( 2.59 lt)  free-run RMSE 0.361981
+arm Janus    seed 21979009   orbit_seed 9529653278432036934 VPT 284 steps ( 5.14 lt)  free-run RMSE 0.365161
+arm Janus    seed 21979009   orbit_seed 9333312947715283458 VPT 262 steps ( 4.75 lt)  free-run RMSE 0.373399
+arm Janus    seed 21979009   orbit_seed 15776701060910552741 VPT 135 steps ( 2.45 lt)  free-run RMSE 0.376105
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979009   orbit_seed 4007931443343602940 VPT 416 steps ( 7.53 lt)  free-run RMSE 0.299440
+arm Janus    seed 21979009   orbit_seed 656605956440221769 VPT 357 steps ( 6.47 lt)  free-run RMSE 0.356237
+arm Janus    seed 21979009   orbit_seed 15992716269590395088 VPT 289 steps ( 5.23 lt)  free-run RMSE 0.345095
+arm Janus    seed 21979009   orbit_seed 9529653278432036934 VPT 284 steps ( 5.14 lt)  free-run RMSE 0.365161
+arm Janus    seed 21979009   orbit_seed 9333312947715283458 VPT 262 steps ( 4.75 lt)  free-run RMSE 0.373399
+arm Janus    seed 21979009   orbit_seed 1249439214165998073 VPT 254 steps ( 4.60 lt)  free-run RMSE 0.378945
+arm Janus    seed 21979009   orbit_seed 7658040265663960149 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.403042
+arm Janus    seed 21979009   orbit_seed 17774587888087229762 VPT 217 steps ( 3.93 lt)  free-run RMSE 0.386679
+arm Janus    seed 21979009   orbit_seed 13095175807113877781 VPT 217 steps ( 3.93 lt)  free-run RMSE 0.350142
+arm Janus    seed 21979009   orbit_seed 13994705457426480036 VPT 206 steps ( 3.73 lt)  free-run RMSE 0.384433
+
+=== ESN seed 21979010 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=7.26  mean=1.94  median=1.50  std=1.50
+  free-run RMSE    n=100  min=0.310440  max=0.490826  mean=0.419519  median=0.422648  std=0.035602
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979010   orbit_seed 656605956440221769 VPT 401 steps ( 7.26 lt)  free-run RMSE 0.310440
+arm Janus    seed 21979010   orbit_seed 7401924419259460404 VPT 163 steps ( 2.95 lt)  free-run RMSE 0.319122
+arm Janus    seed 21979010   orbit_seed 1937234734715600964 VPT 370 steps ( 6.70 lt)  free-run RMSE 0.345446
+arm Janus    seed 21979010   orbit_seed 8542863739336868721 VPT 264 steps ( 4.78 lt)  free-run RMSE 0.348525
+arm Janus    seed 21979010   orbit_seed 18109467897393425238 VPT  83 steps ( 1.50 lt)  free-run RMSE 0.357662
+arm Janus    seed 21979010   orbit_seed 4007931443343602940 VPT 283 steps ( 5.13 lt)  free-run RMSE 0.359144
+arm Janus    seed 21979010   orbit_seed 17609291198829902110 VPT 131 steps ( 2.37 lt)  free-run RMSE 0.367071
+arm Janus    seed 21979010   orbit_seed 11957716583852103447 VPT  70 steps ( 1.27 lt)  free-run RMSE 0.368553
+arm Janus    seed 21979010   orbit_seed 14503336125504450378 VPT  33 steps ( 0.60 lt)  free-run RMSE 0.370500
+arm Janus    seed 21979010   orbit_seed 11101717626751391262 VPT  81 steps ( 1.47 lt)  free-run RMSE 0.371754
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979010   orbit_seed 656605956440221769 VPT 401 steps ( 7.26 lt)  free-run RMSE 0.310440
+arm Janus    seed 21979010   orbit_seed 1937234734715600964 VPT 370 steps ( 6.70 lt)  free-run RMSE 0.345446
+arm Janus    seed 21979010   orbit_seed 9333312947715283458 VPT 321 steps ( 5.81 lt)  free-run RMSE 0.378296
+arm Janus    seed 21979010   orbit_seed 17774587888087229762 VPT 291 steps ( 5.27 lt)  free-run RMSE 0.379059
+arm Janus    seed 21979010   orbit_seed 4007931443343602940 VPT 283 steps ( 5.13 lt)  free-run RMSE 0.359144
+arm Janus    seed 21979010   orbit_seed 6960850931340156210 VPT 282 steps ( 5.11 lt)  free-run RMSE 0.384407
+arm Janus    seed 21979010   orbit_seed 8542863739336868721 VPT 264 steps ( 4.78 lt)  free-run RMSE 0.348525
+arm Janus    seed 21979010   orbit_seed 9180653851401757815 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.409910
+arm Janus    seed 21979010   orbit_seed 10278487631456564348 VPT 244 steps ( 4.42 lt)  free-run RMSE 0.433986
+arm Janus    seed 21979010   orbit_seed 8425156953022204017 VPT 229 steps ( 4.15 lt)  free-run RMSE 0.405518
+
+=== ESN seed 21979011 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.56  mean=1.84  median=1.44  std=1.40
+  free-run RMSE    n=100  min=0.327473  max=0.496933  mean=0.421567  median=0.426700  std=0.033770
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979011   orbit_seed 12735002845385499196 VPT 196 steps ( 3.55 lt)  free-run RMSE 0.327473
+arm Janus    seed 21979011   orbit_seed 4007931443343602940 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.327777
+arm Janus    seed 21979011   orbit_seed 9294122214858465305 VPT 156 steps ( 2.83 lt)  free-run RMSE 0.350176
+arm Janus    seed 21979011   orbit_seed 110890624606369167 VPT 118 steps ( 2.14 lt)  free-run RMSE 0.362544
+arm Janus    seed 21979011   orbit_seed 6960850931340156210 VPT 309 steps ( 5.60 lt)  free-run RMSE 0.363188
+arm Janus    seed 21979011   orbit_seed 14193348660813217918 VPT 107 steps ( 1.94 lt)  free-run RMSE 0.367432
+arm Janus    seed 21979011   orbit_seed 2610235269337149668 VPT 178 steps ( 3.22 lt)  free-run RMSE 0.367840
+arm Janus    seed 21979011   orbit_seed 11569254123151793499 VPT  44 steps ( 0.80 lt)  free-run RMSE 0.368263
+arm Janus    seed 21979011   orbit_seed 9333312947715283458 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.371954
+arm Janus    seed 21979011   orbit_seed 13994705457426480036 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.372377
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979011   orbit_seed 9333312947715283458 VPT 362 steps ( 6.56 lt)  free-run RMSE 0.371954
+arm Janus    seed 21979011   orbit_seed 656605956440221769 VPT 348 steps ( 6.30 lt)  free-run RMSE 0.383477
+arm Janus    seed 21979011   orbit_seed 5237269684808350417 VPT 337 steps ( 6.10 lt)  free-run RMSE 0.378476
+arm Janus    seed 21979011   orbit_seed 6960850931340156210 VPT 309 steps ( 5.60 lt)  free-run RMSE 0.363188
+arm Janus    seed 21979011   orbit_seed 4007931443343602940 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.327777
+arm Janus    seed 21979011   orbit_seed 13994705457426480036 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.372377
+arm Janus    seed 21979011   orbit_seed 7658040265663960149 VPT 237 steps ( 4.29 lt)  free-run RMSE 0.414092
+arm Janus    seed 21979011   orbit_seed 15001926598183616335 VPT 233 steps ( 4.22 lt)  free-run RMSE 0.419119
+arm Janus    seed 21979011   orbit_seed 9180653851401757815 VPT 232 steps ( 4.20 lt)  free-run RMSE 0.385586
+arm Janus    seed 21979011   orbit_seed 5743361355973698255 VPT 204 steps ( 3.69 lt)  free-run RMSE 0.418822
+
+=== ESN seed 21979012 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.24  max=7.03  mean=2.07  median=1.68  std=1.58
+  free-run RMSE    n=100  min=0.333431  max=0.489333  mean=0.421589  median=0.427281  std=0.034139
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979012   orbit_seed 9180653851401757815 VPT 386 steps ( 6.99 lt)  free-run RMSE 0.333431
+arm Janus    seed 21979012   orbit_seed 4007931443343602940 VPT 380 steps ( 6.88 lt)  free-run RMSE 0.337370
+arm Janus    seed 21979012   orbit_seed 4741737415666583010 VPT 111 steps ( 2.01 lt)  free-run RMSE 0.357086
+arm Janus    seed 21979012   orbit_seed 10324059224234835327 VPT 323 steps ( 5.85 lt)  free-run RMSE 0.358358
+arm Janus    seed 21979012   orbit_seed 6960850931340156210 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.365114
+arm Janus    seed 21979012   orbit_seed 656605956440221769 VPT 388 steps ( 7.03 lt)  free-run RMSE 0.367254
+arm Janus    seed 21979012   orbit_seed 14193348660813217918 VPT 296 steps ( 5.36 lt)  free-run RMSE 0.370481
+arm Janus    seed 21979012   orbit_seed 4416234110371315044 VPT 168 steps ( 3.04 lt)  free-run RMSE 0.373693
+arm Janus    seed 21979012   orbit_seed 4804985241073930135 VPT 226 steps ( 4.09 lt)  free-run RMSE 0.373794
+arm Janus    seed 21979012   orbit_seed 11794286179085912200 VPT  14 steps ( 0.25 lt)  free-run RMSE 0.376622
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979012   orbit_seed 656605956440221769 VPT 388 steps ( 7.03 lt)  free-run RMSE 0.367254
+arm Janus    seed 21979012   orbit_seed 9180653851401757815 VPT 386 steps ( 6.99 lt)  free-run RMSE 0.333431
+arm Janus    seed 21979012   orbit_seed 4007931443343602940 VPT 380 steps ( 6.88 lt)  free-run RMSE 0.337370
+arm Janus    seed 21979012   orbit_seed 10324059224234835327 VPT 323 steps ( 5.85 lt)  free-run RMSE 0.358358
+arm Janus    seed 21979012   orbit_seed 6960850931340156210 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.365114
+arm Janus    seed 21979012   orbit_seed 14193348660813217918 VPT 296 steps ( 5.36 lt)  free-run RMSE 0.370481
+arm Janus    seed 21979012   orbit_seed 9015661769437736282 VPT 266 steps ( 4.82 lt)  free-run RMSE 0.378389
+arm Janus    seed 21979012   orbit_seed 5237269684808350417 VPT 256 steps ( 4.64 lt)  free-run RMSE 0.413747
+arm Janus    seed 21979012   orbit_seed 5743361355973698255 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.393053
+arm Janus    seed 21979012   orbit_seed 15378080442305734864 VPT 241 steps ( 4.36 lt)  free-run RMSE 0.404153
+
+=== ESN seed 21979013 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=9.18  mean=2.09  median=1.63  std=1.65
+  free-run RMSE    n=100  min=0.276562  max=0.489869  mean=0.421275  median=0.426978  std=0.037688
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979013   orbit_seed 18109467897393425238 VPT 507 steps ( 9.18 lt)  free-run RMSE 0.276562
+arm Janus    seed 21979013   orbit_seed 9180653851401757815 VPT 198 steps ( 3.59 lt)  free-run RMSE 0.328798
+arm Janus    seed 21979013   orbit_seed 9333312947715283458 VPT 331 steps ( 6.00 lt)  free-run RMSE 0.331668
+arm Janus    seed 21979013   orbit_seed 13160435873346201919 VPT 304 steps ( 5.51 lt)  free-run RMSE 0.340102
+arm Janus    seed 21979013   orbit_seed 5237269684808350417 VPT 225 steps ( 4.08 lt)  free-run RMSE 0.343404
+arm Janus    seed 21979013   orbit_seed 6960850931340156210 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.348327
+arm Janus    seed 21979013   orbit_seed 1937234734715600964 VPT 139 steps ( 2.52 lt)  free-run RMSE 0.357350
+arm Janus    seed 21979013   orbit_seed 656605956440221769 VPT 354 steps ( 6.41 lt)  free-run RMSE 0.358193
+arm Janus    seed 21979013   orbit_seed 13095175807113877781 VPT 184 steps ( 3.33 lt)  free-run RMSE 0.366492
+arm Janus    seed 21979013   orbit_seed 9294122214858465305 VPT  87 steps ( 1.58 lt)  free-run RMSE 0.368192
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979013   orbit_seed 18109467897393425238 VPT 507 steps ( 9.18 lt)  free-run RMSE 0.276562
+arm Janus    seed 21979013   orbit_seed 656605956440221769 VPT 354 steps ( 6.41 lt)  free-run RMSE 0.358193
+arm Janus    seed 21979013   orbit_seed 6960850931340156210 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.348327
+arm Janus    seed 21979013   orbit_seed 4007931443343602940 VPT 342 steps ( 6.19 lt)  free-run RMSE 0.393284
+arm Janus    seed 21979013   orbit_seed 9333312947715283458 VPT 331 steps ( 6.00 lt)  free-run RMSE 0.331668
+arm Janus    seed 21979013   orbit_seed 13160435873346201919 VPT 304 steps ( 5.51 lt)  free-run RMSE 0.340102
+arm Janus    seed 21979013   orbit_seed 13075496520564732781 VPT 285 steps ( 5.16 lt)  free-run RMSE 0.372646
+arm Janus    seed 21979013   orbit_seed 7401497959599845173 VPT 255 steps ( 4.62 lt)  free-run RMSE 0.440175
+arm Janus    seed 21979013   orbit_seed 5743361355973698255 VPT 245 steps ( 4.44 lt)  free-run RMSE 0.433965
+arm Janus    seed 21979013   orbit_seed 8425156953022204017 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.416765
+
+=== ESN seed 21979014 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.18  max=6.28  mean=1.64  median=1.32  std=1.34
+  free-run RMSE    n=100  min=0.303084  max=0.503773  mean=0.425652  median=0.425065  std=0.036171
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979014   orbit_seed 6960850931340156210 VPT  17 steps ( 0.31 lt)  free-run RMSE 0.303084
+arm Janus    seed 21979014   orbit_seed 15001926598183616335 VPT 193 steps ( 3.50 lt)  free-run RMSE 0.345296
+arm Janus    seed 21979014   orbit_seed 9136586738710644795 VPT 119 steps ( 2.16 lt)  free-run RMSE 0.360726
+arm Janus    seed 21979014   orbit_seed 13994705457426480036 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.364880
+arm Janus    seed 21979014   orbit_seed 9294122214858465305 VPT  76 steps ( 1.38 lt)  free-run RMSE 0.364973
+arm Janus    seed 21979014   orbit_seed 2097179478975684523 VPT  93 steps ( 1.68 lt)  free-run RMSE 0.365345
+arm Janus    seed 21979014   orbit_seed 5237269684808350417 VPT 137 steps ( 2.48 lt)  free-run RMSE 0.367032
+arm Janus    seed 21979014   orbit_seed 15776701060910552741 VPT 132 steps ( 2.39 lt)  free-run RMSE 0.373095
+arm Janus    seed 21979014   orbit_seed 4007931443343602940 VPT 312 steps ( 5.65 lt)  free-run RMSE 0.376968
+arm Janus    seed 21979014   orbit_seed 656605956440221769 VPT 347 steps ( 6.28 lt)  free-run RMSE 0.377298
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979014   orbit_seed 656605956440221769 VPT 347 steps ( 6.28 lt)  free-run RMSE 0.377298
+arm Janus    seed 21979014   orbit_seed 9180653851401757815 VPT 345 steps ( 6.25 lt)  free-run RMSE 0.388392
+arm Janus    seed 21979014   orbit_seed 4007931443343602940 VPT 312 steps ( 5.65 lt)  free-run RMSE 0.376968
+arm Janus    seed 21979014   orbit_seed 7658040265663960149 VPT 270 steps ( 4.89 lt)  free-run RMSE 0.377634
+arm Janus    seed 21979014   orbit_seed 10148093844914609385 VPT 254 steps ( 4.60 lt)  free-run RMSE 0.404905
+arm Janus    seed 21979014   orbit_seed 13994705457426480036 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.364880
+arm Janus    seed 21979014   orbit_seed 15992716269590395088 VPT 214 steps ( 3.88 lt)  free-run RMSE 0.384682
+arm Janus    seed 21979014   orbit_seed 17609291198829902110 VPT 211 steps ( 3.82 lt)  free-run RMSE 0.402809
+arm Janus    seed 21979014   orbit_seed 10278487631456564348 VPT 197 steps ( 3.57 lt)  free-run RMSE 0.413968
+arm Janus    seed 21979014   orbit_seed 15001926598183616335 VPT 193 steps ( 3.50 lt)  free-run RMSE 0.345296
+
+=== ESN seed 21979015 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=8.26  mean=1.89  median=1.52  std=1.51
+  free-run RMSE    n=100  min=0.312807  max=0.500037  mean=0.422866  median=0.425198  std=0.035776
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979015   orbit_seed 110890624606369167 VPT 263 steps ( 4.76 lt)  free-run RMSE 0.312807
+arm Janus    seed 21979015   orbit_seed 5743361355973698255 VPT 173 steps ( 3.13 lt)  free-run RMSE 0.320535
+arm Janus    seed 21979015   orbit_seed 15001926598183616335 VPT 456 steps ( 8.26 lt)  free-run RMSE 0.348504
+arm Janus    seed 21979015   orbit_seed 8542863739336868721 VPT 146 steps ( 2.64 lt)  free-run RMSE 0.353625
+arm Janus    seed 21979015   orbit_seed 4007931443343602940 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.355035
+arm Janus    seed 21979015   orbit_seed 3124094803142223752 VPT  11 steps ( 0.20 lt)  free-run RMSE 0.359086
+arm Janus    seed 21979015   orbit_seed 9333312947715283458 VPT 366 steps ( 6.63 lt)  free-run RMSE 0.360976
+arm Janus    seed 21979015   orbit_seed 11957716583852103447 VPT 140 steps ( 2.54 lt)  free-run RMSE 0.362558
+arm Janus    seed 21979015   orbit_seed 16826883592623292674 VPT  83 steps ( 1.50 lt)  free-run RMSE 0.374131
+arm Janus    seed 21979015   orbit_seed 9136586738710644795 VPT 119 steps ( 2.16 lt)  free-run RMSE 0.376467
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979015   orbit_seed 15001926598183616335 VPT 456 steps ( 8.26 lt)  free-run RMSE 0.348504
+arm Janus    seed 21979015   orbit_seed 9333312947715283458 VPT 366 steps ( 6.63 lt)  free-run RMSE 0.360976
+arm Janus    seed 21979015   orbit_seed 4007931443343602940 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.355035
+arm Janus    seed 21979015   orbit_seed 6960850931340156210 VPT 307 steps ( 5.56 lt)  free-run RMSE 0.412045
+arm Janus    seed 21979015   orbit_seed 7658040265663960149 VPT 276 steps ( 5.00 lt)  free-run RMSE 0.386078
+arm Janus    seed 21979015   orbit_seed 110890624606369167 VPT 263 steps ( 4.76 lt)  free-run RMSE 0.312807
+arm Janus    seed 21979015   orbit_seed 9180653851401757815 VPT 240 steps ( 4.35 lt)  free-run RMSE 0.427588
+arm Janus    seed 21979015   orbit_seed 1006469775667417434 VPT 222 steps ( 4.02 lt)  free-run RMSE 0.392627
+arm Janus    seed 21979015   orbit_seed 17774587888087229762 VPT 220 steps ( 3.98 lt)  free-run RMSE 0.390171
+arm Janus    seed 21979015   orbit_seed 656605956440221769 VPT 219 steps ( 3.97 lt)  free-run RMSE 0.420841
+
+=== ESN seed 21979016 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=6.32  mean=1.91  median=1.55  std=1.41
+  free-run RMSE    n=100  min=0.347644  max=0.517461  mean=0.427846  median=0.428176  std=0.033397
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979016   orbit_seed 2097179478975684523 VPT 101 steps ( 1.83 lt)  free-run RMSE 0.347644
+arm Janus    seed 21979016   orbit_seed 10278487631456564348 VPT 231 steps ( 4.18 lt)  free-run RMSE 0.362654
+arm Janus    seed 21979016   orbit_seed 13994705457426480036 VPT 228 steps ( 4.13 lt)  free-run RMSE 0.368372
+arm Janus    seed 21979016   orbit_seed 2696958202838730100 VPT 190 steps ( 3.44 lt)  free-run RMSE 0.369579
+arm Janus    seed 21979016   orbit_seed 656605956440221769 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.380308
+arm Janus    seed 21979016   orbit_seed 5743361355973698255 VPT 250 steps ( 4.53 lt)  free-run RMSE 0.381354
+arm Janus    seed 21979016   orbit_seed 4007931443343602940 VPT 248 steps ( 4.49 lt)  free-run RMSE 0.382432
+arm Janus    seed 21979016   orbit_seed 9333312947715283458 VPT 319 steps ( 5.78 lt)  free-run RMSE 0.382471
+arm Janus    seed 21979016   orbit_seed 16400381301927481083 VPT 138 steps ( 2.50 lt)  free-run RMSE 0.383660
+arm Janus    seed 21979016   orbit_seed 6960850931340156210 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.385101
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979016   orbit_seed 6960850931340156210 VPT 349 steps ( 6.32 lt)  free-run RMSE 0.385101
+arm Janus    seed 21979016   orbit_seed 9333312947715283458 VPT 319 steps ( 5.78 lt)  free-run RMSE 0.382471
+arm Janus    seed 21979016   orbit_seed 17774587888087229762 VPT 292 steps ( 5.29 lt)  free-run RMSE 0.392694
+arm Janus    seed 21979016   orbit_seed 656605956440221769 VPT 275 steps ( 4.98 lt)  free-run RMSE 0.380308
+arm Janus    seed 21979016   orbit_seed 7658040265663960149 VPT 273 steps ( 4.94 lt)  free-run RMSE 0.395922
+arm Janus    seed 21979016   orbit_seed 4364257658748689037 VPT 266 steps ( 4.82 lt)  free-run RMSE 0.408082
+arm Janus    seed 21979016   orbit_seed 5743361355973698255 VPT 250 steps ( 4.53 lt)  free-run RMSE 0.381354
+arm Janus    seed 21979016   orbit_seed 4007931443343602940 VPT 248 steps ( 4.49 lt)  free-run RMSE 0.382432
+arm Janus    seed 21979016   orbit_seed 14645204808822872881 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.396441
+arm Janus    seed 21979016   orbit_seed 10278487631456564348 VPT 231 steps ( 4.18 lt)  free-run RMSE 0.362654
+
+=== ESN seed 21979017 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=6.34  mean=1.63  median=1.36  std=1.32
+  free-run RMSE    n=100  min=0.342965  max=0.494768  mean=0.423909  median=0.425934  std=0.033123
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979017   orbit_seed 6960850931340156210 VPT 350 steps ( 6.34 lt)  free-run RMSE 0.342965
+arm Janus    seed 21979017   orbit_seed 16826883592623292674 VPT  81 steps ( 1.47 lt)  free-run RMSE 0.348620
+arm Janus    seed 21979017   orbit_seed 18109467897393425238 VPT  88 steps ( 1.59 lt)  free-run RMSE 0.354979
+arm Janus    seed 21979017   orbit_seed 9333312947715283458 VPT 319 steps ( 5.78 lt)  free-run RMSE 0.356136
+arm Janus    seed 21979017   orbit_seed 7401924419259460404 VPT  53 steps ( 0.96 lt)  free-run RMSE 0.357071
+arm Janus    seed 21979017   orbit_seed 4416234110371315044 VPT 102 steps ( 1.85 lt)  free-run RMSE 0.363268
+arm Janus    seed 21979017   orbit_seed 1006469775667417434 VPT 153 steps ( 2.77 lt)  free-run RMSE 0.367825
+arm Janus    seed 21979017   orbit_seed 13994705457426480036 VPT 197 steps ( 3.57 lt)  free-run RMSE 0.375396
+arm Janus    seed 21979017   orbit_seed 7658040265663960149 VPT 169 steps ( 3.06 lt)  free-run RMSE 0.377062
+arm Janus    seed 21979017   orbit_seed 10278487631456564348 VPT 165 steps ( 2.99 lt)  free-run RMSE 0.377733
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979017   orbit_seed 6960850931340156210 VPT 350 steps ( 6.34 lt)  free-run RMSE 0.342965
+arm Janus    seed 21979017   orbit_seed 4007931443343602940 VPT 339 steps ( 6.14 lt)  free-run RMSE 0.397154
+arm Janus    seed 21979017   orbit_seed 9333312947715283458 VPT 319 steps ( 5.78 lt)  free-run RMSE 0.356136
+arm Janus    seed 21979017   orbit_seed 8542863739336868721 VPT 305 steps ( 5.52 lt)  free-run RMSE 0.405531
+arm Janus    seed 21979017   orbit_seed 4364257658748689037 VPT 234 steps ( 4.24 lt)  free-run RMSE 0.381450
+arm Janus    seed 21979017   orbit_seed 13994705457426480036 VPT 197 steps ( 3.57 lt)  free-run RMSE 0.375396
+arm Janus    seed 21979017   orbit_seed 9180653851401757815 VPT 194 steps ( 3.51 lt)  free-run RMSE 0.407859
+arm Janus    seed 21979017   orbit_seed 656605956440221769 VPT 183 steps ( 3.31 lt)  free-run RMSE 0.435406
+arm Janus    seed 21979017   orbit_seed 57026663349024645 VPT 180 steps ( 3.26 lt)  free-run RMSE 0.396520
+arm Janus    seed 21979017   orbit_seed 12997851309749444307 VPT 178 steps ( 3.22 lt)  free-run RMSE 0.391328
+
+=== ESN seed 21979018 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.20  max=5.69  mean=1.50  median=1.30  std=1.10
+  free-run RMSE    n=100  min=0.347906  max=0.500068  mean=0.436806  median=0.439309  std=0.026050
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979018   orbit_seed 656605956440221769 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.347906
+arm Janus    seed 21979018   orbit_seed 13994705457426480036 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.354846
+arm Janus    seed 21979018   orbit_seed 8542863739336868721 VPT  69 steps ( 1.25 lt)  free-run RMSE 0.383881
+arm Janus    seed 21979018   orbit_seed 11950338288678257378 VPT  57 steps ( 1.03 lt)  free-run RMSE 0.384998
+arm Janus    seed 21979018   orbit_seed 17609291198829902110 VPT 144 steps ( 2.61 lt)  free-run RMSE 0.387462
+arm Janus    seed 21979018   orbit_seed 4007931443343602940 VPT 212 steps ( 3.84 lt)  free-run RMSE 0.390599
+arm Janus    seed 21979018   orbit_seed 11569254123151793499 VPT  38 steps ( 0.69 lt)  free-run RMSE 0.392455
+arm Janus    seed 21979018   orbit_seed 6960850931340156210 VPT  16 steps ( 0.29 lt)  free-run RMSE 0.394828
+arm Janus    seed 21979018   orbit_seed 18109467897393425238 VPT 121 steps ( 2.19 lt)  free-run RMSE 0.398690
+arm Janus    seed 21979018   orbit_seed 7441876151362698927 VPT  99 steps ( 1.79 lt)  free-run RMSE 0.400894
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979018   orbit_seed 656605956440221769 VPT 314 steps ( 5.69 lt)  free-run RMSE 0.347906
+arm Janus    seed 21979018   orbit_seed 9333312947715283458 VPT 297 steps ( 5.38 lt)  free-run RMSE 0.417019
+arm Janus    seed 21979018   orbit_seed 13994705457426480036 VPT 281 steps ( 5.09 lt)  free-run RMSE 0.354846
+arm Janus    seed 21979018   orbit_seed 5743361355973698255 VPT 244 steps ( 4.42 lt)  free-run RMSE 0.418813
+arm Janus    seed 21979018   orbit_seed 4007931443343602940 VPT 212 steps ( 3.84 lt)  free-run RMSE 0.390599
+arm Janus    seed 21979018   orbit_seed 110890624606369167 VPT 187 steps ( 3.39 lt)  free-run RMSE 0.460652
+arm Janus    seed 21979018   orbit_seed 10278487631456564348 VPT 187 steps ( 3.39 lt)  free-run RMSE 0.446579
+arm Janus    seed 21979018   orbit_seed 15001926598183616335 VPT 156 steps ( 2.83 lt)  free-run RMSE 0.439388
+arm Janus    seed 21979018   orbit_seed 8425156953022204017 VPT 155 steps ( 2.81 lt)  free-run RMSE 0.456979
+arm Janus    seed 21979018   orbit_seed 17609291198829902110 VPT 144 steps ( 2.61 lt)  free-run RMSE 0.387462
+
+=== ESN seed 21979019 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)         n=100  min=0.22  max=8.86  mean=2.12  median=1.74  std=1.53
+  free-run RMSE    n=100  min=0.319724  max=0.496625  mean=0.416611  median=0.417837  std=0.035227
+
+=== Top 10 lowest free-run RMSE ===
+arm Janus    seed 21979019   orbit_seed 656605956440221769 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.319724
+arm Janus    seed 21979019   orbit_seed 13095175807113877781 VPT 489 steps ( 8.86 lt)  free-run RMSE 0.320564
+arm Janus    seed 21979019   orbit_seed 7401924419259460404 VPT 160 steps ( 2.90 lt)  free-run RMSE 0.338594
+arm Janus    seed 21979019   orbit_seed 8425156953022204017 VPT 160 steps ( 2.90 lt)  free-run RMSE 0.340316
+arm Janus    seed 21979019   orbit_seed 7367918243184862287 VPT 328 steps ( 5.94 lt)  free-run RMSE 0.345056
+arm Janus    seed 21979019   orbit_seed 9294122214858465305 VPT  81 steps ( 1.47 lt)  free-run RMSE 0.354326
+arm Janus    seed 21979019   orbit_seed 4804985241073930135 VPT 224 steps ( 4.06 lt)  free-run RMSE 0.354356
+arm Janus    seed 21979019   orbit_seed 4416234110371315044 VPT 208 steps ( 3.77 lt)  free-run RMSE 0.361306
+arm Janus    seed 21979019   orbit_seed 15776701060910552741 VPT 136 steps ( 2.46 lt)  free-run RMSE 0.362439
+arm Janus    seed 21979019   orbit_seed 15001926598183616335 VPT 233 steps ( 4.22 lt)  free-run RMSE 0.367689
+
+=== Top 10 highest VPT (lt) ===
+arm Janus    seed 21979019   orbit_seed 13095175807113877781 VPT 489 steps ( 8.86 lt)  free-run RMSE 0.320564
+arm Janus    seed 21979019   orbit_seed 7367918243184862287 VPT 328 steps ( 5.94 lt)  free-run RMSE 0.345056
+arm Janus    seed 21979019   orbit_seed 656605956440221769 VPT 315 steps ( 5.71 lt)  free-run RMSE 0.319724
+arm Janus    seed 21979019   orbit_seed 5237269684808350417 VPT 261 steps ( 4.73 lt)  free-run RMSE 0.411767
+arm Janus    seed 21979019   orbit_seed 11957716583852103447 VPT 256 steps ( 4.64 lt)  free-run RMSE 0.419176
+arm Janus    seed 21979019   orbit_seed 4007931443343602940 VPT 247 steps ( 4.47 lt)  free-run RMSE 0.425708
+arm Janus    seed 21979019   orbit_seed 6960850931340156210 VPT 246 steps ( 4.46 lt)  free-run RMSE 0.402748
+arm Janus    seed 21979019   orbit_seed 10278487631456564348 VPT 241 steps ( 4.36 lt)  free-run RMSE 0.371317
+arm Janus    seed 21979019   orbit_seed 9180653851401757815 VPT 237 steps ( 4.29 lt)  free-run RMSE 0.407864
+arm Janus    seed 21979019   orbit_seed 15001926598183616335 VPT 233 steps ( 4.22 lt)  free-run RMSE 0.367689
+[seed 21979012] free-run 100/100
+
+Process finished with exit code 0
+
+========================================================================
+POST-HOC: orbit ranking across ESN seeds (from leaderboard rows only)
+Source: top-10 VPT + top-10 RMSE per seed in this log — NOT the full 30x100 grid
+Unique seed-orbit pairs observed: 486 | unique orbits: 78 of 100 | full grid would be 3000
+mean@v10 = mean VPT among seeds where orbit made that seed VPT top-10 (selection-biased)
+n_v10 = count of ESN seeds (of 30) where orbit appeared on the VPT top-10 board
+========================================================================
+
+=== RACK by PEAK VPT (lt) ===
+ rk   peak steps n_v10 mean@v10  med@v10 n_any  orbit_seed                 peak_ESN
+  1  10.07   556    23     5.76     5.78    25  9333312947715283458        21978990
+  2   9.18   507     4     5.35     4.31     9  18109467897393425238       21979013
+  3   8.86   489     3     5.62     4.06     4  13095175807113877781       21979019
+  4   8.26   456    10     4.66     4.22    15  15001926598183616335       21979015
+  5   7.88   435    16     4.81     4.39    17  13994705457426480036       21979008
+  6   7.81   431     3     4.75     3.82     5  17609291198829902110       21979002
+  7   7.64   422    28     5.97     6.12    29  4007931443343602940        21979001
+  8   7.35   406     3     6.84     7.32     3  10324059224234835327       21979004
+  9   7.26   401    29     5.57     5.61    29  656605956440221769         21979010
+ 10   7.06   390     5     4.65     4.24     9  8425156953022204017        21979005
+ 11   6.99   386    11     4.66     4.35    14  9180653851401757815        21979012
+ 12   6.70   370     4     6.44     6.61     6  1937234734715600964        21979010
+ 13   6.67   368    18     5.49     5.58    21  6960850931340156210        21978992
+ 14   6.56   362    17     4.23     4.38    19  5743361355973698255        21978997
+ 15   6.36   351     3     5.38     4.94     7  2696958202838730100        21978990
+ 16   6.10   337     7     5.05     4.67     9  5237269684808350417        21979011
+ 17   6.00   331     6     4.70     4.08     8  11569254123151793499       21978990
+ 18   5.98   330     2     5.96     5.96     5  7367918243184862287        21979006
+ 19   5.96   329     1     5.96     5.96     5  14283968312830459669       21978997
+ 20   5.87   324     1     5.87     5.87     1  12664874877060730678       21979001
+ 21   5.80   320     3     4.83     4.98     8  9515810860901762052        21979000
+ 22   5.60   309     2     4.88     4.88     6  9136586738710644795        21979003
+ 23   5.58   308     1     5.58     5.58    12  7401924419259460404        21979007
+ 24   5.54   306     1     5.54     5.54     7  9294122214858465305        21978995
+ 25   5.52   305     3     5.26     5.49     8  8542863739336868721        21979017
+ 26   5.51   304     1     5.51     5.51     2  13160435873346201919       21979013
+ 27   5.49   303     2     4.51     4.51     3  14719543417854726190       21978997
+ 28   5.40   298     1     5.40     5.40     4  14503336125504450378       21978990
+ 29   5.36   296     6     4.62     4.62     6  17774587888087229762       21979001
+ 30   5.36   296     3     5.10     5.29     5  14193348660813217918       21979012
+ 31   5.36   296     2     5.00     5.00     9  11957716583852103447       21978994
+ 32   5.29   292     3     4.33     3.91     7  4416234110371315044        21978997
+ 33   5.25   290     1     5.25     5.25     1  1906335535637589284        21978990
+ 34   5.23   289     2     4.55     4.55     5  15992716269590395088       21979009
+ 35   5.16   285     2     4.88     4.88     3  10148093844914609385       21978993
+ 36   5.16   285     1     5.16     5.16     2  3077346833989813773        21979004
+ 37   5.16   285     1     5.16     5.16     3  13075496520564732781       21979013
+ 38   5.14   284     1     5.14     5.14     1  9529653278432036934        21979009
+ 39   5.11   282    18     4.32     4.30    20  7658040265663960149        21978993
+ 40   5.07   280     2     4.32     4.32     2  18303404106008543196       21979000
+ 41   4.89   270     3     4.43     4.20     4  12735002845385499196       21978990
+ 42   4.87   269     3     4.64     4.82     3  4364257658748689037        21978992
+ 43   4.87   269     2     4.45     4.45     5  248130967593251468         21978991
+ 44   4.82   266     3     4.57     4.78     7  9015661769437736282        21979012
+ 45   4.78   264     5     4.08     4.13    10  110890624606369167         21978998
+ 46   4.69   259     2     4.66     4.66     2  7401497959599845173        21979006
+ 47   4.67   258     2     4.04     4.04     7  2610235269337149668        21978995
+ 48   4.60   254     3     4.15     3.95     6  1249439214165998073        21979009
+ 49   4.49   248     1     4.49     4.49     5  11101717626751391262       21979000
+ 50   4.44   245     9     3.98     4.18    10  10278487631456564348       21979004
+ 51   4.42   244     3     4.39     4.38     3  15378080442305734864       21979006
+ 52   4.31   238     3     4.27     4.27     3  14645204808822872881       21979008
+ 53   4.09   226     1     4.02     4.02     6  4804985241073930135        21979012
+ 54   4.04   223     3     3.95     3.98     4  17224751303681612354       21978992
+ 55   4.04   223     1     4.02     4.02     3  4741737415666583010        21979005
+ 56   4.04   223     0      n/a      n/a     1  651436683848788812         21979002
+ 57   4.02   222     2     4.01     4.01     3  1006469775667417434        21979015
+ 58   3.77   208     2     3.77     3.77     8  2097179478975684523        21978996
+ 59   3.26   180     1     3.26     3.26     1  57026663349024645          21979017
+ 60   3.22   178     1     3.22     3.22     3  12997851309749444307       21979017
+ 61   2.86   158     0      n/a      n/a     2  4712281022348717183        21978998
+ 62   2.72   150     0      n/a      n/a     2  18001397679514996404       21978991
+ 63   2.50   138     0      n/a      n/a     3  16400381301927481083       21979016
+ 64   2.46   136     0      n/a      n/a     3  15776701060910552741       21979019
+ 65   1.79    99     0      n/a      n/a     1  7441876151362698927        21979018
+ 66   1.63    90     0      n/a      n/a     2  12661963445150923806       21978991
+ 67   1.52    84     0      n/a      n/a     5  16826883592623292674       21978995
+ 68   1.16    64     0      n/a      n/a     1  9717908683336067732        21978997
+ 69   1.16    64     0      n/a      n/a     1  7713847214078855622        21979003
+ 70   1.07    59     0      n/a      n/a     2  11950338288678257378       21979006
+ 71   1.01    56     0      n/a      n/a     5  16104699420182321933       21978990
+ 72   0.91    50     0      n/a      n/a     1  10603344179402640566       21978996
+ 73   0.91    50     0      n/a      n/a     1  2869500753416085466        21979002
+ 74   0.38    21     0      n/a      n/a     2  10801814468121717024       21978991
+ 75   0.36    20     0      n/a      n/a     1  11198218363179429788       21979003
+ 76   0.29    16     0      n/a      n/a     1  12284454596439506926       21979003
+ 77   0.25    14     0      n/a      n/a     2  11794286179085912200       21978996
+ 78   0.22    12     0      n/a      n/a     3  3124094803142223752        21978998
+
+=== RACK by MEAN VPT on VPT top-10 boards (require n_v10 >= 5) ===
+ rk mean@v10  med@v10  min@v10   peak n_v10  orbit_seed
+  1     5.97     6.12     3.84   7.64    28  4007931443343602940
+  2     5.76     5.78     4.13  10.07    23  9333312947715283458
+  3     5.57     5.61     3.31   7.26    29  656605956440221769
+  4     5.49     5.58     4.40   6.67    18  6960850931340156210
+  5     5.05     4.67     4.56   6.10     7  5237269684808350417
+  6     4.81     4.39     3.53   7.88    16  13994705457426480036
+  7     4.70     4.08     4.02   6.00     6  11569254123151793499
+  8     4.66     4.22     2.83   8.26    10  15001926598183616335
+  9     4.66     4.35     3.51   6.99    11  9180653851401757815
+ 10     4.65     4.24     2.81   7.06     5  8425156953022204017
+ 11     4.62     4.62     3.91   5.36     6  17774587888087229762
+ 12     4.32     4.30     3.59   5.11    18  7658040265663960149
+ 13     4.23     4.38     3.55   6.56    17  5743361355973698255
+ 14     4.08     4.13     3.33   4.78     5  110890624606369167
+ 15     3.98     4.18     3.39   4.44     9  10278487631456564348
+
+=== RACK by FREQUENCY in VPT top-10 (consistency across ESN seeds) ===
+ rk n_v10 mean@v10  med@v10   peak  orbit_seed
+  1    29     5.57     5.61   7.26  656605956440221769
+  2    28     5.97     6.12   7.64  4007931443343602940
+  3    23     5.76     5.78  10.07  9333312947715283458
+  4    18     5.49     5.58   6.67  6960850931340156210
+  5    18     4.32     4.30   5.11  7658040265663960149
+  6    17     4.23     4.38   6.56  5743361355973698255
+  7    16     4.81     4.39   7.88  13994705457426480036
+  8    11     4.66     4.35   6.99  9180653851401757815
+  9    10     4.66     4.22   8.26  15001926598183616335
+ 10     9     3.98     4.18   4.44  10278487631456564348
+ 11     7     5.05     4.67   6.10  5237269684808350417
+ 12     6     4.70     4.08   6.00  11569254123151793499
+ 13     6     4.62     4.62   5.36  17774587888087229762
+ 14     5     4.65     4.24   7.06  8425156953022204017
+ 15     5     4.08     4.13   4.78  110890624606369167
+ 16     4     6.44     6.61   6.70  1937234734715600964
+ 17     4     5.35     4.31   9.18  18109467897393425238
+ 18     3     6.84     7.32   7.35  10324059224234835327
+ 19     3     5.62     4.06   8.86  13095175807113877781
+ 20     3     5.38     4.94   6.36  2696958202838730100
+ 21     3     5.26     5.49   5.52  8542863739336868721
+ 22     3     5.10     5.29   5.36  14193348660813217918
+ 23     3     4.83     4.98   5.80  9515810860901762052
+ 24     3     4.75     3.82   7.81  17609291198829902110
+ 25     3     4.64     4.82   4.87  4364257658748689037
+ 26     3     4.57     4.78   4.82  9015661769437736282
+ 27     3     4.43     4.20   4.89  12735002845385499196
+ 28     3     4.39     4.38   4.42  15378080442305734864
+ 29     3     4.33     3.91   5.29  4416234110371315044
+ 30     3     4.27     4.27   4.31  14645204808822872881
+ 31     3     4.15     3.95   4.60  1249439214165998073
+ 32     3     3.95     3.98   4.04  17224751303681612354
+ 33     2     5.96     5.96   5.98  7367918243184862287
+ 34     2     5.00     5.00   5.36  11957716583852103447
+ 35     2     4.88     4.88   5.16  10148093844914609385
+ 36     2     4.88     4.88   5.60  9136586738710644795
+ 37     2     4.66     4.66   4.69  7401497959599845173
+ 38     2     4.55     4.55   5.23  15992716269590395088
+ 39     2     4.51     4.51   5.49  14719543417854726190
+ 40     2     4.45     4.45   4.87  248130967593251468
+ 41     2     4.32     4.32   5.07  18303404106008543196
+ 42     2     4.04     4.04   4.67  2610235269337149668
+ 43     2     4.01     4.01   4.02  1006469775667417434
+ 44     2     3.77     3.77   3.77  2097179478975684523
+ 45     1     5.96     5.96   5.96  14283968312830459669
+ 46     1     5.87     5.87   5.87  12664874877060730678
+ 47     1     5.58     5.58   5.58  7401924419259460404
+ 48     1     5.54     5.54   5.54  9294122214858465305
+ 49     1     5.51     5.51   5.51  13160435873346201919
+ 50     1     5.40     5.40   5.40  14503336125504450378
+ 51     1     5.25     5.25   5.25  1906335535637589284
+ 52     1     5.16     5.16   5.16  3077346833989813773
+ 53     1     5.16     5.16   5.16  13075496520564732781
+ 54     1     5.14     5.14   5.14  9529653278432036934
+ 55     1     4.49     4.49   4.49  11101717626751391262
+ 56     1     4.02     4.02   4.09  4804985241073930135
+ 57     1     4.02     4.02   4.04  4741737415666583010
+ 58     1     3.26     3.26   3.26  57026663349024645
+ 59     1     3.22     3.22   3.22  12997851309749444307
+
+=== Storefront orbit detail ===
+orbit 9333312947715283458
+  peak 10.07 lt (556 steps) on seed 21978990
+  in VPT top-10 on 23/30 seeds
+  VPT when in top-10: 10.07, 6.67, 6.67, 6.63, 6.56, 6.50, 6.47, 6.45, 6.00, 5.81, 5.78, 5.78, 5.71, 5.38, 5.14, 4.80, 4.75, 4.75, 4.75, 4.71, 4.69, 4.17, 4.13
+  mean@v10=5.76  med=5.78  min=4.13
+
+Notes:
+- Peak lottery orbits (high peak, low n_v10): e.g. 181094... 9.18, 130951... 8.86 — seed-orbit resonance.
+- Best typical long-horizon orbit by mean@v10: 4007931443343602940 (5.97 lt, n_v10=28).
+- Most consistent: 656605956440221769 (n_v10=29/30).
+- Storefront clip: 9333312947715283458 (peak 10.07 lt, n_v10=23); paper number stays survey mean VPT.
+- 22 of 100 orbits never appear on either top-10 board in this log (invisible; likely hard).
