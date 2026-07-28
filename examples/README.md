@@ -117,20 +117,17 @@ and multi-DIM lookup tables (archived reference campaigns) are in
 
 ## NARMA
 
-Primary **open-loop** validator: white input `u(t)` drives the reservoir; the
-readout reconstructs NARMA-N output `y(t)` (memory depth + nonlinear mixing).
-**One fixed ESN configuration** across tanh-wrapped orders **30 / 50 / 70**
-(same knobs, same 20 seeds) — see [`NARMA/NARMA.md`](NARMA/NARMA.md).
+Primary **open-loop** validator: white input `u(t)` → reconstruct NARMA-N `y(t)`.
+**One fixed** config across tanh-wrapped orders 30 / 50 / 70 (**best 5 of 20**,
+test NRMSE):
 
-**What it shows:**
-- Correct input/target alignment (system identification, not one-step forecasting)
-- Shared-op-point multi-seed NRMSE (**best 5 of 20**): N30 mean **0.0441**, N50
-  **0.0751**, N70 **0.1251**
-- `tanh`-wrapped fixed coefficients (`NARMA_TANH_WRAP`) so order scales honestly
+| Order | Best-5 mean |
+|------:|------------:|
+| 30 | **0.0441** |
+| 50 | **0.0751** |
+| 70 | **0.1251** |
 
-Optional CLI: `NARMA.exe [order]` (integer ≥ 2; default 50). Knobs and seed list
-live in `NARMA.cpp` `main()`. Walkthrough and seed tables:
-[`NARMA/NARMA.md`](NARMA/NARMA.md).
+CLI: `NARMA.exe [order]`. Full write-up: [`NARMA/NARMA.md`](NARMA/NARMA.md).
 
 ## Building
 

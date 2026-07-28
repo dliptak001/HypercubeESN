@@ -26,12 +26,16 @@ construction rather than by luck. The result is an ESN that is at once
 mathematically clean, strikingly memory-frugal, and strong where reservoirs are
 meant to be: long memory and nonlinear computation.
 
-**Headline result:** **one fixed** HypercubeESN config on tanh-wrapped **NARMA-30 /
-50 / 70** (same knobs, 20 seeds each): N30 **best-5-of-20** mean test NRMSE
-**0.0441** (best **0.0419**), well below the rough literature “strong / large-N”
-floor (~0.30; protocols poorly standardized). Details in
-[Spotlight: NARMA](#spotlight-narma) and
-[examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
+**Headline result** — one fixed config, tanh-wrapped NARMA, **best 5 of 20** seeds
+(test NRMSE):
+
+| Order | Best-5 mean |
+|------:|------------:|
+| 30 | **0.0441** |
+| 50 | **0.0751** |
+| 70 | **0.1251** |
+
+[Spotlight](#spotlight-narma) · [full write-up](examples/NARMA/NARMA.md)
 
 ## What is Reservoir Computing?
 
@@ -86,27 +90,17 @@ reservoir computing.
 
 ## Spotlight: NARMA
 
-NARMA is the classic hard open-loop reservoir stress test: long nonlinear memory
-plus a delayed input product. HypercubeESN’s current campaign runs **one fixed
-configuration** on tanh-wrapped orders **30 / 50 / 70** (same knobs, same 20
-seeds — only the order changes). Featured multi-seed story: **best 5 of 20**
-(lowest NRMSE):
+Open-loop system identification under **one fixed** HypercubeESN configuration
+(orders 30 / 50 / 70; only the recurrence order changes). Multi-seed story:
+**best 5 of 20** (test NRMSE).
 
-| Order | Best-5 mean NRMSE | Best seed |
-|------:|------------------:|----------:|
-| 30 | **0.0441** | **0.0419** |
-| 50 | **0.0751** | **0.0742** |
-| 70 | **0.1251** | **0.1225** |
+| Order | Best-5 mean |
+|------:|------------:|
+| 30 | **0.0441** |
+| 50 | **0.0751** |
+| 70 | **0.1251** |
 
-| | |
-|--|--|
-| Setup | tanh-wrapped · DIM 10 (N=1024) · M=32 · input_scaling 0.03 · B=2 slices |
-| Data | warmup 300 · collect 32000 (train 25600 / test 6400) · **20** seeds |
-| Readout | HypercubeCNN, 16593 parameters |
-
-Rough literature “strong” bands for order 30 sit near **0.30–0.50** NRMSE
-(protocols poorly standardized). Full protocol, seed matrix, and caveats:
-[examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
+Protocol, seed matrix, full pool: [examples/NARMA/NARMA.md](examples/NARMA/NARMA.md).
 
 ## Why a Hypercube?
 
@@ -144,7 +138,7 @@ scaling, history depth). A reservoir is *specified*, not stored.
 
 | Property | Detail |
 |---|---|
-| Neurons | N = 2^DIM neurons on hypercube vertices — DIM 5–16, so 32 to 65,536 |
+| Neurons | N = 2<sup>DIM</sup> on hypercube vertices; **DIM** = hypercube dimension (5–16 → 32 to 65,536 neurons) |
 | Connectivity | DIM neighbors per neuron: the single-bit-flip (Hamming-distance-1) vertices, addressed `v XOR (1 << i)` |
 | Addressing | XOR on vertex indices — O(1), branchless, zero storage (no adjacency list) |
 | Neuron model | Leaky-integrator tanh: `state = (1 − leak)·prev + leak·tanh(drive)` |
@@ -245,7 +239,7 @@ The build produces these executables:
 | `SignalClassification` | Multi-class waveform recognition with confusion matrix |
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
 | `MemoryCapacity` | Jaeger memory-capacity diagnostic (white-noise MC sweep) |
-| `NARMA` | NARMA open-loop validator — one config across 30/50/70; N30 best-5 mean **0.0441**; see [NARMA.md](examples/NARMA/NARMA.md) |
+| `NARMA` | NARMA open-loop validator (orders 30/50/70, best-5 NRMSE 0.0441 / 0.0751 / 0.1251) — [NARMA.md](examples/NARMA/NARMA.md) |
 | `Lorenz` | Lorenz attractor tracking / free-run |
 
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
@@ -266,7 +260,7 @@ HypercubeESN/
     SignalClassification.cpp/md  Multi-class waveform recognition
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
-    NARMA/                       NARMA validator (one config · N30/50/70 · best-5 of 20)
+    NARMA/                       NARMA validator (one config · N30/50/70)
     Lorenz/                      Lorenz attractor tracking / free-run
 
   python/                Python bindings (pybind11 module + pyproject)
