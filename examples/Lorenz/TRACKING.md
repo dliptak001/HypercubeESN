@@ -274,13 +274,16 @@ VPT 1.91 vs 2.03, duty 0.472 vs 0.475, RMSE ~0.422 both; Janus ceiling 10.07 vs
 fwd 9.33; fwd better VPT mean on 26/30 seeds).
 
 > If the goal is a clean free-run storefront and literature-comparable story,
-> default to forward-only (or a true unassisted free-run harness) and treat Janus
-> as optional / research, not the main path. Keep the ablation result in TRACKING
-> as the reason: matched 30×100, past not load-bearing for mean VPT/GS.
+> default the **example** path to forward-only (or a true unassisted free-run
+> harness). **Janus is not discarded** — it moves into a Research Areas tree for
+> parameter-space exploration (past dose, lag curriculum, dual-drive stress,
+> ablations, vanilla-ESN-under-Janus, etc.). Run 4/5 only shows past is not
+> load-bearing for mean VPT/GS at *this* op-point; that is one point in a large
+> space, not a verdict on Janus as a research program.
 
-**To lock in:** flip `config::FORWARD_ONLY` default / example narrative (README,
-queue, optional Pathak-style unassisted path) — do not re-run A/B unless op-point
-changes.
+**To lock in (example only):** simplify `examples/Lorenz` narrative / default
+toward forward free-run; keep Janus alive under Research Areas — do not re-run
+A/B at the same dose unless exploring a new point in param space.
 
 ### Verify duty (suspected reverse) + err-vs-lt plots
 
@@ -354,16 +357,36 @@ unlike textbook die-after-VPT free-run.
 
 ### Tomorrow — Research Areas split + simplify example Lorenz
 
+**Intent:** Janus stays. Research Areas is where Janus **grows** (param sweeps,
+dose, curriculum, stress tests, vanilla comparison) — not a graveyard. The
+example path gets simpler so storefront ≠ research cockpit.
+
 - [ ] Create top-level **`Research Areas/`** (or `ResearchAreas/`) folder in the
-  repo and **copy** the full Lorenz project there as the Janus / ablation /
-  research sandbox (history, TRACKING, dual-cursor work preserved).
+  repo and **copy** the full Lorenz project there as the **active Janus research
+  sandbox** (history, TRACKING, dual-cursor, ablation knobs, room for sweeps).
 - [ ] Keep **`examples/Lorenz/`** as the public example path, but **rip out Janus
-  cursor wiring**: simple, straightforward, forward-only timebase — a single
-  forward-moving “future” cursor (likely **relabel**; drop past/anchor port
-  complexity from the default example).
-- [ ] Example target: clean free-run storefront (literature-comparable story);
-  research tree keeps half-anchored / A/B / curriculum experiments without
-  burdening the example README.
+  cursor wiring there only**: simple forward-moving free-run timebase (likely
+  relabel the “future” cursor); drop past/anchor complexity from the *example*.
+- [ ] Example target: clean free-run storefront (literature-comparable story).
+- [ ] Research target: Janus param-space exploration (input/feedback scaling,
+  window/lag geometry, θ, FORWARD_ONLY × dose, train-vs-free-run ablations,
+  re-lock signature, vanilla ESN under Janus, etc.) without burdening example
+  README.
+
+### Research — vanilla ESN under the Janus cursor method (Python)
+
+Not “vanilla free-run without Janus.” Goal: **classical sparse random ESN + ridge
+(or simple linear) readout**, driven by the **same Janus method** as the C++
+harness (dual cursors, 4+4 past/future ports, lag curriculum, free-run = real
+past + self-feedback future, same θ VPT/duty/relock scoring).
+
+- [ ] **Python MVP** (~1–1.5 day): NumPy vanilla ESN; Janus geometry
+      (port/reimplement); train + free-run; metrics aligned with Runs 4–5;
+      small multi-seed table under Research Areas (preferred home).
+- [ ] Answer: under Janus, does classic ESN (a) wash like Hypercube, (b) need
+      the past, (c) die-after-VPT, or (d) collapse?
+- [ ] Optional later: matched orbit/seed survey vs Hypercube Janus log; C++
+      twin only if the same CLI/survey binary is required.
 
 ### Historical FSF (feature removed — log only)
 
