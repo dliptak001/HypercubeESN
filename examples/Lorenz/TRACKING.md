@@ -224,9 +224,44 @@ Best single free-run RMSE among leaderboards: **0.277** (9.18 lt).
 #### Verdict (Run 4)
 
 Solid Janus reference at production survey size: **~1.9 lt** typical first-upcrossing,
-**~0.42** free-run RMSE, with rare ceiling runs to **~10 lt**. RMSE is tight across
-seeds; VPT is orbit-lottery. Use this row as the **(A)** anchor for the forward-only
-ablation (Run 5 pending).
+with rare ceiling runs to **~10 lt**. VPT is orbit-lottery. **(A)** anchor for the
+forward-only ablation (Run 5).
+
+---
+
+### Run 5 — Forward-only 30×100 (`FORWARD_ONLY = true`)
+
+**Date:** 2026-07-28  
+**Command:** `Lorenz.exe 30 100` (Release)  
+**Arm:** forward-only — past input zeroed every ReservoirStep (train + washout + free-run)  
+**Raw log:** `examples/Lorenz/Lorenz.exe-30-100_future.txt`  
+**Matched to Run 4:** same dim/M/seeds/100 orbits protocol.
+
+GS proxies **present** in this capture (duty / n_relock / n_unlock / meanLock).
+
+#### Aggregate (mean of 30 per-ESN-seed stats) — VPT + GS primary
+
+| Arm | Survey | VPT mean (lt) | VPT max (lt) | duty mean | n_relock mean | Notes |
+|-----|--------|--------------:|-------------:|----------:|--------------:|-------|
+| 4 Janus | 30×100 | 1.91 | 10.07 | *(not in log)* | *(not in log)* | past + future |
+| **5 fwd-only** | 30×100 | **2.03** | **9.33** | **0.475** | **15.7** | past=0 |
+
+Per-seed VPT means (fwd-only): min 1.61 / median 2.05 / max 2.29.  
+Duty means cluster tightly (~0.45–0.49). n_relock means ~15–16 per free-run window.
+
+#### A/B (Δ = fwd-only − Janus) on headline VPT
+
+| Metric | Janus (4) | Fwd-only (5) | Δ |
+|--------|----------:|-------------:|--:|
+| VPT mean (lt) | 1.91 | **2.03** | **+0.12** |
+| VPT max (lt) | **10.07** | 9.33 | −0.74 |
+| duty mean | — | 0.475 | GS only on arm B log |
+
+**Do not over-read +0.12 lt** — same order as across-seed VPT scatter (Run 4 std ~0.15). Ceiling still higher on Janus (storefront clip orbit). Forward-only does **not** collapse first-upcrossing; if anything it sits slightly above Janus mean in this pair of 30×100 runs.
+
+#### Verdict (Run 5 + A/B)
+
+Zeroing past is **not** a VPT cliff at this op-point. Mean VPT holds (~2 lt); GS duty ~0.48 with ~16 relocks/window shows re-lock is active under forward-only. Prefer GS-complete Janus re-run if claiming duty/relock A/B (arm A log lacked those lines). Primary claim so far: **past is not load-bearing for mean VPT** in this matched survey.
 
 ---
 
@@ -235,8 +270,8 @@ ablation (Run 5 pending).
 ### Post-FSF (current code — FSF removed)
 
 - [x] **Janus baseline** (`FORWARD_ONLY = false`): Run 4 — `30 × 100`  
-- [ ] **Forward-only** (`FORWARD_ONLY = true`): matched seeds/orbits; zero past every step  
-- [ ] Side-by-side VPT (lt) + free-run RMSE (and GS duty/relock if binary prints them)
+- [x] **Forward-only** (`FORWARD_ONLY = true`): Run 5 — `30 × 100`  
+- [x] Side-by-side VPT (lt) — Run 4 vs 5; GS full only on Run 5 log
 
 ### Historical FSF (feature removed — log only)
 
