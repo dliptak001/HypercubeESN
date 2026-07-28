@@ -267,11 +267,27 @@ Zeroing past is **not** a VPT cliff at this op-point. Mean VPT holds (~2 lt); GS
 
 ## Queue / next experiments
 
+### Decision pending — lock-in tomorrow (2026-07-29)
+
+Parked after Run 4 vs 5 re-read (both logs now have full GS; mean-of-means
+VPT 1.91 vs 2.03, duty 0.472 vs 0.475, RMSE ~0.422 both; Janus ceiling 10.07 vs
+fwd 9.33; fwd better VPT mean on 26/30 seeds).
+
+> If the goal is a clean free-run storefront and literature-comparable story,
+> default to forward-only (or a true unassisted free-run harness) and treat Janus
+> as optional / research, not the main path. Keep the ablation result in TRACKING
+> as the reason: matched 30×100, past not load-bearing for mean VPT/GS.
+
+**To lock in:** flip `config::FORWARD_ONLY` default / example narrative (README,
+queue, optional Pathak-style unassisted path) — do not re-run A/B unless op-point
+changes.
+
 ### Post-FSF (current code — FSF removed)
 
 - [x] **Janus baseline** (`FORWARD_ONLY = false`): Run 4 — `30 × 100`  
 - [x] **Forward-only** (`FORWARD_ONLY = true`): Run 5 — `30 × 100`  
-- [x] Side-by-side VPT (lt) — Run 4 vs 5; GS full only on Run 5 log
+- [x] Side-by-side VPT + GS (duty/relock) — Run 4 vs 5 both logs complete  
+- [ ] **Lock-in** storefront default = forward-only / unassisted; Janus optional (see note above)
 
 ### Historical FSF (feature removed — log only)
 
