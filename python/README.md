@@ -6,10 +6,10 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/dliptak001/HypercubeESN/blob/main/LICENSE)
 
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
-hypercube. Neurons sit on the vertices, wired to their single-bit-flip neighbors
-by XOR. That topology is **never stored, only computed.** **dim** is the
-hypercube dimension; N = 2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32
-to 65,536 neurons).
+hypercube. Neurons sit on the vertices, each carrying a short delay line of its
+own past, wired to single-bit-flip neighbors by XOR. That topology is **never
+stored, only computed.** **dim** is the hypercube dimension; N =
+2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32 to 65,536 neurons).
 
 Three properties follow:
 

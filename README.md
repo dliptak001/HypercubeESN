@@ -7,9 +7,10 @@
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 
 **HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
-vertices, wired to their single-bit-flip neighbors by XOR. That topology is
-**never stored, only computed.** **dim** is the hypercube dimension; N =
-2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32 to 65,536 neurons).
+vertices, each carrying a short delay line of its own past, wired to
+single-bit-flip neighbors by XOR. That topology is **never stored, only
+computed.** **dim** is the hypercube dimension; N = 2<sup>dim</sup> continuous
+`tanh` units (dim 5–16 → 32 to 65,536 neurons).
 
 Three properties follow:
 

@@ -3,8 +3,9 @@
 The reservoir is the fixed half of HypercubeESN: a recurrent network that turns
 an input stream into a high-dimensional state the readout can learn from. Only
 the readout is trained. What makes this reservoir unusual is the shape it takes —
-neurons sit on the vertices of a Boolean hypercube, wired to their single-bit-flip
-neighbors by XOR. That topology is never stored, only computed.
+neurons sit on the vertices of a Boolean hypercube, each carrying a short delay
+line of its own past, wired to single-bit-flip neighbors by XOR. That topology
+is never stored, only computed.
 
 Three properties follow:
 
