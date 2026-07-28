@@ -70,6 +70,7 @@ struct FreeRunResult
 {
     bool valid = false; ///< false if the rollout scored 0 steps (excluded from stats)
     uint64_t seed = 0; ///< reservoir seed of this run
+    uint64_t orbit_seed = 0; ///< orbit RNG seed after RebuildDatastream (printed in row)
     size_t vpt_steps = 0; ///< step of first VPT_THRESHOLD crossing; 0 = never crossed
     bool crossed = false; ///< whether the error ever crossed VPT_THRESHOLD (vpt_steps > 0)
     double vpt_lt = 0.0; ///< valid-prediction time in Lyapunov times (window floor if never crossed)
@@ -125,7 +126,9 @@ public:
     /// the true orbit. The live error trace / VPT crossing / RMSE lines are gated
     /// on config::ENABLE_PRINTF; the numeric outcome and its formatted table row
     /// are always returned in a FreeRunResult (valid == false if 0 steps scored).
-    FreeRunResult FreeRun(bool verbose);
+    /// If @p csv_path is non-null, writes one CSV row per generative step
+    /// (step, lt, err, locked, pred_*, true_*, past_*) for plot diagnostics.
+    FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr);
 
     /// Human-readable HCNN stack + param counts (shared across survey seeds).
     [[nodiscard]] std::string ReadoutArchSummary() const {
