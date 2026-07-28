@@ -54,6 +54,13 @@ namespace config
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.3f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
     constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
+
+    // ---- Ablation arms ----
+    // false = Janus baseline: real past on input, real/predicted future on ext-fb.
+    // true  = forward-only: past input is zero every ReservoirStep (warmup + train +
+    //         washout + free-run). Architecture unchanged (num_inputs still 4); reverse
+    //         has no dynamical impact — as if the reverse path were absent.
+    constexpr bool FORWARD_ONLY = false;
 }
 
 /// One seed's free-run outcome: the numeric metrics the survey aggregates, plus a
@@ -128,6 +135,9 @@ private:
 
     /// Packs the 4-wide past block [x, y, z, x*z] (input port) from real history.
     static void ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states);
+
+    /// Input-port drive for this arm: real past (Janus) or all zeros (FORWARD_ONLY).
+    static void FillPast(float past[4], const LorenzDatastreamResult& past_future_states);
 
     /// Packs the 4-wide future block [x, y, z, x*z] (feedback port) from the real
     /// future sample — teacher-forced drive (warmups + training).

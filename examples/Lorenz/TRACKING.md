@@ -183,6 +183,14 @@ Monotone-ish **RMSE vs scale** in this set: **OFF (0.440) → 0.003 (0.436) → 
 
 ## Queue / next experiments
 
+### Post-FSF (current code — FSF removed)
+
+- [ ] **Janus baseline** (`FORWARD_ONLY = false`): multi-seed × multi-orbit free-run survey  
+- [ ] **Forward-only** (`FORWARD_ONLY = true`): matched seeds/orbits; zero past every step  
+- [ ] Side-by-side VPT (lt) + free-run RMSE in a new Run N section  
+
+### Historical FSF (feature removed — log only)
+
 - [ ] Larger A/B: same seeds, `Lorenz.exe 4 50` at OFF vs 0.005 if claiming the RMSE edge  
 - [x] `FSF_SCALING` ladder at fixed `FSF_SEED=9089361`: OFF / 0.003 / 0.005 / 0.008 (Runs 1–3)  
 - [ ] Alternate `FSF_SEED` at best scaling (~0.005)  

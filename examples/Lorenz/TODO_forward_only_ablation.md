@@ -2,7 +2,7 @@
 
 **Context:** Critical assessment of Janus Cursor + port mapping + ablation design  
 **Date parked:** 2026-07-27  
-**Status:** design agreed; **implementation next**
+**Status:** implemented (`config::FORWARD_ONLY` in `Lorenz.h`). Flip flag, rebuild, run matched surveys.
 
 ---
 
@@ -39,14 +39,20 @@ ReservoirStep(past, future)
 
 ---
 
-## Implementation sketch (when coding)
+## Implementation (done)
 
-- [ ] Flag or config arm: e.g. `FORWARD_ONLY` / `USE_REVERSE_PATH` in `config::` or CLI  
-- [ ] Baseline: current `ExtractPast`  
-- [ ] Forward-only: skip ExtractPast / memset past to 0 before every `ReservoirStep`  
-- [ ] Same multi-seed / multi-orbit free-run survey as today  
-- [ ] Log which arm; report VPT (lt) + free-run RMSE side by side  
+- [x] `config::FORWARD_ONLY` in `Lorenz.h` (default `false` = Janus)  
+- [x] Baseline: `FillPast` → `ExtractPast`  
+- [x] Forward-only: `FillPast` zeros past before every `ReservoirStep`  
+- [x] Whole trial: warmup + train + washout + free-run  
+- [x] Survey banner + free-run rows tag arm (`Janus` / `fwd-only`)  
 - [ ] Optional later: train-On / free-run-Off arm; matched drive energy  
+
+### How to run A/B
+
+1. `FORWARD_ONLY = false` → rebuild Release `Lorenz` → survey (baseline)  
+2. `FORWARD_ONLY = true` → rebuild → same `Lorenz.exe T R` seeds/orbits  
+3. Paste both into `TRACKING.md` as new Run N rows (post-FSF era)
 
 ---
 

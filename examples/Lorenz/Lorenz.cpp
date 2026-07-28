@@ -74,6 +74,10 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     "  external_feedback_scaling=%.4f\n",
                     esn_config_.reservoir.num_inputs, esn_config_.reservoir.num_external_feedback_channels,
                     config::FEEDBACK_SCALING);
+        std::printf("[Lorenz config] arm:       %s\n",
+                    config::FORWARD_ONLY
+                        ? "forward-only (past=0 every ReservoirStep; train+washout+free-run)"
+                        : "Janus (real past on input + future on ext-fb)");
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",
@@ -119,6 +123,16 @@ void Lorenz::ExtractPast(float past[4], const LorenzDatastreamResult& past_futur
     past[1] = past_future_states.past.y; // past y
     past[2] = past_future_states.past.z; // past z
     past[3] = past[0] * past[2]; // past x*z (nonlinear term)
+}
+
+void Lorenz::FillPast(float past[4], const LorenzDatastreamResult& past_future_states)
+{
+    if (config::FORWARD_ONLY)
+    {
+        past[0] = past[1] = past[2] = past[3] = 0.f;
+        return;
+    }
+    ExtractPast(past, past_future_states);
 }
 
 void Lorenz::ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states)
@@ -178,7 +192,7 @@ void Lorenz::Train()
             // requires a non-null teacher sample. Happens only if warmup >= remaining span.
             if (data_stream_->OOB())
                 break;
-            ExtractPast(past, past_future_states);
+            FillPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
             esn_.ReservoirStep(past, future); // teacher-forced: past->input, real future->feedback
             past_future_states = data_stream_->Step();
@@ -194,7 +208,7 @@ void Lorenz::Train()
             // aligned one-step target is S[f] — the sample this call is about to
             // inject — not S[f+1], one sample further on.
             ExtractTargets(targets, *past_future_states.future);
-            ExtractPast(past, past_future_states);
+            FillPast(past, past_future_states);
             ExtractFutureReal(future, past_future_states);
 
             // Prequential (test-then-train) read: the pre-update prediction of this
@@ -251,7 +265,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     LorenzDatastreamResult past_future_states = data_stream_->States();
     while (!data_stream_->OOB())
     {
-        ExtractPast(past, past_future_states);
+        FillPast(past, past_future_states);
         ExtractFutureReal(future, past_future_states);
         esn_.ReservoirStep(past, future); // teacher-forced anchored washout
         past_future_states = data_stream_->Step();
@@ -287,7 +301,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
         }
 
         esn_.Predict(outputs); // the prediction of S[f]
-        ExtractPast(past, past_future_states); // anchored past -> input port
+        FillPast(past, past_future_states); // Janus: anchored past; FORWARD_ONLY: zeros
         ExtractFuturePredicted(future, outputs); // own prediction -> feedback port
         esn_.ReservoirStep(past, future); // absorb the fed-back prediction
 
@@ -329,14 +343,17 @@ FreeRunResult Lorenz::FreeRun(bool verbose)
     const double rmse = std::sqrt(sq_err_sum / (3.0 * steps));
     const double vpt_lt = (crossed ? vpt_steps : steps) / steps_per_lt;
     char buf[256];
+    const char* arm = config::FORWARD_ONLY ? "fwd-only" : "Janus";
     if (crossed)
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f\n",
-                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_), vpt_steps, vpt_lt, rmse);
+                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  free-run RMSE %.6f\n",
+                      arm, static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_),
+                      vpt_steps, vpt_lt, rmse);
     else
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
-                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_), steps, vpt_lt, rmse, config::VPT_THRESHOLD);
+                      "arm %-8s seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  free-run RMSE %.6f  (never crossed %.2f)\n",
+                      arm, static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(orbit_seed_),
+                      steps, vpt_lt, rmse, config::VPT_THRESHOLD);
 
     FreeRunResult r;
     r.valid = true;
@@ -527,6 +544,10 @@ int main(int argc, char** argv)
         static_cast<long long>(num_runs) *
         (static_cast<long long>(config::TRAINING_WINDOW_SIZE) +
          static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
+    std::printf("[survey] arm=%s\n",
+                config::FORWARD_ONLY
+                    ? "forward-only (past=0 every step; train+washout+free-run)"
+                    : "Janus (real past + future ext-fb)");
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
                 "train_window=%d  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,

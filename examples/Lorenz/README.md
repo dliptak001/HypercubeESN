@@ -266,6 +266,7 @@ file. Groups of interest:
 | Diagnostics | `ENABLE_PRINTF` — banner, per-epoch train lines, free-run traces |
 | Reservoir | dim, seed, spectral radius, input / leak / history depth |
 | Ports | input vs external-feedback channel counts (fixed 4+4 in harness) and their scalings |
+| Ablation | `FORWARD_ONLY` — `false` = Janus (real past); `true` = zero past every `ReservoirStep` (warmup + train + washout + free-run). Architecture unchanged. See [`TODO_forward_only_ablation.md`](TODO_forward_only_ablation.md). |
 | Readout | online Adam LR schedule, epochs, delay-line slices, pooling / layers |
 | Stream / Janus | training window (`span`), free-run window, center, stream length, dt |
 | Stage | reservoir warmup steps before train updates |
