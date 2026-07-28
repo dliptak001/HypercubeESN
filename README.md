@@ -63,12 +63,14 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (half-anchored free-run)
 
-Janus dual-cursor train; free-run with real past + self-feedback on the future
-port. Report VPT / free-run RMSE with the half-anchored protocol stated.
+Janus dual-cursor train; free-run with real past on the input port and
+self-feedback on the future (ext-fb) port — **half-anchored**, not Pathak-style
+unassisted free-run. Report VPT, free-run RMSE, and GS proxies (duty / re-lock)
+with that protocol stated. Numbers pending A/B survey for **v2.0** storefront.
 
 | Metric | Result |
 |--------|--------|
-| VPT (Lyapunov times) / protocol | **TBD** |
+| VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
 
 ## What is Reservoir Computing?
 
@@ -203,46 +205,66 @@ neurons: XOR-addressed Hamming-1 connectivity (N = 2<sup>dim</sup>). Same word,
 different object — Katori’s state moves *in* a cube; HypercubeESN’s activations
 propagate *on* a cube.
 
-## Python SDK
+## Install
 
-Pre-built wheels are available on [PyPI](https://pypi.org/project/hypercube-esn/)
-for Python 3.10–3.13 on Windows (x64), Linux (x86_64, aarch64), and macOS
-(x86_64, arm64). No compiler required.
+### Python (recommended)
 
 ```bash
 pip install hypercube-esn
 ```
+
+Wheels for **Python 3.10–3.14** on Windows (x64), Linux (x86_64, aarch64), and
+macOS (x86_64, arm64). No compiler required.
 
 ```python
 import numpy as np
 import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-esn = he.ESN(reservoir_hypercube_dimension=7, seed=73895)  # surveyed default seed
+esn = he.ESN(dim=7, seed=73895)  # surveyed default seed
 esn.fit(signal, warmup=200)
-print(f"R2 = {esn.r2():.6f}")
+print(f"R² = {esn.r2():.6f}")
 ```
 
-See [docs/Python_SDK.md](docs/Python_SDK.md) for the full API reference.
+Full API: [docs/Python_SDK.md](docs/Python_SDK.md) · package README:
+[python/README.md](python/README.md).
 
-## Building and Running (C++)
+### C++
 
-**Requirements:** C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+), CMake 4.1+.
+**Requirements:** C++23 (GCC 13+, Clang 17+, MSVC 2022+), **CMake 4.1+**.
 
-The learned readout is a **vendored** [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN)
-snapshot at **v1.0.0** (facade API: unified train, private Network, `K = dim + 1`
-kernels). It lives in `third_party/HypercubeCNN/` and is built automatically as
-`HypercubeCNNCore` — no separate install or network fetch. Do not hand-edit that
-tree; re-vendor from upstream and update
-[third_party/HypercubeCNN/VENDORED.md](third_party/HypercubeCNN/VENDORED.md).
+The HCNN readout is **vendored** in-tree (`third_party/HypercubeCNN/`, pin v1.0.0)
+and builds as `HypercubeCNNCore` — no separate install or network fetch.
+
+**From this repo (library + examples):**
 
 ```bash
+git clone https://github.com/dliptak001/HypercubeESN.git
+cd HypercubeESN
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/HypercubeESN
+cmake --build build --target BasicPrediction
+./build/BasicPrediction          # Windows: build\BasicPrediction.exe
 ```
 
-The build produces these executables:
+**As a dependency (FetchContent):**
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    HypercubeESN
+    GIT_REPOSITORY https://github.com/dliptak001/HypercubeESN.git
+    GIT_TAG        v2.0.0          # pin a release tag
+)
+FetchContent_MakeAvailable(HypercubeESN)
+target_link_libraries(my_app PRIVATE HypercubeESNCore)  # #include "ESN.h"
+```
+
+Installed SDK (`cmake --install` + `find_package(HypercubeESN)`): see
+[docs/CPP_SDK.md](docs/CPP_SDK.md).
+
+### Example targets
+
+A full `cmake --build build` also produces:
 
 | Target | Purpose |
 |---|---|
@@ -291,6 +313,7 @@ HypercubeESN/
 
 | Document | Covers |
 |---|---|
+| [CHANGELOG.md](CHANGELOG.md) | **v2.0** release notes, breaking changes, migration |
 | [docs/Reservoir.md](docs/Reservoir.md) | Hypercube graph, connectivity, deep-vertex history depth, leaky integrator, spectral-radius tuning, input fan-in scaling |
 | [docs/Readout.md](docs/Readout.md) | HCNN readout architecture, training algorithm, streaming mode, ESN interface |
 | [docs/Python_SDK.md](docs/Python_SDK.md) | Python SDK: pip install, fit/predict API, streaming, persistence |

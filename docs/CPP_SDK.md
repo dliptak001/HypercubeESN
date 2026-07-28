@@ -3,7 +3,13 @@
 Static C++ library for reservoir computing on Boolean hypercube graphs: a fixed
 `Reservoir` plus a trainable HypercubeCNN `Readout`, wrapped by `ESN`.
 
+**Package version 2.0.0** (`project(HypercubeESN VERSION 2.0.0)`). Breaking
+changes and migration: [CHANGELOG.md](../CHANGELOG.md).
+
 Deep dives: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md).
+
+**House defaults (2.0):** `verbose = false`, `num_layers = 1` (`0` = auto),
+`readout_slices = 1`, external feedback off (`D = 0`), `bias_scaling = 0.02`.
 
 ## Contents
 
@@ -71,7 +77,7 @@ include(FetchContent)
 FetchContent_Declare(
     HypercubeESN
     GIT_REPOSITORY https://github.com/dliptak001/HypercubeESN.git
-    GIT_TAG        v1.4.0   # pin a release tag; check GitHub for latest
+    GIT_TAG        v2.0.0   # pin a release tag when cut; check GitHub Releases
 )
 FetchContent_MakeAvailable(HypercubeESN)
 

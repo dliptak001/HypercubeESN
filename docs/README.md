@@ -49,6 +49,7 @@ API reference for embedding HypercubeESN in your own project:
 |----------|-------------------|
 | [CPP_SDK.md](CPP_SDK.md) | C++ static library: build, install, `find_package` / FetchContent, full `ESN` / `ReservoirConfig` / `ReadoutConfig` API reference |
 | [Python_SDK.md](Python_SDK.md) | Python bindings: install, fit/predict, streaming, persistence |
+| [CHANGELOG.md](../CHANGELOG.md) | **v2.0** release notes, breaking changes, 1.x → 2.0 migration |
 
 ### 4. Maintainers (dependency)
 

@@ -64,10 +64,12 @@ convolutional library that swaps the 2D pixel grid for a Boolean hypercube. Each
 primitive is the reservoir's geometry from the other side (v1.0.0 facade used by
 this host):
 
-- **Exact weight sharing with a self tap.** Every vertex has **dim** Hamming
-  neighbors (one bit flip each) **plus a self/center contribution** — kernel width
-  **K = dim + 1**, shared across all vertices. The hypercube is vertex-transitive,
-  so sharing is exact under the Z₂ⁿ symmetry; neighbor lookup is XOR, with no
+- **Exact weight sharing with a self tap (K = dim + 1).** Every vertex has **dim**
+  Hamming neighbors (one bit flip each) **plus a self/center contribution** —
+  kernel width **K = dim + 1**, shared across all vertices. Older HCNN builds used
+  neighbors only (K = dim); the self tap is a **v2.0 / vendored-pin** upgrade that
+  improved readout performance broadly. The hypercube is vertex-transitive, so
+  sharing is exact under the Z₂ⁿ symmetry; neighbor lookup is XOR, with no
   adjacency list and no image border to pad. (ESN always feeds **full capacity**
   `input_channels` × 2<sup>dim</sup>; short raw vectors would be zero-padded by HCNN, which
   this host does not rely on.)

@@ -65,12 +65,13 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (half-anchored free-run)
 
-Janus dual-cursor train; free-run with real past + self-feedback on the future
-port. Report VPT / free-run RMSE with the half-anchored protocol stated.
+Janus dual-cursor train; free-run with real past on input and self-feedback on
+future (ext-fb) — **half-anchored**, not unassisted Pathak free-run. VPT, RMSE,
+and GS duty/re-lock pending for **v2.0**.
 
 | Metric | Result |
 |--------|--------|
-| VPT (Lyapunov times) / protocol | **TBD** |
+| VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
 
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
 
@@ -90,7 +91,7 @@ import numpy as np
 import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
-esn = he.ESN(reservoir_hypercube_dimension=7)
+esn = he.ESN(dim=7, seed=73895)
 esn.fit(signal, warmup=200)
 print(f"R² = {esn.r2():.6f}")
 print(f"NRMSE = {esn.nrmse():.6f}")

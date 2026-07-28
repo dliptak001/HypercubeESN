@@ -16,3 +16,8 @@ upstream snapshot. Updates flow one way: re-vendor by recopying the core files +
 LICENSE from upstream at a chosen tag/commit; never hand-edit the snapshot here.
 
 Readout host usage (facade-native train/infer): see docs/Readout.md and docs/CPP_SDK.md.
+
+**Notable geometry (this pin):** conv kernels use **K = dim + 1** — dim Hamming-1
+neighbors **plus a self/center tap** at each vertex. Earlier neighbor-only (K = dim)
+kernels are obsolete for this host; retrain after re-vendoring. Called out in
+[CHANGELOG.md](../../CHANGELOG.md) for HypercubeESN 2.0.

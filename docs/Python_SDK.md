@@ -6,7 +6,7 @@ reservoir plus a trainable HypercubeCNN readout, exposed as one `ESN` class.
 Deep dives on the C++ core: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md)
 · [CPP_SDK.md](CPP_SDK.md).
 
-Package version: **1.4.0** (`hypercube_esn.__version__`).
+Package version: **2.0.0** (`hypercube_esn.__version__`).
 
 ## Contents
 
@@ -31,6 +31,8 @@ and macOS (x86_64, arm64):
 ```bash
 pip install hypercube-esn
 ```
+
+Import as `import hypercube_esn as he` (package name on PyPI is `hypercube-esn`).
 
 ### From source
 
@@ -72,7 +74,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
+esn = he.ESN(dim=7, seed=73895)
 esn.fit(signal, warmup=200)       # warmup, run, train in one call
 
 print(f"R² = {esn.r2():.6f}")     # held-out test R²
@@ -87,7 +89,7 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
+esn = he.ESN(dim=7, seed=73895)
 esn.reservoir_warmup(signal[:200])
 esn.reservoir_run(signal[200:-1])
 
@@ -540,6 +542,8 @@ Portable HCNN-only export (no full ESN pickle): `save_readout_hcnn_model` /
   external feedback, and bias_scaling **are** exposed.
 - **Scoring buffers:** `r2` / `nrmse` / `accuracy` need a targets array that
   covers index **0 through start+count−1** (not a window slice alone).
+- **Defaults (2.0):** `verbose=False`, `readout_num_layers=1` (0 = auto),
+  `readout_slices=1`, external feedback off. See [CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
