@@ -56,6 +56,7 @@ namespace config
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = false;
+    constexpr ReadoutActivation READOUT_ACTIVATION = ReadoutActivation::LEAKY_RELU;
 
     // ---- Data stream (Lorenz-63 + forward cursor window) ----
     // Layout: train [0, TRAINING_WINDOW_SIZE] inclusive; free-run runway after span.

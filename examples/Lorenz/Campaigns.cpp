@@ -79,7 +79,12 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "# conv_channels=" << config::CONV_CHANNELS
       << "  readout_slices=" << config::READOUT_SLICES
       << "  pooling=" << (config::USE_POOLING ? "on" : "off")
-      << "  num_layers=" << config::NUM_LAYERS << "\n"
+      << "  num_layers=" << config::NUM_LAYERS
+      << "  activation="
+      << (config::READOUT_ACTIVATION == ReadoutActivation::TANH ? "TANH" :
+          config::READOUT_ACTIVATION == ReadoutActivation::RELU ? "RELU" :
+          config::READOUT_ACTIVATION == ReadoutActivation::LEAKY_RELU ? "LEAKY_RELU" : "NONE")
+      << "\n"
       << "# base_seed=" << base_seed
       << "  orbit_seed=" << orbit_seed
       << "  num_trials=" << num_trials

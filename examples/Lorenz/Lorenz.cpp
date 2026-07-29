@@ -36,7 +36,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.conv_channels = config::CONV_CHANNELS;
     cfg.readout.num_threads = 1;
     cfg.readout.task = ReadoutTask::Regression;
-    cfg.readout.activation = ReadoutActivation::TANH;
+    cfg.readout.activation = config::READOUT_ACTIVATION;
     return cfg;
 }
 
@@ -85,8 +85,12 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
             std::printf("[Lorenz config] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
-        std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",
-                    config::READOUT_SLICES, config::USE_POOLING ? "on" : "off");
+        const char* act =
+            config::READOUT_ACTIVATION == ReadoutActivation::TANH ? "TANH" :
+            config::READOUT_ACTIVATION == ReadoutActivation::RELU ? "RELU" :
+            config::READOUT_ACTIVATION == ReadoutActivation::LEAKY_RELU ? "LEAKY_RELU" : "NONE";
+        std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s  activation=%s\n",
+                    config::READOUT_SLICES, config::USE_POOLING ? "on" : "off", act);
         std::printf("[Lorenz config] stream:    train_span=%d  stream_len=%zu  warmup=%zu\n",
                     config::TRAINING_WINDOW_SIZE, config::STREAM_LENGTH,
                     config::WARMUP_STEPS);
