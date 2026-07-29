@@ -234,7 +234,7 @@ forward-only ablation (Run 5).
 **Date:** 2026-07-28  
 **Command:** `Lorenz.exe 30 100` (Release)  
 **Arm:** forward-only — past input zeroed every ReservoirStep (train + washout + free-run)  
-**Raw log:** `examples/Lorenz/Lorenz.exe-30-100_future.txt`  
+**Raw log:** `Lorenz.exe-30-100_future_channels2.txt`  
 **Matched to Run 4:** same dim/M/seeds/100 orbits protocol.
 
 GS proxies **present** in this capture (duty / n_relock / n_unlock / meanLock).
