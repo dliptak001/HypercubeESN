@@ -70,12 +70,12 @@ namespace config
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
     constexpr float LEARNING_RATE_MIN = 0.000002f;
-    constexpr size_t EPOCHS = 50;  // 50 for rapid comparison tests, 100 for reports
+    constexpr size_t EPOCHS = 100;  // 50 for rapid comparison tests, 100 for reports
     constexpr size_t READOUT_SLICES = 2;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = false;
-    constexpr ReadoutActivation READOUT_ACTIVATION = ReadoutActivation::LEAKY_RELU;
+    constexpr ReadoutActivation READOUT_ACTIVATION = ReadoutActivation::RELU;
 
     // ---- Data stream (Lorenz-63 + forward cursor window) ----
     // Layout: train [0, TRAINING_WINDOW_SIZE] inclusive; free-run runway after span.

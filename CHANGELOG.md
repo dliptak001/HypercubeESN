@@ -72,6 +72,8 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **Lorenz weight stems:** save/load use
   `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` so dim, history depth, and drive width
   do not collide; load must match train-time layout.
+- **Lorenz report knobs:** default `EPOCHS=100`, `READOUT_ACTIVATION=RELU`;
+  `main` points at dim-12 M-sweep grid for overnight runs.
 - **HypercubeCNN kernel geometry** — see **Highlights** (dim → dim+1 with self
   tap). Retrain readouts that were frozen against older neighbor-only HCNN
   weights; blobs are not layout-compatible in spirit even when loaders succeed.
