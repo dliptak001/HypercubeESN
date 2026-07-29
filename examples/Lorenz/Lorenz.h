@@ -30,7 +30,13 @@ enum class FreeRunProtocol
 namespace config
 {
     // ---- Diagnostics ----
+    // Verbose diagnostics: config banner, per-epoch train RMSE, free-run traces.
+    // Survey campaigns force this false; Trace turns it on for train.
     inline bool ENABLE_PRINTF = true;
+    // Coarse progress on stderr: train epoch heartbeats, free-run k/N, phase lines.
+    // Set false for quiet overnight runs (final reports still go to stdout).
+    // WARN / error / save-load notices always print.
+    inline bool ENABLE_PROGRESS = false;
 
     // ---- Reservoir / model ----
     constexpr size_t DIM = 11;
@@ -38,16 +44,18 @@ namespace config
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.04f;
     constexpr float LEAK_RATE = 1.0f;
-    constexpr size_t HISTORY_DEPTH = 24;
+    // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
+    // Reservoir requires M in [1, 64].
+    inline size_t HISTORY_DEPTH = 24;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
     constexpr float LEARNING_RATE_MIN = 0.000002f;
-    constexpr size_t EPOCHS = 100;
+    constexpr size_t EPOCHS = 50;
     constexpr size_t READOUT_SLICES = 2;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
-    constexpr bool USE_POOLING = true;
+    constexpr bool USE_POOLING = false;
 
     // ---- Data stream (Lorenz-63 + forward cursor window) ----
     // Layout: train [0, TRAINING_WINDOW_SIZE] inclusive; free-run runway after span.
@@ -65,12 +73,12 @@ namespace config
     // TrainInSample = first W of train. Clamped to [1, span+1] at free-run use.
     constexpr size_t WARMUP_STEPS = 1000;
 
-    // Default free-run arm (challenge).
-    constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
+    // Default free-run arm (trainholdout).
+    constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::TrainHoldout;
 
     // ---- Model I/O (readout HCNW + arch sidecar; reservoir is seed-reproducible) ----
     // Save: off by default. When true, Train() writes after the last epoch:
-    //   {MODEL_SAVE_DIR}\lorenz_seed{ESN_SEED}.hcnw + .arch.json
+    //   {MODEL_SAVE_DIR}\lorenz_seed{ESN_SEED}_M{HISTORY_DEPTH}.hcnw + .arch.json
     constexpr bool SAVE_TRAINED_WEIGHTS = false;
     constexpr const char* MODEL_SAVE_DIR = R"(C:\\HypercubeESN\\models)";
 
@@ -80,6 +88,9 @@ namespace config
     //   C:\HypercubeESN\models\lorenz_seed21978990
     constexpr bool LOAD_TRAINED_WEIGHTS = false;
     constexpr const char* LOAD_WEIGHTS_STEM = R"(C:\HypercubeESN\models\lorenz_seed21978990)";
+
+    // Campaign results (survey aggregates, M-sweep roll-ups). Created if missing.
+    constexpr const char* RESULTS_DIR = R"(C:\HypercubeESN\results)";
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.3f;

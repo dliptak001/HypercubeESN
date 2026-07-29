@@ -138,7 +138,7 @@ reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epo
 
 | Group | Controls |
 |-------|----------|
-| Diagnostics | `ENABLE_PRINTF` |
+| Diagnostics | `ENABLE_PRINTF` (verbose); `ENABLE_PROGRESS` (stderr heartbeats; off for quiet overnight) |
 | Reservoir | dim, seed, SR, `INPUT_SCALING`, leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
 | Stream | train span, free-run window, stream length, dt |
@@ -158,24 +158,36 @@ No runtime config file — edit constants and rebuild.
 cmake --build <build-dir> --target Lorenz
 ```
 
-Release preferred. MinGW on `PATH` when running the exe:
+Release preferred. MinGW on `PATH` when running the exe. **No CLI knobs** —
+edit `main.cpp` to call a campaign, rebuild, run `Lorenz.exe`.
 
-```text
-Lorenz.exe [NUM_THREADS] [NUM_RUNS]
+```cpp
+// examples/Lorenz/main.cpp
+int main()
+{
+    return Campaign_SeedSurvey(/*threads=*/0, /*runs=*/50);
+    // return Campaign_Trace(/*seed=*/21978990, /*max_freeruns=*/30);
+}
 ```
 
-| Arg | Meaning |
-|-----|---------|
-| `NUM_THREADS` | Parallel ESN-seed trials (default: hardware concurrency) |
-| `NUM_RUNS` | Free-runs per trial after training (default: 50) |
+| Function | Role |
+|----------|------|
+| `Campaign_SeedSurvey(threads, runs, base_seed, orbit_seed)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
+| `Campaign_Trace(esn_seed, max_freeruns, target_orbit, orbit_seed)` | One seed + CSV dumps under `examples/Lorenz/traces/` |
+| `Campaign_HistoryDepthSweep({M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
 
-Progress on **stderr**; final report on stdout. Optional:
+Protocol, epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign
+signatures are in `Campaigns.h`. Progress on **stderr**; reports on **stdout**.
 
-```text
-Lorenz.exe --trace <esn_seed> [max_freeruns] [target_orbit_seed]
-```
+**Results files** (always written under `C:\HypercubeESN\results\`, created if needed):
 
-writes per-step CSV under `examples/Lorenz/traces/`.
+| Job | Files |
+|-----|--------|
+| Survey | `Survey_YYYYMMDD_HHMMSS_M{M}.csv` + `.txt` (metadata + one aggregate row) |
+| M-sweep | `Msweep_YYYYMMDD_HHMMSS.csv` + `.txt` (metadata + all M rows, deltas, code picks) |
+
+CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp protocol,
+dim, N, M, epochs, θ, seeds, etc.
 
 ---
 

@@ -2,11 +2,8 @@
 #include "LorenzDatastream.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -14,21 +11,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
-#include <windows.h>
-
-// Wall time for reports (seconds, one decimal; add h/m if long).
-static void FormatWallTime(char* buf, size_t n, const double seconds)
-{
-    if (seconds < 60.0)
-        std::snprintf(buf, n, "%.1f s", seconds);
-    else if (seconds < 3600.0)
-        std::snprintf(buf, n, "%.1f s (%.1f min)", seconds, seconds / 60.0);
-    else
-        std::snprintf(buf, n, "%.1f s (%.2f h)", seconds, seconds / 3600.0);
-}
-
 
 ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
 {
@@ -230,7 +213,8 @@ void Lorenz::Train()
                 std::printf("epoch %3zu lr %.7f  train RMSE n/a  (0 steps - warmup consumed the window)\n",
                             i, lr);
         }
-        else if ((i + 1) % 10 == 0 || i + 1 == config::EPOCHS)
+        else if (config::ENABLE_PROGRESS &&
+                 ((i + 1) % 10 == 0 || i + 1 == config::EPOCHS))
         {
             std::fprintf(stderr, "[seed %llu] train epoch %zu/%zu\n",
                          static_cast<unsigned long long>(seed_),
@@ -258,8 +242,10 @@ void Lorenz::SaveTrainedWeightsIfEnabled() const
         return;
     }
 
-    // Stem only — SaveReadoutHcnnModel appends .hcnw and .arch.json
-    const fs::path stem = dir / ("lorenz_seed" + std::to_string(seed_));
+    // Stem only - SaveReadoutHcnnModel appends .hcnw and .arch.json.
+    // Include M so M-sweeps (and fixed-M runs) do not overwrite each other.
+    const fs::path stem = dir / ("lorenz_seed" + std::to_string(seed_) +
+                                 "_M" + std::to_string(config::HISTORY_DEPTH));
     try
     {
         esn_.SaveReadoutHcnnModel(stem.string());
@@ -356,8 +342,8 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     if (W > max_w) W = max_w;
 
     // Stage 1: teacher-forced warmup (open-loop drive; config::WARMUP_STEPS).
-    // Unseen / TrainHoldout: last W of train (edge) → leave cursor at span+1.
-    // TrainInSample: first W of train → free-run still inside [0, span].
+    // Unseen / TrainHoldout: last W of train (edge) -> leave cursor at span+1.
+    // TrainInSample: first W of train -> free-run still inside [0, span].
     const int32_t wash_start = (protocol == FreeRunProtocol::TrainInSample)
                                    ? 0
                                    : (span - static_cast<int32_t>(W) + 1);
@@ -373,7 +359,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     }
 
     // Stage 2: generative free-run on the input bank.
-    // Unseen / TrainHoldout: score while index on stream (typically span+1 …).
+    // Unseen / TrainHoldout: score while index on stream (typically span+1 ...).
     // TrainInSample: score only while index <= span (in-train generative).
     const std::vector<NormalizedState>& S = data_stream_->GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
@@ -531,403 +517,4 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     if (csv)
         csv.close();
     return r;
-}
-
-static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
-{
-    using clock = std::chrono::steady_clock;
-    const auto t0 = clock::now();
-
-    auto progress = [esn_seed](const char* phase, int done, int total)
-    {
-        std::fprintf(stderr, "[seed %llu] %s %d/%d\n",
-                     static_cast<unsigned long long>(esn_seed), phase, done, total);
-        std::fflush(stderr);
-    };
-
-    Lorenz lorenz(esn_seed, orbit_seed);
-    if (config::LOAD_TRAINED_WEIGHTS)
-    {
-        progress("load weights", 0, 1);
-        lorenz.LoadTrainedWeights();
-        progress("load done; start free-runs", 0, num_runs);
-    }
-    else
-    {
-        progress("start train", 0, static_cast<int>(config::EPOCHS));
-        lorenz.Train();
-        progress("train done; start free-runs", 0, num_runs);
-    }
-
-    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
-    const size_t n_train_orbits = lorenz.NumTrainOrbits();
-    if ((protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
-    {
-        // Warn only — still run; free-runs cycle train orbits with replacement (% N).
-        std::fprintf(stderr,
-                     "[seed %llu] WARN: %d free-runs > %zu train orbits (protocol=%s); "
-                     "extra free-runs reuse train ICs (modulo). Not unique coverage.\n",
-                     static_cast<unsigned long long>(esn_seed), num_runs, n_train_orbits,
-                     Lorenz::ProtocolName(protocol));
-        std::fflush(stderr);
-    }
-
-    std::vector<FreeRunResult> results;
-    results.reserve(num_runs);
-    const int prog_every = (num_runs <= 20) ? 1 : std::max(10, num_runs / 20);
-    for (int i = 0; i < num_runs; i++)
-    {
-        results.push_back(lorenz.FreeRun(false, nullptr, 0, protocol));
-        if ((i + 1) % prog_every == 0 || i + 1 == num_runs)
-            progress("free-run", i + 1, num_runs);
-    }
-
-    std::string out;
-    char buf[384];
-    auto emit = [&](const char* s) { out += s; };
-
-    std::snprintf(buf, sizeof buf,
-                  "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) protocol=%s ===\n",
-                  static_cast<unsigned long long>(esn_seed), num_runs,
-                  static_cast<unsigned long long>(orbit_seed),
-                  Lorenz::ProtocolName(protocol));
-    emit(buf);
-    if ((protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
-    {
-        std::snprintf(buf, sizeof buf,
-                      "  note: free-runs (%d) exceed train orbits (%zu); extras reuse train ICs "
-                      "(modulo) — not unique coverage\n",
-                      num_runs, n_train_orbits);
-        emit(buf);
-    }
-
-    std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
-    size_t censored = 0, invalid = 0;
-    for (const auto& r : results)
-    {
-        if (!r.valid)
-        {
-            ++invalid;
-            continue;
-        }
-        vpt_lts.push_back(r.vpt_lt);
-        rmses.push_back(r.rmse);
-        duties.push_back(r.duty);
-        relocks.push_back(static_cast<double>(r.n_relock));
-        unlocks.push_back(static_cast<double>(r.n_unlock));
-        mean_locks.push_back(r.mean_locked_sojourn);
-        if (!r.crossed) ++censored;
-    }
-
-    auto report = [&](const char* label, std::vector<double> v, int prec)
-    {
-        if (v.empty())
-        {
-            std::snprintf(buf, sizeof buf, "  %-20s (no valid runs)\n", label);
-            emit(buf);
-            return;
-        }
-        std::sort(v.begin(), v.end());
-        const size_t n = v.size();
-        double sum = 0.0;
-        for (double x : v) sum += x;
-        const double mean = sum / static_cast<double>(n);
-        double var = 0.0;
-        for (double x : v) var += (x - mean) * (x - mean);
-        var = n > 1 ? var / static_cast<double>(n - 1) : 0.0;
-        const double sd = std::sqrt(var);
-        const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::snprintf(buf, sizeof buf, "  %-20s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
-                      label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
-        emit(buf);
-    };
-
-    std::snprintf(buf, sizeof buf, "\n=== Free-run stats (%d runs) ===\n", num_runs);
-    emit(buf);
-    report("VPT (lt)", vpt_lts, 2);
-    report("free-run RMSE", rmses, 6);
-    report("duty (<=theta)", duties, 3);
-    report("n_relock", relocks, 1);
-    report("n_unlock", unlocks, 1);
-    report("meanLock (steps)", mean_locks, 1);
-    std::snprintf(buf, sizeof buf,
-                  "  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=%.2f "
-                  "(re-lock proxies; VPT is first upcrossing only)\n",
-                  config::VPT_THRESHOLD);
-    emit(buf);
-    if (protocol == FreeRunProtocol::TrainInSample)
-    {
-        emit("  note: TrainInSample free-run scores inside the train window (in-sample generative;"
-             " not a held-out free-run claim)\n");
-    }
-    if (config::LOAD_TRAINED_WEIGHTS)
-        emit("  note: readout loaded from disk (Train skipped)\n");
-    if (censored)
-    {
-        std::snprintf(buf, sizeof buf,
-                      "  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
-                      "their VPT is counted at the window floor (a lower bound)\n",
-                      censored, vpt_lts.size(), config::VPT_THRESHOLD);
-        emit(buf);
-    }
-    if (invalid)
-    {
-        std::snprintf(buf, sizeof buf, "  note: %zu run(s) scored 0 steps and are excluded from the stats\n", invalid);
-        emit(buf);
-    }
-
-    std::vector<const FreeRunResult*> valid;
-    valid.reserve(results.size());
-    for (const auto& r : results)
-        if (r.valid) valid.push_back(&r);
-
-    const size_t top_n = std::min<size_t>(10, valid.size());
-
-    std::snprintf(buf, sizeof buf, "\n=== Top %zu lowest free-run RMSE ===\n", top_n);
-    emit(buf);
-    std::sort(valid.begin(), valid.end(),
-              [](const FreeRunResult* a, const FreeRunResult* b) { return a->rmse < b->rmse; });
-    for (size_t i = 0; i < top_n; i++)
-        emit(valid[i]->row.c_str());
-
-    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest VPT (lt) ===\n", top_n);
-    emit(buf);
-    std::sort(valid.begin(), valid.end(),
-              [](const FreeRunResult* a, const FreeRunResult* b) { return a->vpt_lt > b->vpt_lt; });
-    for (size_t i = 0; i < top_n; i++)
-        emit(valid[i]->row.c_str());
-
-    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest duty (<=theta) ===\n", top_n);
-    emit(buf);
-    std::sort(valid.begin(), valid.end(),
-              [](const FreeRunResult* a, const FreeRunResult* b) { return a->duty > b->duty; });
-    for (size_t i = 0; i < top_n; i++)
-        emit(valid[i]->row.c_str());
-
-    const double elapsed_s =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed_s);
-    std::snprintf(buf, sizeof buf, "\n=== Trial wall time: %s ===\n", time_buf);
-    emit(buf);
-
-    return out;
-}
-
-static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit)
-{
-    constexpr uint64_t kBaseOrbit = 72983498;
-    std::printf("=== HypercubeESN: Lorenz --trace ===\n");
-    std::printf("[trace] protocol=%s  esn_seed=%llu  max_freeruns=%d  target_orbit=%llu\n",
-                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
-                static_cast<unsigned long long>(esn_seed), max_freeruns,
-                static_cast<unsigned long long>(target_orbit));
-    std::printf("[trace] train %zu epochs then free-run; CSV under examples/Lorenz/traces/\n",
-                config::EPOCHS);
-    std::fflush(stdout);
-
-    config::ENABLE_PRINTF = true;
-    Lorenz lorenz(esn_seed, kBaseOrbit);
-    std::cout << lorenz.ReadoutArchSummary();
-    if (config::LOAD_TRAINED_WEIGHTS)
-        lorenz.LoadTrainedWeights();
-    else
-        lorenz.Train();
-    config::ENABLE_PRINTF = false;
-    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
-    const size_t n_train_orbits = lorenz.NumTrainOrbits();
-    if ((protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(max_freeruns) > n_train_orbits)
-    {
-        std::fprintf(stderr,
-                     "[trace] WARN: max_freeruns=%d > %zu train orbits (protocol=%s); "
-                     "extras reuse train ICs (modulo)\n",
-                     max_freeruns, n_train_orbits, Lorenz::ProtocolName(protocol));
-        std::fflush(stderr);
-    }
-
-    namespace fs = std::filesystem;
-    const fs::path trace_dir = fs::path("examples") / "Lorenz" / "traces";
-    std::error_code ec;
-    fs::create_directories(trace_dir, ec);
-    if (ec)
-        std::fprintf(stderr, "[trace] create_directories(%s): %s\n",
-                     trace_dir.string().c_str(), ec.message().c_str());
-
-    int dumped = 0;
-    for (int i = 0; i < max_freeruns; ++i)
-    {
-        const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
-        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, protocol);
-        if (!r.valid)
-        {
-            std::printf("[trace] free-run %d invalid — stop\n", i);
-            break;
-        }
-        const bool want = (target_orbit == 0) || (r.orbit_seed == target_orbit);
-        std::printf("[trace] freerun %d/%d  orbit=%llu  VPT=%.2f lt  duty=%.3f  "
-                    "relock=%zu unlock=%zu meanLock=%.1f  %s\n",
-                    i + 1, max_freeruns,
-                    static_cast<unsigned long long>(r.orbit_seed),
-                    r.vpt_lt, r.duty, r.n_relock, r.n_unlock, r.mean_locked_sojourn,
-                    want ? "DUMP" : "skip");
-        std::fflush(stdout);
-
-        if (want)
-        {
-            const fs::path out_path = trace_dir /
-                ("seed" + std::to_string(esn_seed) + "_orbit" +
-                 std::to_string(r.orbit_seed) + ".csv");
-            fs::remove(out_path, ec);
-            fs::rename(tmp_path, out_path, ec);
-            if (ec)
-            {
-                std::printf("[trace] rename failed (%s) — CSV left at %s\n",
-                            ec.message().c_str(), tmp_path.string().c_str());
-            }
-            else
-                std::printf("[trace] wrote %s\n", out_path.string().c_str());
-            std::printf("%s", r.row.c_str());
-            ++dumped;
-            if (target_orbit != 0)
-                break;
-        }
-        else
-        {
-            fs::remove(tmp_path, ec);
-        }
-    }
-    std::printf("[trace] done — %d CSV file(s)\n", dumped);
-    return dumped > 0 ? 0 : 1;
-}
-
-int main(int argc, char** argv)
-{
-    uint64_t seed = 21978990;
-    uint64_t orbit_seed = 72983498;
-
-    if (argc >= 3 && std::strcmp(argv[1], "--trace") == 0)
-    {
-        const uint64_t esn_seed = std::strtoull(argv[2], nullptr, 10);
-        int max_fr = 30;
-        uint64_t target_orbit = 0;
-        if (argc >= 4) max_fr = std::max(1, std::atoi(argv[3]));
-        if (argc >= 5) target_orbit = std::strtoull(argv[4], nullptr, 10);
-        return RunTraceMode(esn_seed, max_fr, target_orbit);
-    }
-
-    std::cout << "=== HypercubeESN: Lorenz ===\n";
-
-    config::ENABLE_PRINTF = false;
-
-    {
-        Lorenz probe(seed, orbit_seed);
-        std::cout << probe.ReadoutArchSummary();
-    }
-
-    const size_t hw = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1;
-    const size_t max_threads = 4 * hw;
-    size_t num_threads = hw;
-    int num_runs = 50;
-    if (argc > 1)
-    {
-        const int arg = std::atoi(argv[1]);
-        if (arg > 0) num_threads = std::min<size_t>(max_threads, static_cast<size_t>(arg));
-    }
-    if (argc > 2)
-    {
-        const int arg = std::atoi(argv[2]);
-        if (arg > 1) num_runs = arg;
-    }
-
-    const long long train_steps_per_trial =
-        static_cast<long long>(config::EPOCHS) *
-        static_cast<long long>(config::TRAINING_WINDOW_SIZE);
-    const long long freerun_steps_per_trial =
-        static_cast<long long>(num_runs) *
-        (static_cast<long long>(config::WARMUP_STEPS) +
-         static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
-    std::printf("[survey] protocol=%s  load_weights=%s  (input-bank free-run; ext-fb off)\n",
-                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
-                config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
-    if (config::LOAD_TRAINED_WEIGHTS)
-        std::printf("[survey] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
-    if ((config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainInSample ||
-         config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainHoldout) &&
-        !config::LOAD_TRAINED_WEIGHTS &&
-        static_cast<size_t>(num_runs) > config::EPOCHS)
-    {
-        std::printf("[survey] WARN: NUM_RUNS=%d > EPOCHS=%zu for %s — free-runs will reuse "
-                    "train ICs (modulo); not unique coverage (not clamped)\n",
-                    num_runs, config::EPOCHS,
-                    Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
-    }
-    std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
-                "train_window=%d  warmup=%zu  freerun_window=%zu\n",
-                num_threads, num_runs, config::DIM, size_t{1} << config::DIM,
-                config::EPOCHS, config::TRAINING_WINDOW_SIZE,
-                config::WARMUP_STEPS, config::FREE_RUN_WINDOW_SIZE);
-    std::printf("[survey] ~%lld train reservoir-steps/trial + ~%lld free-run "
-                "reservoir-steps/trial (warmup+score); progress on stderr\n",
-                train_steps_per_trial, freerun_steps_per_trial);
-    if (num_runs >= 500)
-        std::printf("[survey] NOTE: NUM_RUNS=%d is a heavy survey — expect multi-hour wall "
-                    "clock at this DIM/epoch/window setting\n",
-                    num_runs);
-    std::fflush(stdout);
-
-    using clock = std::chrono::steady_clock;
-    const auto survey_t0 = clock::now();
-
-    std::vector<std::string> reports(num_threads);
-    {
-        std::vector<std::jthread> pool;
-        pool.reserve(num_threads);
-        for (size_t t = 0; t < num_threads; t++)
-        {
-            pool.emplace_back([&, t]
-            {
-                const uint64_t esn_seed = seed + t;
-                try
-                {
-                    reports[t] = RunTrial(esn_seed, orbit_seed, num_runs);
-                }
-                catch (const std::exception& e)
-                {
-                    char buf[512];
-                    std::snprintf(buf, sizeof buf,
-                                  "\n=== ESN seed %llu FAILED ===\n  %s\n",
-                                  static_cast<unsigned long long>(esn_seed), e.what());
-                    reports[t] = buf;
-                }
-                catch (...)
-                {
-                    char buf[256];
-                    std::snprintf(buf, sizeof buf,
-                                  "\n=== ESN seed %llu FAILED ===\n  unknown exception\n",
-                                  static_cast<unsigned long long>(esn_seed));
-                    reports[t] = buf;
-                }
-            });
-        }
-    }
-
-    for (const auto& rep : reports)
-        std::fputs(rep.c_str(), stdout);
-
-    const double survey_s =
-        std::chrono::duration<double>(clock::now() - survey_t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, survey_s);
-    std::printf("\n=== Survey wall time: %s (%zu trial(s)) ===\n",
-                time_buf, num_threads);
-    std::fflush(stdout);
-
-    Beep(2500, 3000);
-    return 0;
 }

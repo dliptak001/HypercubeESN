@@ -64,7 +64,11 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     add_executable(StreamingAnomaly examples/StreamingAnomaly.cpp)
     add_executable(MemoryCapacity examples/MemoryCapacity/MemoryCapacity.cpp)
     add_executable(NARMA examples/NARMA/NARMA.cpp)
-    add_executable(Lorenz examples/Lorenz/Lorenz.cpp examples/Lorenz/LorenzDatastream.cpp)
+    add_executable(Lorenz
+        examples/Lorenz/main.cpp
+        examples/Lorenz/Campaigns.cpp
+        examples/Lorenz/Lorenz.cpp
+        examples/Lorenz/LorenzDatastream.cpp)
 
     set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA Lorenz)
     set(EXE_TARGETS reservoir_snapshot ${EXAMPLE_TARGETS})
