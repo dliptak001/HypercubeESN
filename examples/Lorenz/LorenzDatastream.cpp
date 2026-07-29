@@ -39,7 +39,7 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
         std::printf("%16s%14s%14s%14s\n", "", "|", "|", "|");
         std::printf("%16s%14s%14s%14s\n", "", "seed", "train end", "stream end");
         std::printf("%16s%14s%14s%14s\n", "", "T=0", "(span)", "(span+E)");
-        std::printf("  region [0, %d] = train / washout\n", span);
+        std::printf("  region [0, %d] = train section\n", span);
         std::printf("  region (%d, %zu] = free-run runway (E = %zu)\n", span, N, E);
     }
 }

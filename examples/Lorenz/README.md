@@ -40,12 +40,12 @@ survey is re-run under the current protocol.
         ▼
  LorenzDatastream  — integrate once, normalize → float S[·] ≈ [-1,1]; is a Cursor
         │
-        │  input port (4): [x, y, z, x·z]  real in train/washout; prediction in free-run
+        │  input port (4): [x, y, z, x·z]  real in train/warmup; prediction in free-run
         ▼
  ESN  — fixed hypercube reservoir + online HCNN readout (3 outputs: x, y, z)
         │  external feedback: off
         ├─ Train()   multi-epoch teacher-forced sweeps (horizon-1, prequential)
-        └─ FreeRun() washout → generative self-feedback; VPT + RMSE + re-lock proxies
+        └─ FreeRun() warmup → generative self-feedback; VPT + RMSE + re-lock proxies
 ```
 
 ---
@@ -57,7 +57,7 @@ normalized stream. Details: [`Cursor.md`](Cursor.md).
 
 ```text
 stream:  0 ======================= span ....... end
-              training / washout        free-run runway
+              train section             free-run runway
 ```
 
 | Signal | Meaning |
@@ -100,8 +100,8 @@ Per epoch:
 
 Three protocols (`FreeRunProtocol` / `config::FREE_RUN_PROTOCOL`):
 
-| Protocol | Orbit | Washout | Generative scores |
-|----------|--------|---------|-------------------|
+| Protocol | Orbit | Warmup | Generative scores |
+|----------|--------|--------|-------------------|
 | **Unseen** (default, challenge) | New IC (remix after train) | Last W of train on that orbit | From `span+1` (eval runway) |
 | **TrainInSample** (easy) | Replay a train-epoch IC | First W of train | While `index ≤ span` only |
 | **TrainHoldout** (same-orbit holdout) | Replay a train-epoch IC | Last W of train | From `span+1` |
@@ -109,7 +109,8 @@ Three protocols (`FreeRunProtocol` / `config::FREE_RUN_PROTOCOL`):
 Train stores each epoch’s orbit seed; TrainInSample / TrainHoldout cycle those seeds
 (`FreeRun(..., train_orbit_index)`; default auto-cycles).
 
-Washout length: `FREE_RUN_WASHOUT_STEPS` (override via `washout_steps`; `0` = default).
+Warmup length: `FREE_RUN_WARMUP_STEPS` (override via `warmup_steps`; `0` = default).
+Same idea as `TRAIN_WARMUP_STEPS`: teacher-forced open-loop before the useful phase.
 
 Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
 
@@ -141,7 +142,7 @@ reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epo
 | Reservoir | dim, seed, SR, `INPUT_SCALING`, leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
 | Stream | train span, free-run window, stream length, dt |
-| Stage | train warmup; free-run washout length |
+| Stage | `TRAIN_WARMUP_STEPS` / `FREE_RUN_WARMUP_STEPS` |
 | Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
 | Export | `SAVE_TRAINED_WEIGHTS` (off) → `MODEL_SAVE_DIR` / `lorenz_seed{N}` HCNW + arch |
 | Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only (Unseen) |

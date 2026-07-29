@@ -37,7 +37,7 @@ struct LorenzDatastreamConfig
 /// States / Step map the cursor into the stream buffer.
 ///
 ///     index 0 ====================== span ........ stream end
-///            train / washout              free-run runway
+///            train section                free-run runway
 ///
 /// Owns one orbit; rebuild per epoch / free-run.
 class LorenzDatastream : public Cursor

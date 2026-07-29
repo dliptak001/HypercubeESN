@@ -80,9 +80,9 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::HISTORY_DEPTH);
         std::printf("[Lorenz config] ports:     input=%zu [x,y,z,xz]  ext_feedback=0 (off)\n",
                     esn_config_.reservoir.num_inputs);
-        std::printf("[Lorenz config] free-run:  protocol=%s  washout=%zu  window=%zu\n",
+        std::printf("[Lorenz config] free-run:  protocol=%s  warmup=%zu  window=%zu\n",
                     ProtocolName(config::FREE_RUN_PROTOCOL),
-                    config::FREE_RUN_WASHOUT_STEPS, config::FREE_RUN_WINDOW_SIZE);
+                    config::FREE_RUN_WARMUP_STEPS, config::FREE_RUN_WINDOW_SIZE);
         std::printf("[Lorenz config] model I/O: save=%s  load=%s\n",
                     config::SAVE_TRAINED_WEIGHTS ? "on" : "off",
                     config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
@@ -94,7 +94,7 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::READOUT_SLICES, config::USE_POOLING ? "on" : "off");
         std::printf("[Lorenz config] stream:    train_span=%d  stream_len=%zu  train_warmup=%zu\n",
                     config::TRAINING_WINDOW_SIZE, config::STREAM_LENGTH,
-                    config::RESERVOIR_WARMUP_STEPS);
+                    config::TRAIN_WARMUP_STEPS);
     }
 }
 
@@ -179,7 +179,7 @@ void Lorenz::Train()
         const float lr = LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i);
         LorenzDatastreamResult st = data_stream_->States();
 
-        for (size_t j = 0; j < config::RESERVOIR_WARMUP_STEPS; j++)
+        for (size_t j = 0; j < config::TRAIN_WARMUP_STEPS; j++)
         {
             if (data_stream_->OOB() || st.sample == nullptr)
                 break;
@@ -295,7 +295,7 @@ FreeRunProtocol Lorenz::EffectiveFreeRunProtocol() const
     return config::FREE_RUN_PROTOCOL;
 }
 
-FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t washout_steps,
+FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_steps,
                               FreeRunProtocol protocol, size_t train_orbit_index)
 {
     float drive[4] = {};
@@ -339,11 +339,11 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t washout
 
     const int32_t span = data_stream_->Span();
     const size_t max_w = static_cast<size_t>(span) + 1;
-    size_t W = (washout_steps == 0) ? config::FREE_RUN_WASHOUT_STEPS : washout_steps;
+    size_t W = (warmup_steps == 0) ? config::FREE_RUN_WARMUP_STEPS : warmup_steps;
     if (W < 1) W = 1;
     if (W > max_w) W = max_w;
 
-    // Stage 1: teacher-forced washout.
+    // Stage 1: teacher-forced warmup (open-loop drive; same idea as TRAIN_WARMUP_STEPS).
     // Unseen / TrainHoldout: last W of train (edge) → leave cursor at span+1.
     // TrainInSample: first W of train → free-run still inside [0, span].
     const int32_t wash_start = (protocol == FreeRunProtocol::TrainInSample)
@@ -828,7 +828,7 @@ int main(int argc, char** argv)
         static_cast<long long>(config::TRAINING_WINDOW_SIZE);
     const long long freerun_steps_per_trial =
         static_cast<long long>(num_runs) *
-        (static_cast<long long>(config::FREE_RUN_WASHOUT_STEPS) +
+        (static_cast<long long>(config::FREE_RUN_WARMUP_STEPS) +
          static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
     std::printf("[survey] protocol=%s  load_weights=%s  (input-bank free-run; ext-fb off)\n",
                 Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
@@ -846,12 +846,12 @@ int main(int argc, char** argv)
                     Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
     }
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
-                "train_window=%d  freerun_washout=%zu  freerun_window=%zu\n",
+                "train_window=%d  freerun_warmup=%zu  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,
                 config::EPOCHS, config::TRAINING_WINDOW_SIZE,
-                config::FREE_RUN_WASHOUT_STEPS, config::FREE_RUN_WINDOW_SIZE);
+                config::FREE_RUN_WARMUP_STEPS, config::FREE_RUN_WINDOW_SIZE);
     std::printf("[survey] ~%lld train reservoir-steps/trial + ~%lld free-run "
-                "reservoir-steps/trial (washout+score); progress on stderr\n",
+                "reservoir-steps/trial (warmup+score); progress on stderr\n",
                 train_steps_per_trial, freerun_steps_per_trial);
     if (num_runs >= 500)
         std::printf("[survey] NOTE: NUM_RUNS=%d is a heavy survey — expect multi-hour wall "

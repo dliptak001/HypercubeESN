@@ -17,12 +17,12 @@
 enum class FreeRunProtocol
 {
     /// Challenge (default): new IC each free-run (not a train replay);
-    /// edge washout then free-run past span on that orbit.
+    /// edge warmup then free-run past span on that orbit.
     Unseen = 0,
-    /// Easy / in-sample: replay a training orbit; washout from start of train;
+    /// Easy / in-sample: replay a training orbit; warmup from start of train;
     /// free-run scores only while still inside the train window (index <= span).
     TrainInSample = 1,
-    /// Temporal holdout on a train orbit: edge washout on last W of train;
+    /// Temporal holdout on a train orbit: edge warmup on last W of train;
     /// free-run starts at span+1 (first point past the train section).
     TrainHoldout = 2,
 };
@@ -36,7 +36,6 @@ namespace config
     constexpr size_t DIM = 11;
     constexpr uint64_t SEED = 13649419;
     constexpr float SPECTRAL_RADIUS = 0.99f;
-    // Sole drive gain: teacher / self-prediction on the input bank (4 channels).
     constexpr float INPUT_SCALING = 0.04f;
     constexpr float LEAK_RATE = 1.0f;
     constexpr size_t HISTORY_DEPTH = 24;
@@ -57,15 +56,15 @@ namespace config
     constexpr size_t STREAM_LENGTH =
         static_cast<size_t>(TRAINING_WINDOW_SIZE) + FREE_RUN_WINDOW_SIZE;
 
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {-0.836584, -0.109998, 0.615358};
     constexpr double DT = 0.02;
 
-    // ---- Stage control ----
-    constexpr size_t RESERVOIR_WARMUP_STEPS = 1000; // train: open-loop before readout updates
-    // Free-run washout length W (clamped to [1, span+1] at use).
+    // ---- Stage control (both: teacher-forced open-loop reservoir drive) ----
+    // Train: open-loop steps at start of each epoch before TrainStep updates.
+    constexpr size_t TRAIN_WARMUP_STEPS = 1000;
+    // Free-run: open-loop steps before generative scoring (clamped to [1, span+1]).
     // Unseen / TrainHoldout: last W of train window (edge).
     // TrainInSample: first W of train window (then free-run still in-train).
-    constexpr size_t FREE_RUN_WASHOUT_STEPS = 1000;
+    constexpr size_t FREE_RUN_WARMUP_STEPS = 1000;
 
     // Default free-run arm (challenge).
     constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
@@ -110,7 +109,7 @@ struct FreeRunResult
 /// @brief Online free-run experiment on Lorenz-63.
 ///
 ///   LorenzDatastream (normalized float stream + forward Cursor)
-///       |  input port: [x, y, z, x*z]  real in train/washout; prediction in free-run
+///       |  input port: [x, y, z, x*z]  real in train/warmup; prediction in free-run
 ///       v
 ///   ESN (fixed reservoir + online HCNN readout; external feedback off)
 ///
@@ -128,11 +127,11 @@ public:
     void LoadTrainedWeights();
 
     /// Free-run under @p protocol (default @c config::FREE_RUN_PROTOCOL).
-    /// @p washout_steps 0 → config::FREE_RUN_WASHOUT_STEPS.
+    /// @p warmup_steps 0 → config::FREE_RUN_WARMUP_STEPS.
     /// @p train_orbit_index for TrainInSample / TrainHoldout: which stored train
     /// orbit (SIZE_MAX = auto-cycle). Ignored for Unseen.
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr,
-                          size_t washout_steps = 0,
+                          size_t warmup_steps = 0,
                           FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL,
                           size_t train_orbit_index = static_cast<size_t>(-1));
 

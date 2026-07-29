@@ -44,6 +44,6 @@ int32_t Span() const;
 ## How the example uses it
 
 - **Train:** `Reset()` then teacher-force while `!OOB()`.
-- **Free-run washout:** `Seek` then teacher-force W steps — edge of train
+- **Free-run warmup:** `Seek` then teacher-force W steps — edge of train
   (`span − W + 1`) for Unseen / TrainHoldout, or start of train (`0`) for
   TrainInSample — then generative free-run with prediction on the **input** bank.
