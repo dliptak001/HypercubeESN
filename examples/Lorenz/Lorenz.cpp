@@ -83,6 +83,11 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
         std::printf("[Lorenz config] free-run:  protocol=%s  washout=%zu  window=%zu\n",
                     ProtocolName(config::FREE_RUN_PROTOCOL),
                     config::FREE_RUN_WASHOUT_STEPS, config::FREE_RUN_WINDOW_SIZE);
+        std::printf("[Lorenz config] model I/O: save=%s  load=%s\n",
+                    config::SAVE_TRAINED_WEIGHTS ? "on" : "off",
+                    config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
+        if (config::LOAD_TRAINED_WEIGHTS)
+            std::printf("[Lorenz config] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",
@@ -221,6 +226,73 @@ void Lorenz::Train()
             std::fflush(stderr);
         }
     }
+
+    SaveTrainedWeightsIfEnabled();
+}
+
+void Lorenz::SaveTrainedWeightsIfEnabled() const
+{
+    if (!config::SAVE_TRAINED_WEIGHTS || weights_loaded_)
+        return; // no-op after load-only path (never trained this session)
+
+    namespace fs = std::filesystem;
+    const fs::path dir = config::MODEL_SAVE_DIR;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    if (ec)
+    {
+        std::fprintf(stderr, "[Lorenz] SAVE_TRAINED_WEIGHTS: create_directories(%s) failed: %s\n",
+                     dir.string().c_str(), ec.message().c_str());
+        return;
+    }
+
+    // Stem only — SaveReadoutHcnnModel appends .hcnw and .arch.json
+    const fs::path stem = dir / ("lorenz_seed" + std::to_string(seed_));
+    try
+    {
+        esn_.SaveReadoutHcnnModel(stem.string());
+        std::fprintf(stderr, "[Lorenz] saved trained readout: %s.hcnw (+ .arch.json)\n",
+                     stem.string().c_str());
+        std::fflush(stderr);
+    }
+    catch (const std::exception& e)
+    {
+        std::fprintf(stderr, "[Lorenz] SAVE_TRAINED_WEIGHTS failed: %s\n", e.what());
+        std::fflush(stderr);
+    }
+}
+
+void Lorenz::LoadTrainedWeights()
+{
+    if (config::LOAD_WEIGHTS_STEM == nullptr || config::LOAD_WEIGHTS_STEM[0] == '\0')
+        throw std::invalid_argument(
+            "LoadTrainedWeights: config::LOAD_WEIGHTS_STEM is empty "
+            "(set path stem without .hcnw extension)");
+
+    esn_.LoadReadoutHcnnModel(config::LOAD_WEIGHTS_STEM);
+    train_orbit_seeds_.clear();
+    next_train_orbit_pick_ = 0;
+    weights_loaded_ = true;
+
+    std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
+                         "seed=%llu  (free-run: Unseen only until Train())\n",
+                 config::LOAD_WEIGHTS_STEM,
+                 static_cast<unsigned long long>(seed_));
+    std::fflush(stderr);
+}
+
+FreeRunProtocol Lorenz::EffectiveFreeRunProtocol() const
+{
+    if (weights_loaded_ && train_orbit_seeds_.empty() &&
+        config::FREE_RUN_PROTOCOL != FreeRunProtocol::Unseen)
+    {
+        std::fprintf(stderr,
+                     "[Lorenz] free-run protocol %s unavailable after load-only; using Unseen\n",
+                     ProtocolName(config::FREE_RUN_PROTOCOL));
+        std::fflush(stderr);
+        return FreeRunProtocol::Unseen;
+    }
+    return config::FREE_RUN_PROTOCOL;
 }
 
 FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t washout_steps,
@@ -458,17 +530,28 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
         std::fflush(stderr);
     };
 
-    progress("start train", 0, static_cast<int>(config::EPOCHS));
     Lorenz lorenz(esn_seed, orbit_seed);
-    lorenz.Train();
-    progress("train done; start free-runs", 0, num_runs);
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        progress("load weights", 0, 1);
+        lorenz.LoadTrainedWeights();
+        progress("load done; start free-runs", 0, num_runs);
+    }
+    else
+    {
+        progress("start train", 0, static_cast<int>(config::EPOCHS));
+        lorenz.Train();
+        progress("train done; start free-runs", 0, num_runs);
+    }
+
+    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
 
     std::vector<FreeRunResult> results;
     results.reserve(num_runs);
     const int prog_every = (num_runs <= 20) ? 1 : std::max(10, num_runs / 20);
     for (int i = 0; i < num_runs; i++)
     {
-        results.push_back(lorenz.FreeRun(false, nullptr, 0, config::FREE_RUN_PROTOCOL));
+        results.push_back(lorenz.FreeRun(false, nullptr, 0, protocol));
         if ((i + 1) % prog_every == 0 || i + 1 == num_runs)
             progress("free-run", i + 1, num_runs);
     }
@@ -481,7 +564,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
                   "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) protocol=%s ===\n",
                   static_cast<unsigned long long>(esn_seed), num_runs,
                   static_cast<unsigned long long>(orbit_seed),
-                  Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
+                  Lorenz::ProtocolName(protocol));
     emit(buf);
 
     std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
@@ -538,11 +621,13 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
                   "(re-lock proxies; VPT is first upcrossing only)\n",
                   config::VPT_THRESHOLD);
     emit(buf);
-    if (config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainInSample)
+    if (protocol == FreeRunProtocol::TrainInSample)
     {
         emit("  note: TrainInSample free-run scores inside the train window (in-sample generative;"
              " not a held-out free-run claim)\n");
     }
+    if (config::LOAD_TRAINED_WEIGHTS)
+        emit("  note: readout loaded from disk (Train skipped)\n");
     if (censored)
     {
         std::snprintf(buf, sizeof buf,
@@ -603,8 +688,12 @@ static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orb
     config::ENABLE_PRINTF = true;
     Lorenz lorenz(esn_seed, kBaseOrbit);
     std::cout << lorenz.ReadoutArchSummary();
-    lorenz.Train();
+    if (config::LOAD_TRAINED_WEIGHTS)
+        lorenz.LoadTrainedWeights();
+    else
+        lorenz.Train();
     config::ENABLE_PRINTF = false;
+    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
 
     namespace fs = std::filesystem;
     const fs::path trace_dir = fs::path("examples") / "Lorenz" / "traces";
@@ -618,7 +707,7 @@ static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orb
     for (int i = 0; i < max_freeruns; ++i)
     {
         const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
-        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, config::FREE_RUN_PROTOCOL);
+        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, protocol);
         if (!r.valid)
         {
             std::printf("[trace] free-run %d invalid — stop\n", i);
@@ -707,8 +796,11 @@ int main(int argc, char** argv)
         static_cast<long long>(num_runs) *
         (static_cast<long long>(config::FREE_RUN_WASHOUT_STEPS) +
          static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
-    std::printf("[survey] protocol=%s  (input-bank free-run; ext-fb off)\n",
-                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
+    std::printf("[survey] protocol=%s  load_weights=%s  (input-bank free-run; ext-fb off)\n",
+                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+                config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
+    if (config::LOAD_TRAINED_WEIGHTS)
+        std::printf("[survey] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
                 "train_window=%d  freerun_washout=%zu  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,

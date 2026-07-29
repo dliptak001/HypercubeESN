@@ -70,6 +70,19 @@ namespace config
     // Default free-run arm (challenge).
     constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
 
+    // ---- Model I/O (readout HCNW + arch sidecar; reservoir is seed-reproducible) ----
+    // Save: off by default. When true, Train() writes after the last epoch:
+    //   {MODEL_SAVE_DIR}\lorenz_seed{ESN_SEED}.hcnw + .arch.json
+    constexpr bool SAVE_TRAINED_WEIGHTS = false;
+    constexpr const char* MODEL_SAVE_DIR = "C:\\HypercubeESN\\models";
+
+    // Load: off by default. When true, skip Train() and load readout from stem
+    // (no extension). ESN seed/arch must match the run that produced the file.
+    // Free-run after load is Unseen only (no train-orbit list). Example stem:
+    //   C:\HypercubeESN\models\lorenz_seed21978990
+    constexpr bool LOAD_TRAINED_WEIGHTS = false;
+    constexpr const char* LOAD_WEIGHTS_STEM = "C:\\HypercubeESN\\models\\lorenz_seed21978990";
+
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.3f;
     constexpr double LYAPUNOV_EXPONENT = 0.9056;
@@ -110,6 +123,10 @@ public:
 
     void Train();
 
+    /// Load readout from config::LOAD_WEIGHTS_STEM (throws if stem empty / load fails).
+    /// Clears train-orbit list (TrainInSample / TrainHoldout unavailable until Train()).
+    void LoadTrainedWeights();
+
     /// Free-run under @p protocol (default @c config::FREE_RUN_PROTOCOL).
     /// @p washout_steps 0 → config::FREE_RUN_WASHOUT_STEPS.
     /// @p train_orbit_index for TrainInSample / TrainHoldout: which stored train
@@ -125,6 +142,9 @@ public:
 
     [[nodiscard]] size_t NumTrainOrbits() const { return train_orbit_seeds_.size(); }
 
+    /// Config protocol, or Unseen when load-only (no train-orbit list).
+    [[nodiscard]] FreeRunProtocol EffectiveFreeRunProtocol() const;
+
     static const char* ProtocolName(FreeRunProtocol p);
 
 private:
@@ -132,6 +152,7 @@ private:
     /// Post-mix seeds used for each training epoch (for TrainInSample / TrainHoldout).
     std::vector<uint64_t> train_orbit_seeds_;
     size_t next_train_orbit_pick_ = 0;
+    bool weights_loaded_ = false; // true after LoadTrainedWeights(); skips train-orbit free-run
 
     ESNConfig esn_config_;
     ESN esn_;
@@ -141,6 +162,9 @@ private:
     void RebuildDatastream(bool verbose);
     /// Build stream from a fixed orbit seed without advancing orbit_seed_.
     void BuildDatastreamFromSeed(uint64_t orbit_seed, bool verbose);
+
+    /// If config::SAVE_TRAINED_WEIGHTS, write readout HCNW under MODEL_SAVE_DIR.
+    void SaveTrainedWeightsIfEnabled() const;
 
     static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 

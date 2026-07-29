@@ -139,6 +139,8 @@ temporal free-run; TrainInSample = in-sample generative (do not treat as holdout
 | Stream | train span, free-run window, stream length, dt |
 | Stage | train warmup; free-run washout length |
 | Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
+| Export | `SAVE_TRAINED_WEIGHTS` (off) → `MODEL_SAVE_DIR` / `lorenz_seed{N}` HCNW + arch |
+| Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only (Unseen) |
 | Score | VPT threshold, Lyapunov exponent |
 
 No runtime config file — edit constants and rebuild.
