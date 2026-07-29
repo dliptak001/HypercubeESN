@@ -40,10 +40,9 @@ namespace config
     constexpr bool USE_POOLING = true;
 
     // ---- Data stream (Lorenz-63 + forward cursor window) ----
-    // Layout: train/washout [0, TRAINING_WINDOW_SIZE], free-run truth after that.
+    // Layout: train/washout [0, TRAINING_WINDOW_SIZE] inclusive; free-run after span.
     constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
     constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
-    constexpr int32_t CURSOR_START_INDEX = 0;
     constexpr size_t STREAM_LENGTH =
         static_cast<size_t>(TRAINING_WINDOW_SIZE) + FREE_RUN_WINDOW_SIZE;
 

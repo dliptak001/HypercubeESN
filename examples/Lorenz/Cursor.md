@@ -10,39 +10,37 @@ Holds **no stream data** — only an integer index and window geometry. The owne
 
 ## Geometry
 
+Training window is **`[0, span]` inclusive** (start always 0). The class does
+**not** know stream length `N`.
+
 ```text
-stream:  0 ....... lb ======================= ub ....... N
-                     ^ Reset                    | train end
-         ──────────────────────────────────────>  each Step()
-                                                  OOB when index > ub
+stream:  0 ======================= span ....... N
+         ^ Reset                    | train end
+         ──────────────────────────>  each Step()
+                                      OOB when index > span
 ```
 
 | Parameter | Meaning |
 |-----------|---------|
-| `span` | Training-window width (`ub = start_index + span`) |
-| `start_index` | First index of the training window (`lb`) |
+| `span` | Last in-window train index; `OOB` when `index > span` |
 
-`Reset()` seats at `lb`. Each `Step()` increments by one. `OOB()` is true once
-`index > ub` — the free-run / evaluation runway.
-
-The class does **not** know stream length `N`. Eval runway bounds are the owner's job.
+`Reset()` seats at 0. Each `Step()` increments by one. Free-run / eval runway
+is `index > span` up to the owner's stream end.
 
 ## Public API
 
 ```text
-Cursor(int32_t span, int32_t start_index);
+explicit Cursor(int32_t span);
 
 void    Reset();
 int32_t Step();              // advance; return new index
 int32_t Index() const;
 int32_t NextIndex() const;
 
-bool    OOB() const;         // index > ub
-bool    AtStartPosition() const;  // index == lb
+bool    OOB() const;         // index > span
+bool    AtStartPosition() const;  // index == 0
 
 int32_t Span() const;
-int32_t LowerBound() const;
-int32_t UpperBound() const;
 ```
 
 ## How the example uses it

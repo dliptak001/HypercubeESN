@@ -51,7 +51,6 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State orbit
     LorenzDatastreamConfig cfg;
     cfg.stream_length = config::STREAM_LENGTH;
     cfg.cursor_span = config::TRAINING_WINDOW_SIZE;
-    cfg.cursor_start_index = config::CURSOR_START_INDEX;
     cfg.initial_lorenz_state = orbit;
     cfg.lorenz_dt = static_cast<float>(config::DT);
     return cfg;

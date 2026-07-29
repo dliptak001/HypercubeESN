@@ -57,17 +57,17 @@ System-agnostic index walker (`Cursor.h`). Lorenz only maps indices into the
 normalized stream. Details: [`Cursor.md`](Cursor.md).
 
 ```text
-stream:  0 = lb ======================= ub ....... end
-              training / washout           free-run runway
+stream:  0 ======================= span ....... end
+              training / washout        free-run runway
 ```
 
 | Signal | Meaning |
 |--------|---------|
-| **`Reset()`** | Index = train start (`lb`) |
+| **`Reset()`** | Index = 0 |
 | **`Step()`** | Index += 1 |
-| **`OOB()`** | Index past train upper edge — generative / eval region |
+| **`OOB()`** | `index > span` — generative / eval region |
 
-Default layout (`config::`): train span = `TRAINING_WINDOW_SIZE` from index 0;
+Default layout (`config::`): train window `[0, TRAINING_WINDOW_SIZE]`;
 `STREAM_LENGTH = TRAINING_WINDOW_SIZE + FREE_RUN_WINDOW_SIZE`.
 
 ---

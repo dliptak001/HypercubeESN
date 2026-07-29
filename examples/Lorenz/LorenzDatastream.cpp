@@ -7,7 +7,7 @@
 #include <string>
 
 LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print_header)
-    : Cursor(cfg.cursor_span, cfg.cursor_start_index)
+    : Cursor(cfg.cursor_span)
 {
     if (cfg.stream_length == 0)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting stream_length > 0");
@@ -16,18 +16,15 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - expecting lorenz_dt > 0");
 
     cfg_ = cfg;
-    const int32_t window_lb = cfg.cursor_start_index;
-    const int32_t window_ub = cfg.cursor_start_index + cfg.cursor_span;
-    if (window_lb < 0)
-        throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window underruns the stream");
-    if (static_cast<size_t>(window_ub) > cfg.stream_length)
+    const int32_t span = cfg.cursor_span;
+    if (static_cast<size_t>(span) > cfg.stream_length)
         throw std::out_of_range("LorenzDatastream::LorenzDatastream - cursor window overruns the stream");
 
     Normalize(Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt));
 
     const size_t N = cfg.stream_length;
-    const size_t E = N > static_cast<size_t>(window_ub)
-                         ? N - static_cast<size_t>(window_ub)
+    const size_t E = N > static_cast<size_t>(span)
+                         ? N - static_cast<size_t>(span)
                          : 0;
     const auto dots = [](const long long v) {
         char buf[16];
@@ -39,17 +36,16 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
 
     if (print_header)
     {
-        std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  start=%d  span=%d  window=[%d, %d]\n",
-                    N, cfg.lorenz_dt, cfg.cursor_start_index, cfg.cursor_span, window_lb, window_ub);
-        std::printf("  array index n:%14d%s%s%s\n", 0, dots(window_lb).c_str(),
-                    dots(window_ub).c_str(), dots(static_cast<long long>(N)).c_str());
-        std::printf("%16s%14s%14s%14s%14s\n", "", "|", "|", "|", "|");
-        std::printf("%16s%14s%14s%14s%14s\n", "", "seed", "train start", "train end", "stream end");
-        std::printf("%16s%14s%14s%14s%14s\n", "", "T=0", "(lb)", "(ub)", "(ub+E)");
-        std::printf("  region [%d, %d] = training / washout window (span %d)\n",
-                    window_lb, window_ub, cfg.cursor_span);
+        std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  span=%d  window=[0, %d]\n",
+                    N, cfg.lorenz_dt, span, span);
+        std::printf("  array index n:%14d%s%s\n", 0, dots(span).c_str(),
+                    dots(static_cast<long long>(N)).c_str());
+        std::printf("%16s%14s%14s%14s\n", "", "|", "|", "|");
+        std::printf("%16s%14s%14s%14s\n", "", "seed", "train end", "stream end");
+        std::printf("%16s%14s%14s%14s\n", "", "T=0", "(span)", "(span+E)");
+        std::printf("  region [0, %d] = training / washout window\n", span);
         std::printf("  region (%d, %zu] = free-run / evaluation runway (E = %zu)\n",
-                    window_ub, N, E);
+                    span, N, E);
         std::printf("%16s generative: input drive is the model's own prediction\n", "");
     }
 }

@@ -29,11 +29,10 @@ struct LorenzDatastreamResult
 /// integrate and where the training window sits on it.
 ///
 /// The geometry fields default to 0 as tripwires — a default-constructed config
-/// must be filled in (span > 0, stream_length > 0, start within the stream).
+/// must be filled in (span > 0, stream_length > 0, span within the stream).
 struct LorenzDatastreamConfig
 {
-    int32_t cursor_span = 0;         ///< training-window width (must be > 0)
-    int32_t cursor_start_index = 0;  ///< first index of the training window (>= 0)
+    int32_t cursor_span = 0;         ///< last train index (must be > 0); window is [0, span]
     size_t stream_length = 0;        ///< number of RK4 steps (stream holds stream_length + 1 samples)
     LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5};
     float lorenz_dt = 0.02f;         ///< RK4 integration step (canonical Lorenz-63 dt)
@@ -46,10 +45,10 @@ struct LorenzDatastreamConfig
 /// then @ref Normalize maps them to [-1, 1] with a per-channel midpoint offset and
 /// one shared scale (relative amplitudes preserved).
 ///
-/// Layout (typical storefront config: start = 0, span = train length):
+/// Layout (train [0, span] inclusive):
 ///
-///     index 0 = lb ================ ub          stream end
-///               training / washout     eval / free-run runway
+///     index 0 ====================== span          stream end
+///            training / washout          eval / free-run runway
 ///
 ///   @ref States  -> {index, &stream[index]} when in-bounds; sample is nullptr
 ///                   if the index is outside the stream.
