@@ -58,13 +58,12 @@ namespace config
 
     constexpr double DT = 0.02;
 
-    // ---- Stage control (both: teacher-forced open-loop reservoir drive) ----
-    // Train: open-loop steps at start of each epoch before TrainStep updates.
-    constexpr size_t TRAIN_WARMUP_STEPS = 1000;
-    // Free-run: open-loop steps before generative scoring (clamped to [1, span+1]).
-    // Unseen / TrainHoldout: last W of train window (edge).
-    // TrainInSample: first W of train window (then free-run still in-train).
-    constexpr size_t FREE_RUN_WARMUP_STEPS = 1000;
+    // ---- Stage control ----
+    // Teacher-forced open-loop reservoir drive before the useful phase:
+    // train → before TrainStep; free-run → before generative scoring.
+    // Free-run seating: Unseen/TrainHoldout = last W of train (edge);
+    // TrainInSample = first W of train. Clamped to [1, span+1] at free-run use.
+    constexpr size_t WARMUP_STEPS = 1000;
 
     // Default free-run arm (challenge).
     constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
@@ -73,14 +72,14 @@ namespace config
     // Save: off by default. When true, Train() writes after the last epoch:
     //   {MODEL_SAVE_DIR}\lorenz_seed{ESN_SEED}.hcnw + .arch.json
     constexpr bool SAVE_TRAINED_WEIGHTS = false;
-    constexpr const char* MODEL_SAVE_DIR = "C:\\HypercubeESN\\models";
+    constexpr const char* MODEL_SAVE_DIR = R"(C:\\HypercubeESN\\models)";
 
     // Load: off by default. When true, skip Train() and load readout from stem
     // (no extension). ESN seed/arch must match the run that produced the file.
     // Free-run after load is Unseen only (no train-orbit list). Example stem:
     //   C:\HypercubeESN\models\lorenz_seed21978990
     constexpr bool LOAD_TRAINED_WEIGHTS = false;
-    constexpr const char* LOAD_WEIGHTS_STEM = "C:\\HypercubeESN\\models\\lorenz_seed21978990";
+    constexpr const char* LOAD_WEIGHTS_STEM = R"(C:\HypercubeESN\models\lorenz_seed21978990)";
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.3f;
@@ -127,7 +126,7 @@ public:
     void LoadTrainedWeights();
 
     /// Free-run under @p protocol (default @c config::FREE_RUN_PROTOCOL).
-    /// @p warmup_steps 0 → config::FREE_RUN_WARMUP_STEPS.
+    /// @p warmup_steps 0 → config::WARMUP_STEPS.
     /// @p train_orbit_index for TrainInSample / TrainHoldout: which stored train
     /// orbit (SIZE_MAX = auto-cycle). Ignored for Unseen.
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr,

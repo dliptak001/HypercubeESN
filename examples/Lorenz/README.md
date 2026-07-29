@@ -109,8 +109,8 @@ Three protocols (`FreeRunProtocol` / `config::FREE_RUN_PROTOCOL`):
 Train stores each epoch’s orbit seed; TrainInSample / TrainHoldout cycle those seeds
 (`FreeRun(..., train_orbit_index)`; default auto-cycles).
 
-Warmup length: `FREE_RUN_WARMUP_STEPS` (override via `warmup_steps`; `0` = default).
-Same idea as `TRAIN_WARMUP_STEPS`: teacher-forced open-loop before the useful phase.
+Warmup length: `WARMUP_STEPS` (shared with train; override free-run via `warmup_steps`;
+`0` = default). Teacher-forced open-loop before the useful phase.
 
 Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
 
@@ -142,7 +142,7 @@ reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epo
 | Reservoir | dim, seed, SR, `INPUT_SCALING`, leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
 | Stream | train span, free-run window, stream length, dt |
-| Stage | `TRAIN_WARMUP_STEPS` / `FREE_RUN_WARMUP_STEPS` |
+| Stage | `WARMUP_STEPS` (train and free-run) |
 | Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
 | Export | `SAVE_TRAINED_WEIGHTS` (off) → `MODEL_SAVE_DIR` / `lorenz_seed{N}` HCNW + arch |
 | Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only (Unseen) |
