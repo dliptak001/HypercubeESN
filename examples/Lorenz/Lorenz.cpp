@@ -545,6 +545,19 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     }
 
     const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
+    const size_t n_train_orbits = lorenz.NumTrainOrbits();
+    if ((protocol == FreeRunProtocol::TrainInSample ||
+         protocol == FreeRunProtocol::TrainHoldout) &&
+        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
+    {
+        // Warn only — still run; free-runs cycle train orbits with replacement (% N).
+        std::fprintf(stderr,
+                     "[seed %llu] WARN: %d free-runs > %zu train orbits (protocol=%s); "
+                     "extra free-runs reuse train ICs (modulo). Not unique coverage.\n",
+                     static_cast<unsigned long long>(esn_seed), num_runs, n_train_orbits,
+                     Lorenz::ProtocolName(protocol));
+        std::fflush(stderr);
+    }
 
     std::vector<FreeRunResult> results;
     results.reserve(num_runs);
@@ -566,6 +579,16 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
                   static_cast<unsigned long long>(orbit_seed),
                   Lorenz::ProtocolName(protocol));
     emit(buf);
+    if ((protocol == FreeRunProtocol::TrainInSample ||
+         protocol == FreeRunProtocol::TrainHoldout) &&
+        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
+    {
+        std::snprintf(buf, sizeof buf,
+                      "  note: free-runs (%d) exceed train orbits (%zu); extras reuse train ICs "
+                      "(modulo) — not unique coverage\n",
+                      num_runs, n_train_orbits);
+        emit(buf);
+    }
 
     std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
     size_t censored = 0, invalid = 0;
@@ -694,6 +717,17 @@ static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orb
         lorenz.Train();
     config::ENABLE_PRINTF = false;
     const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
+    const size_t n_train_orbits = lorenz.NumTrainOrbits();
+    if ((protocol == FreeRunProtocol::TrainInSample ||
+         protocol == FreeRunProtocol::TrainHoldout) &&
+        n_train_orbits > 0 && static_cast<size_t>(max_freeruns) > n_train_orbits)
+    {
+        std::fprintf(stderr,
+                     "[trace] WARN: max_freeruns=%d > %zu train orbits (protocol=%s); "
+                     "extras reuse train ICs (modulo)\n",
+                     max_freeruns, n_train_orbits, Lorenz::ProtocolName(protocol));
+        std::fflush(stderr);
+    }
 
     namespace fs = std::filesystem;
     const fs::path trace_dir = fs::path("examples") / "Lorenz" / "traces";
@@ -801,6 +835,16 @@ int main(int argc, char** argv)
                 config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
     if (config::LOAD_TRAINED_WEIGHTS)
         std::printf("[survey] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
+    if ((config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainInSample ||
+         config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainHoldout) &&
+        !config::LOAD_TRAINED_WEIGHTS &&
+        static_cast<size_t>(num_runs) > config::EPOCHS)
+    {
+        std::printf("[survey] WARN: NUM_RUNS=%d > EPOCHS=%zu for %s — free-runs will reuse "
+                    "train ICs (modulo); not unique coverage (not clamped)\n",
+                    num_runs, config::EPOCHS,
+                    Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
+    }
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
                 "train_window=%d  freerun_washout=%zu  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,

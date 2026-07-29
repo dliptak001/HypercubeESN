@@ -120,6 +120,10 @@ Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
 **Claim discipline:** Unseen = multi-IC generalization; TrainHoldout ≈ single-trajectory
 temporal free-run; TrainInSample = in-sample generative (do not treat as holdout VPT).
 
+For **TrainInSample / TrainHoldout**, free-run count is independent of epochs, but if
+`NUM_RUNS > EPOCHS` (train-orbit count) the harness **warns** and still runs — extras
+reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epochs.
+
 | Field | Meaning |
 |-------|---------|
 | `vpt_steps` / `vpt_lt` | First step with channel-RMS `err > θ` (Lyapunov times) |
