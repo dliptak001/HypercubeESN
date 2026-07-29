@@ -2,6 +2,7 @@
 #include "LorenzDatastream.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,17 @@
 #include <thread>
 #include <vector>
 #include <windows.h>
+
+// Wall time for reports (seconds, one decimal; add h/m if long).
+static void FormatWallTime(char* buf, size_t n, const double seconds)
+{
+    if (seconds < 60.0)
+        std::snprintf(buf, n, "%.1f s", seconds);
+    else if (seconds < 3600.0)
+        std::snprintf(buf, n, "%.1f s (%.1f min)", seconds, seconds / 60.0);
+    else
+        std::snprintf(buf, n, "%.1f s (%.2f h)", seconds, seconds / 3600.0);
+}
 
 
 ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
@@ -523,6 +535,9 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
 
 static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
 {
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
     auto progress = [esn_seed](const char* phase, int done, int total)
     {
         std::fprintf(stderr, "[seed %llu] %s %d/%d\n",
@@ -693,6 +708,13 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     for (size_t i = 0; i < top_n; i++)
         emit(valid[i]->row.c_str());
 
+    const double elapsed_s =
+        std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed_s);
+    std::snprintf(buf, sizeof buf, "\n=== Trial wall time: %s ===\n", time_buf);
+    emit(buf);
+
     return out;
 }
 
@@ -859,6 +881,9 @@ int main(int argc, char** argv)
                     num_runs);
     std::fflush(stdout);
 
+    using clock = std::chrono::steady_clock;
+    const auto survey_t0 = clock::now();
+
     std::vector<std::string> reports(num_threads);
     {
         std::vector<std::jthread> pool;
@@ -894,6 +919,14 @@ int main(int argc, char** argv)
 
     for (const auto& rep : reports)
         std::fputs(rep.c_str(), stdout);
+
+    const double survey_s =
+        std::chrono::duration<double>(clock::now() - survey_t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, survey_s);
+    std::printf("\n=== Survey wall time: %s (%zu trial(s)) ===\n",
+                time_buf, num_threads);
+    std::fflush(stdout);
 
     Beep(2500, 3000);
     return 0;
