@@ -3,80 +3,67 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
 #include "Cursor.h"
 #include "LorenzAttractor.h"
 
-
-/// @brief One normalized [-1, 1] Lorenz sample (x, y, z) in float storage.
-///
-/// The reservoir consumes floats, so the stream is narrowed once in
-/// @ref LorenzDatastream::Normalize rather than per step.
+/// One normalized [-1, 1] Lorenz sample (float storage for the reservoir).
 struct NormalizedState
 {
     float x = 0, y = 0, z = 0;
 };
 
-/// @brief What @ref LorenzDatastream::States and @ref LorenzDatastream::Step hand
-/// back for the current cursor position.
+/// Current cursor index + sample pointer (nullptr if index is off the stream).
 struct LorenzDatastreamResult
 {
-    int32_t index = 0; ///< current forward cursor index
-    const NormalizedState* sample = nullptr; ///< stream[index] when in-bounds; nullptr if
-                                             ///< index is outside the integrated stream.
+    int32_t index = 0;
+    const NormalizedState* sample = nullptr;
 };
 
-/// @brief Construction parameters for @ref LorenzDatastream: how long an orbit to
-/// integrate and where the training window sits on it.
-///
-/// The geometry fields default to 0 as tripwires — a default-constructed config
-/// must be filled in (span > 0, stream_length > 0, span within the stream).
+/// Orbit length + train window + IC for @ref LorenzDatastream construction.
+/// Defaults of 0 are tripwires — fill before use.
 struct LorenzDatastreamConfig
 {
-    int32_t cursor_span = 0;         ///< last train index (must be > 0); window is [0, span]
-    size_t stream_length = 0;        ///< number of RK4 steps (stream holds stream_length + 1 samples)
+    int32_t span = 0;        ///< last train index; window [0, span] (Cursor)
+    size_t stream_length = 0;///< RK4 steps; storage is stream_length + 1 samples
     LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5};
-    float lorenz_dt = 0.02f;         ///< RK4 integration step (canonical Lorenz-63 dt)
+    float lorenz_dt = 0.02f;
 };
 
-/// @brief Integrates one Lorenz-63 orbit, normalizes it to float [-1, 1], and
-/// serves samples through a single forward @ref Cursor.
+/// One Lorenz-63 orbit, normalized to float [-1, 1], walked by a forward @ref Cursor.
 ///
-/// Construction integrates `stream_length + 1` samples (via @ref LorenzAttractor),
-/// then @ref Normalize maps them to [-1, 1] with a per-channel midpoint offset and
-/// one shared scale (relative amplitudes preserved).
+/// Construction: integrate (double) → normalize (shared scale) → float stream.
+/// This class **is** a Cursor: Reset / OOB / Index / Span come from the base.
+/// States / Step map the cursor into the stream buffer.
 ///
-/// Layout (train [0, span] inclusive):
+///     index 0 ====================== span ........ stream end
+///            train / washout              free-run runway
 ///
-///     index 0 ====================== span          stream end
-///            training / washout          eval / free-run runway
-///
-///   @ref States  -> {index, &stream[index]} when in-bounds; sample is nullptr
-///                   if the index is outside the stream.
-///   @ref Step    -> advances the cursor, then returns the same pair.
-///
-/// One instance owns one orbit; the harness rebuilds it per epoch / free-run.
+/// Owns one orbit; rebuild per epoch / free-run.
 class LorenzDatastream : public Cursor
 {
 public:
-    LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print_header = false);
+    explicit LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print_header = false);
 
-    [[nodiscard]] LorenzDatastreamResult States();
+    /// Sample at the current index (no advance).
+    [[nodiscard]] LorenzDatastreamResult States() const;
+
+    /// Advance cursor one step, then return sample at the new index.
     LorenzDatastreamResult Step();
 
     [[nodiscard]] const std::vector<NormalizedState>& GetDataStream() const { return data_stream_; }
 
-    void PrintOrbit();
+    void PrintOrbit() const;
 
 private:
-    LorenzDatastreamConfig cfg_;
-
+    LorenzAttractor::State seed_state_;
     std::vector<NormalizedState> data_stream_;
 
-    [[nodiscard]] std::vector<LorenzAttractor::State> Build(size_t stream_length,
-                                                            const LorenzAttractor::State& initial_lorenz_state,
-                                                            float lorenz_dt) const;
+    [[nodiscard]] const NormalizedState* SampleAt(int32_t index) const;
+
+    static std::vector<LorenzAttractor::State> Build(size_t stream_length,
+                                                     const LorenzAttractor::State& seed,
+                                                     float dt);
 
     void Normalize(const std::vector<LorenzAttractor::State>& raw);
-
-    [[nodiscard]] const NormalizedState* SampleAt(int32_t index) const;
 };

@@ -5,8 +5,8 @@
 | Source | `Cursor.h` (header-only) |
 | Role | Single forward index over a training window |
 
-Holds **no stream data** — only an integer index and window geometry. The owner
-(`LorenzDatastream`) maps the index into its buffer.
+Holds **no stream data** — only an integer index and window geometry.
+`LorenzDatastream` inherits Cursor and maps the index into its orbit buffer.
 
 ## Geometry
 

@@ -38,8 +38,7 @@ survey is re-run under the current protocol.
  LorenzAttractor (RK4 Lorenz-63; σ, ρ, β, dt as configured)
         │
         ▼
- LorenzDatastream  — integrate once, midpoint-offset + shared-scale → float S[·] ≈ [-1,1]
-        │            inherits Cursor (forward index over train window)
+ LorenzDatastream  — integrate once, normalize → float S[·] ≈ [-1,1]; is a Cursor
         │
         │  input port (4): [x, y, z, x·z]  real in train/washout; prediction in free-run
         ▼
