@@ -98,11 +98,27 @@ Per epoch:
 
 ## 6. Free-run (`Lorenz::FreeRun`)
 
-1. **Washout** — teacher-forced sweep of the training window (no readout updates).
-2. **Generative** — for up to `FREE_RUN_WINDOW_SIZE` steps:
-   - `Predict` → pack prediction as input drive → `ReservoirStep(drive, nullptr)`
-   - Score vs true `S[index]` (normalized channel-RMS)
-   - VPT, free-run RMSE, duty / n_relock / n_unlock / meanLock (θ = `VPT_THRESHOLD`)
+Three protocols (`FreeRunProtocol` / `config::FREE_RUN_PROTOCOL`):
+
+| Protocol | Orbit | Washout | Generative scores |
+|----------|--------|---------|-------------------|
+| **Unseen** (default, challenge) | New IC (remix after train) | Last W of train on that orbit | From `span+1` (eval runway) |
+| **TrainInSample** (easy) | Replay a train-epoch IC | First W of train | While `index ≤ span` only |
+| **TrainHoldout** (same-orbit holdout) | Replay a train-epoch IC | Last W of train | From `span+1` |
+
+Train stores each epoch’s orbit seed; TrainInSample / TrainHoldout cycle those seeds
+(`FreeRun(..., train_orbit_index)`; default auto-cycles).
+
+Washout length: `FREE_RUN_WASHOUT_STEPS` (override via `washout_steps`; `0` = default).
+
+Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
+
+- `Predict` → pack prediction as input drive → `ReservoirStep(drive, nullptr)`
+- Score vs true `S[index]` (normalized channel-RMS)
+- VPT, free-run RMSE, duty / n_relock / n_unlock / meanLock (θ = `VPT_THRESHOLD`)
+
+**Claim discipline:** Unseen = multi-IC generalization; TrainHoldout ≈ single-trajectory
+temporal free-run; TrainInSample = in-sample generative (do not treat as holdout VPT).
 
 | Field | Meaning |
 |-------|---------|
@@ -121,6 +137,8 @@ Per epoch:
 | Reservoir | dim, seed, SR, `INPUT_SCALING`, leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
 | Stream | train span, free-run window, stream length, dt |
+| Stage | train warmup; free-run washout length |
+| Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
 | Score | VPT threshold, Lyapunov exponent |
 
 No runtime config file — edit constants and rebuild.

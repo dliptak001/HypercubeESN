@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,7 +24,6 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.dim = config::DIM;
     cfg.reservoir.seed = seed;
 
-    // Single forward drive on the input bank; external feedback off.
     cfg.reservoir.num_inputs = 4; // [x, y, z, x*z]
     cfg.reservoir.num_external_feedback_channels = 0;
     cfg.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
@@ -39,7 +39,6 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9f;
     cfg.readout.conv_channels = config::CONV_CHANNELS;
-    // Survey owns outer jthreads — keep each HCNN single-threaded.
     cfg.readout.num_threads = 1;
     cfg.readout.task = ReadoutTask::Regression;
     cfg.readout.activation = ReadoutActivation::TANH;
@@ -56,6 +55,17 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State orbit
     return cfg;
 }
 
+const char* Lorenz::ProtocolName(const FreeRunProtocol p)
+{
+    switch (p)
+    {
+    case FreeRunProtocol::Unseen:        return "Unseen";
+    case FreeRunProtocol::TrainInSample: return "TrainInSample";
+    case FreeRunProtocol::TrainHoldout:  return "TrainHoldout";
+    }
+    return "Unknown";
+}
+
 Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
     orbit_seed_(orbit_seed),
     esn_config_(MakeESNConfig(seed_)),
@@ -70,14 +80,16 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::HISTORY_DEPTH);
         std::printf("[Lorenz config] ports:     input=%zu [x,y,z,xz]  ext_feedback=0 (off)\n",
                     esn_config_.reservoir.num_inputs);
-        std::printf("[Lorenz config] free-run:  teacher force train/washout; self-feedback on input bank\n");
+        std::printf("[Lorenz config] free-run:  protocol=%s  washout=%zu  window=%zu\n",
+                    ProtocolName(config::FREE_RUN_PROTOCOL),
+                    config::FREE_RUN_WASHOUT_STEPS, config::FREE_RUN_WINDOW_SIZE);
         std::printf("[Lorenz config] readout:   lr %.6f -> %.6f   epochs=%zu\n",
                     config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS);
         std::printf("[Lorenz config] readout in: slices=%zu  pooling=%s\n",
                     config::READOUT_SLICES, config::USE_POOLING ? "on" : "off");
-        std::printf("[Lorenz config] stream:    train_span=%d  freerun=%zu  stream_len=%zu  warmup=%zu\n",
-                    config::TRAINING_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE,
-                    config::STREAM_LENGTH, config::RESERVOIR_WARMUP_STEPS);
+        std::printf("[Lorenz config] stream:    train_span=%d  stream_len=%zu  train_warmup=%zu\n",
+                    config::TRAINING_WINDOW_SIZE, config::STREAM_LENGTH,
+                    config::RESERVOIR_WARMUP_STEPS);
     }
 }
 
@@ -89,18 +101,26 @@ static inline uint64_t mix64(uint64_t x)
     return x ^ (x >> 31);
 }
 
-void Lorenz::RebuildDatastream(bool verbose)
+LorenzAttractor::State Lorenz::IcFromOrbitSeed(const uint64_t orbit_seed)
 {
-    orbit_seed_ = mix64(orbit_seed_ ^ (0x100000001B3ULL));
-    std::mt19937_64 rng(orbit_seed_);
+    std::mt19937_64 rng(orbit_seed);
     std::uniform_real_distribution<double> dist(-0.999, 0.999);
     std::uniform_real_distribution<double> dist_uni(0.0, 0.999);
-    LorenzAttractor::State orbit{
-        dist(rng), dist(rng), dist_uni(rng)
-    };
-    data_stream_ = std::make_unique<LorenzDatastream>(MakeDatastreamConfig(orbit));
+    return {dist(rng), dist(rng), dist_uni(rng)};
+}
+
+void Lorenz::BuildDatastreamFromSeed(const uint64_t orbit_seed, const bool verbose)
+{
+    data_stream_ = std::make_unique<LorenzDatastream>(
+        MakeDatastreamConfig(IcFromOrbitSeed(orbit_seed)));
     if (verbose)
         data_stream_->PrintOrbit();
+}
+
+void Lorenz::RebuildDatastream(const bool verbose)
+{
+    orbit_seed_ = mix64(orbit_seed_ ^ (0x100000001B3ULL));
+    BuildDatastreamFromSeed(orbit_seed_, verbose);
 }
 
 void Lorenz::ExtractDriveReal(float drive[4], const NormalizedState& state)
@@ -141,9 +161,14 @@ void Lorenz::Train()
     float targets[3] = {};
     float outputs[3] = {};
 
+    train_orbit_seeds_.clear();
+    train_orbit_seeds_.reserve(config::EPOCHS);
+    next_train_orbit_pick_ = 0;
+
     for (size_t i = 0; i < config::EPOCHS; i++)
     {
         RebuildDatastream(config::ENABLE_PRINTF);
+        train_orbit_seeds_.push_back(orbit_seed_);
 
         data_stream_->Reset();
         const float lr = LrProfile(config::LEARNING_RATE, config::LEARNING_RATE_MIN, config::EPOCHS, i);
@@ -162,7 +187,6 @@ void Lorenz::Train()
         size_t train_steps = 0;
         while (!data_stream_->OOB() && st.sample != nullptr)
         {
-            // Horizon-1: predict S[t] at x(t) before injecting this step's drive.
             ExtractTargets(targets, *st.sample);
             ExtractDriveReal(drive, *st.sample);
 
@@ -199,14 +223,34 @@ void Lorenz::Train()
     }
 }
 
-FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
+FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t washout_steps,
+                              FreeRunProtocol protocol, size_t train_orbit_index)
 {
     float drive[4] = {};
     float targets[3] = {};
     float outputs[3] = {};
 
-    RebuildDatastream(false);
-    const uint64_t freerun_orbit_seed = orbit_seed_;
+    const bool use_train_orbit =
+        (protocol == FreeRunProtocol::TrainInSample ||
+         protocol == FreeRunProtocol::TrainHoldout);
+
+    uint64_t freerun_orbit_seed = 0;
+    if (use_train_orbit)
+    {
+        if (train_orbit_seeds_.empty())
+            throw std::logic_error("FreeRun: TrainInSample/TrainHoldout require Train() first");
+        size_t pick = train_orbit_index;
+        if (pick == static_cast<size_t>(-1))
+            pick = next_train_orbit_pick_++;
+        freerun_orbit_seed = train_orbit_seeds_[pick % train_orbit_seeds_.size()];
+        BuildDatastreamFromSeed(freerun_orbit_seed, false);
+    }
+    else
+    {
+        // Unseen: continue remix chain past all training seeds.
+        RebuildDatastream(false);
+        freerun_orbit_seed = orbit_seed_;
+    }
 
     std::ofstream csv;
     if (csv_path && csv_path[0])
@@ -221,19 +265,35 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
             std::fprintf(stderr, "[FreeRun] failed to open CSV path: %s\n", csv_path);
     }
 
-    // Stage 1: teacher-forced washout over the training window.
-    data_stream_->Reset();
+    const int32_t span = data_stream_->Span();
+    const size_t max_w = static_cast<size_t>(span) + 1;
+    size_t W = (washout_steps == 0) ? config::FREE_RUN_WASHOUT_STEPS : washout_steps;
+    if (W < 1) W = 1;
+    if (W > max_w) W = max_w;
+
+    // Stage 1: teacher-forced washout.
+    // Unseen / TrainHoldout: last W of train (edge) → leave cursor at span+1.
+    // TrainInSample: first W of train → free-run still inside [0, span].
+    const int32_t wash_start = (protocol == FreeRunProtocol::TrainInSample)
+                                   ? 0
+                                   : (span - static_cast<int32_t>(W) + 1);
+    data_stream_->Seek(wash_start);
     LorenzDatastreamResult st = data_stream_->States();
-    while (!data_stream_->OOB() && st.sample != nullptr)
+    for (size_t w = 0; w < W; ++w)
     {
+        if (st.sample == nullptr)
+            break;
         ExtractDriveReal(drive, *st.sample);
         esn_.ReservoirStep(drive, nullptr);
         st = data_stream_->Step();
     }
 
-    // Stage 2: generative free-run — prediction fed on the input bank.
+    // Stage 2: generative free-run on the input bank.
+    // Unseen / TrainHoldout: score while index on stream (typically span+1 …).
+    // TrainInSample: score only while index <= span (in-train generative).
     const std::vector<NormalizedState>& S = data_stream_->GetDataStream();
     const double steps_per_lt = 1.0 / (config::LYAPUNOV_EXPONENT * config::DT);
+    const bool in_sample = (protocol == FreeRunProtocol::TrainInSample);
 
     double sq_err_sum = 0.0;
     size_t steps = 0;
@@ -254,7 +314,13 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
         if (t < 0 || static_cast<size_t>(t) >= S.size())
         {
             if (config::ENABLE_PRINTF && verbose)
-                std::printf("[FreeRun] runway exhausted after %zu steps - stream ends\n", steps);
+                std::printf("[FreeRun] runway exhausted after %zu steps\n", steps);
+            break;
+        }
+        if (in_sample && t > span)
+        {
+            if (config::ENABLE_PRINTF && verbose)
+                std::printf("[FreeRun] left train window after %zu generative steps\n", steps);
             break;
         }
 
@@ -348,21 +414,26 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path)
     char buf[384];
     if (crossed)
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  "
+                      "%-14s seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  "
                       "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f\n",
-                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(freerun_orbit_seed),
+                      ProtocolName(protocol),
+                      static_cast<unsigned long long>(seed_),
+                      static_cast<unsigned long long>(freerun_orbit_seed),
                       vpt_steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked);
     else
         std::snprintf(buf, sizeof buf,
-                      "seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  "
+                      "%-14s seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  "
                       "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f  (never crossed %.2f)\n",
-                      static_cast<unsigned long long>(seed_), static_cast<unsigned long long>(freerun_orbit_seed),
+                      ProtocolName(protocol),
+                      static_cast<unsigned long long>(seed_),
+                      static_cast<unsigned long long>(freerun_orbit_seed),
                       steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked, config::VPT_THRESHOLD);
 
     FreeRunResult r;
     r.valid = true;
     r.seed = seed_;
     r.orbit_seed = freerun_orbit_seed;
+    r.protocol = protocol;
     r.vpt_steps = vpt_steps;
     r.crossed = crossed;
     r.vpt_lt = vpt_lt;
@@ -397,7 +468,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     const int prog_every = (num_runs <= 20) ? 1 : std::max(10, num_runs / 20);
     for (int i = 0; i < num_runs; i++)
     {
-        results.push_back(lorenz.FreeRun(false));
+        results.push_back(lorenz.FreeRun(false, nullptr, 0, config::FREE_RUN_PROTOCOL));
         if ((i + 1) % prog_every == 0 || i + 1 == num_runs)
             progress("free-run", i + 1, num_runs);
     }
@@ -406,9 +477,11 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     char buf[384];
     auto emit = [&](const char* s) { out += s; };
 
-    std::snprintf(buf, sizeof buf, "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
+    std::snprintf(buf, sizeof buf,
+                  "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) protocol=%s ===\n",
                   static_cast<unsigned long long>(esn_seed), num_runs,
-                  static_cast<unsigned long long>(orbit_seed));
+                  static_cast<unsigned long long>(orbit_seed),
+                  Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
     emit(buf);
 
     std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
@@ -465,6 +538,11 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
                   "(re-lock proxies; VPT is first upcrossing only)\n",
                   config::VPT_THRESHOLD);
     emit(buf);
+    if (config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainInSample)
+    {
+        emit("  note: TrainInSample free-run scores inside the train window (in-sample generative;"
+             " not a held-out free-run claim)\n");
+    }
     if (censored)
     {
         std::snprintf(buf, sizeof buf,
@@ -510,13 +588,12 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
     return out;
 }
 
-// Diagnostic: train one seed, free-run, write per-step CSV under examples/Lorenz/traces/.
-//   Lorenz.exe --trace <esn_seed> [max_freeruns=30] [target_orbit_seed=0]
 static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit)
 {
     constexpr uint64_t kBaseOrbit = 72983498;
     std::printf("=== HypercubeESN: Lorenz --trace ===\n");
-    std::printf("[trace] esn_seed=%llu  max_freeruns=%d  target_orbit=%llu\n",
+    std::printf("[trace] protocol=%s  esn_seed=%llu  max_freeruns=%d  target_orbit=%llu\n",
+                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
                 static_cast<unsigned long long>(esn_seed), max_freeruns,
                 static_cast<unsigned long long>(target_orbit));
     std::printf("[trace] train %zu epochs then free-run; CSV under examples/Lorenz/traces/\n",
@@ -541,7 +618,7 @@ static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orb
     for (int i = 0; i < max_freeruns; ++i)
     {
         const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
-        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str());
+        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, config::FREE_RUN_PROTOCOL);
         if (!r.valid)
         {
             std::printf("[trace] free-run %d invalid — stop\n", i);
@@ -608,8 +685,6 @@ int main(int argc, char** argv)
         std::cout << probe.ReadoutArchSummary();
     }
 
-    // argv[1] = NUM_THREADS (default hardware_concurrency)
-    // argv[2] = NUM_RUNS    (default 50 free-runs per trial)
     const size_t hw = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1;
     const size_t max_threads = 4 * hw;
     size_t num_threads = hw;
@@ -630,13 +705,15 @@ int main(int argc, char** argv)
         static_cast<long long>(config::TRAINING_WINDOW_SIZE);
     const long long freerun_steps_per_trial =
         static_cast<long long>(num_runs) *
-        (static_cast<long long>(config::TRAINING_WINDOW_SIZE) +
+        (static_cast<long long>(config::FREE_RUN_WASHOUT_STEPS) +
          static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
-    std::printf("[survey] free-run (input-bank self-feedback; ext-fb off)\n");
+    std::printf("[survey] protocol=%s  (input-bank free-run; ext-fb off)\n",
+                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  epochs=%zu  "
-                "train_window=%d  freerun_window=%zu\n",
+                "train_window=%d  freerun_washout=%zu  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,
-                config::EPOCHS, config::TRAINING_WINDOW_SIZE, config::FREE_RUN_WINDOW_SIZE);
+                config::EPOCHS, config::TRAINING_WINDOW_SIZE,
+                config::FREE_RUN_WASHOUT_STEPS, config::FREE_RUN_WINDOW_SIZE);
     std::printf("[survey] ~%lld train reservoir-steps/trial + ~%lld free-run "
                 "reservoir-steps/trial (washout+score); progress on stderr\n",
                 train_steps_per_trial, freerun_steps_per_trial);

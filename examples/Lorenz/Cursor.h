@@ -15,7 +15,8 @@
 ///              ──────────────────────────>  each Step
 ///                                           OOB when index > span
 ///
-///   - @ref Reset seats at 0 (start of the training / washout window).
+///   - @ref Reset seats at 0.
+///   - @ref Seek seats at an arbitrary index (owner validates vs stream length).
 ///   - @ref Step increments by one.
 ///   - @ref OOB is true once the index has left the training window (generative /
 ///     eval runway begins). The class does not know stream length N; runway bounds
@@ -33,6 +34,15 @@ public:
     }
 
     void Reset() { idx_ = 0; }
+
+    /// Seat at @p index. Does not validate against stream length (owner's job).
+    /// @throws std::out_of_range if @p index < 0.
+    void Seek(const int32_t index)
+    {
+        if (index < 0)
+            throw std::out_of_range("Cursor::Seek - index must be >= 0");
+        idx_ = index;
+    }
 
     /// Advance one step; return the new index.
     int32_t Step() { return idx_ += 1; }

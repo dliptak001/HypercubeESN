@@ -24,15 +24,13 @@ stream:  0 ======================= span ....... N
 |-----------|---------|
 | `span` | Last in-window train index; `OOB` when `index > span` |
 
-`Reset()` seats at 0. Each `Step()` increments by one. Free-run / eval runway
-is `index > span` up to the owner's stream end.
-
 ## Public API
 
 ```text
 explicit Cursor(int32_t span);
 
-void    Reset();
+void    Reset();             // index = 0
+void    Seek(int32_t index); // seat (index >= 0); stream bounds = owner
 int32_t Step();              // advance; return new index
 int32_t Index() const;
 int32_t NextIndex() const;
@@ -45,6 +43,7 @@ int32_t Span() const;
 
 ## How the example uses it
 
-In `examples/Lorenz`, train and washout run while `!OOB()` with teacher-forced
-samples at the current index. Free-run continues on the eval runway with the
-model's prediction fed on the **input** bank (`num_external_feedback_channels = 0`).
+- **Train:** `Reset()` then teacher-force while `!OOB()`.
+- **Free-run washout:** `Seek` then teacher-force W steps — edge of train
+  (`span − W + 1`) for Unseen / TrainHoldout, or start of train (`0`) for
+  TrainInSample — then generative free-run with prediction on the **input** bank.
