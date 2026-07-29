@@ -35,7 +35,7 @@ namespace config
     constexpr float LEARNING_RATE_MIN = 0.000002f;// anneal floor reached at the final epoch
     constexpr size_t EPOCHS = 100;
     constexpr size_t READOUT_SLICES = 2;
-    constexpr size_t CONV_CHANNELS = 2;//8;
+    constexpr size_t CONV_CHANNELS = 4;//8;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;
 
@@ -60,7 +60,7 @@ namespace config
     // true  = forward-only: past input is zero every ReservoirStep (warmup + train +
     //         washout + free-run). Architecture unchanged (num_inputs still 4); reverse
     //         has no dynamical impact — as if the reverse path were absent.
-    constexpr bool FORWARD_ONLY = false;
+    constexpr bool FORWARD_ONLY = true;
 }
 
 /// One seed's free-run outcome: the numeric metrics the survey aggregates, plus a
