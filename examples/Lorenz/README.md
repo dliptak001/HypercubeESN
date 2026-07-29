@@ -40,7 +40,8 @@ survey is re-run under the current protocol.
         ▼
  LorenzDatastream  — integrate once, normalize → float S[·] ≈ [-1,1]; is a Cursor
         │
-        │  input port (4): [x, y, z, x·z]  real in train/warmup; prediction in free-run
+        │  input port: DriveLayout (4-in xz or 8-in quadratic)
+        │    real in train/warmup; prediction in free-run
         ▼
  ESN  — fixed hypercube reservoir + online HCNN readout (3 outputs: x, y, z)
         │  external feedback: off
@@ -73,14 +74,20 @@ Default layout (`config::`): train window `[0, TRAINING_WINDOW_SIZE]`;
 
 ## 4. Drive and targets
 
+Switch with `config::DRIVE_LAYOUT` in `Lorenz.h` (`num_inputs` must divide `N = 2^DIM`).
+
+| `DriveLayout` | Channels | Features |
+|---------------|---------:|----------|
+| `XyzXz` (default) | 4 | `[x, y, z, x·z]` |
+| `Quadratic8` | 8 | `[x, y, z, x·y, x·z, x², y², z²]` |
+
 ```text
- input port (4):  [ x, y, z, x·z ]   ExtractDriveReal / ExtractDrivePredicted
- targets    (3):  (x, y, z)          ExtractTargets
+ targets (3):  (x, y, z)   ExtractTargets
 ```
 
-- Fourth channel is the product of that step's `x` and `z` (after normalization).
-- Free-run rebuilds the product from predicted channels — no denorm/renorm bug.
-- Gain: `input_scaling` only.
+- Products use the same-step `(x,y,z)` (normalized). Free-run rebuilds from predictions.
+- Single global `INPUT_SCALING` (no per-channel gains yet).
+- Load/save readout must match the layout used at train time.
 
 ---
 
@@ -144,7 +151,7 @@ reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epo
 | Stream | train span, free-run window, stream length, dt |
 | Stage | `WARMUP_STEPS` (train and free-run) |
 | Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
-| Export | `SAVE_TRAINED_WEIGHTS` (off) → `MODEL_SAVE_DIR` / `lorenz_seed{N}` HCNW + arch |
+| Export | `SAVE_TRAINED_WEIGHTS` (off) → `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` HCNW + arch |
 | Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only (Unseen) |
 | Score | VPT threshold, Lyapunov exponent |
 
@@ -165,17 +172,19 @@ edit `main.cpp` to call a campaign, rebuild, run `Lorenz.exe`.
 // examples/Lorenz/main.cpp
 int main()
 {
-    return Campaign_SeedSurvey(/*threads=*/0, /*runs=*/50);
-    // return Campaign_Trace(/*seed=*/21978990, /*max_freeruns=*/30);
+    return Campaign_SeedSurvey(/*dim=*/11, /*threads=*/0, /*runs=*/50);
+    // return Campaign_Trace(/*dim=*/11, /*seed=*/21978990, /*max_freeruns=*/30);
 }
 ```
 
 | Function | Role |
 |----------|------|
-| `Campaign_SeedSurvey(threads, runs, base_seed, orbit_seed)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
-| `Campaign_Trace(esn_seed, max_freeruns, target_orbit, orbit_seed)` | One seed + CSV dumps under `examples/Lorenz/traces/` |
-| `Campaign_HistoryDepthSweep({M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
+| `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
+| `Campaign_Trace(dim, esn_seed, max_freeruns, ...)` | One seed + CSV dumps under `examples/Lorenz/traces/` |
+| `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
+| `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
 
+First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit.
 Protocol, epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign
 signatures are in `Campaigns.h`. Progress on **stderr**; reports on **stdout**.
 
@@ -185,6 +194,7 @@ signatures are in `Campaigns.h`. Progress on **stderr**; reports on **stdout**.
 |-----|--------|
 | Survey | `Survey_YYYYMMDD_HHMMSS_M{M}.csv` + `.txt` (metadata + one aggregate row) |
 | M-sweep | `Msweep_YYYYMMDD_HHMMSS.csv` + `.txt` (metadata + all M rows, deltas, code picks) |
+| Drive A/B | `DriveAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas) |
 
 CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp protocol,
 dim, N, M, epochs, θ, seeds, etc.

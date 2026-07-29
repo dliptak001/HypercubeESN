@@ -58,11 +58,20 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `PredictFromState` kept).
 - **Lorenz harness:** Janus half-anchored free-run, `FORWARD_ONLY` ablation,
   GS operational metrics (`duty`, `n_relock`, `n_unlock`, `mean_locked_sojourn`).
+- **Lorenz drive layouts:** `DriveLayout::XyzXz` (4-in `[x,y,z,xz]`) and
+  `Quadratic8` (8-in state + bilinears + squares); `config::DRIVE_LAYOUT`.
+- **`Campaign_DriveLayoutAB`:** matched A/B at fixed M with code-computed
+  deltas and VPT/duty picks; `DriveAB_*` CSV/TXT under `RESULTS_DIR`.
+- **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` / `HistoryDepthSweep`
+  take reservoir `dim` first; RAII restore of `DIM` / `HISTORY_DEPTH` / drive.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 
 ### Changed
 
+- **Lorenz weight stems:** save/load use
+  `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` so dim, history depth, and drive width
+  do not collide; load must match train-time layout.
 - **HypercubeCNN kernel geometry** — see **Highlights** (dim → dim+1 with self
   tap). Retrain readouts that were frozen against older neighbor-only HCNN
   weights; blobs are not layout-compatible in spirit even when loaders succeed.

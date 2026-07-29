@@ -30,6 +30,39 @@ void FormatWallTime(char* buf, size_t n, const double seconds)
         std::snprintf(buf, n, "%.1f s (%.2f h)", seconds, seconds / 3600.0);
 }
 
+// RAII: assign a config value for the campaign duration, restore on exit.
+template <typename T>
+struct ConfigRestore
+{
+    T& slot;
+    T saved;
+    ConfigRestore(T& ref, T value) : slot(ref), saved(ref) { slot = value; }
+    ~ConfigRestore() { slot = saved; }
+    ConfigRestore(const ConfigRestore&) = delete;
+    ConfigRestore& operator=(const ConfigRestore&) = delete;
+};
+using ConfigSizeRestore = ConfigRestore<size_t>;
+using ConfigDriveRestore = ConfigRestore<DriveLayout>;
+
+// Reservoir requires 5 <= dim <= 16 (see Reservoir.cpp).
+bool ValidateDim(size_t dim, const char* campaign)
+{
+    if (dim >= 5 && dim <= 16)
+        return true;
+    std::fprintf(stderr, "[%s] refused: dim=%zu (reservoir requires 5 <= dim <= 16)\n",
+                 campaign, dim);
+    return false;
+}
+
+bool ValidateHistoryDepth(size_t M, const char* campaign)
+{
+    if (M >= 1 && M <= 64)
+        return true;
+    std::fprintf(stderr, "[%s] refused: M=%zu (reservoir requires 1 <= M <= 64)\n",
+                 campaign, M);
+    return false;
+}
+
 std::string TimestampNow()
 {
     using clock = std::chrono::system_clock;
@@ -88,6 +121,8 @@ void AppendCompactConfigLines(std::ostream& o)
       << "  lr=" << config::LEARNING_RATE << ".." << config::LEARNING_RATE_MIN
       << "  theta=" << config::VPT_THRESHOLD
       << "  load_w=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
+      << "  drive=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
+      << "  n_in=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT)
       << "\n";
 }
 
@@ -124,6 +159,8 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "  freeruns_per_trial=" << num_runs << "\n"
       << "# load_weights=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
       << "  save_weights=" << (config::SAVE_TRAINED_WEIGHTS ? "on" : "off") << "\n"
+      << "# drive_layout=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
+      << "  num_inputs=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT) << "\n"
       << "# metrics=mean_of_trial_means (sample std across trials)\n";
 }
 
@@ -526,9 +563,13 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
 // ---------------------------------------------------------------------------
 // Campaign_SeedSurvey
 // ---------------------------------------------------------------------------
-int Campaign_SeedSurvey(size_t num_threads, int num_runs, uint64_t base_seed, uint64_t orbit_seed,
-                        bool completion_beep, SurveySummary* out)
+int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t base_seed,
+                        uint64_t orbit_seed, bool completion_beep, SurveySummary* out)
 {
+    if (!ValidateDim(dim, "survey"))
+        return 2;
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+
     std::cout << "=== HypercubeESN: Lorenz / survey ===\n";
 
     config::ENABLE_PRINTF = false;
@@ -641,6 +682,8 @@ int Campaign_SeedSurvey(size_t num_threads, int num_runs, uint64_t base_seed, ui
 
     SurveySummary sum;
     sum.history_depth = config::HISTORY_DEPTH;
+    sum.drive_layout = config::DRIVE_LAYOUT;
+    sum.num_inputs = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
     sum.num_trials = num_threads;
     sum.num_runs = num_runs;
     sum.n_trials_ok = trial_vpt.size();
@@ -685,15 +728,21 @@ int Campaign_SeedSurvey(size_t num_threads, int num_runs, uint64_t base_seed, ui
 // ---------------------------------------------------------------------------
 // Campaign_Trace
 // ---------------------------------------------------------------------------
-int Campaign_Trace(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit, uint64_t orbit_seed)
+int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t target_orbit,
+                   uint64_t orbit_seed)
 {
+    if (!ValidateDim(dim, "trace"))
+        return 2;
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+
     if (max_freeruns < 1)
         max_freeruns = 1;
 
     std::printf("=== HypercubeESN: Lorenz / trace ===\n");
-    std::printf("[trace] protocol=%s  esn_seed=%llu  max_freeruns=%d  target_orbit=%llu  "
-                "history_depth(M)=%zu\n",
+    std::printf("[trace] protocol=%s  DIM=%zu (N=%zu)  esn_seed=%llu  max_freeruns=%d  "
+                "target_orbit=%llu  history_depth(M)=%zu\n",
                 Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+                config::DIM, size_t{1} << config::DIM,
                 static_cast<unsigned long long>(esn_seed), max_freeruns,
                 static_cast<unsigned long long>(target_orbit), config::HISTORY_DEPTH);
     std::printf("[trace] train %zu epochs then free-run; CSV under examples/Lorenz/traces/\n",
@@ -787,10 +836,12 @@ int Campaign_Trace(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit, u
 // ---------------------------------------------------------------------------
 // Campaign_HistoryDepthSweep
 // ---------------------------------------------------------------------------
-int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
+int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history_depths,
                                size_t num_threads, int num_runs,
                                uint64_t base_seed, uint64_t orbit_seed)
 {
+    if (!ValidateDim(dim, "M-sweep"))
+        return 2;
     if (history_depths.size() == 0)
     {
         std::fprintf(stderr, "[M-sweep] empty history_depths list -- nothing to do\n");
@@ -810,23 +861,19 @@ int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
     if (config::SAVE_TRAINED_WEIGHTS)
     {
         std::fprintf(stderr,
-                     "[M-sweep] NOTE: SAVE_TRAINED_WEIGHTS is on; stems include M "
-                     "(lorenz_seed{{seed}}_M{{M}}) so each depth keeps its own file.\n");
+                     "[M-sweep] NOTE: SAVE_TRAINED_WEIGHTS is on; stems include "
+                     "DIM/M/num_inputs (lorenz_seed{{seed}}_D{{DIM}}_M{{M}}_in{{Nin}}) "
+                     "so each geometry keeps its own file.\n");
         std::fflush(stderr);
     }
 
-    // RAII: always restore caller's HISTORY_DEPTH (including on throw / early return).
-    struct HistoryDepthRestore
-    {
-        size_t saved;
-        explicit HistoryDepthRestore(size_t current) : saved(current) {}
-        ~HistoryDepthRestore() { config::HISTORY_DEPTH = saved; }
-        HistoryDepthRestore(const HistoryDepthRestore&) = delete;
-        HistoryDepthRestore& operator=(const HistoryDepthRestore&) = delete;
-    } restore(config::HISTORY_DEPTH);
+    // RAII: always restore caller's DIM and HISTORY_DEPTH (throw / early return safe).
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, config::HISTORY_DEPTH);
 
     std::printf("=== HypercubeESN: Lorenz / history-depth (M) sweep ===\n");
-    std::printf("[M-sweep] %zu value(s):", history_depths.size());
+    std::printf("[M-sweep] DIM=%zu (N=%zu)  %zu M value(s):",
+                config::DIM, size_t{1} << config::DIM, history_depths.size());
     for (size_t M : history_depths)
         std::printf(" %zu", M);
     std::printf("\n");
@@ -863,7 +910,7 @@ int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
         std::fflush(stdout);
 
         SurveySummary sum;
-        const int rc = Campaign_SeedSurvey(num_threads, num_runs, base_seed, orbit_seed,
+        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
                                            /*completion_beep=*/false, &sum);
         if (sum.ok)
             rows.push_back(sum);
@@ -968,8 +1015,8 @@ int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
         FormatWallTime(time_buf, sizeof time_buf, elapsed);
         char wall_line[160];
         std::snprintf(wall_line, sizeof wall_line,
-                      "\n=== M-sweep wall time: %s (restoring HISTORY_DEPTH=%zu) ===\n",
-                      time_buf, restore.saved);
+                      "\n=== M-sweep wall time: %s (restoring DIM=%zu HISTORY_DEPTH=%zu) ===\n",
+                      time_buf, dim_restore.saved, m_restore.saved);
         roll << wall_line;
 
         const std::string block = roll.str();
@@ -980,6 +1027,295 @@ int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
         WriteMsweepResultFiles(rows, base_seed, orbit_seed, num_threads, num_runs, elapsed,
                                i_best_vpt, i_best_duty);
     }
+
+    Beep(2500, 3000);
+    return first_err;
+}
+
+// Drive-layout A/B: CSV + TXT under RESULTS_DIR.
+void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
+                             size_t dim, size_t history_depth,
+                             uint64_t base_seed, uint64_t orbit_seed,
+                             size_t num_threads, int num_runs,
+                             double total_wall_s)
+{
+    const fs::path dir = EnsureResultsDir();
+    if (!fs::exists(dir))
+        return;
+
+    const std::string ts = TimestampNow();
+    const fs::path csv_path = dir / ("DriveAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".csv");
+    const fs::path txt_path = dir / ("DriveAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".txt");
+
+    auto write_row = [](std::ostream& o, const SurveySummary& s) {
+        o << Lorenz::DriveLayoutName(s.drive_layout) << ','
+          << s.num_inputs << ','
+          << s.history_depth << ','
+          << s.mean_vpt << ',' << s.std_vpt << ','
+          << s.mean_rmse << ',' << s.std_rmse << ','
+          << s.mean_duty << ',' << s.std_duty << ','
+          << s.mean_n_relock << ',' << s.std_n_relock << ','
+          << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
+          << s.wall_seconds << ','
+          << Lorenz::ProtocolName(s.protocol) << ','
+          << (s.ok ? 1 : 0) << '\n';
+    };
+
+    {
+        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
+        if (!csv)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", csv_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(csv, "DriveAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        csv << "# dim=" << dim << "  fixed_M=" << history_depth
+            << "  total_wall_seconds=" << total_wall_s << "\n";
+        csv << "drive,num_inputs,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
+               "mean_duty,std_duty,mean_n_relock,std_n_relock,"
+               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+        if (a.ok) write_row(csv, a);
+        if (b.ok) write_row(csv, b);
+        if (a.ok && b.ok)
+        {
+            csv << "# deltas (Quadratic8 - XyzXz): dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dRelock=" << (b.mean_n_relock - a.mean_n_relock) << "\n";
+        }
+    }
+    {
+        std::ofstream txt(txt_path, std::ios::out | std::ios::trunc);
+        if (!txt)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", txt_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(txt, "DriveAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        txt << "\nDrive-layout A/B (fixed M; mean of trial-means)\n";
+        txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
+            << "  M=" << history_depth << "\n";
+        AppendCompactConfigLines(txt);
+        txt << "\narm,drive,n_in,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
+               "relk_mn,relk_sd,trials_ok,wall_s\n";
+        auto arm_line = [&](const char* tag, const SurveySummary& s) {
+            if (!s.ok)
+            {
+                txt << tag << ",(failed)\n";
+                return;
+            }
+            txt << tag << ','
+                << Lorenz::DriveLayoutName(s.drive_layout) << ','
+                << s.num_inputs << ','
+                << s.mean_vpt << ',' << s.std_vpt << ','
+                << s.mean_rmse << ',' << s.std_rmse << ','
+                << s.mean_duty << ',' << s.std_duty << ','
+                << s.mean_n_relock << ',' << s.std_n_relock << ','
+                << s.n_trials_ok << ',' << s.wall_seconds << '\n';
+        };
+        arm_line("A", a);
+        arm_line("B", b);
+        if (a.ok && b.ok)
+        {
+            txt << "\nDeltas (B - A) = Quadratic8 - XyzXz\n";
+            txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dRelock=" << (b.mean_n_relock - a.mean_n_relock) << "\n";
+            txt << "\nCode pick (max mean VPT among successful arms):\n";
+            const SurveySummary& best = (b.mean_vpt >= a.mean_vpt) ? b : a;
+            txt << "  " << Lorenz::DriveLayoutName(best.drive_layout)
+                << "  VPT=" << best.mean_vpt << " +/- " << best.std_vpt << "\n";
+            txt << "  total_wall_seconds=" << total_wall_s << "\n";
+        }
+    }
+
+    std::printf("[results] wrote %s\n", csv_path.string().c_str());
+    std::printf("[results] wrote %s\n", txt_path.string().c_str());
+    std::fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
+// Campaign_DriveLayoutAB
+// ---------------------------------------------------------------------------
+int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
+                           size_t num_threads, int num_runs,
+                           uint64_t base_seed, uint64_t orbit_seed)
+{
+    if (!ValidateDim(dim, "DriveAB"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "DriveAB"))
+        return 2;
+
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[DriveAB] refused: LOAD_TRAINED_WEIGHTS is on. "
+                     "A/B needs a fresh train per drive layout.\n");
+        return 2;
+    }
+
+    if (config::SAVE_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[DriveAB] NOTE: SAVE_TRAINED_WEIGHTS is on; stems include "
+                     "DIM/M/num_inputs so each arm keeps its own file.\n");
+        std::fflush(stderr);
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigDriveRestore drive_restore(config::DRIVE_LAYOUT, config::DRIVE_LAYOUT);
+
+    static const DriveLayout kArms[] = {
+        DriveLayout::XyzXz,
+        DriveLayout::Quadratic8,
+    };
+
+    std::printf("=== HypercubeESN: Lorenz / drive-layout A/B ===\n");
+    std::printf("[DriveAB] DIM=%zu (N=%zu)  M=%zu  arms:",
+                config::DIM, size_t{1} << config::DIM, history_depth);
+    for (DriveLayout L : kArms)
+        std::printf(" %s(n_in=%zu)", Lorenz::DriveLayoutName(L), Lorenz::NumDriveChannels(L));
+    std::printf("\n");
+    std::printf("[DriveAB] survey threads=%zu  runs=%d  (0 threads => HW)\n",
+                num_threads, num_runs);
+    std::printf("[DriveAB] matched seeds/protocol; train per arm (not load)\n");
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    SurveySummary arm_a{};
+    SurveySummary arm_b{};
+    int first_err = 0;
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const DriveLayout L = kArms[i];
+        config::DRIVE_LAYOUT = L;
+        std::printf("\n########## DriveAB arm %zu/2: %s  (n_in=%zu)  M=%zu ##########\n",
+                    i + 1, Lorenz::DriveLayoutName(L), Lorenz::NumDriveChannels(L),
+                    history_depth);
+        std::fflush(stdout);
+
+        SurveySummary sum;
+        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
+                                           /*completion_beep=*/false, &sum);
+        if (i == 0)
+            arm_a = sum;
+        else
+            arm_b = sum;
+        if (rc != 0 && first_err == 0)
+            first_err = rc;
+    }
+
+    std::fflush(stdout);
+
+    const double elapsed = std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+
+    {
+        std::ostringstream roll;
+        roll << "\n========================================================================\n"
+             << "=== Drive A/B roll-up (fixed M; mean of trial-means; code-computed) ===\n"
+             << "========================================================================\n";
+        AppendCompactConfigLines(roll);
+
+        char line[512];
+        std::snprintf(line, sizeof line,
+                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      dim, size_t{1} << dim, history_depth,
+                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+                      arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
+                      num_runs, config::VPT_THRESHOLD);
+        roll << line;
+
+        std::snprintf(line, sizeof line,
+                      "%-12s %5s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                      "drive", "n_in", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
+                      "duty_mn", "duty_sd", "relk_mn", "relk_sd", "trials_ok", "wall_s");
+        roll << line;
+        std::snprintf(line, sizeof line,
+                      "%-12s %5s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                      "------------", "-----", "--------", "--------", "----------", "--------",
+                      "--------", "----------", "--------", "--------", "----------", "----------");
+        roll << line;
+
+        auto row = [&](const SurveySummary& s) {
+            if (!s.ok)
+            {
+                std::snprintf(line, sizeof line, "%-12s  (failed)\n",
+                              Lorenz::DriveLayoutName(s.drive_layout));
+                roll << line;
+                return;
+            }
+            std::snprintf(line, sizeof line,
+                          "%-12s %5zu %8.3f %8.3f %10.6f %8.6f %8.3f %10.3f %8.1f %8.1f %10zu %10.1f\n",
+                          Lorenz::DriveLayoutName(s.drive_layout), s.num_inputs,
+                          s.mean_vpt, s.std_vpt,
+                          s.mean_rmse, s.std_rmse,
+                          s.mean_duty, s.std_duty,
+                          s.mean_n_relock, s.std_n_relock,
+                          s.n_trials_ok, s.wall_seconds);
+            roll << line;
+        };
+        row(arm_a);
+        row(arm_b);
+
+        if (arm_a.ok && arm_b.ok)
+        {
+            roll << "\nDeltas (Quadratic8 - XyzXz):\n";
+            std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
+                          "", "dVPT", "dRMSE", "dDuty", "dRelock");
+            roll << line;
+            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.1f\n",
+                          "B - A",
+                          arm_b.mean_vpt - arm_a.mean_vpt,
+                          arm_b.mean_rmse - arm_a.mean_rmse,
+                          arm_b.mean_duty - arm_a.mean_duty,
+                          arm_b.mean_n_relock - arm_a.mean_n_relock);
+            roll << line;
+
+            roll << "\nCode pick (max mean VPT among successful arms):\n";
+            const SurveySummary& best =
+                (arm_b.mean_vpt >= arm_a.mean_vpt) ? arm_b : arm_a;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT  : %s  VPT=%.3f +/- %.3f  (n_in=%zu)\n",
+                          Lorenz::DriveLayoutName(best.drive_layout),
+                          best.mean_vpt, best.std_vpt, best.num_inputs);
+            roll << line;
+            const SurveySummary& best_d =
+                (arm_b.mean_duty >= arm_a.mean_duty) ? arm_b : arm_a;
+            std::snprintf(line, sizeof line,
+                          "  best mean duty : %s  duty=%.3f +/- %.3f  (n_in=%zu)\n",
+                          Lorenz::DriveLayoutName(best_d.drive_layout),
+                          best_d.mean_duty, best_d.std_duty, best_d.num_inputs);
+            roll << line;
+        }
+        else if (!arm_a.ok && !arm_b.ok)
+        {
+            roll << "(no successful arms)\n";
+        }
+
+        std::snprintf(line, sizeof line,
+                      "\n=== Drive A/B wall time: %s (restoring DIM=%zu M=%zu drive=%s) ===\n",
+                      time_buf, dim_restore.saved, m_restore.saved,
+                      Lorenz::DriveLayoutName(drive_restore.saved));
+        roll << line;
+
+        const std::string block = roll.str();
+        std::fwrite(block.data(), 1, block.size(), stdout);
+        std::fflush(stdout);
+    }
+
+    WriteDriveAbResultFiles(arm_a, arm_b, dim, history_depth, base_seed, orbit_seed,
+                            num_threads, num_runs, elapsed);
 
     Beep(2500, 3000);
     return first_err;

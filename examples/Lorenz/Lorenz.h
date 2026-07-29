@@ -27,6 +27,20 @@ enum class FreeRunProtocol
     TrainHoldout = 2,
 };
 
+/// Reservoir input-drive layout (num_inputs must divide N = 2^DIM).
+/// Free-run rebuilds products from predicted (x,y,z) -- no denorm/renorm.
+enum class DriveLayout
+{
+    /// 4 channels: [x, y, z, x*z]  (ODE bilinear in y-dot). Baseline.
+    XyzXz = 0,
+    /// 8 channels: [x, y, z, x*y, x*z, x*x, y*y, z*z]
+    /// Both ODE bilinears + pure quadratic pad (drops y*z; full deg-2 is 9).
+    Quadratic8 = 1,
+};
+
+/// Max channels among DriveLayout variants (stack buffers / CSV).
+inline constexpr size_t kMaxDriveChannels = 8;
+
 namespace config
 {
     // ---- Diagnostics ----
@@ -39,19 +53,24 @@ namespace config
     inline bool ENABLE_PROGRESS = false;
 
     // ---- Reservoir / model ----
-    constexpr size_t DIM = 11;
+    // Hypercube dim (N = 2^DIM). Not constexpr: campaigns pass DIM as an argument.
+    // Reservoir requires 5 <= dim <= 16.
+    inline size_t DIM = 11;
     constexpr uint64_t SEED = 13649419;
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.04f;
     constexpr float LEAK_RATE = 1.0f;
     // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
     // Reservoir requires M in [1, 64].
-    inline size_t HISTORY_DEPTH = 24;
+    inline size_t HISTORY_DEPTH = 18;   // 18 is optimal for DIM11.
+    // Input-drive feature map (see DriveLayout). Campaigns may reassign (A/B).
+    // Load/save readout must match the layout used at train time.
+    inline DriveLayout DRIVE_LAYOUT = DriveLayout::XyzXz;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
     constexpr float LEARNING_RATE_MIN = 0.000002f;
-    constexpr size_t EPOCHS = 50;
+    constexpr size_t EPOCHS = 50;  // 50 for rapid comparison tests, 100 for reports
     constexpr size_t READOUT_SLICES = 2;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
@@ -79,16 +98,19 @@ namespace config
 
     // ---- Model I/O (readout HCNW + arch sidecar; reservoir is seed-reproducible) ----
     // Save: off by default. When true, Train() writes after the last epoch:
-    //   {MODEL_SAVE_DIR}\lorenz_seed{ESN_SEED}_M{HISTORY_DEPTH}.hcnw + .arch.json
+    //   {MODEL_SAVE_DIR}\lorenz_seed{SEED}_D{DIM}_M{M}_in{Nin}.hcnw + .arch.json
+    // (DIM / M / num_inputs in the stem so layout and geometry do not collide.)
     constexpr bool SAVE_TRAINED_WEIGHTS = false;
     constexpr const char* MODEL_SAVE_DIR = R"(C:\\HypercubeESN\\models)";
 
     // Load: off by default. When true, skip Train() and load readout from stem
-    // (no extension). ESN seed/arch must match the run that produced the file.
-    // Free-run after load is Unseen only (no train-orbit list). Example stem:
-    //   C:\HypercubeESN\models\lorenz_seed21978990
+    // (no extension). ESN seed/arch/drive layout must match the run that produced
+    // the file. Free-run after load is Unseen only (no train-orbit list).
+    // Example stem (match save naming):
+    //   C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4
     constexpr bool LOAD_TRAINED_WEIGHTS = false;
-    constexpr const char* LOAD_WEIGHTS_STEM = R"(C:\HypercubeESN\models\lorenz_seed21978990)";
+    constexpr const char* LOAD_WEIGHTS_STEM =
+        R"(C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4)";
 
     // Campaign results (survey aggregates, M-sweep roll-ups). Created if missing.
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESN\results)";
@@ -120,7 +142,8 @@ struct FreeRunResult
 /// @brief Online free-run experiment on Lorenz-63.
 ///
 ///   LorenzDatastream (normalized float stream + forward Cursor)
-///       |  input port: [x, y, z, x*z]  real in train/warmup; prediction in free-run
+///       |  input port: DriveLayout (4-in xz or 8-in quadratic)
+///       |    real in train/warmup; prediction in free-run
 ///       v
 ///   ESN (fixed reservoir + online HCNN readout; external feedback off)
 ///
@@ -156,6 +179,9 @@ public:
     [[nodiscard]] FreeRunProtocol EffectiveFreeRunProtocol() const;
 
     static const char* ProtocolName(FreeRunProtocol p);
+    static const char* DriveLayoutName(DriveLayout layout = config::DRIVE_LAYOUT);
+    /// Channel count for @p layout (4 or 8); must divide N.
+    static size_t NumDriveChannels(DriveLayout layout = config::DRIVE_LAYOUT);
 
 private:
     uint64_t seed_, orbit_seed_;
@@ -178,8 +204,10 @@ private:
 
     static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 
-    static void ExtractDriveReal(float drive[4], const NormalizedState& state);
-    static void ExtractDrivePredicted(float drive[4], const float* prediction);
+    /// Fill drive[0..NumDriveChannels) from normalized (x,y,z).
+    static void FillDrive(float* drive, float x, float y, float z);
+    static void ExtractDriveReal(float* drive, const NormalizedState& state);
+    static void ExtractDrivePredicted(float* drive, const float* prediction);
     static void ExtractTargets(float targets[3], const NormalizedState& state);
 
     static ESNConfig MakeESNConfig(uint64_t seed);
