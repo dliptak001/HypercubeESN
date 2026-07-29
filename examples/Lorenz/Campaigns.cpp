@@ -448,19 +448,13 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         emit(buf);
     }
 
+    // Leaderboards: VPT and duty only (no RMSE top list -- aggregates cover RMSE).
     std::vector<const FreeRunResult*> valid;
     valid.reserve(results.size());
     for (const auto& r : results)
         if (r.valid) valid.push_back(&r);
 
-    const size_t top_n = std::min<size_t>(10, valid.size());
-
-    std::snprintf(buf, sizeof buf, "\n=== Top %zu lowest free-run RMSE ===\n", top_n);
-    emit(buf);
-    std::sort(valid.begin(), valid.end(),
-              [](const FreeRunResult* a, const FreeRunResult* b) { return a->rmse < b->rmse; });
-    for (size_t i = 0; i < top_n; i++)
-        emit(valid[i]->row.c_str());
+    const size_t top_n = std::min<size_t>(5, valid.size());
 
     std::snprintf(buf, sizeof buf, "\n=== Top %zu highest VPT (lt) ===\n", top_n);
     emit(buf);
