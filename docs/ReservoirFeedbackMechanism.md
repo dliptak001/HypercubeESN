@@ -215,10 +215,10 @@ auto y = esn.Predict();
 esn.ReservoirStep(u_t, fb_pred);
 ```
 
-What goes in `fb_*` is **your** rule, not something ESN selects. A production
-example is the Lorenz free-run harness: past block on the **input** port, future
-block on this **external-feedback** port (real during train, predicted in
-free-run) — see `examples/Lorenz/`.
+What goes in `fb_*` is **your** rule, not something ESN selects. The storefront
+Lorenz free-run example drives a single forward signal on the **input** bank
+and leaves external feedback off (`D = 0`); dual-drive policies can still use
+this port when needed — see `examples/Lorenz/`.
 
 ---
 
@@ -251,5 +251,5 @@ API for closed-loop work, or extend the bindings later.
 | [CPP_SDK.md](CPP_SDK.md) | `ReservoirConfig` / `ReservoirStep` API |
 | `Reservoir.h` / `Reservoir.cpp` | Implementation |
 | `ESN.h` / `ESN.cpp` | `ReservoirStep` seam |
-| `examples/Lorenz/` | Free-run policy example (external feedback in closed loop) |
+| `examples/Lorenz/` | Free-run example (input-bank self-feedback; ext-fb optional elsewhere) |
 | `tests/reservoir_snapshot.cpp` | CTest: snapshot/restore + drive (incl. ext-fb) |

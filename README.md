@@ -57,7 +57,7 @@ grid.
 ## Headline results
 
 Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
-Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md).
+Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md) · [Cursor](examples/Lorenz/Cursor.md).
 
 ### NARMA (open-loop system ID)
 
@@ -95,7 +95,7 @@ and harness details as provisional until that lands.
 |--------|--------|
 | VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
 
-[Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md)
+[Lorenz](examples/Lorenz/README.md) · [Cursor](examples/Lorenz/Cursor.md)
 
 ## What is Reservoir Computing?
 

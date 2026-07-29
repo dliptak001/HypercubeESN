@@ -14,123 +14,90 @@
 namespace config
 {
     // ---- Diagnostics ----
-    // Master gate for all live per-run diagnostic printf's (config banner, per-epoch
-    // train lines, free-run header / step trace / runway notes). Leave true for a
-    // normal single-seed run to watch progress; set false for a concurrent seed
-    // survey, whose per-seed result table (VPT + RMSE) prints regardless — main
-    // collects it from FreeRun()'s return value, not from these gated prints.
+    // Master gate for live per-run diagnostic printf's (config banner, per-epoch
+    // train lines, free-run traces). Leave true for a single-seed interactive run;
+    // set false for concurrent seed surveys (main collects FreeRunResult rows).
     inline bool ENABLE_PRINTF = true;
 
     // ---- Reservoir / model ----
-    constexpr size_t DIM = 11; // hypercube dimension
-    constexpr uint64_t SEED = 13649419; // reservoir seed
+    constexpr size_t DIM = 11;
+    constexpr uint64_t SEED = 13649419;
     constexpr float SPECTRAL_RADIUS = 0.99f;
-    constexpr float INPUT_SCALING = 0.005; // shared across all input channels
-    constexpr float FEEDBACK_SCALING = 0.04f; // future-block gain on the dedicated external-feedback port
-    constexpr float LEAK_RATE = 1.0;
-    constexpr size_t HISTORY_DEPTH = 24; // delay-line depth
+    // Sole drive gain: teacher / self-prediction on the input bank (4 channels).
+    // (Former Janus used a weak past on input and ~0.04 on the future ext-fb path;
+    // the forward signal was the 0.04 arm — start there for free-run.)
+    constexpr float INPUT_SCALING = 0.04f;
+    constexpr float LEAK_RATE = 1.0f;
+    constexpr size_t HISTORY_DEPTH = 24;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
-    constexpr float LEARNING_RATE = 0.00004f; // peak per-step online learning rate (Adam); annealed by LrProfile
-    constexpr float LEARNING_RATE_MIN = 0.000002f;// anneal floor reached at the final epoch
+    constexpr float LEARNING_RATE = 0.00004f;
+    constexpr float LEARNING_RATE_MIN = 0.000002f;
     constexpr size_t EPOCHS = 100;
     constexpr size_t READOUT_SLICES = 2;
-    constexpr size_t CONV_CHANNELS = 1;//8;
+    constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;
 
-    // ---- Data stream (Lorenz-63 integration + Janus cursor window) ----
+    // ---- Data stream (Lorenz-63 + forward cursor window) ----
+    // Layout: train/washout [0, TRAINING_WINDOW_SIZE], free-run truth after that.
     constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
     constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
-    constexpr int32_t CURSOR_CENTER_INDEX = FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE / 2;
-    constexpr size_t STREAM_LENGTH = 2*FREE_RUN_WINDOW_SIZE + TRAINING_WINDOW_SIZE;
+    constexpr int32_t CURSOR_START_INDEX = 0;
+    constexpr size_t STREAM_LENGTH =
+        static_cast<size_t>(TRAINING_WINDOW_SIZE) + FREE_RUN_WINDOW_SIZE;
 
-    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {-0.836584,-0.109998,0.615358};
-    constexpr double DT = 0.02; // RK4 integration step (canonical Lorenz-63)
+    constexpr LorenzAttractor::State INITIAL_LORENZ_STATE = {-0.836584, -0.109998, 0.615358};
+    constexpr double DT = 0.02;
 
     // ---- Stage control ----
     constexpr size_t RESERVOIR_WARMUP_STEPS = 1000;
 
     // ---- Free-run scoring ----
-    constexpr float VPT_THRESHOLD = 0.3f; // channel-RMS error (normalized units) ending the valid-prediction time; provisional
-    constexpr double LYAPUNOV_EXPONENT = 0.9056; // canonical Lorenz-63 lambda_max, for the step -> Lyapunov-time conversion
-
-    // ---- Ablation arms ----
-    // false = Janus baseline: real past on input, real/predicted future on ext-fb.
-    // true  = forward-only: past input is zero every ReservoirStep (warmup + train +
-    //         washout + free-run). Architecture unchanged (num_inputs still 4); reverse
-    //         has no dynamical impact — as if the reverse path were absent.
-    constexpr bool FORWARD_ONLY = true;
+    constexpr float VPT_THRESHOLD = 0.3f;
+    constexpr double LYAPUNOV_EXPONENT = 0.9056;
 }
 
-/// One seed's free-run outcome: the numeric metrics the survey aggregates, plus a
-/// pre-formatted display row. @ref Lorenz::FreeRun fills it; main() prints the rows
-/// and computes min/max/mean/median/std over the fields.
+/// One free-run outcome: metrics the survey aggregates, plus a display row.
 struct FreeRunResult
 {
-    bool valid = false; ///< false if the rollout scored 0 steps (excluded from stats)
-    uint64_t seed = 0; ///< reservoir seed of this run
-    uint64_t orbit_seed = 0; ///< orbit RNG seed after RebuildDatastream (printed in row)
-    size_t vpt_steps = 0; ///< step of first VPT_THRESHOLD crossing; 0 = never crossed
-    bool crossed = false; ///< whether the error ever crossed VPT_THRESHOLD (vpt_steps > 0)
-    double vpt_lt = 0.0; ///< valid-prediction time in Lyapunov times (window floor if never crossed)
-    double rmse = 0.0; ///< free-run RMSE over the scored steps (normalized units)
-    size_t steps = 0; ///< number of generative steps actually scored
-    /// GS / re-lock proxies (same θ = VPT_THRESHOLD; channel-RMS error):
-    /// duty = fraction of steps with err ≤ θ (VPT uses err > θ);
-    /// n_relock = # unlocked→locked after at least one prior unlock (true re-locks);
-    /// n_unlock = # locked→unlocked; mean_locked_sojourn = mean contiguous locked run length.
+    bool valid = false;
+    uint64_t seed = 0;
+    uint64_t orbit_seed = 0;
+    size_t vpt_steps = 0;
+    bool crossed = false;
+    double vpt_lt = 0.0;
+    double rmse = 0.0;
+    size_t steps = 0;
+    /// GS / re-lock proxies (θ = VPT_THRESHOLD; channel-RMS):
+    /// duty = fraction of steps with err ≤ θ; n_relock / n_unlock / mean locked sojourn.
     double duty = 0.0;
     size_t n_relock = 0;
     size_t n_unlock = 0;
     double mean_locked_sojourn = 0.0;
-    std::string row; ///< human-readable table line for this seed
+    std::string row;
 };
 
-/// @brief Experiment driver: online Janus-cursor training of an ESN on the
-/// Lorenz-63 attractor.
+/// @brief Online free-run experiment on Lorenz-63.
 ///
-/// Owns the full pipeline and wires it from the config:: constants above:
-///
-///   LorenzDatastream (normalized float stream + dual Janus cursors)
-///       |  input port:    past block   [x, y, z, x*z]  (real history)
-///       |  feedback port: future block [x, y, z, x*z]  (real in train, prediction in free-run)
+///   LorenzDatastream (normalized float stream + forward Cursor)
+///       |  input port: [x, y, z, x*z]  real in train/washout; prediction in free-run
 ///       v
-///   ESN (fixed reservoir + online-trained CNN readout)
+///   ESN (fixed reservoir + online HCNN readout; external feedback off)
 ///
-/// Each Train() epoch resets the cursors, warms the reservoir up teacher-forced,
-/// then sweeps the cursor window once teacher-forced at horizon 1, reporting the
-/// prequential RMSE. FreeRun() then rides the same cursors past the window edge:
-/// the future block on the feedback port switches to the model's OWN prediction
-/// (single-ESN self-feedback closed loop, ExtractFuturePredicted) while the past
-/// cursor stays anchored to real history; the prediction is scored step-for-step
-/// against the held-out orbit tail.
+/// Train(): teacher-forced one-step sweeps. FreeRun(): washout then generative
+/// self-feedback on the input bank; score vs held-out orbit tail.
 class Lorenz
 {
 public:
-    /// Builds the ESN from the config:: constants. The datastream is allocated later
-    /// by Train() / FreeRun() via RebuildDatastream (fresh orbit each call).
     Lorenz(uint64_t seed, uint64_t orbit_seed);
 
-    /// Runs config::EPOCHS teacher-forced training passes over the cursor
-    /// window, printing one line per epoch: the learning rate and the prequential
-    /// train RMSE (normalized units, over all 3 channels x all steps of the sweep).
     void Train();
 
-    /// Generative rollout over the held-out tail. Self-contained: resets the
-    /// cursors, re-sweeps the whole training window teacher-forced but
-    /// inference-only (anchored washout), then goes generative for
-    /// config::FREE_RUN_WINDOW_SIZE steps in the self-feedback closed loop — the
-    /// model's own prediction is fed on the future input channels while the past
-    /// cursor stays anchored to real history, and the prediction is scored against
-    /// the true orbit. The live error trace / VPT crossing / RMSE lines are gated
-    /// on config::ENABLE_PRINTF; the numeric outcome and its formatted table row
-    /// are always returned in a FreeRunResult (valid == false if 0 steps scored).
-    /// If @p csv_path is non-null, writes one CSV row per generative step
-    /// (step, lt, err, locked, pred_*, true_*, past_*) for plot diagnostics.
+    /// Washout on the training window (teacher-forced), then generative free-run
+    /// for FREE_RUN_WINDOW_SIZE steps. Optional per-step CSV via @p csv_path.
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr);
 
-    /// Human-readable HCNN stack + param counts (shared across survey seeds).
     [[nodiscard]] std::string ReadoutArchSummary() const {
         return esn_.ReadoutArchSummary();
     }
@@ -140,37 +107,20 @@ private:
 
     ESNConfig esn_config_;
     ESN esn_;
-    std::unique_ptr<LorenzDatastream> data_stream_; // rebuilt each epoch / free-run; owns the current stream
+    std::unique_ptr<LorenzDatastream> data_stream_;
 
     void RebuildDatastream(bool verbose);
 
-    /// Packs the 4-wide past block [x, y, z, x*z] (input port) from real history.
-    static void ExtractPast(float past[4], const LorenzDatastreamResult& past_future_states);
+    /// Pack input drive [x, y, z, x*z] from a real stream sample (teacher force).
+    static void ExtractDriveReal(float drive[4], const NormalizedState& state);
 
-    /// Input-port drive for this arm: real past (Janus) or all zeros (FORWARD_ONLY).
-    static void FillPast(float past[4], const LorenzDatastreamResult& past_future_states);
+    /// Pack input drive [x, y, z, x*z] from the model's prediction (free-run).
+    static void ExtractDrivePredicted(float drive[4], const float* prediction);
 
-    /// Packs the 4-wide future block [x, y, z, x*z] (feedback port) from the real
-    /// future sample — teacher-forced drive (warmups + training).
-    static void ExtractFutureReal(float future[4], const LorenzDatastreamResult& past_future_states);
+    /// Horizon-1 targets: current sample's (x, y, z).
+    static void ExtractTargets(float targets[3], const NormalizedState& state);
 
-    /// Packs the 4-wide future block [x, y, z, x*z] (feedback port) from the model's
-    /// own prediction — the generative self-feedback drive.
-    static void ExtractFuturePredicted(float future[4], const float* prediction);
-
-    /// Copies the current future sample — the horizon-1 target — into targets.
-    static void ExtractTargets(float targets[3], const NormalizedState& future_state);
-
-    /// Assembles the ESN config from the config:: constants.
     static ESNConfig MakeESNConfig(uint64_t seed);
-
-    /// Assembles the LorenzDatastream config from the config:: constants and a
-    /// by-value orbit seed state (owned by the caller for this call only).
     static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State orbit);
-
-    /// Per-epoch learning-rate schedule: cosine-anneal (CosineLR) from lr_max at
-    /// epoch 0 down to lr_min at 75% of the run, then held flat at lr_min for the
-    /// final 25% — lowers the single-sample gradient-noise floor late in training
-    /// and lets the readout settle at the floor rather than still cooling at the end.
     static float LrProfile(float lr_max, float lr_min, size_t epochs, size_t current_epoch);
 };

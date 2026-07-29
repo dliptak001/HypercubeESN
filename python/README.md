@@ -55,7 +55,7 @@ grid.
 
 ## Headline results
 
-Primary validators — open-loop (NARMA, MC) and half-anchored free-run (Lorenz).
+Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
 
 ### NARMA (open-loop system ID)
 
@@ -96,7 +96,7 @@ progress** — scores provisional for **v2.0**.
 | VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
 
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
-· [JanusCursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/JanusCursor.md)
+· [Cursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/Cursor.md)
 
 ## Installation
 
