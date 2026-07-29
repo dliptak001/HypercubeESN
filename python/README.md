@@ -86,16 +86,14 @@ theoretical ceiling (MC/F ≈ 1).
 
 [MemoryCapacity](https://github.com/dliptak001/HypercubeESN/blob/main/examples/MemoryCapacity/MemoryCapacity.md)
 
-### Lorenz (half-anchored free-run)
+### Lorenz (free-run)
 
-[Janus cursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/JanusCursor.md)
-train; free-run with real past on the input port and self-feedback on the future
-(ext-fb) port — **half-anchored**, not unassisted Pathak free-run. VPT, RMSE,
-and GS duty/re-lock pending for **v2.0**.
+Closed-loop free-run on Lorenz-63. See the C++ example docs; **major rework in
+progress** — scores provisional for **v2.0**.
 
 | Metric | Result |
 |--------|--------|
-| VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
+| VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
 
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
 · [JanusCursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/JanusCursor.md)

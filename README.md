@@ -56,7 +56,7 @@ grid.
 
 ## Headline results
 
-Primary validators — open-loop (NARMA, MC) and half-anchored free-run (Lorenz).
+Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
 Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md).
 
 ### NARMA (open-loop system ID)
@@ -84,17 +84,16 @@ theoretical ceiling (MC/F ≈ 1).
 | 10 | 1024 | ~820 |
 | 12 | 4096 | ~1380 |
 
-### Lorenz (half-anchored free-run)
+### Lorenz (free-run)
 
-[Janus cursor](examples/Lorenz/JanusCursor.md) train; free-run with real past
-on the input port and self-feedback on the future (ext-fb) port —
-**half-anchored**, not Pathak-style unassisted free-run. Report VPT, free-run
-RMSE, and GS proxies (duty / re-lock) with that protocol stated. Numbers pending
-A/B survey for **v2.0** storefront.
+Closed-loop free-run on Lorenz-63: train, then generative self-feedback.
+Report VPT, free-run RMSE, and related scores with the protocol stated in the
+example docs. **Major rework of this example is in progress** — treat numbers
+and harness details as provisional until that lands.
 
 | Metric | Result |
 |--------|--------|
-| VPT (lt) / free-run RMSE / duty · protocol | **TBD** |
+| VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
 
 [Lorenz](examples/Lorenz/README.md) · [JanusCursor](examples/Lorenz/JanusCursor.md)
 
@@ -335,7 +334,7 @@ HypercubeESN/
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
     NARMA/                       NARMA validator (one config · N30/50/70)
-    Lorenz/                      Lorenz attractor tracking / free-run
+    Lorenz/                      Lorenz attractor free-run (example rework in progress)
 
   python/                Python bindings (pybind11 module + pyproject)
   cmake/                 Package config template (find_package support)

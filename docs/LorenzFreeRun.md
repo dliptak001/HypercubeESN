@@ -1,5 +1,8 @@
 # Lorenz-63 Free-Run: A(x) vs tanh — Experiment Tracking
 
+> **Historical** A(x)-vs-tanh campaign notes. Current public free-run example:
+> [`examples/Lorenz/`](../examples/Lorenz/).
+
 > Status: **active campaign**. This is the closed-loop (generative) test that
 > open-loop tasks could not resolve. Open-loop is settled parity (NARMA, sine,
 > anomaly, classification; tanh wins linear MC) — A differs only by a gentler

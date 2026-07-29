@@ -1,12 +1,17 @@
-# Lorenz — Janus half-anchored free-run on Lorenz-63
+# Lorenz — free-run on Lorenz-63
 
-Closed-loop experiment: train a HypercubeESN online on a Lorenz-63 orbit with a
-**Janus cursor** presentation, then free-run with **self-feedback on the
-future port** while the past port stays anchored to real history.
+Closed-loop experiment: train a HypercubeESN online on a Lorenz-63 orbit, then
+free-run with generative self-feedback. The current harness uses a **Janus
+cursor** presentation (real past on the input port; future on the external-feedback
+port — teacher-forced in train, predicted in free-run).
 
-This is **assisted / half-anchored** free-run — continuous partial observation
-on the past — **not** classical unassisted autonomous generation (no true drive
-at all). Report VPT and RMSE with that distinction stated.
+This is **assisted / half-anchored** free-run when the past port is live —
+continuous partial observation on the past — **not** classical unassisted
+autonomous generation. Report VPT and RMSE with that distinction stated.
+
+> **Note:** This example is about to undergo a **major rework** (simpler
+> forward free-run storefront). Treat protocol details and published numbers as
+> provisional until that lands.
 
 ---
 

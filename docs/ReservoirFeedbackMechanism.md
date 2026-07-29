@@ -251,5 +251,5 @@ API for closed-loop work, or extend the bindings later.
 | [CPP_SDK.md](CPP_SDK.md) | `ReservoirConfig` / `ReservoirStep` API |
 | `Reservoir.h` / `Reservoir.cpp` | Implementation |
 | `ESN.h` / `ESN.cpp` | `ReservoirStep` seam |
-| `examples/Lorenz/` | Policy example (Janus cursor free-run) |
+| `examples/Lorenz/` | Free-run policy example (external feedback in closed loop) |
 | `tests/reservoir_snapshot.cpp` | CTest: snapshot/restore + drive (incl. ext-fb) |

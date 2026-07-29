@@ -40,6 +40,7 @@ The `examples/` directory contains worked examples, each with a companion
 | [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger linear MC diagnostic — how to run + at-a-glance peaks |
 | [MemoryCapacity_grids](../examples/MemoryCapacity/MemoryCapacity_grids.md) | Archived TotalMC grids (dim 5–12) + seed/leak appendices |
 | [NARMA](../examples/NARMA/NARMA.md) | Nonlinear system-identification benchmark — memory depth × nonlinear mixing |
+| [Lorenz](../examples/Lorenz/README.md) | Lorenz-63 free-run (example rework in progress) |
 
 ### 3. Build with the SDK
 
