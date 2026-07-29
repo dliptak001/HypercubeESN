@@ -1,0 +1,2330 @@
+C:\CLion\HypercubeESN\cmake-build-release\Lorenz.exe 30 100
+=== HypercubeESN: Lorenz ===
+Reservoir: DIM=11  N=2048  M=24  weights(fixed)=585728  [=N*DIM*(M+drives)=2048*11*(24+2)]
+HCNN input: readout_slices=2  B=2 blocks x N=2048  -> start_DIM=12  N_hcnn=4096
+  (start_DIM = reservoir_DIM + log2(B) = 11 + 1; M does not change HCNN size)
+
+HCNN Architecture: Conv(1->1, TANH, bias)  hcnn_DIM=12  N=4096
+                   -> Pool(MAX)  hcnn_DIM 12->11  N 4096->2048
+                   -> FLATTEN
+                   -> Linear(2048 -> 3)
+HCNN parameters (trained): 6161 (14 conv1 + 6147 readout)
+
+HCNN live weight_count: 6161
+[survey] arm=forward-only (past=0 every step; train+washout+free-run)
+[survey] 30 trial(s) x 100 free-run(s)  DIM=11 N=2048  epochs=100  train_window=20000  freerun_window=1000
+[survey] ~2000000 train reservoir-steps/trial + ~2100000 free-run reservoir-steps/trial (washout+score); no stdout until
+ all trials finish (progress on stderr)
+
+=== ESN seed 21978990 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=6.09  mean=1.90  median=1.55  std=1.45
+  free-run RMSE        n=100  min=0.338311  max=0.497400  mean=0.421092  median=0.420488  std=0.033088
+  duty (<=theta)       n=100  min=0.178  max=0.711  mean=0.473  median=0.478  std=0.123
+  n_relock             n=100  min=9.0  max=23.0  mean=16.2  median=16.0  std=2.9
+  n_unlock             n=100  min=9.0  max=24.0  mean=16.8  median=17.0  std=2.9
+  meanLock (steps)     n=100  min=10.5  max=55.8  mean=28.2  median=27.6  std=8.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978990   orbit_seed 14645204808822872881 VPT 160 steps ( 2.90 lt)  RMSE 0.338311  duty 0.711  relock
+ 13  unlock 14  meanLock 50.8
+arm fwd-only seed 21978990   orbit_seed 4804985241073930135 VPT 219 steps ( 3.97 lt)  RMSE 0.351665  duty 0.602  relock
+19  unlock 19  meanLock 30.1
+arm fwd-only seed 21978990   orbit_seed 8542863739336868721 VPT 140 steps ( 2.54 lt)  RMSE 0.354319  duty 0.657  relock
+13  unlock 13  meanLock 46.9
+arm fwd-only seed 21978990   orbit_seed 4364257658748689037 VPT 275 steps ( 4.98 lt)  RMSE 0.360255  duty 0.700  relock
+13  unlock 14  meanLock 50.0
+arm fwd-only seed 21978990   orbit_seed 7367918243184862287 VPT 189 steps ( 3.42 lt)  RMSE 0.362352  duty 0.669  relock
+11  unlock 12  meanLock 55.8
+arm fwd-only seed 21978990   orbit_seed 656605956440221769 VPT 311 steps ( 5.63 lt)  RMSE 0.370568  duty 0.516  relock 1
+3  unlock 14  meanLock 36.9
+arm fwd-only seed 21978990   orbit_seed 248130967593251468 VPT 266 steps ( 4.82 lt)  RMSE 0.372246  duty 0.657  relock 1
+7  unlock 17  meanLock 36.5
+arm fwd-only seed 21978990   orbit_seed 15992716269590395088 VPT 105 steps ( 1.90 lt)  RMSE 0.373221  duty 0.585  relock
+ 16  unlock 16  meanLock 34.4
+arm fwd-only seed 21978990   orbit_seed 11957716583852103447 VPT 179 steps ( 3.24 lt)  RMSE 0.376569  duty 0.694  relock
+ 13  unlock 13  meanLock 49.6
+arm fwd-only seed 21978990   orbit_seed 15378080442305734864 VPT 169 steps ( 3.06 lt)  RMSE 0.376630  duty 0.637  relock
+ 16  unlock 16  meanLock 37.5
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978990   orbit_seed 4007931443343602940 VPT 336 steps ( 6.09 lt)  RMSE 0.386407  duty 0.551  relock
+14  unlock 15  meanLock 36.7
+arm fwd-only seed 21978990   orbit_seed 656605956440221769 VPT 311 steps ( 5.63 lt)  RMSE 0.370568  duty 0.516  relock 1
+3  unlock 14  meanLock 36.9
+arm fwd-only seed 21978990   orbit_seed 18303404106008543196 VPT 309 steps ( 5.60 lt)  RMSE 0.396869  duty 0.483  relock
+ 15  unlock 16  meanLock 30.2
+arm fwd-only seed 21978990   orbit_seed 9333312947715283458 VPT 296 steps ( 5.36 lt)  RMSE 0.393923  duty 0.488  relock
+12  unlock 12  meanLock 37.5
+arm fwd-only seed 21978990   orbit_seed 4364257658748689037 VPT 275 steps ( 4.98 lt)  RMSE 0.360255  duty 0.700  relock
+13  unlock 14  meanLock 50.0
+arm fwd-only seed 21978990   orbit_seed 16826883592623292674 VPT 272 steps ( 4.93 lt)  RMSE 0.386939  duty 0.588  relock
+ 14  unlock 15  meanLock 39.2
+arm fwd-only seed 21978990   orbit_seed 14719543417854726190 VPT 267 steps ( 4.84 lt)  RMSE 0.388599  duty 0.578  relock
+ 13  unlock 13  meanLock 41.3
+arm fwd-only seed 21978990   orbit_seed 248130967593251468 VPT 266 steps ( 4.82 lt)  RMSE 0.372246  duty 0.657  relock 1
+7  unlock 17  meanLock 36.5
+arm fwd-only seed 21978990   orbit_seed 6960850931340156210 VPT 245 steps ( 4.44 lt)  RMSE 0.420727  duty 0.387  relock
+13  unlock 14  meanLock 27.6
+arm fwd-only seed 21978990   orbit_seed 11569254123151793499 VPT 222 steps ( 4.02 lt)  RMSE 0.394694  duty 0.473  relock
+ 12  unlock 12  meanLock 36.4
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978990   orbit_seed 14645204808822872881 VPT 160 steps ( 2.90 lt)  RMSE 0.338311  duty 0.711  relock
+ 13  unlock 14  meanLock 50.8
+arm fwd-only seed 21978990   orbit_seed 4364257658748689037 VPT 275 steps ( 4.98 lt)  RMSE 0.360255  duty 0.700  relock
+13  unlock 14  meanLock 50.0
+arm fwd-only seed 21978990   orbit_seed 11957716583852103447 VPT 179 steps ( 3.24 lt)  RMSE 0.376569  duty 0.694  relock
+ 13  unlock 13  meanLock 49.6
+arm fwd-only seed 21978990   orbit_seed 9136586738710644795 VPT 123 steps ( 2.23 lt)  RMSE 0.382740  duty 0.672  relock
+15  unlock 16  meanLock 42.0
+arm fwd-only seed 21978990   orbit_seed 7367918243184862287 VPT 189 steps ( 3.42 lt)  RMSE 0.362352  duty 0.669  relock
+11  unlock 12  meanLock 55.8
+arm fwd-only seed 21978990   orbit_seed 7417943782770258172 VPT  21 steps ( 0.38 lt)  RMSE 0.383799  duty 0.668  relock
+17  unlock 17  meanLock 37.1
+arm fwd-only seed 21978990   orbit_seed 248130967593251468 VPT 266 steps ( 4.82 lt)  RMSE 0.372246  duty 0.657  relock 1
+7  unlock 17  meanLock 36.5
+arm fwd-only seed 21978990   orbit_seed 8542863739336868721 VPT 140 steps ( 2.54 lt)  RMSE 0.354319  duty 0.657  relock
+13  unlock 13  meanLock 46.9
+arm fwd-only seed 21978990   orbit_seed 15378080442305734864 VPT 169 steps ( 3.06 lt)  RMSE 0.376630  duty 0.637  relock
+ 16  unlock 16  meanLock 37.5
+arm fwd-only seed 21978990   orbit_seed 12997851309749444307 VPT  30 steps ( 0.54 lt)  RMSE 0.391622  duty 0.623  relock
+ 19  unlock 19  meanLock 31.1
+
+=== ESN seed 21978991 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=6.36  mean=1.93  median=1.54  std=1.39
+  free-run RMSE        n=100  min=0.322551  max=0.490374  mean=0.420545  median=0.425176  std=0.034662
+  duty (<=theta)       n=100  min=0.167  max=0.765  mean=0.486  median=0.492  std=0.125
+  n_relock             n=100  min=5.0  max=23.0  mean=16.1  median=16.0  std=3.6
+  n_unlock             n=100  min=5.0  max=24.0  mean=16.7  median=17.0  std=3.6
+  meanLock (steps)     n=100  min=13.8  max=69.5  mean=29.7  median=28.3  std=10.5
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978991   orbit_seed 2097179478975684523 VPT  98 steps ( 1.77 lt)  RMSE 0.322551  duty 0.765  relock
+10  unlock 11  meanLock 69.5
+arm fwd-only seed 21978991   orbit_seed 18109467897393425238 VPT 164 steps ( 2.97 lt)  RMSE 0.324448  duty 0.739  relock
+ 14  unlock 14  meanLock 49.3
+arm fwd-only seed 21978991   orbit_seed 7658040265663960149 VPT 244 steps ( 4.42 lt)  RMSE 0.348975  duty 0.717  relock
+16  unlock 16  meanLock 42.2
+arm fwd-only seed 21978991   orbit_seed 14645204808822872881 VPT 236 steps ( 4.27 lt)  RMSE 0.353860  duty 0.682  relock
+ 13  unlock 14  meanLock 48.7
+arm fwd-only seed 21978991   orbit_seed 8425156953022204017 VPT  85 steps ( 1.54 lt)  RMSE 0.368263  duty 0.681  relock
+13  unlock 14  meanLock 48.6
+arm fwd-only seed 21978991   orbit_seed 9136586738710644795 VPT 123 steps ( 2.23 lt)  RMSE 0.369562  duty 0.605  relock
+15  unlock 16  meanLock 37.8
+arm fwd-only seed 21978991   orbit_seed 9515810860901762052 VPT 275 steps ( 4.98 lt)  RMSE 0.370817  duty 0.619  relock
+18  unlock 19  meanLock 32.6
+arm fwd-only seed 21978991   orbit_seed 16826883592623292674 VPT  85 steps ( 1.54 lt)  RMSE 0.371322  duty 0.619  relock
+ 18  unlock 19  meanLock 32.6
+arm fwd-only seed 21978991   orbit_seed 11101717626751391262 VPT  82 steps ( 1.49 lt)  RMSE 0.373926  duty 0.597  relock
+ 15  unlock 16  meanLock 37.3
+arm fwd-only seed 21978991   orbit_seed 2696958202838730100 VPT 121 steps ( 2.19 lt)  RMSE 0.375438  duty 0.645  relock
+19  unlock 20  meanLock 32.2
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978991   orbit_seed 4007931443343602940 VPT 351 steps ( 6.36 lt)  RMSE 0.410480  duty 0.424  relock
+6  unlock 7  meanLock 60.6
+arm fwd-only seed 21978991   orbit_seed 656605956440221769 VPT 320 steps ( 5.80 lt)  RMSE 0.387630  duty 0.522  relock 1
+0  unlock 10  meanLock 47.5
+arm fwd-only seed 21978991   orbit_seed 9515810860901762052 VPT 275 steps ( 4.98 lt)  RMSE 0.370817  duty 0.619  relock
+18  unlock 19  meanLock 32.6
+arm fwd-only seed 21978991   orbit_seed 14283968312830459669 VPT 260 steps ( 4.71 lt)  RMSE 0.391205  duty 0.558  relock
+ 19  unlock 20  meanLock 27.9
+arm fwd-only seed 21978991   orbit_seed 3077346833989813773 VPT 250 steps ( 4.53 lt)  RMSE 0.397821  duty 0.465  relock
+16  unlock 17  meanLock 27.4
+arm fwd-only seed 21978991   orbit_seed 5743361355973698255 VPT 248 steps ( 4.49 lt)  RMSE 0.381565  duty 0.625  relock
+11  unlock 11  meanLock 52.1
+arm fwd-only seed 21978991   orbit_seed 6960850931340156210 VPT 245 steps ( 4.44 lt)  RMSE 0.415353  duty 0.450  relock
+16  unlock 17  meanLock 26.5
+arm fwd-only seed 21978991   orbit_seed 7658040265663960149 VPT 244 steps ( 4.42 lt)  RMSE 0.348975  duty 0.717  relock
+16  unlock 16  meanLock 42.2
+arm fwd-only seed 21978991   orbit_seed 14645204808822872881 VPT 236 steps ( 4.27 lt)  RMSE 0.353860  duty 0.682  relock
+ 13  unlock 14  meanLock 48.7
+arm fwd-only seed 21978991   orbit_seed 4364257658748689037 VPT 231 steps ( 4.18 lt)  RMSE 0.385207  duty 0.700  relock
+15  unlock 15  meanLock 43.8
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978991   orbit_seed 2097179478975684523 VPT  98 steps ( 1.77 lt)  RMSE 0.322551  duty 0.765  relock
+10  unlock 11  meanLock 69.5
+arm fwd-only seed 21978991   orbit_seed 18109467897393425238 VPT 164 steps ( 2.97 lt)  RMSE 0.324448  duty 0.739  relock
+ 14  unlock 14  meanLock 49.3
+arm fwd-only seed 21978991   orbit_seed 7658040265663960149 VPT 244 steps ( 4.42 lt)  RMSE 0.348975  duty 0.717  relock
+16  unlock 16  meanLock 42.2
+arm fwd-only seed 21978991   orbit_seed 4364257658748689037 VPT 231 steps ( 4.18 lt)  RMSE 0.385207  duty 0.700  relock
+15  unlock 15  meanLock 43.8
+arm fwd-only seed 21978991   orbit_seed 14645204808822872881 VPT 236 steps ( 4.27 lt)  RMSE 0.353860  duty 0.682  relock
+ 13  unlock 14  meanLock 48.7
+arm fwd-only seed 21978991   orbit_seed 8425156953022204017 VPT  85 steps ( 1.54 lt)  RMSE 0.368263  duty 0.681  relock
+13  unlock 14  meanLock 48.6
+arm fwd-only seed 21978991   orbit_seed 237546279129265911 VPT  77 steps ( 1.39 lt)  RMSE 0.378768  duty 0.652  relock 2
+0  unlock 20  meanLock 31.0
+arm fwd-only seed 21978991   orbit_seed 11957716583852103447 VPT 180 steps ( 3.26 lt)  RMSE 0.385760  duty 0.648  relock
+ 14  unlock 15  meanLock 43.2
+arm fwd-only seed 21978991   orbit_seed 2696958202838730100 VPT 121 steps ( 2.19 lt)  RMSE 0.375438  duty 0.645  relock
+19  unlock 20  meanLock 32.2
+arm fwd-only seed 21978991   orbit_seed 12284454596439506926 VPT  13 steps ( 0.24 lt)  RMSE 0.380181  duty 0.640  relock
+ 18  unlock 18  meanLock 33.7
+
+=== ESN seed 21978992 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=7.03  mean=2.05  median=1.75  std=1.53
+  free-run RMSE        n=100  min=0.332124  max=0.488668  mean=0.423171  median=0.426864  std=0.036236
+  duty (<=theta)       n=100  min=0.183  max=0.749  mean=0.465  median=0.465  std=0.132
+  n_relock             n=100  min=9.0  max=22.0  mean=15.5  median=16.0  std=3.1
+  n_unlock             n=100  min=10.0  max=23.0  mean=16.1  median=16.0  std=3.0
+  meanLock (steps)     n=100  min=14.2  max=64.2  mean=29.2  median=27.6  std=10.7
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978992   orbit_seed 11569254123151793499 VPT 185 steps ( 3.35 lt)  RMSE 0.332124  duty 0.679  relock
+ 13  unlock 13  meanLock 48.5
+arm fwd-only seed 21978992   orbit_seed 4007931443343602940 VPT 388 steps ( 7.03 lt)  RMSE 0.334610  duty 0.749  relock
+12  unlock 12  meanLock 57.6
+arm fwd-only seed 21978992   orbit_seed 2696958202838730100 VPT 356 steps ( 6.45 lt)  RMSE 0.339252  duty 0.710  relock
+13  unlock 14  meanLock 50.7
+arm fwd-only seed 21978992   orbit_seed 16400381301927481083 VPT 216 steps ( 3.91 lt)  RMSE 0.346491  duty 0.706  relock
+ 10  unlock 11  meanLock 64.2
+arm fwd-only seed 21978992   orbit_seed 15987026048469243800 VPT 113 steps ( 2.05 lt)  RMSE 0.355533  duty 0.693  relock
+ 11  unlock 12  meanLock 57.8
+arm fwd-only seed 21978992   orbit_seed 4416234110371315044 VPT 221 steps ( 4.00 lt)  RMSE 0.360129  duty 0.587  relock
+12  unlock 13  meanLock 45.2
+arm fwd-only seed 21978992   orbit_seed 14503336125504450378 VPT 301 steps ( 5.45 lt)  RMSE 0.362746  duty 0.613  relock
+ 17  unlock 17  meanLock 34.1
+arm fwd-only seed 21978992   orbit_seed 12997851309749444307 VPT  65 steps ( 1.18 lt)  RMSE 0.369065  duty 0.635  relock
+ 17  unlock 18  meanLock 35.3
+arm fwd-only seed 21978992   orbit_seed 11101717626751391262 VPT 253 steps ( 4.58 lt)  RMSE 0.369705  duty 0.611  relock
+ 14  unlock 14  meanLock 40.7
+arm fwd-only seed 21978992   orbit_seed 3077346833989813773 VPT  95 steps ( 1.72 lt)  RMSE 0.370766  duty 0.647  relock
+12  unlock 12  meanLock 49.8
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978992   orbit_seed 4007931443343602940 VPT 388 steps ( 7.03 lt)  RMSE 0.334610  duty 0.749  relock
+12  unlock 12  meanLock 57.6
+arm fwd-only seed 21978992   orbit_seed 2696958202838730100 VPT 356 steps ( 6.45 lt)  RMSE 0.339252  duty 0.710  relock
+13  unlock 14  meanLock 50.7
+arm fwd-only seed 21978992   orbit_seed 656605956440221769 VPT 350 steps ( 6.34 lt)  RMSE 0.372638  duty 0.598  relock 1
+0  unlock 10  meanLock 54.4
+arm fwd-only seed 21978992   orbit_seed 14503336125504450378 VPT 301 steps ( 5.45 lt)  RMSE 0.362746  duty 0.613  relock
+ 17  unlock 17  meanLock 34.1
+arm fwd-only seed 21978992   orbit_seed 7658040265663960149 VPT 276 steps ( 5.00 lt)  RMSE 0.403915  duty 0.502  relock
+12  unlock 12  meanLock 38.6
+arm fwd-only seed 21978992   orbit_seed 8542863739336868721 VPT 262 steps ( 4.75 lt)  RMSE 0.402781  duty 0.541  relock
+14  unlock 14  meanLock 36.1
+arm fwd-only seed 21978992   orbit_seed 9333312947715283458 VPT 261 steps ( 4.73 lt)  RMSE 0.393365  duty 0.503  relock
+15  unlock 15  meanLock 31.4
+arm fwd-only seed 21978992   orbit_seed 11101717626751391262 VPT 253 steps ( 4.58 lt)  RMSE 0.369705  duty 0.611  relock
+ 14  unlock 14  meanLock 40.7
+arm fwd-only seed 21978992   orbit_seed 13994705457426480036 VPT 247 steps ( 4.47 lt)  RMSE 0.389802  duty 0.525  relock
+ 16  unlock 17  meanLock 30.9
+arm fwd-only seed 21978992   orbit_seed 6960850931340156210 VPT 245 steps ( 4.44 lt)  RMSE 0.419132  duty 0.377  relock
+16  unlock 17  meanLock 22.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978992   orbit_seed 4007931443343602940 VPT 388 steps ( 7.03 lt)  RMSE 0.334610  duty 0.749  relock
+12  unlock 12  meanLock 57.6
+arm fwd-only seed 21978992   orbit_seed 2696958202838730100 VPT 356 steps ( 6.45 lt)  RMSE 0.339252  duty 0.710  relock
+13  unlock 14  meanLock 50.7
+arm fwd-only seed 21978992   orbit_seed 16400381301927481083 VPT 216 steps ( 3.91 lt)  RMSE 0.346491  duty 0.706  relock
+ 10  unlock 11  meanLock 64.2
+arm fwd-only seed 21978992   orbit_seed 15987026048469243800 VPT 113 steps ( 2.05 lt)  RMSE 0.355533  duty 0.693  relock
+ 11  unlock 12  meanLock 57.8
+arm fwd-only seed 21978992   orbit_seed 11569254123151793499 VPT 185 steps ( 3.35 lt)  RMSE 0.332124  duty 0.679  relock
+ 13  unlock 13  meanLock 48.5
+arm fwd-only seed 21978992   orbit_seed 2610235269337149668 VPT 140 steps ( 2.54 lt)  RMSE 0.380540  duty 0.664  relock
+13  unlock 14  meanLock 47.4
+arm fwd-only seed 21978992   orbit_seed 9515810860901762052 VPT 129 steps ( 2.34 lt)  RMSE 0.376522  duty 0.648  relock
+16  unlock 17  meanLock 38.1
+arm fwd-only seed 21978992   orbit_seed 3077346833989813773 VPT  95 steps ( 1.72 lt)  RMSE 0.370766  duty 0.647  relock
+12  unlock 12  meanLock 49.8
+arm fwd-only seed 21978992   orbit_seed 12813272890801086603 VPT  12 steps ( 0.22 lt)  RMSE 0.377451  duty 0.645  relock
+ 16  unlock 16  meanLock 37.9
+arm fwd-only seed 21978992   orbit_seed 12997851309749444307 VPT  65 steps ( 1.18 lt)  RMSE 0.369065  duty 0.635  relock
+ 17  unlock 18  meanLock 35.3
+
+=== ESN seed 21978993 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=6.81  mean=1.80  median=1.47  std=1.31
+  free-run RMSE        n=100  min=0.306621  max=0.501105  mean=0.427260  median=0.435855  std=0.036353
+  duty (<=theta)       n=100  min=0.142  max=0.718  mean=0.452  median=0.462  std=0.131
+  n_relock             n=100  min=5.0  max=22.0  mean=15.3  median=15.0  std=3.4
+  n_unlock             n=100  min=6.0  max=23.0  mean=16.0  median=16.0  std=3.4
+  meanLock (steps)     n=100  min=12.8  max=63.2  mean=28.7  median=27.2  std=10.3
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978993   orbit_seed 6960850931340156210 VPT 303 steps ( 5.49 lt)  RMSE 0.306621  duty 0.717  relock
+11  unlock 12  meanLock 59.8
+arm fwd-only seed 21978993   orbit_seed 14645204808822872881 VPT 235 steps ( 4.26 lt)  RMSE 0.340345  duty 0.695  relock
+ 10  unlock 11  meanLock 63.2
+arm fwd-only seed 21978993   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  RMSE 0.344954  duty 0.578  relock
+13  unlock 14  meanLock 41.3
+arm fwd-only seed 21978993   orbit_seed 12284454596439506926 VPT  16 steps ( 0.29 lt)  RMSE 0.352794  duty 0.676  relock
+ 13  unlock 14  meanLock 48.3
+arm fwd-only seed 21978993   orbit_seed 12997851309749444307 VPT  69 steps ( 1.25 lt)  RMSE 0.354761  duty 0.718  relock
+ 15  unlock 15  meanLock 44.9
+arm fwd-only seed 21978993   orbit_seed 13994705457426480036 VPT 226 steps ( 4.09 lt)  RMSE 0.356073  duty 0.594  relock
+ 12  unlock 13  meanLock 45.7
+arm fwd-only seed 21978993   orbit_seed 248130967593251468 VPT 223 steps ( 4.04 lt)  RMSE 0.357703  duty 0.624  relock 1
+3  unlock 14  meanLock 44.6
+arm fwd-only seed 21978993   orbit_seed 13095175807113877781 VPT 144 steps ( 2.61 lt)  RMSE 0.377060  duty 0.641  relock
+ 15  unlock 16  meanLock 40.1
+arm fwd-only seed 21978993   orbit_seed 4416234110371315044 VPT 171 steps ( 3.10 lt)  RMSE 0.377824  duty 0.593  relock
+9  unlock 10  meanLock 59.3
+arm fwd-only seed 21978993   orbit_seed 9333312947715283458 VPT 351 steps ( 6.36 lt)  RMSE 0.379067  duty 0.478  relock
+13  unlock 13  meanLock 34.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978993   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  RMSE 0.344954  duty 0.578  relock
+13  unlock 14  meanLock 41.3
+arm fwd-only seed 21978993   orbit_seed 9333312947715283458 VPT 351 steps ( 6.36 lt)  RMSE 0.379067  duty 0.478  relock
+13  unlock 13  meanLock 34.1
+arm fwd-only seed 21978993   orbit_seed 6960850931340156210 VPT 303 steps ( 5.49 lt)  RMSE 0.306621  duty 0.717  relock
+11  unlock 12  meanLock 59.8
+arm fwd-only seed 21978993   orbit_seed 656605956440221769 VPT 249 steps ( 4.51 lt)  RMSE 0.406362  duty 0.378  relock 1
+2  unlock 12  meanLock 29.1
+arm fwd-only seed 21978993   orbit_seed 14645204808822872881 VPT 235 steps ( 4.26 lt)  RMSE 0.340345  duty 0.695  relock
+ 10  unlock 11  meanLock 63.2
+arm fwd-only seed 21978993   orbit_seed 13994705457426480036 VPT 226 steps ( 4.09 lt)  RMSE 0.356073  duty 0.594  relock
+ 12  unlock 13  meanLock 45.7
+arm fwd-only seed 21978993   orbit_seed 248130967593251468 VPT 223 steps ( 4.04 lt)  RMSE 0.357703  duty 0.624  relock 1
+3  unlock 14  meanLock 44.6
+arm fwd-only seed 21978993   orbit_seed 5743361355973698255 VPT 205 steps ( 3.71 lt)  RMSE 0.388415  duty 0.620  relock
+11  unlock 12  meanLock 51.7
+arm fwd-only seed 21978993   orbit_seed 14719543417854726190 VPT 191 steps ( 3.46 lt)  RMSE 0.417379  duty 0.502  relock
+ 13  unlock 14  meanLock 35.9
+arm fwd-only seed 21978993   orbit_seed 15001926598183616335 VPT 190 steps ( 3.44 lt)  RMSE 0.404395  duty 0.550  relock
+ 20  unlock 21  meanLock 26.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978993   orbit_seed 12997851309749444307 VPT  69 steps ( 1.25 lt)  RMSE 0.354761  duty 0.718  relock
+ 15  unlock 15  meanLock 44.9
+arm fwd-only seed 21978993   orbit_seed 6960850931340156210 VPT 303 steps ( 5.49 lt)  RMSE 0.306621  duty 0.717  relock
+11  unlock 12  meanLock 59.8
+arm fwd-only seed 21978993   orbit_seed 14645204808822872881 VPT 235 steps ( 4.26 lt)  RMSE 0.340345  duty 0.695  relock
+ 10  unlock 11  meanLock 63.2
+arm fwd-only seed 21978993   orbit_seed 12284454596439506926 VPT  16 steps ( 0.29 lt)  RMSE 0.352794  duty 0.676  relock
+ 13  unlock 14  meanLock 48.3
+arm fwd-only seed 21978993   orbit_seed 12661963445150923806 VPT  60 steps ( 1.09 lt)  RMSE 0.383173  duty 0.648  relock
+ 13  unlock 14  meanLock 46.3
+arm fwd-only seed 21978993   orbit_seed 1599451092061524015 VPT 186 steps ( 3.37 lt)  RMSE 0.392870  duty 0.648  relock
+16  unlock 17  meanLock 38.1
+arm fwd-only seed 21978993   orbit_seed 2610235269337149668 VPT 139 steps ( 2.52 lt)  RMSE 0.396679  duty 0.647  relock
+17  unlock 18  meanLock 35.9
+arm fwd-only seed 21978993   orbit_seed 13095175807113877781 VPT 144 steps ( 2.61 lt)  RMSE 0.377060  duty 0.641  relock
+ 15  unlock 16  meanLock 40.1
+arm fwd-only seed 21978993   orbit_seed 11957716583852103447 VPT 180 steps ( 3.26 lt)  RMSE 0.399495  duty 0.640  relock
+ 15  unlock 15  meanLock 40.0
+arm fwd-only seed 21978993   orbit_seed 248130967593251468 VPT 223 steps ( 4.04 lt)  RMSE 0.357703  duty 0.624  relock 1
+3  unlock 14  meanLock 44.6
+
+=== ESN seed 21978994 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.32  mean=1.86  median=1.55  std=1.43
+  free-run RMSE        n=100  min=0.331409  max=0.496436  mean=0.418433  median=0.418346  std=0.035281
+  duty (<=theta)       n=100  min=0.223  max=0.716  mean=0.485  median=0.485  std=0.118
+  n_relock             n=100  min=8.0  max=24.0  mean=15.5  median=15.5  std=3.6
+  n_unlock             n=100  min=8.0  max=25.0  mean=16.1  median=16.0  std=3.6
+  meanLock (steps)     n=100  min=13.1  max=60.3  mean=30.6  median=28.1  std=9.7
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978994   orbit_seed 248130967593251468 VPT 190 steps ( 3.44 lt)  RMSE 0.331409  duty 0.716  relock 1
+3  unlock 14  meanLock 51.1
+arm fwd-only seed 21978994   orbit_seed 9333312947715283458 VPT 404 steps ( 7.32 lt)  RMSE 0.335323  duty 0.648  relock
+10  unlock 11  meanLock 58.9
+arm fwd-only seed 21978994   orbit_seed 15378080442305734864 VPT 128 steps ( 2.32 lt)  RMSE 0.342687  duty 0.637  relock
+ 19  unlock 19  meanLock 31.9
+arm fwd-only seed 21978994   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  RMSE 0.343779  duty 0.588  relock
+12  unlock 13  meanLock 45.2
+arm fwd-only seed 21978994   orbit_seed 14645204808822872881 VPT  49 steps ( 0.89 lt)  RMSE 0.351911  duty 0.697  relock
+ 14  unlock 15  meanLock 46.5
+arm fwd-only seed 21978994   orbit_seed 12997851309749444307 VPT  69 steps ( 1.25 lt)  RMSE 0.357080  duty 0.635  relock
+ 12  unlock 13  meanLock 48.8
+arm fwd-only seed 21978994   orbit_seed 8542863739336868721 VPT 143 steps ( 2.59 lt)  RMSE 0.360454  duty 0.661  relock
+13  unlock 13  meanLock 47.2
+arm fwd-only seed 21978994   orbit_seed 5922037731218166086 VPT  12 steps ( 0.22 lt)  RMSE 0.363955  duty 0.672  relock
+15  unlock 16  meanLock 42.0
+arm fwd-only seed 21978994   orbit_seed 6960850931340156210 VPT 317 steps ( 5.74 lt)  RMSE 0.366568  duty 0.635  relock
+12  unlock 12  meanLock 48.8
+arm fwd-only seed 21978994   orbit_seed 110890624606369167 VPT 339 steps ( 6.14 lt)  RMSE 0.367355  duty 0.640  relock 1
+4  unlock 15  meanLock 42.7
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978994   orbit_seed 9333312947715283458 VPT 404 steps ( 7.32 lt)  RMSE 0.335323  duty 0.648  relock
+10  unlock 11  meanLock 58.9
+arm fwd-only seed 21978994   orbit_seed 4007931443343602940 VPT 376 steps ( 6.81 lt)  RMSE 0.343779  duty 0.588  relock
+12  unlock 13  meanLock 45.2
+arm fwd-only seed 21978994   orbit_seed 110890624606369167 VPT 339 steps ( 6.14 lt)  RMSE 0.367355  duty 0.640  relock 1
+4  unlock 15  meanLock 42.7
+arm fwd-only seed 21978994   orbit_seed 6960850931340156210 VPT 317 steps ( 5.74 lt)  RMSE 0.366568  duty 0.635  relock
+12  unlock 12  meanLock 48.8
+arm fwd-only seed 21978994   orbit_seed 13994705457426480036 VPT 273 steps ( 4.94 lt)  RMSE 0.375482  duty 0.600  relock
+ 15  unlock 15  meanLock 37.5
+arm fwd-only seed 21978994   orbit_seed 7658040265663960149 VPT 237 steps ( 4.29 lt)  RMSE 0.404569  duty 0.483  relock
+17  unlock 17  meanLock 26.8
+arm fwd-only seed 21978994   orbit_seed 10278487631456564348 VPT 232 steps ( 4.20 lt)  RMSE 0.418465  duty 0.573  relock
+ 15  unlock 16  meanLock 35.8
+arm fwd-only seed 21978994   orbit_seed 15001926598183616335 VPT 231 steps ( 4.18 lt)  RMSE 0.405008  duty 0.634  relock
+ 18  unlock 19  meanLock 33.4
+arm fwd-only seed 21978994   orbit_seed 656605956440221769 VPT 214 steps ( 3.88 lt)  RMSE 0.425834  duty 0.374  relock 1
+4  unlock 15  meanLock 24.9
+arm fwd-only seed 21978994   orbit_seed 9294122214858465305 VPT 199 steps ( 3.60 lt)  RMSE 0.399119  duty 0.515  relock
+13  unlock 14  meanLock 36.8
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978994   orbit_seed 248130967593251468 VPT 190 steps ( 3.44 lt)  RMSE 0.331409  duty 0.716  relock 1
+3  unlock 14  meanLock 51.1
+arm fwd-only seed 21978994   orbit_seed 14645204808822872881 VPT  49 steps ( 0.89 lt)  RMSE 0.351911  duty 0.697  relock
+ 14  unlock 15  meanLock 46.5
+arm fwd-only seed 21978994   orbit_seed 5922037731218166086 VPT  12 steps ( 0.22 lt)  RMSE 0.363955  duty 0.672  relock
+15  unlock 16  meanLock 42.0
+arm fwd-only seed 21978994   orbit_seed 8542863739336868721 VPT 143 steps ( 2.59 lt)  RMSE 0.360454  duty 0.661  relock
+13  unlock 13  meanLock 47.2
+arm fwd-only seed 21978994   orbit_seed 7713847214078855622 VPT  24 steps ( 0.43 lt)  RMSE 0.380928  duty 0.656  relock
+19  unlock 19  meanLock 32.8
+arm fwd-only seed 21978994   orbit_seed 4712281022348717183 VPT 154 steps ( 2.79 lt)  RMSE 0.386119  duty 0.653  relock
+13  unlock 14  meanLock 46.6
+arm fwd-only seed 21978994   orbit_seed 2696958202838730100 VPT 116 steps ( 2.10 lt)  RMSE 0.419087  duty 0.651  relock
+17  unlock 17  meanLock 36.2
+arm fwd-only seed 21978994   orbit_seed 11957716583852103447 VPT 180 steps ( 3.26 lt)  RMSE 0.369949  duty 0.650  relock
+ 13  unlock 13  meanLock 46.4
+arm fwd-only seed 21978994   orbit_seed 9333312947715283458 VPT 404 steps ( 7.32 lt)  RMSE 0.335323  duty 0.648  relock
+10  unlock 11  meanLock 58.9
+arm fwd-only seed 21978994   orbit_seed 110890624606369167 VPT 339 steps ( 6.14 lt)  RMSE 0.367355  duty 0.640  relock 1
+4  unlock 15  meanLock 42.7
+
+=== ESN seed 21978995 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.39  mean=2.00  median=1.72  std=1.59
+  free-run RMSE        n=100  min=0.334551  max=0.509238  mean=0.422826  median=0.424988  std=0.037793
+  duty (<=theta)       n=100  min=0.138  max=0.695  mean=0.472  median=0.480  std=0.129
+  n_relock             n=100  min=6.0  max=22.0  mean=15.6  median=16.0  std=3.7
+  n_unlock             n=100  min=7.0  max=23.0  mean=16.2  median=17.0  std=3.7
+  meanLock (steps)     n=100  min=12.0  max=59.1  mean=29.6  median=27.7  std=9.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978995   orbit_seed 14645204808822872881 VPT 161 steps ( 2.92 lt)  RMSE 0.334551  duty 0.668  relock
+ 14  unlock 14  meanLock 44.5
+arm fwd-only seed 21978995   orbit_seed 656605956440221769 VPT 391 steps ( 7.08 lt)  RMSE 0.345569  duty 0.650  relock 1
+0  unlock 11  meanLock 59.1
+arm fwd-only seed 21978995   orbit_seed 18303404106008543196 VPT 318 steps ( 5.76 lt)  RMSE 0.348816  duty 0.566  relock
+ 11  unlock 12  meanLock 47.2
+arm fwd-only seed 21978995   orbit_seed 2097179478975684523 VPT 102 steps ( 1.85 lt)  RMSE 0.353318  duty 0.668  relock
+14  unlock 15  meanLock 44.5
+arm fwd-only seed 21978995   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.353491  duty 0.579  relock
+10  unlock 11  meanLock 52.6
+arm fwd-only seed 21978995   orbit_seed 5237269684808350417 VPT 216 steps ( 3.91 lt)  RMSE 0.354412  duty 0.695  relock
+13  unlock 13  meanLock 49.6
+arm fwd-only seed 21978995   orbit_seed 2610235269337149668 VPT 141 steps ( 2.55 lt)  RMSE 0.359834  duty 0.690  relock
+14  unlock 15  meanLock 46.0
+arm fwd-only seed 21978995   orbit_seed 13994705457426480036 VPT 277 steps ( 5.02 lt)  RMSE 0.367180  duty 0.578  relock
+ 15  unlock 16  meanLock 36.1
+arm fwd-only seed 21978995   orbit_seed 9333312947715283458 VPT 285 steps ( 5.16 lt)  RMSE 0.368333  duty 0.603  relock
+13  unlock 14  meanLock 43.1
+arm fwd-only seed 21978995   orbit_seed 16826883592623292674 VPT  80 steps ( 1.45 lt)  RMSE 0.369398  duty 0.582  relock
+ 19  unlock 20  meanLock 29.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978995   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.353491  duty 0.579  relock
+10  unlock 11  meanLock 52.6
+arm fwd-only seed 21978995   orbit_seed 656605956440221769 VPT 391 steps ( 7.08 lt)  RMSE 0.345569  duty 0.650  relock 1
+0  unlock 11  meanLock 59.1
+arm fwd-only seed 21978995   orbit_seed 6960850931340156210 VPT 355 steps ( 6.43 lt)  RMSE 0.381257  duty 0.635  relock
+13  unlock 14  meanLock 45.4
+arm fwd-only seed 21978995   orbit_seed 18303404106008543196 VPT 318 steps ( 5.76 lt)  RMSE 0.348816  duty 0.566  relock
+ 11  unlock 12  meanLock 47.2
+arm fwd-only seed 21978995   orbit_seed 17774587888087229762 VPT 303 steps ( 5.49 lt)  RMSE 0.371672  duty 0.639  relock
+ 15  unlock 15  meanLock 39.9
+arm fwd-only seed 21978995   orbit_seed 9333312947715283458 VPT 285 steps ( 5.16 lt)  RMSE 0.368333  duty 0.603  relock
+13  unlock 14  meanLock 43.1
+arm fwd-only seed 21978995   orbit_seed 13994705457426480036 VPT 277 steps ( 5.02 lt)  RMSE 0.367180  duty 0.578  relock
+ 15  unlock 16  meanLock 36.1
+arm fwd-only seed 21978995   orbit_seed 1249439214165998073 VPT 258 steps ( 4.67 lt)  RMSE 0.382701  duty 0.570  relock
+11  unlock 11  meanLock 47.5
+arm fwd-only seed 21978995   orbit_seed 9136586738710644795 VPT 234 steps ( 4.24 lt)  RMSE 0.412445  duty 0.415  relock
+10  unlock 11  meanLock 37.7
+arm fwd-only seed 21978995   orbit_seed 10278487631456564348 VPT 231 steps ( 4.18 lt)  RMSE 0.422185  duty 0.567  relock
+ 16  unlock 16  meanLock 33.4
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978995   orbit_seed 5237269684808350417 VPT 216 steps ( 3.91 lt)  RMSE 0.354412  duty 0.695  relock
+13  unlock 13  meanLock 49.6
+arm fwd-only seed 21978995   orbit_seed 2610235269337149668 VPT 141 steps ( 2.55 lt)  RMSE 0.359834  duty 0.690  relock
+14  unlock 15  meanLock 46.0
+arm fwd-only seed 21978995   orbit_seed 2097179478975684523 VPT 102 steps ( 1.85 lt)  RMSE 0.353318  duty 0.668  relock
+14  unlock 15  meanLock 44.5
+arm fwd-only seed 21978995   orbit_seed 14645204808822872881 VPT 161 steps ( 2.92 lt)  RMSE 0.334551  duty 0.668  relock
+ 14  unlock 14  meanLock 44.5
+arm fwd-only seed 21978995   orbit_seed 656605956440221769 VPT 391 steps ( 7.08 lt)  RMSE 0.345569  duty 0.650  relock 1
+0  unlock 11  meanLock 59.1
+arm fwd-only seed 21978995   orbit_seed 7401497959599845173 VPT 144 steps ( 2.61 lt)  RMSE 0.371978  duty 0.647  relock
+14  unlock 14  meanLock 43.1
+arm fwd-only seed 21978995   orbit_seed 14503336125504450378 VPT 114 steps ( 2.06 lt)  RMSE 0.373465  duty 0.642  relock
+ 19  unlock 19  meanLock 32.1
+arm fwd-only seed 21978995   orbit_seed 17774587888087229762 VPT 303 steps ( 5.49 lt)  RMSE 0.371672  duty 0.639  relock
+ 15  unlock 15  meanLock 39.9
+arm fwd-only seed 21978995   orbit_seed 6960850931340156210 VPT 355 steps ( 6.43 lt)  RMSE 0.381257  duty 0.635  relock
+13  unlock 14  meanLock 45.4
+arm fwd-only seed 21978995   orbit_seed 18109467897393425238 VPT  87 steps ( 1.58 lt)  RMSE 0.394720  duty 0.634  relock
+ 16  unlock 16  meanLock 37.3
+
+=== ESN seed 21978996 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=6.19  mean=2.07  median=1.75  std=1.44
+  free-run RMSE        n=100  min=0.332305  max=0.492668  mean=0.420818  median=0.421217  std=0.033046
+  duty (<=theta)       n=100  min=0.209  max=0.746  mean=0.480  median=0.485  std=0.116
+  n_relock             n=100  min=9.0  max=24.0  mean=16.2  median=16.0  std=3.2
+  n_unlock             n=100  min=10.0  max=25.0  mean=16.8  median=17.0  std=3.1
+  meanLock (steps)     n=100  min=13.4  max=62.2  mean=29.0  median=27.5  std=9.6
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978996   orbit_seed 4416234110371315044 VPT 213 steps ( 3.86 lt)  RMSE 0.332305  duty 0.678  relock
+12  unlock 13  meanLock 52.2
+arm fwd-only seed 21978996   orbit_seed 7658040265663960149 VPT 195 steps ( 3.53 lt)  RMSE 0.346046  duty 0.597  relock
+13  unlock 14  meanLock 42.6
+arm fwd-only seed 21978996   orbit_seed 11198218363179429788 VPT  19 steps ( 0.34 lt)  RMSE 0.353571  duty 0.746  relock
+ 11  unlock 12  meanLock 62.2
+arm fwd-only seed 21978996   orbit_seed 14719543417854726190 VPT 118 steps ( 2.14 lt)  RMSE 0.358599  duty 0.619  relock
+ 19  unlock 20  meanLock 30.9
+arm fwd-only seed 21978996   orbit_seed 8425156953022204017 VPT  83 steps ( 1.50 lt)  RMSE 0.364301  duty 0.627  relock
+14  unlock 14  meanLock 41.8
+arm fwd-only seed 21978996   orbit_seed 15001926598183616335 VPT 237 steps ( 4.29 lt)  RMSE 0.365256  duty 0.728  relock
+ 14  unlock 14  meanLock 48.5
+arm fwd-only seed 21978996   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.365560  duty 0.671  relock
+ 14  unlock 15  meanLock 44.7
+arm fwd-only seed 21978996   orbit_seed 9136586738710644795 VPT 123 steps ( 2.23 lt)  RMSE 0.371288  duty 0.642  relock
+15  unlock 16  meanLock 40.1
+arm fwd-only seed 21978996   orbit_seed 2696958202838730100 VPT 267 steps ( 4.84 lt)  RMSE 0.373421  duty 0.696  relock
+13  unlock 14  meanLock 49.7
+arm fwd-only seed 21978996   orbit_seed 15992716269590395088 VPT 217 steps ( 3.93 lt)  RMSE 0.373575  duty 0.678  relock
+ 18  unlock 18  meanLock 35.7
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978996   orbit_seed 4007931443343602940 VPT 342 steps ( 6.19 lt)  RMSE 0.406671  duty 0.415  relock
+11  unlock 12  meanLock 34.6
+arm fwd-only seed 21978996   orbit_seed 11569254123151793499 VPT 338 steps ( 6.12 lt)  RMSE 0.404709  duty 0.450  relock
+ 11  unlock 12  meanLock 37.5
+arm fwd-only seed 21978996   orbit_seed 6960850931340156210 VPT 317 steps ( 5.74 lt)  RMSE 0.393356  duty 0.450  relock
+9  unlock 10  meanLock 45.0
+arm fwd-only seed 21978996   orbit_seed 2696958202838730100 VPT 267 steps ( 4.84 lt)  RMSE 0.373421  duty 0.696  relock
+13  unlock 14  meanLock 49.7
+arm fwd-only seed 21978996   orbit_seed 9333312947715283458 VPT 264 steps ( 4.78 lt)  RMSE 0.394070  duty 0.463  relock
+13  unlock 13  meanLock 33.1
+arm fwd-only seed 21978996   orbit_seed 14193348660813217918 VPT 259 steps ( 4.69 lt)  RMSE 0.380069  duty 0.590  relock
+ 14  unlock 14  meanLock 39.3
+arm fwd-only seed 21978996   orbit_seed 15001926598183616335 VPT 237 steps ( 4.29 lt)  RMSE 0.365256  duty 0.728  relock
+ 14  unlock 14  meanLock 48.5
+arm fwd-only seed 21978996   orbit_seed 13994705457426480036 VPT 231 steps ( 4.18 lt)  RMSE 0.398506  duty 0.532  relock
+ 13  unlock 13  meanLock 38.0
+arm fwd-only seed 21978996   orbit_seed 248130967593251468 VPT 222 steps ( 4.02 lt)  RMSE 0.388972  duty 0.602  relock 1
+4  unlock 15  meanLock 40.1
+arm fwd-only seed 21978996   orbit_seed 17224751303681612354 VPT 220 steps ( 3.98 lt)  RMSE 0.399480  duty 0.491  relock
+ 14  unlock 15  meanLock 32.7
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978996   orbit_seed 11198218363179429788 VPT  19 steps ( 0.34 lt)  RMSE 0.353571  duty 0.746  relock
+ 11  unlock 12  meanLock 62.2
+arm fwd-only seed 21978996   orbit_seed 15001926598183616335 VPT 237 steps ( 4.29 lt)  RMSE 0.365256  duty 0.728  relock
+ 14  unlock 14  meanLock 48.5
+arm fwd-only seed 21978996   orbit_seed 2696958202838730100 VPT 267 steps ( 4.84 lt)  RMSE 0.373421  duty 0.696  relock
+13  unlock 14  meanLock 49.7
+arm fwd-only seed 21978996   orbit_seed 4416234110371315044 VPT 213 steps ( 3.86 lt)  RMSE 0.332305  duty 0.678  relock
+12  unlock 13  meanLock 52.2
+arm fwd-only seed 21978996   orbit_seed 15992716269590395088 VPT 217 steps ( 3.93 lt)  RMSE 0.373575  duty 0.678  relock
+ 18  unlock 18  meanLock 35.7
+arm fwd-only seed 21978996   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.365560  duty 0.671  relock
+ 14  unlock 15  meanLock 44.7
+arm fwd-only seed 21978996   orbit_seed 110890624606369167 VPT 114 steps ( 2.06 lt)  RMSE 0.408703  duty 0.668  relock 1
+7  unlock 18  meanLock 37.1
+arm fwd-only seed 21978996   orbit_seed 9136586738710644795 VPT 123 steps ( 2.23 lt)  RMSE 0.371288  duty 0.642  relock
+15  unlock 16  meanLock 40.1
+arm fwd-only seed 21978996   orbit_seed 14645204808822872881 VPT 157 steps ( 2.84 lt)  RMSE 0.395795  duty 0.630  relock
+ 17  unlock 18  meanLock 35.0
+arm fwd-only seed 21978996   orbit_seed 9515810860901762052 VPT 203 steps ( 3.68 lt)  RMSE 0.405115  duty 0.627  relock
+18  unlock 18  meanLock 33.0
+
+=== ESN seed 21978997 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.24  max=6.47  mean=1.94  median=1.61  std=1.42
+  free-run RMSE        n=100  min=0.327086  max=0.493183  mean=0.424288  median=0.427866  std=0.035038
+  duty (<=theta)       n=100  min=0.167  max=0.759  mean=0.461  median=0.466  std=0.121
+  n_relock             n=100  min=7.0  max=24.0  mean=15.8  median=16.0  std=3.4
+  n_unlock             n=100  min=8.0  max=24.0  mean=16.3  median=16.0  std=3.4
+  meanLock (steps)     n=100  min=10.7  max=69.0  mean=28.5  median=27.8  std=9.3
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978997   orbit_seed 2097179478975684523 VPT 357 steps ( 6.47 lt)  RMSE 0.327086  duty 0.759  relock
+10  unlock 11  meanLock 69.0
+arm fwd-only seed 21978997   orbit_seed 110890624606369167 VPT 268 steps ( 4.85 lt)  RMSE 0.330680  duty 0.683  relock 1
+5  unlock 16  meanLock 42.7
+arm fwd-only seed 21978997   orbit_seed 14645204808822872881 VPT  52 steps ( 0.94 lt)  RMSE 0.334035  duty 0.637  relock
+ 17  unlock 18  meanLock 35.4
+arm fwd-only seed 21978997   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.337829  duty 0.626  relock 1
+1  unlock 11  meanLock 52.2
+arm fwd-only seed 21978997   orbit_seed 17224751303681612354 VPT 227 steps ( 4.11 lt)  RMSE 0.347246  duty 0.581  relock
+ 14  unlock 14  meanLock 38.7
+arm fwd-only seed 21978997   orbit_seed 4712281022348717183 VPT 152 steps ( 2.75 lt)  RMSE 0.352922  duty 0.696  relock
+16  unlock 16  meanLock 40.9
+arm fwd-only seed 21978997   orbit_seed 5237269684808350417 VPT 143 steps ( 2.59 lt)  RMSE 0.353311  duty 0.675  relock
+15  unlock 15  meanLock 42.2
+arm fwd-only seed 21978997   orbit_seed 16400381301927481083 VPT 220 steps ( 3.98 lt)  RMSE 0.374576  duty 0.596  relock
+ 11  unlock 11  meanLock 49.7
+arm fwd-only seed 21978997   orbit_seed 4007931443343602940 VPT 215 steps ( 3.89 lt)  RMSE 0.381387  duty 0.578  relock
+15  unlock 16  meanLock 36.1
+arm fwd-only seed 21978997   orbit_seed 8542863739336868721 VPT 185 steps ( 3.35 lt)  RMSE 0.381612  duty 0.584  relock
+17  unlock 18  meanLock 32.4
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978997   orbit_seed 2097179478975684523 VPT 357 steps ( 6.47 lt)  RMSE 0.327086  duty 0.759  relock
+10  unlock 11  meanLock 69.0
+arm fwd-only seed 21978997   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.337829  duty 0.626  relock 1
+1  unlock 11  meanLock 52.2
+arm fwd-only seed 21978997   orbit_seed 7658040265663960149 VPT 278 steps ( 5.04 lt)  RMSE 0.419692  duty 0.562  relock
+18  unlock 19  meanLock 29.6
+arm fwd-only seed 21978997   orbit_seed 110890624606369167 VPT 268 steps ( 4.85 lt)  RMSE 0.330680  duty 0.683  relock 1
+5  unlock 16  meanLock 42.7
+arm fwd-only seed 21978997   orbit_seed 14719543417854726190 VPT 266 steps ( 4.82 lt)  RMSE 0.385288  duty 0.554  relock
+ 14  unlock 15  meanLock 36.9
+arm fwd-only seed 21978997   orbit_seed 5743361355973698255 VPT 247 steps ( 4.47 lt)  RMSE 0.403447  duty 0.461  relock
+14  unlock 14  meanLock 30.7
+arm fwd-only seed 21978997   orbit_seed 17224751303681612354 VPT 227 steps ( 4.11 lt)  RMSE 0.347246  duty 0.581  relock
+ 14  unlock 14  meanLock 38.7
+arm fwd-only seed 21978997   orbit_seed 9333312947715283458 VPT 226 steps ( 4.09 lt)  RMSE 0.428556  duty 0.318  relock
+9  unlock 10  meanLock 31.8
+arm fwd-only seed 21978997   orbit_seed 14503336125504450378 VPT 224 steps ( 4.06 lt)  RMSE 0.386654  duty 0.621  relock
+ 15  unlock 15  meanLock 38.8
+arm fwd-only seed 21978997   orbit_seed 16400381301927481083 VPT 220 steps ( 3.98 lt)  RMSE 0.374576  duty 0.596  relock
+ 11  unlock 11  meanLock 49.7
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978997   orbit_seed 2097179478975684523 VPT 357 steps ( 6.47 lt)  RMSE 0.327086  duty 0.759  relock
+10  unlock 11  meanLock 69.0
+arm fwd-only seed 21978997   orbit_seed 4712281022348717183 VPT 152 steps ( 2.75 lt)  RMSE 0.352922  duty 0.696  relock
+16  unlock 16  meanLock 40.9
+arm fwd-only seed 21978997   orbit_seed 110890624606369167 VPT 268 steps ( 4.85 lt)  RMSE 0.330680  duty 0.683  relock 1
+5  unlock 16  meanLock 42.7
+arm fwd-only seed 21978997   orbit_seed 10603344179402640566 VPT  50 steps ( 0.91 lt)  RMSE 0.384111  duty 0.681  relock
+ 15  unlock 15  meanLock 42.6
+arm fwd-only seed 21978997   orbit_seed 5237269684808350417 VPT 143 steps ( 2.59 lt)  RMSE 0.353311  duty 0.675  relock
+15  unlock 15  meanLock 42.2
+arm fwd-only seed 21978997   orbit_seed 14645204808822872881 VPT  52 steps ( 0.94 lt)  RMSE 0.334035  duty 0.637  relock
+ 17  unlock 18  meanLock 35.4
+arm fwd-only seed 21978997   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.337829  duty 0.626  relock 1
+1  unlock 11  meanLock 52.2
+arm fwd-only seed 21978997   orbit_seed 14503336125504450378 VPT 224 steps ( 4.06 lt)  RMSE 0.386654  duty 0.621  relock
+ 15  unlock 15  meanLock 38.8
+arm fwd-only seed 21978997   orbit_seed 9515810860901762052 VPT 125 steps ( 2.26 lt)  RMSE 0.403233  duty 0.612  relock
+17  unlock 18  meanLock 34.0
+arm fwd-only seed 21978997   orbit_seed 11101717626751391262 VPT  66 steps ( 1.20 lt)  RMSE 0.390846  duty 0.608  relock
+ 17  unlock 17  meanLock 33.8
+
+=== ESN seed 21978998 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.41  mean=1.84  median=1.43  std=1.45
+  free-run RMSE        n=100  min=0.320564  max=0.500862  mean=0.424065  median=0.427732  std=0.037511
+  duty (<=theta)       n=100  min=0.205  max=0.785  mean=0.470  median=0.470  std=0.123
+  n_relock             n=100  min=10.0  max=24.0  mean=16.9  median=17.0  std=3.1
+  n_unlock             n=100  min=10.0  max=25.0  mean=17.4  median=17.5  std=3.3
+  meanLock (steps)     n=100  min=10.2  max=65.4  mean=27.4  median=26.1  std=10.0
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978998   orbit_seed 248130967593251468 VPT 263 steps ( 4.76 lt)  RMSE 0.320564  duty 0.785  relock 1
+1  unlock 11  meanLock 65.4
+arm fwd-only seed 21978998   orbit_seed 14283968312830459669 VPT 115 steps ( 2.08 lt)  RMSE 0.324503  duty 0.707  relock
+ 16  unlock 16  meanLock 41.6
+arm fwd-only seed 21978998   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.334567  duty 0.604  relock
+10  unlock 11  meanLock 54.9
+arm fwd-only seed 21978998   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  RMSE 0.341369  duty 0.671  relock
+17  unlock 17  meanLock 37.3
+arm fwd-only seed 21978998   orbit_seed 17609291198829902110 VPT 131 steps ( 2.37 lt)  RMSE 0.348970  duty 0.654  relock
+ 12  unlock 12  meanLock 50.3
+arm fwd-only seed 21978998   orbit_seed 10801814468121717024 VPT  21 steps ( 0.38 lt)  RMSE 0.349565  duty 0.643  relock
+ 17  unlock 18  meanLock 35.7
+arm fwd-only seed 21978998   orbit_seed 9333312947715283458 VPT 367 steps ( 6.65 lt)  RMSE 0.363990  duty 0.645  relock
+12  unlock 13  meanLock 49.6
+arm fwd-only seed 21978998   orbit_seed 7401497959599845173 VPT 295 steps ( 5.34 lt)  RMSE 0.367643  duty 0.671  relock
+13  unlock 14  meanLock 47.9
+arm fwd-only seed 21978998   orbit_seed 7367918243184862287 VPT  69 steps ( 1.25 lt)  RMSE 0.369964  duty 0.639  relock
+12  unlock 12  meanLock 49.2
+arm fwd-only seed 21978998   orbit_seed 5743361355973698255 VPT 247 steps ( 4.47 lt)  RMSE 0.373148  duty 0.533  relock
+10  unlock 10  meanLock 48.5
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978998   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.334567  duty 0.604  relock
+10  unlock 11  meanLock 54.9
+arm fwd-only seed 21978998   orbit_seed 9333312947715283458 VPT 367 steps ( 6.65 lt)  RMSE 0.363990  duty 0.645  relock
+12  unlock 13  meanLock 49.6
+arm fwd-only seed 21978998   orbit_seed 7401497959599845173 VPT 295 steps ( 5.34 lt)  RMSE 0.367643  duty 0.671  relock
+13  unlock 14  meanLock 47.9
+arm fwd-only seed 21978998   orbit_seed 12735002845385499196 VPT 267 steps ( 4.84 lt)  RMSE 0.375012  duty 0.607  relock
+ 16  unlock 16  meanLock 35.7
+arm fwd-only seed 21978998   orbit_seed 248130967593251468 VPT 263 steps ( 4.76 lt)  RMSE 0.320564  duty 0.785  relock 1
+1  unlock 11  meanLock 65.4
+arm fwd-only seed 21978998   orbit_seed 656605956440221769 VPT 248 steps ( 4.49 lt)  RMSE 0.412640  duty 0.399  relock 1
+5  unlock 15  meanLock 24.9
+arm fwd-only seed 21978998   orbit_seed 5743361355973698255 VPT 247 steps ( 4.47 lt)  RMSE 0.373148  duty 0.533  relock
+10  unlock 10  meanLock 48.5
+arm fwd-only seed 21978998   orbit_seed 15378080442305734864 VPT 246 steps ( 4.46 lt)  RMSE 0.399223  duty 0.579  relock
+ 18  unlock 18  meanLock 30.5
+arm fwd-only seed 21978998   orbit_seed 6960850931340156210 VPT 243 steps ( 4.40 lt)  RMSE 0.403776  duty 0.440  relock
+14  unlock 15  meanLock 29.3
+arm fwd-only seed 21978998   orbit_seed 10278487631456564348 VPT 238 steps ( 4.31 lt)  RMSE 0.411986  duty 0.546  relock
+ 18  unlock 19  meanLock 28.7
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978998   orbit_seed 248130967593251468 VPT 263 steps ( 4.76 lt)  RMSE 0.320564  duty 0.785  relock 1
+1  unlock 11  meanLock 65.4
+arm fwd-only seed 21978998   orbit_seed 14283968312830459669 VPT 115 steps ( 2.08 lt)  RMSE 0.324503  duty 0.707  relock
+ 16  unlock 16  meanLock 41.6
+arm fwd-only seed 21978998   orbit_seed 7401497959599845173 VPT 295 steps ( 5.34 lt)  RMSE 0.367643  duty 0.671  relock
+13  unlock 14  meanLock 47.9
+arm fwd-only seed 21978998   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  RMSE 0.341369  duty 0.671  relock
+17  unlock 17  meanLock 37.3
+arm fwd-only seed 21978998   orbit_seed 17609291198829902110 VPT 131 steps ( 2.37 lt)  RMSE 0.348970  duty 0.654  relock
+ 12  unlock 12  meanLock 50.3
+arm fwd-only seed 21978998   orbit_seed 9136586738710644795 VPT 120 steps ( 2.17 lt)  RMSE 0.380671  duty 0.654  relock
+13  unlock 13  meanLock 46.7
+arm fwd-only seed 21978998   orbit_seed 15001926598183616335 VPT 234 steps ( 4.24 lt)  RMSE 0.387496  duty 0.651  relock
+ 14  unlock 14  meanLock 43.4
+arm fwd-only seed 21978998   orbit_seed 16400381301927481083 VPT  68 steps ( 1.23 lt)  RMSE 0.386028  duty 0.647  relock
+ 15  unlock 15  meanLock 40.4
+arm fwd-only seed 21978998   orbit_seed 9333312947715283458 VPT 367 steps ( 6.65 lt)  RMSE 0.363990  duty 0.645  relock
+12  unlock 13  meanLock 49.6
+arm fwd-only seed 21978998   orbit_seed 10801814468121717024 VPT  21 steps ( 0.38 lt)  RMSE 0.349565  duty 0.643  relock
+ 17  unlock 18  meanLock 35.7
+
+=== ESN seed 21978999 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.53  mean=1.82  median=1.46  std=1.50
+  free-run RMSE        n=100  min=0.303804  max=0.490674  mean=0.422693  median=0.422803  std=0.033879
+  duty (<=theta)       n=100  min=0.211  max=0.765  mean=0.447  median=0.454  std=0.120
+  n_relock             n=100  min=2.0  max=24.0  mean=15.6  median=16.0  std=3.6
+  n_unlock             n=100  min=3.0  max=24.0  mean=16.2  median=17.0  std=3.6
+  meanLock (steps)     n=100  min=13.6  max=141.7  mean=29.0  median=26.0  std=15.1
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21978999   orbit_seed 7401924419259460404 VPT 353 steps ( 6.39 lt)  RMSE 0.303804  duty 0.764  relock
+10  unlock 11  meanLock 69.5
+arm fwd-only seed 21978999   orbit_seed 1006469775667417434 VPT  67 steps ( 1.21 lt)  RMSE 0.330893  duty 0.701  relock
+16  unlock 17  meanLock 41.2
+arm fwd-only seed 21978999   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.333609  duty 0.765  relock
+ 11  unlock 11  meanLock 63.8
+arm fwd-only seed 21978999   orbit_seed 10278487631456564348 VPT 232 steps ( 4.20 lt)  RMSE 0.361606  duty 0.624  relock
+ 9  unlock 10  meanLock 62.4
+arm fwd-only seed 21978999   orbit_seed 9333312947715283458 VPT 364 steps ( 6.59 lt)  RMSE 0.363741  duty 0.556  relock
+14  unlock 14  meanLock 37.1
+arm fwd-only seed 21978999   orbit_seed 4741737415666583010 VPT  37 steps ( 0.67 lt)  RMSE 0.365287  duty 0.665  relock
+19  unlock 20  meanLock 33.2
+arm fwd-only seed 21978999   orbit_seed 9180653851401757815 VPT 310 steps ( 5.61 lt)  RMSE 0.368391  duty 0.616  relock
+12  unlock 13  meanLock 47.4
+arm fwd-only seed 21978999   orbit_seed 13994705457426480036 VPT 207 steps ( 3.75 lt)  RMSE 0.378678  duty 0.511  relock
+ 16  unlock 17  meanLock 30.1
+arm fwd-only seed 21978999   orbit_seed 4364257658748689037 VPT  52 steps ( 0.94 lt)  RMSE 0.384713  duty 0.603  relock
+15  unlock 16  meanLock 37.7
+arm fwd-only seed 21978999   orbit_seed 3077346833989813773 VPT 178 steps ( 3.22 lt)  RMSE 0.388438  duty 0.608  relock
+16  unlock 16  meanLock 35.8
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21978999   orbit_seed 4007931443343602940 VPT 416 steps ( 7.53 lt)  RMSE 0.397335  duty 0.425  relock
+2  unlock 3  meanLock 141.7
+arm fwd-only seed 21978999   orbit_seed 9333312947715283458 VPT 364 steps ( 6.59 lt)  RMSE 0.363741  duty 0.556  relock
+14  unlock 14  meanLock 37.1
+arm fwd-only seed 21978999   orbit_seed 13075496520564732781 VPT 357 steps ( 6.47 lt)  RMSE 0.392820  duty 0.458  relock
+ 10  unlock 11  meanLock 41.6
+arm fwd-only seed 21978999   orbit_seed 7401924419259460404 VPT 353 steps ( 6.39 lt)  RMSE 0.303804  duty 0.764  relock
+10  unlock 11  meanLock 69.5
+arm fwd-only seed 21978999   orbit_seed 5237269684808350417 VPT 332 steps ( 6.01 lt)  RMSE 0.389724  duty 0.489  relock
+9  unlock 10  meanLock 48.9
+arm fwd-only seed 21978999   orbit_seed 9180653851401757815 VPT 310 steps ( 5.61 lt)  RMSE 0.368391  duty 0.616  relock
+12  unlock 13  meanLock 47.4
+arm fwd-only seed 21978999   orbit_seed 656605956440221769 VPT 243 steps ( 4.40 lt)  RMSE 0.393844  duty 0.481  relock 1
+6  unlock 17  meanLock 28.3
+arm fwd-only seed 21978999   orbit_seed 10278487631456564348 VPT 232 steps ( 4.20 lt)  RMSE 0.361606  duty 0.624  relock
+ 9  unlock 10  meanLock 62.4
+arm fwd-only seed 21978999   orbit_seed 13994705457426480036 VPT 207 steps ( 3.75 lt)  RMSE 0.378678  duty 0.511  relock
+ 16  unlock 17  meanLock 30.1
+arm fwd-only seed 21978999   orbit_seed 5743361355973698255 VPT 196 steps ( 3.55 lt)  RMSE 0.410294  duty 0.552  relock
+16  unlock 16  meanLock 32.5
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21978999   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.333609  duty 0.765  relock
+ 11  unlock 11  meanLock 63.8
+arm fwd-only seed 21978999   orbit_seed 7401924419259460404 VPT 353 steps ( 6.39 lt)  RMSE 0.303804  duty 0.764  relock
+10  unlock 11  meanLock 69.5
+arm fwd-only seed 21978999   orbit_seed 1006469775667417434 VPT  67 steps ( 1.21 lt)  RMSE 0.330893  duty 0.701  relock
+16  unlock 17  meanLock 41.2
+arm fwd-only seed 21978999   orbit_seed 4741737415666583010 VPT  37 steps ( 0.67 lt)  RMSE 0.365287  duty 0.665  relock
+19  unlock 20  meanLock 33.2
+arm fwd-only seed 21978999   orbit_seed 248130967593251468 VPT  76 steps ( 1.38 lt)  RMSE 0.396585  duty 0.634  relock 1
+6  unlock 17  meanLock 37.3
+arm fwd-only seed 21978999   orbit_seed 10278487631456564348 VPT 232 steps ( 4.20 lt)  RMSE 0.361606  duty 0.624  relock
+ 9  unlock 10  meanLock 62.4
+arm fwd-only seed 21978999   orbit_seed 9717908683336067732 VPT  60 steps ( 1.09 lt)  RMSE 0.392103  duty 0.617  relock
+15  unlock 15  meanLock 38.6
+arm fwd-only seed 21978999   orbit_seed 9180653851401757815 VPT 310 steps ( 5.61 lt)  RMSE 0.368391  duty 0.616  relock
+12  unlock 13  meanLock 47.4
+arm fwd-only seed 21978999   orbit_seed 3077346833989813773 VPT 178 steps ( 3.22 lt)  RMSE 0.388438  duty 0.608  relock
+16  unlock 16  meanLock 35.8
+arm fwd-only seed 21978999   orbit_seed 17191373089416203648 VPT  52 steps ( 0.94 lt)  RMSE 0.416011  duty 0.605  relock
+ 18  unlock 19  meanLock 31.8
+
+=== ESN seed 21979000 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=4.76  mean=1.69  median=1.49  std=1.11
+  free-run RMSE        n=100  min=0.348410  max=0.480132  mean=0.423644  median=0.424797  std=0.029847
+  duty (<=theta)       n=100  min=0.243  max=0.736  mean=0.471  median=0.487  std=0.112
+  n_relock             n=100  min=7.0  max=23.0  mean=16.1  median=16.0  std=3.1
+  n_unlock             n=100  min=7.0  max=24.0  mean=16.7  median=17.0  std=3.1
+  meanLock (steps)     n=100  min=14.3  max=56.6  mean=28.5  median=28.4  std=8.6
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979000   orbit_seed 110890624606369167 VPT 113 steps ( 2.05 lt)  RMSE 0.348410  duty 0.736  relock 1
+2  unlock 12  meanLock 56.6
+arm fwd-only seed 21979000   orbit_seed 248130967593251468 VPT 217 steps ( 3.93 lt)  RMSE 0.348813  duty 0.604  relock 1
+4  unlock 15  meanLock 40.3
+arm fwd-only seed 21979000   orbit_seed 9515810860901762052 VPT 201 steps ( 3.64 lt)  RMSE 0.353325  duty 0.664  relock
+15  unlock 16  meanLock 41.5
+arm fwd-only seed 21979000   orbit_seed 12284454596439506926 VPT  13 steps ( 0.24 lt)  RMSE 0.356035  duty 0.713  relock
+ 13  unlock 13  meanLock 50.9
+arm fwd-only seed 21979000   orbit_seed 11957716583852103447 VPT 188 steps ( 3.41 lt)  RMSE 0.368342  duty 0.608  relock
+ 20  unlock 20  meanLock 29.0
+arm fwd-only seed 21979000   orbit_seed 17609291198829902110 VPT 263 steps ( 4.76 lt)  RMSE 0.368735  duty 0.515  relock
+ 18  unlock 19  meanLock 27.1
+arm fwd-only seed 21979000   orbit_seed 14645204808822872881 VPT  48 steps ( 0.87 lt)  RMSE 0.369414  duty 0.679  relock
+ 15  unlock 15  meanLock 42.4
+arm fwd-only seed 21979000   orbit_seed 3077346833989813773 VPT 172 steps ( 3.12 lt)  RMSE 0.379585  duty 0.626  relock
+12  unlock 13  meanLock 48.2
+arm fwd-only seed 21979000   orbit_seed 9294122214858465305 VPT  80 steps ( 1.45 lt)  RMSE 0.381968  duty 0.622  relock
+14  unlock 15  meanLock 41.5
+arm fwd-only seed 21979000   orbit_seed 13075496520564732781 VPT 176 steps ( 3.19 lt)  RMSE 0.382053  duty 0.608  relock
+ 17  unlock 17  meanLock 33.8
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979000   orbit_seed 17609291198829902110 VPT 263 steps ( 4.76 lt)  RMSE 0.368735  duty 0.515  relock
+ 18  unlock 19  meanLock 27.1
+arm fwd-only seed 21979000   orbit_seed 9015661769437736282 VPT 228 steps ( 4.13 lt)  RMSE 0.386570  duty 0.449  relock
+14  unlock 15  meanLock 29.9
+arm fwd-only seed 21979000   orbit_seed 4741737415666583010 VPT 227 steps ( 4.11 lt)  RMSE 0.388211  duty 0.652  relock
+15  unlock 15  meanLock 40.8
+arm fwd-only seed 21979000   orbit_seed 248130967593251468 VPT 217 steps ( 3.93 lt)  RMSE 0.348813  duty 0.604  relock 1
+4  unlock 15  meanLock 40.3
+arm fwd-only seed 21979000   orbit_seed 656605956440221769 VPT 217 steps ( 3.93 lt)  RMSE 0.419207  duty 0.357  relock 7
+  unlock 7  meanLock 44.6
+arm fwd-only seed 21979000   orbit_seed 6960850931340156210 VPT 211 steps ( 3.82 lt)  RMSE 0.420763  duty 0.345  relock
+7  unlock 8  meanLock 43.1
+arm fwd-only seed 21979000   orbit_seed 9515810860901762052 VPT 201 steps ( 3.64 lt)  RMSE 0.353325  duty 0.664  relock
+15  unlock 16  meanLock 41.5
+arm fwd-only seed 21979000   orbit_seed 18303404106008543196 VPT 198 steps ( 3.59 lt)  RMSE 0.390343  duty 0.536  relock
+ 15  unlock 16  meanLock 33.5
+arm fwd-only seed 21979000   orbit_seed 9333312947715283458 VPT 195 steps ( 3.53 lt)  RMSE 0.427403  duty 0.366  relock
+16  unlock 16  meanLock 21.5
+arm fwd-only seed 21979000   orbit_seed 8425156953022204017 VPT 194 steps ( 3.51 lt)  RMSE 0.404756  duty 0.495  relock
+14  unlock 15  meanLock 33.0
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979000   orbit_seed 110890624606369167 VPT 113 steps ( 2.05 lt)  RMSE 0.348410  duty 0.736  relock 1
+2  unlock 12  meanLock 56.6
+arm fwd-only seed 21979000   orbit_seed 12284454596439506926 VPT  13 steps ( 0.24 lt)  RMSE 0.356035  duty 0.713  relock
+ 13  unlock 13  meanLock 50.9
+arm fwd-only seed 21979000   orbit_seed 14645204808822872881 VPT  48 steps ( 0.87 lt)  RMSE 0.369414  duty 0.679  relock
+ 15  unlock 15  meanLock 42.4
+arm fwd-only seed 21979000   orbit_seed 9515810860901762052 VPT 201 steps ( 3.64 lt)  RMSE 0.353325  duty 0.664  relock
+15  unlock 16  meanLock 41.5
+arm fwd-only seed 21979000   orbit_seed 4741737415666583010 VPT 227 steps ( 4.11 lt)  RMSE 0.388211  duty 0.652  relock
+15  unlock 15  meanLock 40.8
+arm fwd-only seed 21979000   orbit_seed 4007931443343602940 VPT 183 steps ( 3.31 lt)  RMSE 0.386386  duty 0.628  relock
+16  unlock 17  meanLock 36.9
+arm fwd-only seed 21979000   orbit_seed 3077346833989813773 VPT 172 steps ( 3.12 lt)  RMSE 0.379585  duty 0.626  relock
+12  unlock 13  meanLock 48.2
+arm fwd-only seed 21979000   orbit_seed 7401924419259460404 VPT 159 steps ( 2.88 lt)  RMSE 0.390693  duty 0.625  relock
+18  unlock 18  meanLock 32.9
+arm fwd-only seed 21979000   orbit_seed 9294122214858465305 VPT  80 steps ( 1.45 lt)  RMSE 0.381968  duty 0.622  relock
+14  unlock 15  meanLock 41.5
+arm fwd-only seed 21979000   orbit_seed 11957716583852103447 VPT 188 steps ( 3.41 lt)  RMSE 0.368342  duty 0.608  relock
+ 20  unlock 20  meanLock 29.0
+
+=== ESN seed 21979001 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=6.30  mean=1.92  median=1.49  std=1.46
+  free-run RMSE        n=100  min=0.306648  max=0.499688  mean=0.422916  median=0.428355  std=0.037885
+  duty (<=theta)       n=100  min=0.176  max=0.736  mean=0.471  median=0.468  std=0.131
+  n_relock             n=100  min=8.0  max=23.0  mean=15.5  median=16.0  std=3.2
+  n_unlock             n=100  min=8.0  max=24.0  mean=16.2  median=17.0  std=3.2
+  meanLock (steps)     n=100  min=13.5  max=73.4  mean=29.5  median=27.7  std=10.1
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979001   orbit_seed 2696958202838730100 VPT 348 steps ( 6.30 lt)  RMSE 0.306648  duty 0.734  relock
+9  unlock 10  meanLock 73.4
+arm fwd-only seed 21979001   orbit_seed 4007931443343602940 VPT 318 steps ( 5.76 lt)  RMSE 0.317621  duty 0.692  relock
+16  unlock 17  meanLock 40.7
+arm fwd-only seed 21979001   orbit_seed 6960850931340156210 VPT 278 steps ( 5.04 lt)  RMSE 0.338337  duty 0.577  relock
+17  unlock 18  meanLock 32.1
+arm fwd-only seed 21979001   orbit_seed 9333312947715283458 VPT 260 steps ( 4.71 lt)  RMSE 0.341844  duty 0.659  relock
+10  unlock 10  meanLock 59.9
+arm fwd-only seed 21979001   orbit_seed 3077346833989813773 VPT 170 steps ( 3.08 lt)  RMSE 0.343303  duty 0.736  relock
+12  unlock 12  meanLock 56.6
+arm fwd-only seed 21979001   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.344717  duty 0.547  relock 1
+4  unlock 15  meanLock 36.5
+arm fwd-only seed 21979001   orbit_seed 7367918243184862287 VPT 323 steps ( 5.85 lt)  RMSE 0.350092  duty 0.614  relock
+14  unlock 15  meanLock 40.9
+arm fwd-only seed 21979001   orbit_seed 11101717626751391262 VPT  70 steps ( 1.27 lt)  RMSE 0.369064  duty 0.663  relock
+ 15  unlock 16  meanLock 41.4
+arm fwd-only seed 21979001   orbit_seed 5743361355973698255 VPT 239 steps ( 4.33 lt)  RMSE 0.369539  duty 0.597  relock
+13  unlock 13  meanLock 42.6
+arm fwd-only seed 21979001   orbit_seed 13075496520564732781 VPT  30 steps ( 0.54 lt)  RMSE 0.370567  duty 0.656  relock
+ 14  unlock 14  meanLock 43.7
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979001   orbit_seed 2696958202838730100 VPT 348 steps ( 6.30 lt)  RMSE 0.306648  duty 0.734  relock
+9  unlock 10  meanLock 73.4
+arm fwd-only seed 21979001   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.344717  duty 0.547  relock 1
+4  unlock 15  meanLock 36.5
+arm fwd-only seed 21979001   orbit_seed 7367918243184862287 VPT 323 steps ( 5.85 lt)  RMSE 0.350092  duty 0.614  relock
+14  unlock 15  meanLock 40.9
+arm fwd-only seed 21979001   orbit_seed 4007931443343602940 VPT 318 steps ( 5.76 lt)  RMSE 0.317621  duty 0.692  relock
+16  unlock 17  meanLock 40.7
+arm fwd-only seed 21979001   orbit_seed 6960850931340156210 VPT 278 steps ( 5.04 lt)  RMSE 0.338337  duty 0.577  relock
+17  unlock 18  meanLock 32.1
+arm fwd-only seed 21979001   orbit_seed 9333312947715283458 VPT 260 steps ( 4.71 lt)  RMSE 0.341844  duty 0.659  relock
+10  unlock 10  meanLock 59.9
+arm fwd-only seed 21979001   orbit_seed 14283968312830459669 VPT 256 steps ( 4.64 lt)  RMSE 0.407294  duty 0.574  relock
+ 13  unlock 13  meanLock 41.0
+arm fwd-only seed 21979001   orbit_seed 5743361355973698255 VPT 239 steps ( 4.33 lt)  RMSE 0.369539  duty 0.597  relock
+13  unlock 13  meanLock 42.6
+arm fwd-only seed 21979001   orbit_seed 15001926598183616335 VPT 230 steps ( 4.17 lt)  RMSE 0.399363  duty 0.634  relock
+ 16  unlock 17  meanLock 37.3
+arm fwd-only seed 21979001   orbit_seed 5237269684808350417 VPT 217 steps ( 3.93 lt)  RMSE 0.411251  duty 0.499  relock
+18  unlock 19  meanLock 26.3
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979001   orbit_seed 3077346833989813773 VPT 170 steps ( 3.08 lt)  RMSE 0.343303  duty 0.736  relock
+12  unlock 12  meanLock 56.6
+arm fwd-only seed 21979001   orbit_seed 2696958202838730100 VPT 348 steps ( 6.30 lt)  RMSE 0.306648  duty 0.734  relock
+9  unlock 10  meanLock 73.4
+arm fwd-only seed 21979001   orbit_seed 4007931443343602940 VPT 318 steps ( 5.76 lt)  RMSE 0.317621  duty 0.692  relock
+16  unlock 17  meanLock 40.7
+arm fwd-only seed 21979001   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.375024  duty 0.687  relock
+ 13  unlock 14  meanLock 49.1
+arm fwd-only seed 21979001   orbit_seed 9015661769437736282 VPT  89 steps ( 1.61 lt)  RMSE 0.381802  duty 0.668  relock
+16  unlock 17  meanLock 39.3
+arm fwd-only seed 21979001   orbit_seed 9717908683336067732 VPT  73 steps ( 1.32 lt)  RMSE 0.372281  duty 0.665  relock
+17  unlock 17  meanLock 36.9
+arm fwd-only seed 21979001   orbit_seed 11101717626751391262 VPT  70 steps ( 1.27 lt)  RMSE 0.369064  duty 0.663  relock
+ 15  unlock 16  meanLock 41.4
+arm fwd-only seed 21979001   orbit_seed 9333312947715283458 VPT 260 steps ( 4.71 lt)  RMSE 0.341844  duty 0.659  relock
+10  unlock 10  meanLock 59.9
+arm fwd-only seed 21979001   orbit_seed 13075496520564732781 VPT  30 steps ( 0.54 lt)  RMSE 0.370567  duty 0.656  relock
+ 14  unlock 14  meanLock 43.7
+arm fwd-only seed 21979001   orbit_seed 1249439214165998073 VPT  77 steps ( 1.39 lt)  RMSE 0.397654  duty 0.649  relock
+15  unlock 15  meanLock 40.6
+
+=== ESN seed 21979002 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.39  mean=2.05  median=1.62  std=1.55
+  free-run RMSE        n=100  min=0.343495  max=0.491823  mean=0.417126  median=0.420590  std=0.032397
+  duty (<=theta)       n=100  min=0.178  max=0.721  mean=0.497  median=0.511  std=0.121
+  n_relock             n=100  min=6.0  max=23.0  mean=15.6  median=16.0  std=3.4
+  n_unlock             n=100  min=7.0  max=23.0  mean=16.2  median=16.5  std=3.3
+  meanLock (steps)     n=100  min=10.4  max=80.9  mean=31.2  median=29.6  std=10.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979002   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.343495  duty 0.566  relock
+6  unlock 7  meanLock 80.9
+arm fwd-only seed 21979002   orbit_seed 4416234110371315044 VPT 175 steps ( 3.17 lt)  RMSE 0.346798  duty 0.721  relock
+9  unlock 10  meanLock 72.1
+arm fwd-only seed 21979002   orbit_seed 9333312947715283458 VPT 357 steps ( 6.47 lt)  RMSE 0.349274  duty 0.634  relock
+14  unlock 14  meanLock 42.3
+arm fwd-only seed 21979002   orbit_seed 18303404106008543196 VPT 351 steps ( 6.36 lt)  RMSE 0.353572  duty 0.666  relock
+ 14  unlock 15  meanLock 44.4
+arm fwd-only seed 21979002   orbit_seed 12997851309749444307 VPT  67 steps ( 1.21 lt)  RMSE 0.353954  duty 0.699  relock
+ 12  unlock 12  meanLock 53.8
+arm fwd-only seed 21979002   orbit_seed 7367918243184862287 VPT 177 steps ( 3.21 lt)  RMSE 0.354809  duty 0.629  relock
+15  unlock 15  meanLock 39.3
+arm fwd-only seed 21979002   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  RMSE 0.360651  duty 0.656  relock
+13  unlock 13  meanLock 46.9
+arm fwd-only seed 21979002   orbit_seed 10148093844914609385 VPT 113 steps ( 2.05 lt)  RMSE 0.368066  duty 0.633  relock
+ 19  unlock 19  meanLock 31.6
+arm fwd-only seed 21979002   orbit_seed 15987026048469243800 VPT 114 steps ( 2.06 lt)  RMSE 0.368749  duty 0.511  relock
+ 10  unlock 11  meanLock 46.5
+arm fwd-only seed 21979002   orbit_seed 2097179478975684523 VPT 284 steps ( 5.14 lt)  RMSE 0.370268  duty 0.631  relock
+13  unlock 13  meanLock 45.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979002   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.343495  duty 0.566  relock
+6  unlock 7  meanLock 80.9
+arm fwd-only seed 21979002   orbit_seed 2610235269337149668 VPT 372 steps ( 6.74 lt)  RMSE 0.396721  duty 0.512  relock
+10  unlock 11  meanLock 46.5
+arm fwd-only seed 21979002   orbit_seed 9333312947715283458 VPT 357 steps ( 6.47 lt)  RMSE 0.349274  duty 0.634  relock
+14  unlock 14  meanLock 42.3
+arm fwd-only seed 21979002   orbit_seed 18303404106008543196 VPT 351 steps ( 6.36 lt)  RMSE 0.353572  duty 0.666  relock
+ 14  unlock 15  meanLock 44.4
+arm fwd-only seed 21979002   orbit_seed 2097179478975684523 VPT 284 steps ( 5.14 lt)  RMSE 0.370268  duty 0.631  relock
+13  unlock 13  meanLock 45.1
+arm fwd-only seed 21979002   orbit_seed 656605956440221769 VPT 282 steps ( 5.11 lt)  RMSE 0.429339  duty 0.373  relock 8
+  unlock 9  meanLock 41.4
+arm fwd-only seed 21979002   orbit_seed 13994705457426480036 VPT 271 steps ( 4.91 lt)  RMSE 0.376839  duty 0.552  relock
+ 14  unlock 15  meanLock 36.8
+arm fwd-only seed 21979002   orbit_seed 6960850931340156210 VPT 246 steps ( 4.46 lt)  RMSE 0.401853  duty 0.435  relock
+17  unlock 18  meanLock 24.2
+arm fwd-only seed 21979002   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  RMSE 0.360651  duty 0.656  relock
+13  unlock 13  meanLock 46.9
+arm fwd-only seed 21979002   orbit_seed 10278487631456564348 VPT 240 steps ( 4.35 lt)  RMSE 0.431851  duty 0.579  relock
+ 17  unlock 18  meanLock 32.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979002   orbit_seed 4416234110371315044 VPT 175 steps ( 3.17 lt)  RMSE 0.346798  duty 0.721  relock
+9  unlock 10  meanLock 72.1
+arm fwd-only seed 21979002   orbit_seed 12997851309749444307 VPT  67 steps ( 1.21 lt)  RMSE 0.353954  duty 0.699  relock
+ 12  unlock 12  meanLock 53.8
+arm fwd-only seed 21979002   orbit_seed 13075496520564732781 VPT 181 steps ( 3.28 lt)  RMSE 0.370895  duty 0.693  relock
+ 15  unlock 15  meanLock 43.3
+arm fwd-only seed 21979002   orbit_seed 7401924419259460404 VPT 159 steps ( 2.88 lt)  RMSE 0.377511  duty 0.670  relock
+15  unlock 16  meanLock 41.9
+arm fwd-only seed 21979002   orbit_seed 18303404106008543196 VPT 351 steps ( 6.36 lt)  RMSE 0.353572  duty 0.666  relock
+ 14  unlock 15  meanLock 44.4
+arm fwd-only seed 21979002   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  RMSE 0.360651  duty 0.656  relock
+13  unlock 13  meanLock 46.9
+arm fwd-only seed 21979002   orbit_seed 12284454596439506926 VPT  17 steps ( 0.31 lt)  RMSE 0.411313  duty 0.645  relock
+ 18  unlock 18  meanLock 33.9
+arm fwd-only seed 21979002   orbit_seed 7401497959599845173 VPT  73 steps ( 1.32 lt)  RMSE 0.394972  duty 0.638  relock
+13  unlock 13  meanLock 45.6
+arm fwd-only seed 21979002   orbit_seed 11569254123151793499 VPT  47 steps ( 0.85 lt)  RMSE 0.383440  duty 0.637  relock
+ 13  unlock 13  meanLock 45.5
+arm fwd-only seed 21979002   orbit_seed 10801814468121717024 VPT  20 steps ( 0.36 lt)  RMSE 0.383224  duty 0.636  relock
+ 15  unlock 15  meanLock 39.8
+
+=== ESN seed 21979003 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.39  mean=1.95  median=1.49  std=1.49
+  free-run RMSE        n=100  min=0.344253  max=0.491497  mean=0.425657  median=0.425444  std=0.031566
+  duty (<=theta)       n=100  min=0.193  max=0.718  mean=0.464  median=0.483  std=0.116
+  n_relock             n=100  min=7.0  max=23.0  mean=16.2  median=17.0  std=3.2
+  n_unlock             n=100  min=8.0  max=23.0  mean=16.8  median=17.0  std=3.2
+  meanLock (steps)     n=100  min=14.1  max=55.2  mean=27.9  median=26.4  std=9.0
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979003   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.344253  duty 0.589  relock
+11  unlock 12  meanLock 49.1
+arm fwd-only seed 21979003   orbit_seed 2610235269337149668 VPT 178 steps ( 3.22 lt)  RMSE 0.361704  duty 0.718  relock
+12  unlock 13  meanLock 55.2
+arm fwd-only seed 21979003   orbit_seed 15378080442305734864 VPT 128 steps ( 2.32 lt)  RMSE 0.363205  duty 0.643  relock
+ 16  unlock 17  meanLock 37.8
+arm fwd-only seed 21979003   orbit_seed 3077346833989813773 VPT 321 steps ( 5.81 lt)  RMSE 0.368426  duty 0.552  relock
+14  unlock 15  meanLock 36.8
+arm fwd-only seed 21979003   orbit_seed 9333312947715283458 VPT 357 steps ( 6.47 lt)  RMSE 0.375267  duty 0.487  relock
+11  unlock 11  meanLock 40.6
+arm fwd-only seed 21979003   orbit_seed 14719543417854726190 VPT  79 steps ( 1.43 lt)  RMSE 0.378390  duty 0.604  relock
+ 18  unlock 19  meanLock 31.8
+arm fwd-only seed 21979003   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.378543  duty 0.650  relock
+ 15  unlock 16  meanLock 40.6
+arm fwd-only seed 21979003   orbit_seed 5743361355973698255 VPT 199 steps ( 3.60 lt)  RMSE 0.378646  duty 0.536  relock
+10  unlock 11  meanLock 48.7
+arm fwd-only seed 21979003   orbit_seed 6960850931340156210 VPT 281 steps ( 5.09 lt)  RMSE 0.380122  duty 0.529  relock
+19  unlock 20  meanLock 26.4
+arm fwd-only seed 21979003   orbit_seed 14283968312830459669 VPT 118 steps ( 2.14 lt)  RMSE 0.381486  duty 0.527  relock
+ 20  unlock 21  meanLock 25.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979003   orbit_seed 4007931443343602940 VPT 408 steps ( 7.39 lt)  RMSE 0.344253  duty 0.589  relock
+11  unlock 12  meanLock 49.1
+arm fwd-only seed 21979003   orbit_seed 9333312947715283458 VPT 357 steps ( 6.47 lt)  RMSE 0.375267  duty 0.487  relock
+11  unlock 11  meanLock 40.6
+arm fwd-only seed 21979003   orbit_seed 3077346833989813773 VPT 321 steps ( 5.81 lt)  RMSE 0.368426  duty 0.552  relock
+14  unlock 15  meanLock 36.8
+arm fwd-only seed 21979003   orbit_seed 9515810860901762052 VPT 318 steps ( 5.76 lt)  RMSE 0.423230  duty 0.622  relock
+17  unlock 18  meanLock 34.6
+arm fwd-only seed 21979003   orbit_seed 17774587888087229762 VPT 296 steps ( 5.36 lt)  RMSE 0.394713  duty 0.523  relock
+ 13  unlock 14  meanLock 37.4
+arm fwd-only seed 21979003   orbit_seed 656605956440221769 VPT 282 steps ( 5.11 lt)  RMSE 0.394304  duty 0.496  relock 1
+2  unlock 12  meanLock 38.2
+arm fwd-only seed 21979003   orbit_seed 6960850931340156210 VPT 281 steps ( 5.09 lt)  RMSE 0.380122  duty 0.529  relock
+19  unlock 20  meanLock 26.4
+arm fwd-only seed 21979003   orbit_seed 5237269684808350417 VPT 253 steps ( 4.58 lt)  RMSE 0.398195  duty 0.621  relock
+19  unlock 19  meanLock 31.1
+arm fwd-only seed 21979003   orbit_seed 10278487631456564348 VPT 240 steps ( 4.35 lt)  RMSE 0.445256  duty 0.392  relock
+ 12  unlock 13  meanLock 30.2
+arm fwd-only seed 21979003   orbit_seed 7441876151362698927 VPT 219 steps ( 3.97 lt)  RMSE 0.406533  duty 0.459  relock
+20  unlock 20  meanLock 21.9
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979003   orbit_seed 2610235269337149668 VPT 178 steps ( 3.22 lt)  RMSE 0.361704  duty 0.718  relock
+12  unlock 13  meanLock 55.2
+arm fwd-only seed 21979003   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.378543  duty 0.650  relock
+ 15  unlock 16  meanLock 40.6
+arm fwd-only seed 21979003   orbit_seed 15378080442305734864 VPT 128 steps ( 2.32 lt)  RMSE 0.363205  duty 0.643  relock
+ 16  unlock 17  meanLock 37.8
+arm fwd-only seed 21979003   orbit_seed 8425156953022204017 VPT  84 steps ( 1.52 lt)  RMSE 0.384836  duty 0.627  relock
+12  unlock 13  meanLock 48.2
+arm fwd-only seed 21979003   orbit_seed 11794286179085912200 VPT  13 steps ( 0.24 lt)  RMSE 0.381724  duty 0.623  relock
+ 16  unlock 16  meanLock 36.6
+arm fwd-only seed 21979003   orbit_seed 9515810860901762052 VPT 318 steps ( 5.76 lt)  RMSE 0.423230  duty 0.622  relock
+17  unlock 18  meanLock 34.6
+arm fwd-only seed 21979003   orbit_seed 5237269684808350417 VPT 253 steps ( 4.58 lt)  RMSE 0.398195  duty 0.621  relock
+19  unlock 19  meanLock 31.1
+arm fwd-only seed 21979003   orbit_seed 2097179478975684523 VPT 210 steps ( 3.80 lt)  RMSE 0.405234  duty 0.619  relock
+14  unlock 14  meanLock 41.3
+arm fwd-only seed 21979003   orbit_seed 15001926598183616335 VPT 126 steps ( 2.28 lt)  RMSE 0.408227  duty 0.617  relock
+ 14  unlock 15  meanLock 41.1
+arm fwd-only seed 21979003   orbit_seed 16826883592623292674 VPT  80 steps ( 1.45 lt)  RMSE 0.397308  duty 0.609  relock
+ 18  unlock 18  meanLock 32.1
+
+=== ESN seed 21979004 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.24  max=6.70  mean=1.91  median=1.46  std=1.41
+  free-run RMSE        n=100  min=0.320887  max=0.485137  mean=0.417351  median=0.419934  std=0.035259
+  duty (<=theta)       n=100  min=0.195  max=0.741  mean=0.487  median=0.487  std=0.115
+  n_relock             n=100  min=4.0  max=23.0  mean=15.8  median=16.0  std=3.9
+  n_unlock             n=100  min=5.0  max=23.0  mean=16.5  median=17.0  std=3.8
+  meanLock (steps)     n=100  min=10.3  max=65.2  mean=30.8  median=28.9  std=11.0
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979004   orbit_seed 15001926598183616335 VPT 230 steps ( 4.17 lt)  RMSE 0.320887  duty 0.741  relock
+ 12  unlock 13  meanLock 57.0
+arm fwd-only seed 21979004   orbit_seed 17609291198829902110 VPT  64 steps ( 1.16 lt)  RMSE 0.331285  duty 0.670  relock
+ 13  unlock 14  meanLock 47.9
+arm fwd-only seed 21979004   orbit_seed 6960850931340156210 VPT 370 steps ( 6.70 lt)  RMSE 0.336241  duty 0.658  relock
+12  unlock 13  meanLock 50.6
+arm fwd-only seed 21979004   orbit_seed 4712281022348717183 VPT 159 steps ( 2.88 lt)  RMSE 0.339798  duty 0.737  relock
+16  unlock 16  meanLock 43.4
+arm fwd-only seed 21979004   orbit_seed 1599451092061524015 VPT 227 steps ( 4.11 lt)  RMSE 0.342584  duty 0.732  relock
+13  unlock 14  meanLock 52.3
+arm fwd-only seed 21979004   orbit_seed 9136586738710644795 VPT 236 steps ( 4.27 lt)  RMSE 0.349904  duty 0.662  relock
+12  unlock 12  meanLock 50.9
+arm fwd-only seed 21979004   orbit_seed 8566824326635013017 VPT  47 steps ( 0.85 lt)  RMSE 0.350719  duty 0.652  relock
+9  unlock 9  meanLock 65.2
+arm fwd-only seed 21979004   orbit_seed 14283968312830459669 VPT 127 steps ( 2.30 lt)  RMSE 0.366567  duty 0.604  relock
+ 16  unlock 16  meanLock 35.5
+arm fwd-only seed 21979004   orbit_seed 8425156953022204017 VPT 153 steps ( 2.77 lt)  RMSE 0.375685  duty 0.656  relock
+12  unlock 12  meanLock 50.5
+arm fwd-only seed 21979004   orbit_seed 13994705457426480036 VPT 171 steps ( 3.10 lt)  RMSE 0.376047  duty 0.616  relock
+ 12  unlock 13  meanLock 47.4
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979004   orbit_seed 6960850931340156210 VPT 370 steps ( 6.70 lt)  RMSE 0.336241  duty 0.658  relock
+12  unlock 13  meanLock 50.6
+arm fwd-only seed 21979004   orbit_seed 4007931443343602940 VPT 348 steps ( 6.30 lt)  RMSE 0.391078  duty 0.473  relock
+8  unlock 9  meanLock 52.6
+arm fwd-only seed 21979004   orbit_seed 9180653851401757815 VPT 239 steps ( 4.33 lt)  RMSE 0.385707  duty 0.607  relock
+15  unlock 15  meanLock 37.9
+arm fwd-only seed 21979004   orbit_seed 7658040265663960149 VPT 239 steps ( 4.33 lt)  RMSE 0.385012  duty 0.566  relock
+18  unlock 19  meanLock 29.8
+arm fwd-only seed 21979004   orbit_seed 9136586738710644795 VPT 236 steps ( 4.27 lt)  RMSE 0.349904  duty 0.662  relock
+12  unlock 12  meanLock 50.9
+arm fwd-only seed 21979004   orbit_seed 15001926598183616335 VPT 230 steps ( 4.17 lt)  RMSE 0.320887  duty 0.741  relock
+ 12  unlock 13  meanLock 57.0
+arm fwd-only seed 21979004   orbit_seed 9333312947715283458 VPT 228 steps ( 4.13 lt)  RMSE 0.423985  duty 0.289  relock
+8  unlock 9  meanLock 32.1
+arm fwd-only seed 21979004   orbit_seed 1599451092061524015 VPT 227 steps ( 4.11 lt)  RMSE 0.342584  duty 0.732  relock
+13  unlock 14  meanLock 52.3
+arm fwd-only seed 21979004   orbit_seed 14503336125504450378 VPT 219 steps ( 3.97 lt)  RMSE 0.441307  duty 0.409  relock
+ 13  unlock 14  meanLock 29.2
+arm fwd-only seed 21979004   orbit_seed 656605956440221769 VPT 217 steps ( 3.93 lt)  RMSE 0.442728  duty 0.306  relock 4
+  unlock 5  meanLock 61.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979004   orbit_seed 15001926598183616335 VPT 230 steps ( 4.17 lt)  RMSE 0.320887  duty 0.741  relock
+ 12  unlock 13  meanLock 57.0
+arm fwd-only seed 21979004   orbit_seed 4712281022348717183 VPT 159 steps ( 2.88 lt)  RMSE 0.339798  duty 0.737  relock
+16  unlock 16  meanLock 43.4
+arm fwd-only seed 21979004   orbit_seed 1599451092061524015 VPT 227 steps ( 4.11 lt)  RMSE 0.342584  duty 0.732  relock
+13  unlock 14  meanLock 52.3
+arm fwd-only seed 21979004   orbit_seed 3077346833989813773 VPT  97 steps ( 1.76 lt)  RMSE 0.385578  duty 0.677  relock
+15  unlock 15  meanLock 42.3
+arm fwd-only seed 21979004   orbit_seed 3124094803142223752 VPT  13 steps ( 0.24 lt)  RMSE 0.382873  duty 0.674  relock
+15  unlock 15  meanLock 42.1
+arm fwd-only seed 21979004   orbit_seed 17609291198829902110 VPT  64 steps ( 1.16 lt)  RMSE 0.331285  duty 0.670  relock
+ 13  unlock 14  meanLock 47.9
+arm fwd-only seed 21979004   orbit_seed 9136586738710644795 VPT 236 steps ( 4.27 lt)  RMSE 0.349904  duty 0.662  relock
+12  unlock 12  meanLock 50.9
+arm fwd-only seed 21979004   orbit_seed 6960850931340156210 VPT 370 steps ( 6.70 lt)  RMSE 0.336241  duty 0.658  relock
+12  unlock 13  meanLock 50.6
+arm fwd-only seed 21979004   orbit_seed 110890624606369167 VPT  77 steps ( 1.39 lt)  RMSE 0.378587  duty 0.657  relock 1
+3  unlock 14  meanLock 46.9
+arm fwd-only seed 21979004   orbit_seed 8425156953022204017 VPT 153 steps ( 2.77 lt)  RMSE 0.375685  duty 0.656  relock
+12  unlock 12  meanLock 50.5
+
+=== ESN seed 21979005 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=7.86  mean=1.91  median=1.59  std=1.43
+  free-run RMSE        n=100  min=0.306176  max=0.500249  mean=0.422598  median=0.423017  std=0.037515
+  duty (<=theta)       n=100  min=0.202  max=0.793  mean=0.475  median=0.478  std=0.126
+  n_relock             n=100  min=9.0  max=23.0  mean=15.9  median=15.5  std=3.3
+  n_unlock             n=100  min=10.0  max=24.0  mean=16.6  median=16.0  std=3.3
+  meanLock (steps)     n=100  min=12.7  max=72.1  mean=29.2  median=27.2  std=10.1
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979005   orbit_seed 4007931443343602940 VPT 434 steps ( 7.86 lt)  RMSE 0.306176  duty 0.793  relock
+10  unlock 11  meanLock 72.1
+arm fwd-only seed 21979005   orbit_seed 14719543417854726190 VPT 156 steps ( 2.83 lt)  RMSE 0.344339  duty 0.653  relock
+ 14  unlock 14  meanLock 43.5
+arm fwd-only seed 21979005   orbit_seed 12997851309749444307 VPT  65 steps ( 1.18 lt)  RMSE 0.364376  duty 0.642  relock
+ 17  unlock 17  meanLock 35.7
+arm fwd-only seed 21979005   orbit_seed 9717908683336067732 VPT  64 steps ( 1.16 lt)  RMSE 0.365610  duty 0.665  relock
+13  unlock 14  meanLock 47.5
+arm fwd-only seed 21979005   orbit_seed 3077346833989813773 VPT  93 steps ( 1.68 lt)  RMSE 0.365717  duty 0.659  relock
+17  unlock 18  meanLock 36.6
+arm fwd-only seed 21979005   orbit_seed 3124094803142223752 VPT  11 steps ( 0.20 lt)  RMSE 0.368973  duty 0.636  relock
+14  unlock 15  meanLock 42.4
+arm fwd-only seed 21979005   orbit_seed 4364257658748689037 VPT 161 steps ( 2.92 lt)  RMSE 0.369247  duty 0.627  relock
+20  unlock 21  meanLock 29.9
+arm fwd-only seed 21979005   orbit_seed 10148093844914609385 VPT 116 steps ( 2.10 lt)  RMSE 0.370511  duty 0.632  relock
+ 13  unlock 13  meanLock 45.1
+arm fwd-only seed 21979005   orbit_seed 7401924419259460404 VPT 157 steps ( 2.84 lt)  RMSE 0.371316  duty 0.609  relock
+13  unlock 13  meanLock 43.5
+arm fwd-only seed 21979005   orbit_seed 656605956440221769 VPT 313 steps ( 5.67 lt)  RMSE 0.374407  duty 0.616  relock 1
+3  unlock 13  meanLock 44.0
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979005   orbit_seed 4007931443343602940 VPT 434 steps ( 7.86 lt)  RMSE 0.306176  duty 0.793  relock
+10  unlock 11  meanLock 72.1
+arm fwd-only seed 21979005   orbit_seed 6960850931340156210 VPT 356 steps ( 6.45 lt)  RMSE 0.380243  duty 0.595  relock
+15  unlock 16  meanLock 37.2
+arm fwd-only seed 21979005   orbit_seed 656605956440221769 VPT 313 steps ( 5.67 lt)  RMSE 0.374407  duty 0.616  relock 1
+3  unlock 13  meanLock 44.0
+arm fwd-only seed 21979005   orbit_seed 248130967593251468 VPT 264 steps ( 4.78 lt)  RMSE 0.377582  duty 0.696  relock 1
+2  unlock 13  meanLock 53.5
+arm fwd-only seed 21979005   orbit_seed 9333312947715283458 VPT 260 steps ( 4.71 lt)  RMSE 0.394939  duty 0.464  relock
+16  unlock 17  meanLock 27.3
+arm fwd-only seed 21979005   orbit_seed 5743361355973698255 VPT 242 steps ( 4.38 lt)  RMSE 0.404114  duty 0.582  relock
+11  unlock 11  meanLock 48.5
+arm fwd-only seed 21979005   orbit_seed 8425156953022204017 VPT 236 steps ( 4.27 lt)  RMSE 0.440175  duty 0.360  relock
+10  unlock 11  meanLock 32.7
+arm fwd-only seed 21979005   orbit_seed 7658040265663960149 VPT 236 steps ( 4.27 lt)  RMSE 0.376057  duty 0.644  relock
+18  unlock 19  meanLock 33.9
+arm fwd-only seed 21979005   orbit_seed 4741737415666583010 VPT 228 steps ( 4.13 lt)  RMSE 0.403905  duty 0.566  relock
+13  unlock 14  meanLock 40.4
+arm fwd-only seed 21979005   orbit_seed 1249439214165998073 VPT 222 steps ( 4.02 lt)  RMSE 0.385548  duty 0.597  relock
+15  unlock 15  meanLock 37.3
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979005   orbit_seed 4007931443343602940 VPT 434 steps ( 7.86 lt)  RMSE 0.306176  duty 0.793  relock
+10  unlock 11  meanLock 72.1
+arm fwd-only seed 21979005   orbit_seed 248130967593251468 VPT 264 steps ( 4.78 lt)  RMSE 0.377582  duty 0.696  relock 1
+2  unlock 13  meanLock 53.5
+arm fwd-only seed 21979005   orbit_seed 9717908683336067732 VPT  64 steps ( 1.16 lt)  RMSE 0.365610  duty 0.665  relock
+13  unlock 14  meanLock 47.5
+arm fwd-only seed 21979005   orbit_seed 3077346833989813773 VPT  93 steps ( 1.68 lt)  RMSE 0.365717  duty 0.659  relock
+17  unlock 18  meanLock 36.6
+arm fwd-only seed 21979005   orbit_seed 14719543417854726190 VPT 156 steps ( 2.83 lt)  RMSE 0.344339  duty 0.653  relock
+ 14  unlock 14  meanLock 43.5
+arm fwd-only seed 21979005   orbit_seed 4712281022348717183 VPT 153 steps ( 2.77 lt)  RMSE 0.383960  duty 0.646  relock
+13  unlock 14  meanLock 46.1
+arm fwd-only seed 21979005   orbit_seed 7658040265663960149 VPT 236 steps ( 4.27 lt)  RMSE 0.376057  duty 0.644  relock
+18  unlock 19  meanLock 33.9
+arm fwd-only seed 21979005   orbit_seed 12997851309749444307 VPT  65 steps ( 1.18 lt)  RMSE 0.364376  duty 0.642  relock
+ 17  unlock 17  meanLock 35.7
+arm fwd-only seed 21979005   orbit_seed 1908319643991053893 VPT  22 steps ( 0.40 lt)  RMSE 0.379906  duty 0.638  relock
+14  unlock 15  meanLock 42.5
+arm fwd-only seed 21979005   orbit_seed 3124094803142223752 VPT  11 steps ( 0.20 lt)  RMSE 0.368973  duty 0.636  relock
+14  unlock 15  meanLock 42.4
+
+=== ESN seed 21979006 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.41  mean=2.00  median=1.53  std=1.53
+  free-run RMSE        n=100  min=0.340946  max=0.483068  mean=0.422411  median=0.423668  std=0.029655
+  duty (<=theta)       n=100  min=0.195  max=0.754  mean=0.469  median=0.474  std=0.119
+  n_relock             n=100  min=6.0  max=24.0  mean=15.6  median=16.0  std=3.3
+  n_unlock             n=100  min=7.0  max=24.0  mean=16.3  median=16.5  std=3.3
+  meanLock (steps)     n=100  min=13.8  max=62.8  mean=29.1  median=27.8  std=9.2
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979006   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.340946  duty 0.595  relock
+11  unlock 12  meanLock 49.6
+arm fwd-only seed 21979006   orbit_seed 656605956440221769 VPT 355 steps ( 6.43 lt)  RMSE 0.348161  duty 0.592  relock 1
+0  unlock 11  meanLock 53.8
+arm fwd-only seed 21979006   orbit_seed 5743361355973698255 VPT 250 steps ( 4.53 lt)  RMSE 0.350145  duty 0.660  relock
+14  unlock 15  meanLock 44.0
+arm fwd-only seed 21979006   orbit_seed 7401924419259460404 VPT 159 steps ( 2.88 lt)  RMSE 0.352491  duty 0.679  relock
+14  unlock 14  meanLock 45.3
+arm fwd-only seed 21979006   orbit_seed 4712281022348717183 VPT 117 steps ( 2.12 lt)  RMSE 0.356191  duty 0.754  relock
+11  unlock 11  meanLock 62.8
+arm fwd-only seed 21979006   orbit_seed 16104699420182321933 VPT  58 steps ( 1.05 lt)  RMSE 0.364335  duty 0.586  relock
+ 18  unlock 18  meanLock 30.8
+arm fwd-only seed 21979006   orbit_seed 13095175807113877781 VPT 147 steps ( 2.66 lt)  RMSE 0.364626  duty 0.581  relock
+ 13  unlock 14  meanLock 41.5
+arm fwd-only seed 21979006   orbit_seed 9333312947715283458 VPT 354 steps ( 6.41 lt)  RMSE 0.371865  duty 0.491  relock
+15  unlock 15  meanLock 30.7
+arm fwd-only seed 21979006   orbit_seed 10148093844914609385 VPT 105 steps ( 1.90 lt)  RMSE 0.371950  duty 0.670  relock
+ 15  unlock 15  meanLock 41.9
+arm fwd-only seed 21979006   orbit_seed 13075496520564732781 VPT  34 steps ( 0.62 lt)  RMSE 0.380790  duty 0.623  relock
+ 15  unlock 15  meanLock 38.9
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979006   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.340946  duty 0.595  relock
+11  unlock 12  meanLock 49.6
+arm fwd-only seed 21979006   orbit_seed 656605956440221769 VPT 355 steps ( 6.43 lt)  RMSE 0.348161  duty 0.592  relock 1
+0  unlock 11  meanLock 53.8
+arm fwd-only seed 21979006   orbit_seed 9333312947715283458 VPT 354 steps ( 6.41 lt)  RMSE 0.371865  duty 0.491  relock
+15  unlock 15  meanLock 30.7
+arm fwd-only seed 21979006   orbit_seed 17774587888087229762 VPT 291 steps ( 5.27 lt)  RMSE 0.415295  duty 0.411  relock
+ 12  unlock 13  meanLock 31.6
+arm fwd-only seed 21979006   orbit_seed 15378080442305734864 VPT 284 steps ( 5.14 lt)  RMSE 0.417619  duty 0.407  relock
+ 6  unlock 7  meanLock 58.1
+arm fwd-only seed 21979006   orbit_seed 6960850931340156210 VPT 280 steps ( 5.07 lt)  RMSE 0.408746  duty 0.428  relock
+10  unlock 11  meanLock 38.9
+arm fwd-only seed 21979006   orbit_seed 8425156953022204017 VPT 274 steps ( 4.96 lt)  RMSE 0.405247  duty 0.611  relock
+16  unlock 17  meanLock 35.9
+arm fwd-only seed 21979006   orbit_seed 110890624606369167 VPT 265 steps ( 4.80 lt)  RMSE 0.424386  duty 0.408  relock 1
+1  unlock 12  meanLock 34.0
+arm fwd-only seed 21979006   orbit_seed 5743361355973698255 VPT 250 steps ( 4.53 lt)  RMSE 0.350145  duty 0.660  relock
+14  unlock 15  meanLock 44.0
+arm fwd-only seed 21979006   orbit_seed 13994705457426480036 VPT 229 steps ( 4.15 lt)  RMSE 0.382970  duty 0.488  relock
+ 19  unlock 20  meanLock 24.4
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979006   orbit_seed 4712281022348717183 VPT 117 steps ( 2.12 lt)  RMSE 0.356191  duty 0.754  relock
+11  unlock 11  meanLock 62.8
+arm fwd-only seed 21979006   orbit_seed 7401924419259460404 VPT 159 steps ( 2.88 lt)  RMSE 0.352491  duty 0.679  relock
+14  unlock 14  meanLock 45.3
+arm fwd-only seed 21979006   orbit_seed 10148093844914609385 VPT 105 steps ( 1.90 lt)  RMSE 0.371950  duty 0.670  relock
+ 15  unlock 15  meanLock 41.9
+arm fwd-only seed 21979006   orbit_seed 5743361355973698255 VPT 250 steps ( 4.53 lt)  RMSE 0.350145  duty 0.660  relock
+14  unlock 15  meanLock 44.0
+arm fwd-only seed 21979006   orbit_seed 12997851309749444307 VPT 182 steps ( 3.30 lt)  RMSE 0.390177  duty 0.652  relock
+ 18  unlock 18  meanLock 34.3
+arm fwd-only seed 21979006   orbit_seed 2696958202838730100 VPT 119 steps ( 2.16 lt)  RMSE 0.403855  duty 0.649  relock
+16  unlock 16  meanLock 38.2
+arm fwd-only seed 21979006   orbit_seed 12661963445150923806 VPT  60 steps ( 1.09 lt)  RMSE 0.414310  duty 0.637  relock
+ 17  unlock 17  meanLock 35.4
+arm fwd-only seed 21979006   orbit_seed 13075496520564732781 VPT  34 steps ( 0.62 lt)  RMSE 0.380790  duty 0.623  relock
+ 15  unlock 15  meanLock 38.9
+arm fwd-only seed 21979006   orbit_seed 10324059224234835327 VPT  58 steps ( 1.05 lt)  RMSE 0.380991  duty 0.614  relock
+ 10  unlock 11  meanLock 55.8
+arm fwd-only seed 21979006   orbit_seed 1908319643991053893 VPT  55 steps ( 1.00 lt)  RMSE 0.408344  duty 0.612  relock
+19  unlock 19  meanLock 30.6
+
+=== ESN seed 21979007 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=6.81  mean=1.95  median=1.72  std=1.41
+  free-run RMSE        n=100  min=0.330063  max=0.495173  mean=0.422757  median=0.426589  std=0.034164
+  duty (<=theta)       n=100  min=0.230  max=0.771  mean=0.462  median=0.449  std=0.118
+  n_relock             n=100  min=5.0  max=25.0  mean=16.1  median=16.0  std=3.7
+  n_unlock             n=100  min=6.0  max=26.0  mean=16.8  median=17.0  std=3.6
+  meanLock (steps)     n=100  min=11.3  max=65.6  mean=28.5  median=25.8  std=10.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979007   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  RMSE 0.330063  duty 0.771  relock
+12  unlock 12  meanLock 59.3
+arm fwd-only seed 21979007   orbit_seed 6960850931340156210 VPT 315 steps ( 5.71 lt)  RMSE 0.337995  duty 0.646  relock
+10  unlock 11  meanLock 58.7
+arm fwd-only seed 21979007   orbit_seed 4416234110371315044 VPT 208 steps ( 3.77 lt)  RMSE 0.357348  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+arm fwd-only seed 21979007   orbit_seed 17224751303681612354 VPT  40 steps ( 0.72 lt)  RMSE 0.357505  duty 0.620  relock
+ 11  unlock 12  meanLock 51.7
+arm fwd-only seed 21979007   orbit_seed 4712281022348717183 VPT 116 steps ( 2.10 lt)  RMSE 0.358908  duty 0.721  relock
+11  unlock 11  meanLock 60.1
+arm fwd-only seed 21979007   orbit_seed 14193348660813217918 VPT 116 steps ( 2.10 lt)  RMSE 0.361594  duty 0.621  relock
+ 14  unlock 15  meanLock 41.4
+arm fwd-only seed 21979007   orbit_seed 2610235269337149668 VPT 183 steps ( 3.31 lt)  RMSE 0.362212  duty 0.706  relock
+14  unlock 15  meanLock 47.1
+arm fwd-only seed 21979007   orbit_seed 9136586738710644795 VPT 232 steps ( 4.20 lt)  RMSE 0.362315  duty 0.656  relock
+14  unlock 15  meanLock 43.7
+arm fwd-only seed 21979007   orbit_seed 13994705457426480036 VPT 283 steps ( 5.13 lt)  RMSE 0.365432  duty 0.556  relock
+ 15  unlock 16  meanLock 34.8
+arm fwd-only seed 21979007   orbit_seed 14283968312830459669 VPT 126 steps ( 2.28 lt)  RMSE 0.373240  duty 0.673  relock
+ 15  unlock 15  meanLock 42.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979007   orbit_seed 656605956440221769 VPT 376 steps ( 6.81 lt)  RMSE 0.391404  duty 0.525  relock 7
+  unlock 8  meanLock 65.6
+arm fwd-only seed 21979007   orbit_seed 6960850931340156210 VPT 315 steps ( 5.71 lt)  RMSE 0.337995  duty 0.646  relock
+10  unlock 11  meanLock 58.7
+arm fwd-only seed 21979007   orbit_seed 2696958202838730100 VPT 310 steps ( 5.61 lt)  RMSE 0.394543  duty 0.549  relock
+14  unlock 15  meanLock 36.6
+arm fwd-only seed 21979007   orbit_seed 10148093844914609385 VPT 286 steps ( 5.18 lt)  RMSE 0.375467  duty 0.611  relock
+ 14  unlock 14  meanLock 40.7
+arm fwd-only seed 21979007   orbit_seed 13994705457426480036 VPT 283 steps ( 5.13 lt)  RMSE 0.365432  duty 0.556  relock
+ 15  unlock 16  meanLock 34.8
+arm fwd-only seed 21979007   orbit_seed 1249439214165998073 VPT 259 steps ( 4.69 lt)  RMSE 0.386807  duty 0.550  relock
+17  unlock 17  meanLock 30.6
+arm fwd-only seed 21979007   orbit_seed 9136586738710644795 VPT 232 steps ( 4.20 lt)  RMSE 0.362315  duty 0.656  relock
+14  unlock 15  meanLock 43.7
+arm fwd-only seed 21979007   orbit_seed 9333312947715283458 VPT 229 steps ( 4.15 lt)  RMSE 0.426276  duty 0.292  relock
+5  unlock 6  meanLock 48.7
+arm fwd-only seed 21979007   orbit_seed 7658040265663960149 VPT 210 steps ( 3.80 lt)  RMSE 0.396687  duty 0.449  relock
+12  unlock 13  meanLock 34.5
+arm fwd-only seed 21979007   orbit_seed 4416234110371315044 VPT 208 steps ( 3.77 lt)  RMSE 0.357348  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979007   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  RMSE 0.330063  duty 0.771  relock
+12  unlock 12  meanLock 59.3
+arm fwd-only seed 21979007   orbit_seed 4712281022348717183 VPT 116 steps ( 2.10 lt)  RMSE 0.358908  duty 0.721  relock
+11  unlock 11  meanLock 60.1
+arm fwd-only seed 21979007   orbit_seed 2610235269337149668 VPT 183 steps ( 3.31 lt)  RMSE 0.362212  duty 0.706  relock
+14  unlock 15  meanLock 47.1
+arm fwd-only seed 21979007   orbit_seed 14283968312830459669 VPT 126 steps ( 2.28 lt)  RMSE 0.373240  duty 0.673  relock
+ 15  unlock 15  meanLock 42.1
+arm fwd-only seed 21979007   orbit_seed 110890624606369167 VPT 108 steps ( 1.96 lt)  RMSE 0.395830  duty 0.656  relock 1
+4  unlock 14  meanLock 43.7
+arm fwd-only seed 21979007   orbit_seed 9136586738710644795 VPT 232 steps ( 4.20 lt)  RMSE 0.362315  duty 0.656  relock
+14  unlock 15  meanLock 43.7
+arm fwd-only seed 21979007   orbit_seed 4416234110371315044 VPT 208 steps ( 3.77 lt)  RMSE 0.357348  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+arm fwd-only seed 21979007   orbit_seed 6960850931340156210 VPT 315 steps ( 5.71 lt)  RMSE 0.337995  duty 0.646  relock
+10  unlock 11  meanLock 58.7
+arm fwd-only seed 21979007   orbit_seed 17191373089416203648 VPT  56 steps ( 1.01 lt)  RMSE 0.407259  duty 0.642  relock
+ 17  unlock 18  meanLock 35.7
+arm fwd-only seed 21979007   orbit_seed 14193348660813217918 VPT 116 steps ( 2.10 lt)  RMSE 0.361594  duty 0.621  relock
+ 14  unlock 15  meanLock 41.4
+
+=== ESN seed 21979008 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.24  max=5.27  mean=1.68  median=1.38  std=1.12
+  free-run RMSE        n=100  min=0.322157  max=0.497405  mean=0.425658  median=0.426187  std=0.033730
+  duty (<=theta)       n=100  min=0.188  max=0.698  mean=0.449  median=0.447  std=0.124
+  n_relock             n=100  min=7.0  max=23.0  mean=15.6  median=15.0  std=3.4
+  n_unlock             n=100  min=8.0  max=24.0  mean=16.3  median=16.0  std=3.3
+  meanLock (steps)     n=100  min=12.0  max=58.2  mean=27.9  median=25.9  std=9.6
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979008   orbit_seed 5743361355973698255 VPT 238 steps ( 4.31 lt)  RMSE 0.322157  duty 0.655  relock
+11  unlock 12  meanLock 54.6
+arm fwd-only seed 21979008   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.335955  duty 0.698  relock
+ 11  unlock 12  meanLock 58.2
+arm fwd-only seed 21979008   orbit_seed 7401924419259460404 VPT 160 steps ( 2.90 lt)  RMSE 0.355179  duty 0.632  relock
+18  unlock 18  meanLock 33.3
+arm fwd-only seed 21979008   orbit_seed 656605956440221769 VPT 244 steps ( 4.42 lt)  RMSE 0.361649  duty 0.534  relock 1
+6  unlock 17  meanLock 31.4
+arm fwd-only seed 21979008   orbit_seed 10603344179402640566 VPT  52 steps ( 0.94 lt)  RMSE 0.371798  duty 0.646  relock
+ 13  unlock 14  meanLock 46.1
+arm fwd-only seed 21979008   orbit_seed 14283968312830459669 VPT 291 steps ( 5.27 lt)  RMSE 0.371845  duty 0.651  relock
+ 12  unlock 12  meanLock 50.1
+arm fwd-only seed 21979008   orbit_seed 12997851309749444307 VPT  31 steps ( 0.56 lt)  RMSE 0.374594  duty 0.618  relock
+ 21  unlock 21  meanLock 28.1
+arm fwd-only seed 21979008   orbit_seed 3124094803142223752 VPT  13 steps ( 0.24 lt)  RMSE 0.375733  duty 0.590  relock
+16  unlock 16  meanLock 34.7
+arm fwd-only seed 21979008   orbit_seed 3351315778533618945 VPT  91 steps ( 1.65 lt)  RMSE 0.381313  duty 0.638  relock
+11  unlock 12  meanLock 53.2
+arm fwd-only seed 21979008   orbit_seed 2696958202838730100 VPT 198 steps ( 3.59 lt)  RMSE 0.384016  duty 0.628  relock
+15  unlock 16  meanLock 39.2
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979008   orbit_seed 14283968312830459669 VPT 291 steps ( 5.27 lt)  RMSE 0.371845  duty 0.651  relock
+ 12  unlock 12  meanLock 50.1
+arm fwd-only seed 21979008   orbit_seed 13994705457426480036 VPT 272 steps ( 4.93 lt)  RMSE 0.398817  duty 0.610  relock
+ 15  unlock 16  meanLock 38.1
+arm fwd-only seed 21979008   orbit_seed 4007931443343602940 VPT 250 steps ( 4.53 lt)  RMSE 0.405960  duty 0.457  relock
+15  unlock 16  meanLock 28.6
+arm fwd-only seed 21979008   orbit_seed 656605956440221769 VPT 244 steps ( 4.42 lt)  RMSE 0.361649  duty 0.534  relock 1
+6  unlock 17  meanLock 31.4
+arm fwd-only seed 21979008   orbit_seed 5743361355973698255 VPT 238 steps ( 4.31 lt)  RMSE 0.322157  duty 0.655  relock
+11  unlock 12  meanLock 54.6
+arm fwd-only seed 21979008   orbit_seed 9294122214858465305 VPT 201 steps ( 3.64 lt)  RMSE 0.443045  duty 0.382  relock
+13  unlock 14  meanLock 27.3
+arm fwd-only seed 21979008   orbit_seed 2696958202838730100 VPT 198 steps ( 3.59 lt)  RMSE 0.384016  duty 0.628  relock
+15  unlock 16  meanLock 39.2
+arm fwd-only seed 21979008   orbit_seed 14719543417854726190 VPT 195 steps ( 3.53 lt)  RMSE 0.455213  duty 0.337  relock
+ 14  unlock 15  meanLock 22.5
+arm fwd-only seed 21979008   orbit_seed 16826883592623292674 VPT 190 steps ( 3.44 lt)  RMSE 0.395603  duty 0.395  relock
+ 11  unlock 12  meanLock 32.9
+arm fwd-only seed 21979008   orbit_seed 10278487631456564348 VPT 188 steps ( 3.41 lt)  RMSE 0.446883  duty 0.360  relock
+ 14  unlock 15  meanLock 24.0
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979008   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.335955  duty 0.698  relock
+ 11  unlock 12  meanLock 58.2
+arm fwd-only seed 21979008   orbit_seed 18109467897393425238 VPT  89 steps ( 1.61 lt)  RMSE 0.391858  duty 0.659  relock
+ 16  unlock 17  meanLock 38.8
+arm fwd-only seed 21979008   orbit_seed 5743361355973698255 VPT 238 steps ( 4.31 lt)  RMSE 0.322157  duty 0.655  relock
+11  unlock 12  meanLock 54.6
+arm fwd-only seed 21979008   orbit_seed 14283968312830459669 VPT 291 steps ( 5.27 lt)  RMSE 0.371845  duty 0.651  relock
+ 12  unlock 12  meanLock 50.1
+arm fwd-only seed 21979008   orbit_seed 15992716269590395088 VPT 147 steps ( 2.66 lt)  RMSE 0.405735  duty 0.650  relock
+ 19  unlock 19  meanLock 32.5
+arm fwd-only seed 21979008   orbit_seed 10603344179402640566 VPT  52 steps ( 0.94 lt)  RMSE 0.371798  duty 0.646  relock
+ 13  unlock 14  meanLock 46.1
+arm fwd-only seed 21979008   orbit_seed 4364257658748689037 VPT  44 steps ( 0.80 lt)  RMSE 0.387529  duty 0.639  relock
+13  unlock 14  meanLock 45.6
+arm fwd-only seed 21979008   orbit_seed 3351315778533618945 VPT  91 steps ( 1.65 lt)  RMSE 0.381313  duty 0.638  relock
+11  unlock 12  meanLock 53.2
+arm fwd-only seed 21979008   orbit_seed 7401924419259460404 VPT 160 steps ( 2.90 lt)  RMSE 0.355179  duty 0.632  relock
+18  unlock 18  meanLock 33.3
+arm fwd-only seed 21979008   orbit_seed 2696958202838730100 VPT 198 steps ( 3.59 lt)  RMSE 0.384016  duty 0.628  relock
+15  unlock 16  meanLock 39.2
+
+=== ESN seed 21979009 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.24  max=7.70  mean=1.85  median=1.57  std=1.37
+  free-run RMSE        n=100  min=0.349144  max=0.490459  mean=0.423836  median=0.424608  std=0.032263
+  duty (<=theta)       n=100  min=0.163  max=0.713  mean=0.474  median=0.492  std=0.122
+  n_relock             n=100  min=8.0  max=22.0  mean=16.5  median=17.0  std=3.3
+  n_unlock             n=100  min=8.0  max=22.0  mean=17.1  median=17.0  std=3.2
+  meanLock (steps)     n=100  min=13.6  max=57.4  mean=27.7  median=26.8  std=8.4
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979009   orbit_seed 4999626912442380604 VPT  16 steps ( 0.29 lt)  RMSE 0.349144  duty 0.689  relock
+11  unlock 12  meanLock 57.4
+arm fwd-only seed 21979009   orbit_seed 656605956440221769 VPT 353 steps ( 6.39 lt)  RMSE 0.354397  duty 0.669  relock 1
+3  unlock 14  meanLock 47.8
+arm fwd-only seed 21979009   orbit_seed 14719543417854726190 VPT 201 steps ( 3.64 lt)  RMSE 0.359006  duty 0.569  relock
+ 16  unlock 17  meanLock 33.5
+arm fwd-only seed 21979009   orbit_seed 7658040265663960149 VPT 280 steps ( 5.07 lt)  RMSE 0.366760  duty 0.713  relock
+14  unlock 14  meanLock 47.5
+arm fwd-only seed 21979009   orbit_seed 17191373089416203648 VPT  59 steps ( 1.07 lt)  RMSE 0.369441  duty 0.655  relock
+ 17  unlock 18  meanLock 36.4
+arm fwd-only seed 21979009   orbit_seed 18303404106008543196 VPT 203 steps ( 3.68 lt)  RMSE 0.370774  duty 0.573  relock
+ 16  unlock 17  meanLock 33.7
+arm fwd-only seed 21979009   orbit_seed 6960850931340156210 VPT 278 steps ( 5.04 lt)  RMSE 0.371080  duty 0.500  relock
+11  unlock 12  meanLock 41.7
+arm fwd-only seed 21979009   orbit_seed 12997851309749444307 VPT 176 steps ( 3.19 lt)  RMSE 0.373729  duty 0.633  relock
+ 15  unlock 15  meanLock 39.6
+arm fwd-only seed 21979009   orbit_seed 12284454596439506926 VPT  90 steps ( 1.63 lt)  RMSE 0.374353  duty 0.619  relock
+ 18  unlock 18  meanLock 32.6
+arm fwd-only seed 21979009   orbit_seed 8566824326635013017 VPT  51 steps ( 0.92 lt)  RMSE 0.379949  duty 0.567  relock
+15  unlock 15  meanLock 35.4
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979009   orbit_seed 4007931443343602940 VPT 425 steps ( 7.70 lt)  RMSE 0.387298  duty 0.584  relock
+14  unlock 15  meanLock 38.9
+arm fwd-only seed 21979009   orbit_seed 656605956440221769 VPT 353 steps ( 6.39 lt)  RMSE 0.354397  duty 0.669  relock 1
+3  unlock 14  meanLock 47.8
+arm fwd-only seed 21979009   orbit_seed 9333312947715283458 VPT 330 steps ( 5.98 lt)  RMSE 0.397941  duty 0.453  relock
+8  unlock 9  meanLock 50.3
+arm fwd-only seed 21979009   orbit_seed 7658040265663960149 VPT 280 steps ( 5.07 lt)  RMSE 0.366760  duty 0.713  relock
+14  unlock 14  meanLock 47.5
+arm fwd-only seed 21979009   orbit_seed 6960850931340156210 VPT 278 steps ( 5.04 lt)  RMSE 0.371080  duty 0.500  relock
+11  unlock 12  meanLock 41.7
+arm fwd-only seed 21979009   orbit_seed 17774587888087229762 VPT 261 steps ( 4.73 lt)  RMSE 0.400081  duty 0.541  relock
+ 14  unlock 15  meanLock 36.1
+arm fwd-only seed 21979009   orbit_seed 10278487631456564348 VPT 230 steps ( 4.17 lt)  RMSE 0.407506  duty 0.583  relock
+ 13  unlock 14  meanLock 41.6
+arm fwd-only seed 21979009   orbit_seed 10801814468121717024 VPT 223 steps ( 4.04 lt)  RMSE 0.404593  duty 0.617  relock
+ 16  unlock 16  meanLock 36.3
+arm fwd-only seed 21979009   orbit_seed 5237269684808350417 VPT 217 steps ( 3.93 lt)  RMSE 0.382879  duty 0.667  relock
+17  unlock 17  meanLock 37.1
+arm fwd-only seed 21979009   orbit_seed 13994705457426480036 VPT 206 steps ( 3.73 lt)  RMSE 0.411464  duty 0.420  relock
+ 12  unlock 13  meanLock 32.3
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979009   orbit_seed 7658040265663960149 VPT 280 steps ( 5.07 lt)  RMSE 0.366760  duty 0.713  relock
+14  unlock 14  meanLock 47.5
+arm fwd-only seed 21979009   orbit_seed 4999626912442380604 VPT  16 steps ( 0.29 lt)  RMSE 0.349144  duty 0.689  relock
+11  unlock 12  meanLock 57.4
+arm fwd-only seed 21979009   orbit_seed 3077346833989813773 VPT  93 steps ( 1.68 lt)  RMSE 0.388153  duty 0.677  relock
+18  unlock 18  meanLock 35.6
+arm fwd-only seed 21979009   orbit_seed 656605956440221769 VPT 353 steps ( 6.39 lt)  RMSE 0.354397  duty 0.669  relock 1
+3  unlock 14  meanLock 47.8
+arm fwd-only seed 21979009   orbit_seed 5237269684808350417 VPT 217 steps ( 3.93 lt)  RMSE 0.382879  duty 0.667  relock
+17  unlock 17  meanLock 37.1
+arm fwd-only seed 21979009   orbit_seed 17191373089416203648 VPT  59 steps ( 1.07 lt)  RMSE 0.369441  duty 0.655  relock
+ 17  unlock 18  meanLock 36.4
+arm fwd-only seed 21979009   orbit_seed 12997851309749444307 VPT 176 steps ( 3.19 lt)  RMSE 0.373729  duty 0.633  relock
+ 15  unlock 15  meanLock 39.6
+arm fwd-only seed 21979009   orbit_seed 9529653278432036934 VPT 107 steps ( 1.94 lt)  RMSE 0.383090  duty 0.628  relock
+19  unlock 19  meanLock 31.4
+arm fwd-only seed 21979009   orbit_seed 9136586738710644795 VPT 120 steps ( 2.17 lt)  RMSE 0.387043  duty 0.622  relock
+21  unlock 22  meanLock 28.3
+arm fwd-only seed 21979009   orbit_seed 2097179478975684523 VPT  95 steps ( 1.72 lt)  RMSE 0.399302  duty 0.620  relock
+17  unlock 17  meanLock 34.4
+
+=== ESN seed 21979010 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.24  max=5.71  mean=1.89  median=1.63  std=1.28
+  free-run RMSE        n=100  min=0.309670  max=0.493220  mean=0.418795  median=0.422680  std=0.037318
+  duty (<=theta)       n=100  min=0.215  max=0.809  mean=0.488  median=0.495  std=0.127
+  n_relock             n=100  min=9.0  max=22.0  mean=16.2  median=16.0  std=3.2
+  n_unlock             n=100  min=9.0  max=22.0  mean=16.9  median=17.0  std=3.1
+  meanLock (steps)     n=100  min=11.8  max=80.9  mean=29.9  median=28.0  std=11.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979010   orbit_seed 14503336125504450378 VPT 106 steps ( 1.92 lt)  RMSE 0.309670  duty 0.809  relock
+ 9  unlock 9  meanLock 80.9
+arm fwd-only seed 21979010   orbit_seed 2610235269337149668 VPT 148 steps ( 2.68 lt)  RMSE 0.331157  duty 0.687  relock
+12  unlock 13  meanLock 52.8
+arm fwd-only seed 21979010   orbit_seed 1937234734715600964 VPT 182 steps ( 3.30 lt)  RMSE 0.331268  duty 0.719  relock
+11  unlock 12  meanLock 59.9
+arm fwd-only seed 21979010   orbit_seed 11101717626751391262 VPT  74 steps ( 1.34 lt)  RMSE 0.333291  duty 0.716  relock
+ 10  unlock 11  meanLock 65.1
+arm fwd-only seed 21979010   orbit_seed 14719543417854726190 VPT 189 steps ( 3.42 lt)  RMSE 0.347225  duty 0.688  relock
+ 11  unlock 12  meanLock 57.3
+arm fwd-only seed 21979010   orbit_seed 15001926598183616335 VPT 195 steps ( 3.53 lt)  RMSE 0.351231  duty 0.703  relock
+ 15  unlock 16  meanLock 43.9
+arm fwd-only seed 21979010   orbit_seed 656605956440221769 VPT 315 steps ( 5.71 lt)  RMSE 0.351512  duty 0.617  relock 9
+  unlock 10  meanLock 61.7
+arm fwd-only seed 21979010   orbit_seed 12735002845385499196 VPT 313 steps ( 5.67 lt)  RMSE 0.361279  duty 0.665  relock
+ 15  unlock 15  meanLock 41.6
+arm fwd-only seed 21979010   orbit_seed 16400381301927481083 VPT 140 steps ( 2.54 lt)  RMSE 0.361320  duty 0.692  relock
+ 12  unlock 13  meanLock 53.2
+arm fwd-only seed 21979010   orbit_seed 7658040265663960149 VPT 202 steps ( 3.66 lt)  RMSE 0.371292  duty 0.521  relock
+16  unlock 17  meanLock 30.6
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979010   orbit_seed 656605956440221769 VPT 315 steps ( 5.71 lt)  RMSE 0.351512  duty 0.617  relock 9
+  unlock 10  meanLock 61.7
+arm fwd-only seed 21979010   orbit_seed 12735002845385499196 VPT 313 steps ( 5.67 lt)  RMSE 0.361279  duty 0.665  relock
+ 15  unlock 15  meanLock 41.6
+arm fwd-only seed 21979010   orbit_seed 9333312947715283458 VPT 263 steps ( 4.76 lt)  RMSE 0.375567  duty 0.491  relock
+15  unlock 15  meanLock 30.7
+arm fwd-only seed 21979010   orbit_seed 4007931443343602940 VPT 248 steps ( 4.49 lt)  RMSE 0.386250  duty 0.527  relock
+17  unlock 18  meanLock 29.3
+arm fwd-only seed 21979010   orbit_seed 6960850931340156210 VPT 246 steps ( 4.46 lt)  RMSE 0.383469  duty 0.509  relock
+10  unlock 11  meanLock 46.3
+arm fwd-only seed 21979010   orbit_seed 5743361355973698255 VPT 240 steps ( 4.35 lt)  RMSE 0.387482  duty 0.507  relock
+9  unlock 10  meanLock 50.7
+arm fwd-only seed 21979010   orbit_seed 13994705457426480036 VPT 204 steps ( 3.69 lt)  RMSE 0.428638  duty 0.407  relock
+ 14  unlock 15  meanLock 27.1
+arm fwd-only seed 21979010   orbit_seed 9515810860901762052 VPT 202 steps ( 3.66 lt)  RMSE 0.416485  duty 0.624  relock
+19  unlock 19  meanLock 31.2
+arm fwd-only seed 21979010   orbit_seed 7658040265663960149 VPT 202 steps ( 3.66 lt)  RMSE 0.371292  duty 0.521  relock
+16  unlock 17  meanLock 30.6
+arm fwd-only seed 21979010   orbit_seed 10278487631456564348 VPT 198 steps ( 3.59 lt)  RMSE 0.382421  duty 0.647  relock
+ 15  unlock 16  meanLock 40.4
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979010   orbit_seed 14503336125504450378 VPT 106 steps ( 1.92 lt)  RMSE 0.309670  duty 0.809  relock
+ 9  unlock 9  meanLock 80.9
+arm fwd-only seed 21979010   orbit_seed 1937234734715600964 VPT 182 steps ( 3.30 lt)  RMSE 0.331268  duty 0.719  relock
+11  unlock 12  meanLock 59.9
+arm fwd-only seed 21979010   orbit_seed 11101717626751391262 VPT  74 steps ( 1.34 lt)  RMSE 0.333291  duty 0.716  relock
+ 10  unlock 11  meanLock 65.1
+arm fwd-only seed 21979010   orbit_seed 15001926598183616335 VPT 195 steps ( 3.53 lt)  RMSE 0.351231  duty 0.703  relock
+ 15  unlock 16  meanLock 43.9
+arm fwd-only seed 21979010   orbit_seed 16400381301927481083 VPT 140 steps ( 2.54 lt)  RMSE 0.361320  duty 0.692  relock
+ 12  unlock 13  meanLock 53.2
+arm fwd-only seed 21979010   orbit_seed 14719543417854726190 VPT 189 steps ( 3.42 lt)  RMSE 0.347225  duty 0.688  relock
+ 11  unlock 12  meanLock 57.3
+arm fwd-only seed 21979010   orbit_seed 2610235269337149668 VPT 148 steps ( 2.68 lt)  RMSE 0.331157  duty 0.687  relock
+12  unlock 13  meanLock 52.8
+arm fwd-only seed 21979010   orbit_seed 12735002845385499196 VPT 313 steps ( 5.67 lt)  RMSE 0.361279  duty 0.665  relock
+ 15  unlock 15  meanLock 41.6
+arm fwd-only seed 21979010   orbit_seed 7401924419259460404 VPT 158 steps ( 2.86 lt)  RMSE 0.379968  duty 0.660  relock
+16  unlock 17  meanLock 38.8
+arm fwd-only seed 21979010   orbit_seed 10278487631456564348 VPT 198 steps ( 3.59 lt)  RMSE 0.382421  duty 0.647  relock
+ 15  unlock 16  meanLock 40.4
+
+=== ESN seed 21979011 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.97  mean=2.01  median=1.52  std=1.66
+  free-run RMSE        n=100  min=0.297730  max=0.487710  mean=0.416468  median=0.416527  std=0.039160
+  duty (<=theta)       n=100  min=0.161  max=0.756  mean=0.497  median=0.518  std=0.135
+  n_relock             n=100  min=5.0  max=22.0  mean=15.4  median=16.0  std=3.6
+  n_unlock             n=100  min=6.0  max=23.0  mean=16.0  median=16.0  std=3.5
+  meanLock (steps)     n=100  min=13.0  max=80.9  mean=32.1  median=28.8  std=13.3
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979011   orbit_seed 6960850931340156210 VPT 339 steps ( 6.14 lt)  RMSE 0.297730  duty 0.756  relock
+9  unlock 10  meanLock 75.6
+arm fwd-only seed 21979011   orbit_seed 7441876151362698927 VPT 230 steps ( 4.17 lt)  RMSE 0.326989  duty 0.702  relock
+14  unlock 15  meanLock 46.8
+arm fwd-only seed 21979011   orbit_seed 656605956440221769 VPT 307 steps ( 5.56 lt)  RMSE 0.328876  duty 0.657  relock 9
+  unlock 10  meanLock 65.7
+arm fwd-only seed 21979011   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.341384  duty 0.741  relock
+ 10  unlock 10  meanLock 67.4
+arm fwd-only seed 21979011   orbit_seed 9916893445636222244 VPT  14 steps ( 0.25 lt)  RMSE 0.350149  duty 0.736  relock
+15  unlock 15  meanLock 46.0
+arm fwd-only seed 21979011   orbit_seed 5743361355973698255 VPT 206 steps ( 3.73 lt)  RMSE 0.355185  duty 0.693  relock
+10  unlock 11  meanLock 63.0
+arm fwd-only seed 21979011   orbit_seed 8425156953022204017 VPT 383 steps ( 6.94 lt)  RMSE 0.358267  duty 0.686  relock
+11  unlock 12  meanLock 57.2
+arm fwd-only seed 21979011   orbit_seed 7658040265663960149 VPT 240 steps ( 4.35 lt)  RMSE 0.358515  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+arm fwd-only seed 21979011   orbit_seed 15776701060910552741 VPT 440 steps ( 7.97 lt)  RMSE 0.360106  duty 0.647  relock
+ 7  unlock 8  meanLock 80.9
+arm fwd-only seed 21979011   orbit_seed 1937234734715600964 VPT 320 steps ( 5.80 lt)  RMSE 0.363354  duty 0.668  relock
+13  unlock 13  meanLock 47.7
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979011   orbit_seed 15776701060910552741 VPT 440 steps ( 7.97 lt)  RMSE 0.360106  duty 0.647  relock
+ 7  unlock 8  meanLock 80.9
+arm fwd-only seed 21979011   orbit_seed 4007931443343602940 VPT 413 steps ( 7.48 lt)  RMSE 0.367163  duty 0.650  relock
+8  unlock 9  meanLock 72.2
+arm fwd-only seed 21979011   orbit_seed 8425156953022204017 VPT 383 steps ( 6.94 lt)  RMSE 0.358267  duty 0.686  relock
+11  unlock 12  meanLock 57.2
+arm fwd-only seed 21979011   orbit_seed 9333312947715283458 VPT 354 steps ( 6.41 lt)  RMSE 0.372265  duty 0.511  relock
+12  unlock 12  meanLock 39.3
+arm fwd-only seed 21979011   orbit_seed 6960850931340156210 VPT 339 steps ( 6.14 lt)  RMSE 0.297730  duty 0.756  relock
+9  unlock 10  meanLock 75.6
+arm fwd-only seed 21979011   orbit_seed 1937234734715600964 VPT 320 steps ( 5.80 lt)  RMSE 0.363354  duty 0.668  relock
+13  unlock 13  meanLock 47.7
+arm fwd-only seed 21979011   orbit_seed 656605956440221769 VPT 307 steps ( 5.56 lt)  RMSE 0.328876  duty 0.657  relock 9
+  unlock 10  meanLock 65.7
+arm fwd-only seed 21979011   orbit_seed 7658040265663960149 VPT 240 steps ( 4.35 lt)  RMSE 0.358515  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+arm fwd-only seed 21979011   orbit_seed 7441876151362698927 VPT 230 steps ( 4.17 lt)  RMSE 0.326989  duty 0.702  relock
+14  unlock 15  meanLock 46.8
+arm fwd-only seed 21979011   orbit_seed 9015661769437736282 VPT 223 steps ( 4.04 lt)  RMSE 0.440634  duty 0.422  relock
+11  unlock 12  meanLock 35.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979011   orbit_seed 6960850931340156210 VPT 339 steps ( 6.14 lt)  RMSE 0.297730  duty 0.756  relock
+9  unlock 10  meanLock 75.6
+arm fwd-only seed 21979011   orbit_seed 10801814468121717024 VPT  19 steps ( 0.34 lt)  RMSE 0.341384  duty 0.741  relock
+ 10  unlock 10  meanLock 67.4
+arm fwd-only seed 21979011   orbit_seed 9916893445636222244 VPT  14 steps ( 0.25 lt)  RMSE 0.350149  duty 0.736  relock
+15  unlock 15  meanLock 46.0
+arm fwd-only seed 21979011   orbit_seed 7441876151362698927 VPT 230 steps ( 4.17 lt)  RMSE 0.326989  duty 0.702  relock
+14  unlock 15  meanLock 46.8
+arm fwd-only seed 21979011   orbit_seed 5743361355973698255 VPT 206 steps ( 3.73 lt)  RMSE 0.355185  duty 0.693  relock
+10  unlock 11  meanLock 63.0
+arm fwd-only seed 21979011   orbit_seed 8425156953022204017 VPT 383 steps ( 6.94 lt)  RMSE 0.358267  duty 0.686  relock
+11  unlock 12  meanLock 57.2
+arm fwd-only seed 21979011   orbit_seed 1937234734715600964 VPT 320 steps ( 5.80 lt)  RMSE 0.363354  duty 0.668  relock
+13  unlock 13  meanLock 47.7
+arm fwd-only seed 21979011   orbit_seed 5237269684808350417 VPT 148 steps ( 2.68 lt)  RMSE 0.364614  duty 0.661  relock
+16  unlock 16  meanLock 38.9
+arm fwd-only seed 21979011   orbit_seed 656605956440221769 VPT 307 steps ( 5.56 lt)  RMSE 0.328876  duty 0.657  relock 9
+  unlock 10  meanLock 65.7
+arm fwd-only seed 21979011   orbit_seed 7658040265663960149 VPT 240 steps ( 4.35 lt)  RMSE 0.358515  duty 0.655  relock
+15  unlock 16  meanLock 40.9
+
+=== ESN seed 21979012 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.37  mean=1.90  median=1.48  std=1.63
+  free-run RMSE        n=100  min=0.327964  max=0.500478  mean=0.424048  median=0.423879  std=0.034281
+  duty (<=theta)       n=100  min=0.172  max=0.765  mean=0.480  median=0.488  std=0.121
+  n_relock             n=100  min=6.0  max=26.0  mean=16.1  median=16.0  std=3.6
+  n_unlock             n=100  min=7.0  max=26.0  mean=16.7  median=17.0  std=3.5
+  meanLock (steps)     n=100  min=13.6  max=63.8  mean=29.5  median=27.3  std=10.7
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979012   orbit_seed 11957716583852103447 VPT 407 steps ( 7.37 lt)  RMSE 0.327964  duty 0.709  relock
+ 13  unlock 13  meanLock 50.6
+arm fwd-only seed 21979012   orbit_seed 4364257658748689037 VPT 383 steps ( 6.94 lt)  RMSE 0.342145  duty 0.718  relock
+12  unlock 13  meanLock 55.2
+arm fwd-only seed 21979012   orbit_seed 15001926598183616335 VPT 228 steps ( 4.13 lt)  RMSE 0.349277  duty 0.765  relock
+ 11  unlock 11  meanLock 63.8
+arm fwd-only seed 21979012   orbit_seed 9333312947715283458 VPT 365 steps ( 6.61 lt)  RMSE 0.355228  duty 0.693  relock
+12  unlock 12  meanLock 53.3
+arm fwd-only seed 21979012   orbit_seed 6960850931340156210 VPT 308 steps ( 5.58 lt)  RMSE 0.357170  duty 0.667  relock
+12  unlock 13  meanLock 51.3
+arm fwd-only seed 21979012   orbit_seed 2610235269337149668 VPT 138 steps ( 2.50 lt)  RMSE 0.363778  duty 0.732  relock
+14  unlock 15  meanLock 48.8
+arm fwd-only seed 21979012   orbit_seed 4007931443343602940 VPT 302 steps ( 5.47 lt)  RMSE 0.366456  duty 0.564  relock
+8  unlock 9  meanLock 62.7
+arm fwd-only seed 21979012   orbit_seed 13994705457426480036 VPT 191 steps ( 3.46 lt)  RMSE 0.372180  duty 0.616  relock
+ 15  unlock 16  meanLock 38.5
+arm fwd-only seed 21979012   orbit_seed 13075496520564732781 VPT  31 steps ( 0.56 lt)  RMSE 0.374222  duty 0.624  relock
+ 16  unlock 16  meanLock 36.7
+arm fwd-only seed 21979012   orbit_seed 8425156953022204017 VPT 273 steps ( 4.94 lt)  RMSE 0.376868  duty 0.624  relock
+15  unlock 15  meanLock 39.0
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979012   orbit_seed 11957716583852103447 VPT 407 steps ( 7.37 lt)  RMSE 0.327964  duty 0.709  relock
+ 13  unlock 13  meanLock 50.6
+arm fwd-only seed 21979012   orbit_seed 4364257658748689037 VPT 383 steps ( 6.94 lt)  RMSE 0.342145  duty 0.718  relock
+12  unlock 13  meanLock 55.2
+arm fwd-only seed 21979012   orbit_seed 9333312947715283458 VPT 365 steps ( 6.61 lt)  RMSE 0.355228  duty 0.693  relock
+12  unlock 12  meanLock 53.3
+arm fwd-only seed 21979012   orbit_seed 10278487631456564348 VPT 349 steps ( 6.32 lt)  RMSE 0.382901  duty 0.719  relock
+ 14  unlock 14  meanLock 47.9
+arm fwd-only seed 21979012   orbit_seed 656605956440221769 VPT 345 steps ( 6.25 lt)  RMSE 0.378518  duty 0.501  relock 1
+1  unlock 11  meanLock 41.8
+arm fwd-only seed 21979012   orbit_seed 6960850931340156210 VPT 308 steps ( 5.58 lt)  RMSE 0.357170  duty 0.667  relock
+12  unlock 13  meanLock 51.3
+arm fwd-only seed 21979012   orbit_seed 4007931443343602940 VPT 302 steps ( 5.47 lt)  RMSE 0.366456  duty 0.564  relock
+8  unlock 9  meanLock 62.7
+arm fwd-only seed 21979012   orbit_seed 8425156953022204017 VPT 273 steps ( 4.94 lt)  RMSE 0.376868  duty 0.624  relock
+15  unlock 15  meanLock 39.0
+arm fwd-only seed 21979012   orbit_seed 5743361355973698255 VPT 241 steps ( 4.36 lt)  RMSE 0.406360  duty 0.475  relock
+13  unlock 14  meanLock 33.9
+arm fwd-only seed 21979012   orbit_seed 9180653851401757815 VPT 237 steps ( 4.29 lt)  RMSE 0.393042  duty 0.559  relock
+13  unlock 14  meanLock 39.9
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979012   orbit_seed 15001926598183616335 VPT 228 steps ( 4.13 lt)  RMSE 0.349277  duty 0.765  relock
+ 11  unlock 11  meanLock 63.8
+arm fwd-only seed 21979012   orbit_seed 2610235269337149668 VPT 138 steps ( 2.50 lt)  RMSE 0.363778  duty 0.732  relock
+14  unlock 15  meanLock 48.8
+arm fwd-only seed 21979012   orbit_seed 10278487631456564348 VPT 349 steps ( 6.32 lt)  RMSE 0.382901  duty 0.719  relock
+ 14  unlock 14  meanLock 47.9
+arm fwd-only seed 21979012   orbit_seed 4364257658748689037 VPT 383 steps ( 6.94 lt)  RMSE 0.342145  duty 0.718  relock
+12  unlock 13  meanLock 55.2
+arm fwd-only seed 21979012   orbit_seed 11957716583852103447 VPT 407 steps ( 7.37 lt)  RMSE 0.327964  duty 0.709  relock
+ 13  unlock 13  meanLock 50.6
+arm fwd-only seed 21979012   orbit_seed 9333312947715283458 VPT 365 steps ( 6.61 lt)  RMSE 0.355228  duty 0.693  relock
+12  unlock 12  meanLock 53.3
+arm fwd-only seed 21979012   orbit_seed 6960850931340156210 VPT 308 steps ( 5.58 lt)  RMSE 0.357170  duty 0.667  relock
+12  unlock 13  meanLock 51.3
+arm fwd-only seed 21979012   orbit_seed 12997851309749444307 VPT  28 steps ( 0.51 lt)  RMSE 0.385256  duty 0.640  relock
+ 18  unlock 18  meanLock 33.7
+arm fwd-only seed 21979012   orbit_seed 13075496520564732781 VPT  31 steps ( 0.56 lt)  RMSE 0.374222  duty 0.624  relock
+ 16  unlock 16  meanLock 36.7
+arm fwd-only seed 21979012   orbit_seed 8425156953022204017 VPT 273 steps ( 4.94 lt)  RMSE 0.376868  duty 0.624  relock
+15  unlock 15  meanLock 39.0
+
+=== ESN seed 21979013 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=6.85  mean=1.82  median=1.49  std=1.41
+  free-run RMSE        n=100  min=0.334039  max=0.508751  mean=0.422553  median=0.426912  std=0.037243
+  duty (<=theta)       n=100  min=0.170  max=0.713  mean=0.472  median=0.472  std=0.136
+  n_relock             n=100  min=4.0  max=22.0  mean=15.6  median=15.5  std=3.1
+  n_unlock             n=100  min=5.0  max=23.0  mean=16.2  median=16.0  std=3.1
+  meanLock (steps)     n=100  min=11.3  max=62.4  mean=29.4  median=26.7  std=10.5
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979013   orbit_seed 4007931443343602940 VPT 378 steps ( 6.85 lt)  RMSE 0.334039  duty 0.686  relock
+10  unlock 10  meanLock 62.4
+arm fwd-only seed 21979013   orbit_seed 13994705457426480036 VPT 238 steps ( 4.31 lt)  RMSE 0.347345  duty 0.644  relock
+ 14  unlock 15  meanLock 42.9
+arm fwd-only seed 21979013   orbit_seed 16826883592623292674 VPT  88 steps ( 1.59 lt)  RMSE 0.349124  duty 0.688  relock
+ 13  unlock 14  meanLock 49.1
+arm fwd-only seed 21979013   orbit_seed 656605956440221769 VPT 352 steps ( 6.38 lt)  RMSE 0.351651  duty 0.652  relock 1
+2  unlock 13  meanLock 50.2
+arm fwd-only seed 21979013   orbit_seed 8425156953022204017 VPT 158 steps ( 2.86 lt)  RMSE 0.352985  duty 0.708  relock
+13  unlock 14  meanLock 50.6
+arm fwd-only seed 21979013   orbit_seed 9333312947715283458 VPT 369 steps ( 6.68 lt)  RMSE 0.358928  duty 0.713  relock
+11  unlock 11  meanLock 59.4
+arm fwd-only seed 21979013   orbit_seed 1006469775667417434 VPT  80 steps ( 1.45 lt)  RMSE 0.361736  duty 0.704  relock
+13  unlock 14  meanLock 50.3
+arm fwd-only seed 21979013   orbit_seed 10801814468121717024 VPT  18 steps ( 0.33 lt)  RMSE 0.361900  duty 0.670  relock
+ 13  unlock 13  meanLock 47.9
+arm fwd-only seed 21979013   orbit_seed 14719543417854726190 VPT 195 steps ( 3.53 lt)  RMSE 0.367639  duty 0.577  relock
+ 10  unlock 11  meanLock 52.5
+arm fwd-only seed 21979013   orbit_seed 9515810860901762052 VPT 125 steps ( 2.26 lt)  RMSE 0.369084  duty 0.643  relock
+16  unlock 17  meanLock 37.8
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979013   orbit_seed 4007931443343602940 VPT 378 steps ( 6.85 lt)  RMSE 0.334039  duty 0.686  relock
+10  unlock 10  meanLock 62.4
+arm fwd-only seed 21979013   orbit_seed 9333312947715283458 VPT 369 steps ( 6.68 lt)  RMSE 0.358928  duty 0.713  relock
+11  unlock 11  meanLock 59.4
+arm fwd-only seed 21979013   orbit_seed 656605956440221769 VPT 352 steps ( 6.38 lt)  RMSE 0.351651  duty 0.652  relock 1
+2  unlock 13  meanLock 50.2
+arm fwd-only seed 21979013   orbit_seed 6960850931340156210 VPT 310 steps ( 5.61 lt)  RMSE 0.412995  duty 0.438  relock
+11  unlock 12  meanLock 36.5
+arm fwd-only seed 21979013   orbit_seed 14193348660813217918 VPT 259 steps ( 4.69 lt)  RMSE 0.406096  duty 0.454  relock
+ 17  unlock 18  meanLock 25.2
+arm fwd-only seed 21979013   orbit_seed 5743361355973698255 VPT 243 steps ( 4.40 lt)  RMSE 0.402928  duty 0.548  relock
+13  unlock 14  meanLock 39.1
+arm fwd-only seed 21979013   orbit_seed 13994705457426480036 VPT 238 steps ( 4.31 lt)  RMSE 0.347345  duty 0.644  relock
+ 14  unlock 15  meanLock 42.9
+arm fwd-only seed 21979013   orbit_seed 7658040265663960149 VPT 205 steps ( 3.71 lt)  RMSE 0.402098  duty 0.585  relock
+20  unlock 20  meanLock 27.9
+arm fwd-only seed 21979013   orbit_seed 9180653851401757815 VPT 196 steps ( 3.55 lt)  RMSE 0.427882  duty 0.464  relock
+15  unlock 16  meanLock 29.0
+arm fwd-only seed 21979013   orbit_seed 14719543417854726190 VPT 195 steps ( 3.53 lt)  RMSE 0.367639  duty 0.577  relock
+ 10  unlock 11  meanLock 52.5
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979013   orbit_seed 9333312947715283458 VPT 369 steps ( 6.68 lt)  RMSE 0.358928  duty 0.713  relock
+11  unlock 11  meanLock 59.4
+arm fwd-only seed 21979013   orbit_seed 8425156953022204017 VPT 158 steps ( 2.86 lt)  RMSE 0.352985  duty 0.708  relock
+13  unlock 14  meanLock 50.6
+arm fwd-only seed 21979013   orbit_seed 1006469775667417434 VPT  80 steps ( 1.45 lt)  RMSE 0.361736  duty 0.704  relock
+13  unlock 14  meanLock 50.3
+arm fwd-only seed 21979013   orbit_seed 16826883592623292674 VPT  88 steps ( 1.59 lt)  RMSE 0.349124  duty 0.688  relock
+ 13  unlock 14  meanLock 49.1
+arm fwd-only seed 21979013   orbit_seed 4007931443343602940 VPT 378 steps ( 6.85 lt)  RMSE 0.334039  duty 0.686  relock
+10  unlock 10  meanLock 62.4
+arm fwd-only seed 21979013   orbit_seed 12813272890801086603 VPT  84 steps ( 1.52 lt)  RMSE 0.388680  duty 0.672  relock
+ 15  unlock 16  meanLock 42.0
+arm fwd-only seed 21979013   orbit_seed 10801814468121717024 VPT  18 steps ( 0.33 lt)  RMSE 0.361900  duty 0.670  relock
+ 13  unlock 13  meanLock 47.9
+arm fwd-only seed 21979013   orbit_seed 1249439214165998073 VPT  85 steps ( 1.54 lt)  RMSE 0.371540  duty 0.662  relock
+14  unlock 14  meanLock 44.1
+arm fwd-only seed 21979013   orbit_seed 15001926598183616335 VPT 162 steps ( 2.93 lt)  RMSE 0.369103  duty 0.658  relock
+ 17  unlock 18  meanLock 36.6
+arm fwd-only seed 21979013   orbit_seed 656605956440221769 VPT 352 steps ( 6.38 lt)  RMSE 0.351651  duty 0.652  relock 1
+2  unlock 13  meanLock 50.2
+
+=== ESN seed 21979014 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.18  max=6.88  mean=1.63  median=1.34  std=1.26
+  free-run RMSE        n=100  min=0.299141  max=0.497970  mean=0.423382  median=0.424965  std=0.031558
+  duty (<=theta)       n=100  min=0.205  max=0.763  mean=0.453  median=0.462  std=0.110
+  n_relock             n=100  min=8.0  max=23.0  mean=15.8  median=16.0  std=3.4
+  n_unlock             n=100  min=8.0  max=23.0  mean=16.4  median=17.0  std=3.4
+  meanLock (steps)     n=100  min=11.9  max=63.6  mean=27.9  median=26.0  std=8.8
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979014   orbit_seed 4007931443343602940 VPT 353 steps ( 6.39 lt)  RMSE 0.299141  duty 0.763  relock
+11  unlock 11  meanLock 63.6
+arm fwd-only seed 21979014   orbit_seed 15992716269590395088 VPT  94 steps ( 1.70 lt)  RMSE 0.353312  duty 0.746  relock
+ 13  unlock 13  meanLock 53.3
+arm fwd-only seed 21979014   orbit_seed 4999626912442380604 VPT  15 steps ( 0.27 lt)  RMSE 0.358322  duty 0.607  relock
+14  unlock 14  meanLock 40.5
+arm fwd-only seed 21979014   orbit_seed 3124094803142223752 VPT  10 steps ( 0.18 lt)  RMSE 0.359405  duty 0.559  relock
+16  unlock 17  meanLock 32.9
+arm fwd-only seed 21979014   orbit_seed 10324059224234835327 VPT  59 steps ( 1.07 lt)  RMSE 0.360834  duty 0.545  relock
+ 15  unlock 15  meanLock 34.1
+arm fwd-only seed 21979014   orbit_seed 14193348660813217918 VPT 107 steps ( 1.94 lt)  RMSE 0.376369  duty 0.506  relock
+ 17  unlock 18  meanLock 28.1
+arm fwd-only seed 21979014   orbit_seed 656605956440221769 VPT 380 steps ( 6.88 lt)  RMSE 0.376772  duty 0.552  relock 1
+3  unlock 13  meanLock 39.4
+arm fwd-only seed 21979014   orbit_seed 16400381301927481083 VPT  67 steps ( 1.21 lt)  RMSE 0.377830  duty 0.519  relock
+ 18  unlock 18  meanLock 27.3
+arm fwd-only seed 21979014   orbit_seed 15987026048469243800 VPT  96 steps ( 1.74 lt)  RMSE 0.378106  duty 0.571  relock
+ 15  unlock 16  meanLock 35.7
+arm fwd-only seed 21979014   orbit_seed 2097179478975684523 VPT  55 steps ( 1.00 lt)  RMSE 0.380417  duty 0.568  relock
+13  unlock 14  meanLock 40.6
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979014   orbit_seed 656605956440221769 VPT 380 steps ( 6.88 lt)  RMSE 0.376772  duty 0.552  relock 1
+3  unlock 13  meanLock 39.4
+arm fwd-only seed 21979014   orbit_seed 4007931443343602940 VPT 353 steps ( 6.39 lt)  RMSE 0.299141  duty 0.763  relock
+11  unlock 11  meanLock 63.6
+arm fwd-only seed 21979014   orbit_seed 18303404106008543196 VPT 275 steps ( 4.98 lt)  RMSE 0.407091  duty 0.524  relock
+ 12  unlock 13  meanLock 40.3
+arm fwd-only seed 21979014   orbit_seed 1055386218686043223 VPT 249 steps ( 4.51 lt)  RMSE 0.416711  duty 0.436  relock
+13  unlock 14  meanLock 31.1
+arm fwd-only seed 21979014   orbit_seed 13994705457426480036 VPT 230 steps ( 4.17 lt)  RMSE 0.394212  duty 0.432  relock
+ 20  unlock 21  meanLock 20.6
+arm fwd-only seed 21979014   orbit_seed 9333312947715283458 VPT 229 steps ( 4.15 lt)  RMSE 0.441238  duty 0.291  relock
+8  unlock 8  meanLock 32.3
+arm fwd-only seed 21979014   orbit_seed 6960850931340156210 VPT 213 steps ( 3.86 lt)  RMSE 0.407282  duty 0.389  relock
+10  unlock 11  meanLock 35.4
+arm fwd-only seed 21979014   orbit_seed 1599451092061524015 VPT 183 steps ( 3.31 lt)  RMSE 0.415430  duty 0.447  relock
+20  unlock 21  meanLock 21.3
+arm fwd-only seed 21979014   orbit_seed 8542863739336868721 VPT 182 steps ( 3.30 lt)  RMSE 0.395642  duty 0.506  relock
+16  unlock 17  meanLock 29.8
+arm fwd-only seed 21979014   orbit_seed 4416234110371315044 VPT 178 steps ( 3.22 lt)  RMSE 0.431834  duty 0.498  relock
+14  unlock 15  meanLock 33.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979014   orbit_seed 4007931443343602940 VPT 353 steps ( 6.39 lt)  RMSE 0.299141  duty 0.763  relock
+11  unlock 11  meanLock 63.6
+arm fwd-only seed 21979014   orbit_seed 15992716269590395088 VPT  94 steps ( 1.70 lt)  RMSE 0.353312  duty 0.746  relock
+ 13  unlock 13  meanLock 53.3
+arm fwd-only seed 21979014   orbit_seed 11101717626751391262 VPT  64 steps ( 1.16 lt)  RMSE 0.391064  duty 0.696  relock
+ 12  unlock 12  meanLock 53.5
+arm fwd-only seed 21979014   orbit_seed 3077346833989813773 VPT 138 steps ( 2.50 lt)  RMSE 0.381789  duty 0.628  relock
+18  unlock 18  meanLock 33.1
+arm fwd-only seed 21979014   orbit_seed 14645204808822872881 VPT  52 steps ( 0.94 lt)  RMSE 0.393715  duty 0.624  relock
+ 18  unlock 19  meanLock 32.8
+arm fwd-only seed 21979014   orbit_seed 4999626912442380604 VPT  15 steps ( 0.27 lt)  RMSE 0.358322  duty 0.607  relock
+14  unlock 14  meanLock 40.5
+arm fwd-only seed 21979014   orbit_seed 110890624606369167 VPT  73 steps ( 1.32 lt)  RMSE 0.392529  duty 0.590  relock 1
+9  unlock 19  meanLock 29.5
+arm fwd-only seed 21979014   orbit_seed 10148093844914609385 VPT  99 steps ( 1.79 lt)  RMSE 0.410370  duty 0.590  relock
+ 17  unlock 17  meanLock 32.8
+arm fwd-only seed 21979014   orbit_seed 3351315778533618945 VPT  61 steps ( 1.10 lt)  RMSE 0.398670  duty 0.588  relock
+11  unlock 11  meanLock 49.0
+arm fwd-only seed 21979014   orbit_seed 2610235269337149668 VPT 139 steps ( 2.52 lt)  RMSE 0.423716  duty 0.585  relock
+17  unlock 18  meanLock 32.5
+
+=== ESN seed 21979015 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=5.94  mean=1.87  median=1.44  std=1.40
+  free-run RMSE        n=100  min=0.317136  max=0.493749  mean=0.425350  median=0.424157  std=0.033005
+  duty (<=theta)       n=100  min=0.179  max=0.783  mean=0.445  median=0.462  std=0.130
+  n_relock             n=100  min=5.0  max=23.0  mean=15.5  median=16.0  std=3.7
+  n_unlock             n=100  min=6.0  max=24.0  mean=16.2  median=16.0  std=3.7
+  meanLock (steps)     n=100  min=12.4  max=83.8  mean=28.6  median=26.9  std=11.6
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979015   orbit_seed 2097179478975684523 VPT 250 steps ( 4.53 lt)  RMSE 0.317136  duty 0.783  relock
+11  unlock 11  meanLock 65.2
+arm fwd-only seed 21979015   orbit_seed 2610235269337149668 VPT 109 steps ( 1.97 lt)  RMSE 0.346464  duty 0.653  relock
+15  unlock 16  meanLock 40.8
+arm fwd-only seed 21979015   orbit_seed 9333312947715283458 VPT 328 steps ( 5.94 lt)  RMSE 0.368610  duty 0.566  relock
+10  unlock 11  meanLock 51.5
+arm fwd-only seed 21979015   orbit_seed 13095175807113877781 VPT 106 steps ( 1.92 lt)  RMSE 0.371058  duty 0.653  relock
+ 15  unlock 15  meanLock 40.8
+arm fwd-only seed 21979015   orbit_seed 110890624606369167 VPT  78 steps ( 1.41 lt)  RMSE 0.371234  duty 0.635  relock 1
+4  unlock 15  meanLock 42.3
+arm fwd-only seed 21979015   orbit_seed 12997851309749444307 VPT  30 steps ( 0.54 lt)  RMSE 0.374391  duty 0.619  relock
+ 17  unlock 18  meanLock 34.4
+arm fwd-only seed 21979015   orbit_seed 17774587888087229762 VPT 218 steps ( 3.95 lt)  RMSE 0.377675  duty 0.551  relock
+ 15  unlock 16  meanLock 34.4
+arm fwd-only seed 21979015   orbit_seed 2696958202838730100 VPT 189 steps ( 3.42 lt)  RMSE 0.378963  duty 0.628  relock
+14  unlock 15  meanLock 41.9
+arm fwd-only seed 21979015   orbit_seed 6440932397460161416 VPT  76 steps ( 1.38 lt)  RMSE 0.379862  duty 0.468  relock
+14  unlock 15  meanLock 31.2
+arm fwd-only seed 21979015   orbit_seed 12661963445150923806 VPT  24 steps ( 0.43 lt)  RMSE 0.380945  duty 0.613  relock
+ 16  unlock 17  meanLock 36.1
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979015   orbit_seed 9333312947715283458 VPT 328 steps ( 5.94 lt)  RMSE 0.368610  duty 0.566  relock
+10  unlock 11  meanLock 51.5
+arm fwd-only seed 21979015   orbit_seed 4007931443343602940 VPT 283 steps ( 5.13 lt)  RMSE 0.422148  duty 0.335  relock
+5  unlock 6  meanLock 55.8
+arm fwd-only seed 21979015   orbit_seed 6960850931340156210 VPT 281 steps ( 5.09 lt)  RMSE 0.391145  duty 0.503  relock
+5  unlock 6  meanLock 83.8
+arm fwd-only seed 21979015   orbit_seed 656605956440221769 VPT 277 steps ( 5.02 lt)  RMSE 0.418512  duty 0.365  relock 8
+  unlock 8  meanLock 40.6
+arm fwd-only seed 21979015   orbit_seed 4364257658748689037 VPT 273 steps ( 4.94 lt)  RMSE 0.395190  duty 0.521  relock
+11  unlock 12  meanLock 43.4
+arm fwd-only seed 21979015   orbit_seed 2097179478975684523 VPT 250 steps ( 4.53 lt)  RMSE 0.317136  duty 0.783  relock
+11  unlock 11  meanLock 65.2
+arm fwd-only seed 21979015   orbit_seed 5743361355973698255 VPT 245 steps ( 4.44 lt)  RMSE 0.403579  duty 0.586  relock
+17  unlock 18  meanLock 32.6
+arm fwd-only seed 21979015   orbit_seed 1006469775667417434 VPT 225 steps ( 4.08 lt)  RMSE 0.445559  duty 0.363  relock
+10  unlock 11  meanLock 33.0
+arm fwd-only seed 21979015   orbit_seed 17224751303681612354 VPT 223 steps ( 4.04 lt)  RMSE 0.440369  duty 0.348  relock
+ 11  unlock 12  meanLock 29.0
+arm fwd-only seed 21979015   orbit_seed 1249439214165998073 VPT 219 steps ( 3.97 lt)  RMSE 0.402943  duty 0.517  relock
+14  unlock 15  meanLock 34.5
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979015   orbit_seed 2097179478975684523 VPT 250 steps ( 4.53 lt)  RMSE 0.317136  duty 0.783  relock
+11  unlock 11  meanLock 65.2
+arm fwd-only seed 21979015   orbit_seed 18109467897393425238 VPT  90 steps ( 1.63 lt)  RMSE 0.393099  duty 0.656  relock
+ 18  unlock 18  meanLock 34.5
+arm fwd-only seed 21979015   orbit_seed 2610235269337149668 VPT 109 steps ( 1.97 lt)  RMSE 0.346464  duty 0.653  relock
+15  unlock 16  meanLock 40.8
+arm fwd-only seed 21979015   orbit_seed 13095175807113877781 VPT 106 steps ( 1.92 lt)  RMSE 0.371058  duty 0.653  relock
+ 15  unlock 15  meanLock 40.8
+arm fwd-only seed 21979015   orbit_seed 110890624606369167 VPT  78 steps ( 1.41 lt)  RMSE 0.371234  duty 0.635  relock 1
+4  unlock 15  meanLock 42.3
+arm fwd-only seed 21979015   orbit_seed 16826883592623292674 VPT  80 steps ( 1.45 lt)  RMSE 0.390277  duty 0.631  relock
+ 14  unlock 15  meanLock 42.1
+arm fwd-only seed 21979015   orbit_seed 2696958202838730100 VPT 189 steps ( 3.42 lt)  RMSE 0.378963  duty 0.628  relock
+14  unlock 15  meanLock 41.9
+arm fwd-only seed 21979015   orbit_seed 12997851309749444307 VPT  30 steps ( 0.54 lt)  RMSE 0.374391  duty 0.619  relock
+ 17  unlock 18  meanLock 34.4
+arm fwd-only seed 21979015   orbit_seed 9136586738710644795 VPT 117 steps ( 2.12 lt)  RMSE 0.402827  duty 0.615  relock
+16  unlock 17  meanLock 36.2
+arm fwd-only seed 21979015   orbit_seed 12661963445150923806 VPT  24 steps ( 0.43 lt)  RMSE 0.380945  duty 0.613  relock
+ 16  unlock 17  meanLock 36.1
+
+=== ESN seed 21979016 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.06  mean=2.13  median=1.59  std=1.62
+  free-run RMSE        n=100  min=0.314287  max=0.493263  mean=0.418917  median=0.417959  std=0.033771
+  duty (<=theta)       n=100  min=0.166  max=0.712  mean=0.471  median=0.477  std=0.119
+  n_relock             n=100  min=5.0  max=26.0  mean=15.1  median=15.0  std=3.6
+  n_unlock             n=100  min=6.0  max=26.0  mean=15.8  median=15.5  std=3.7
+  meanLock (steps)     n=100  min=14.7  max=67.9  mean=30.6  median=29.3  std=10.2
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979016   orbit_seed 18109467897393425238 VPT 234 steps ( 4.24 lt)  RMSE 0.314287  duty 0.707  relock
+ 14  unlock 15  meanLock 47.1
+arm fwd-only seed 21979016   orbit_seed 13075496520564732781 VPT  35 steps ( 0.63 lt)  RMSE 0.341382  duty 0.712  relock
+ 13  unlock 13  meanLock 50.9
+arm fwd-only seed 21979016   orbit_seed 9333312947715283458 VPT 332 steps ( 6.01 lt)  RMSE 0.349327  duty 0.634  relock
+13  unlock 14  meanLock 45.3
+arm fwd-only seed 21979016   orbit_seed 9180653851401757815 VPT 194 steps ( 3.51 lt)  RMSE 0.359124  duty 0.680  relock
+13  unlock 14  meanLock 48.6
+arm fwd-only seed 21979016   orbit_seed 110890624606369167 VPT 116 steps ( 2.10 lt)  RMSE 0.362133  duty 0.698  relock 1
+3  unlock 14  meanLock 49.9
+arm fwd-only seed 21979016   orbit_seed 13994705457426480036 VPT 354 steps ( 6.41 lt)  RMSE 0.368608  duty 0.577  relock
+ 12  unlock 13  meanLock 44.4
+arm fwd-only seed 21979016   orbit_seed 9136586738710644795 VPT 118 steps ( 2.14 lt)  RMSE 0.370206  duty 0.634  relock
+12  unlock 13  meanLock 48.8
+arm fwd-only seed 21979016   orbit_seed 1249439214165998073 VPT 217 steps ( 3.93 lt)  RMSE 0.371646  duty 0.689  relock
+13  unlock 13  meanLock 49.2
+arm fwd-only seed 21979016   orbit_seed 656605956440221769 VPT 390 steps ( 7.06 lt)  RMSE 0.376233  duty 0.569  relock 1
+3  unlock 13  meanLock 40.6
+arm fwd-only seed 21979016   orbit_seed 3124094803142223752 VPT  12 steps ( 0.22 lt)  RMSE 0.376720  duty 0.518  relock
+14  unlock 14  meanLock 34.5
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979016   orbit_seed 656605956440221769 VPT 390 steps ( 7.06 lt)  RMSE 0.376233  duty 0.569  relock 1
+3  unlock 13  meanLock 40.6
+arm fwd-only seed 21979016   orbit_seed 13994705457426480036 VPT 354 steps ( 6.41 lt)  RMSE 0.368608  duty 0.577  relock
+ 12  unlock 13  meanLock 44.4
+arm fwd-only seed 21979016   orbit_seed 9333312947715283458 VPT 332 steps ( 6.01 lt)  RMSE 0.349327  duty 0.634  relock
+13  unlock 14  meanLock 45.3
+arm fwd-only seed 21979016   orbit_seed 4007931443343602940 VPT 315 steps ( 5.71 lt)  RMSE 0.391185  duty 0.529  relock
+10  unlock 11  meanLock 48.1
+arm fwd-only seed 21979016   orbit_seed 7401924419259460404 VPT 309 steps ( 5.60 lt)  RMSE 0.380967  duty 0.537  relock
+18  unlock 19  meanLock 28.3
+arm fwd-only seed 21979016   orbit_seed 10324059224234835327 VPT 259 steps ( 4.69 lt)  RMSE 0.406049  duty 0.530  relock
+ 19  unlock 20  meanLock 26.5
+arm fwd-only seed 21979016   orbit_seed 14193348660813217918 VPT 254 steps ( 4.60 lt)  RMSE 0.382217  duty 0.536  relock
+ 13  unlock 13  meanLock 38.3
+arm fwd-only seed 21979016   orbit_seed 11101717626751391262 VPT 248 steps ( 4.49 lt)  RMSE 0.424101  duty 0.457  relock
+ 14  unlock 14  meanLock 30.5
+arm fwd-only seed 21979016   orbit_seed 6960850931340156210 VPT 244 steps ( 4.42 lt)  RMSE 0.412683  duty 0.408  relock
+12  unlock 13  meanLock 31.4
+arm fwd-only seed 21979016   orbit_seed 10278487631456564348 VPT 242 steps ( 4.38 lt)  RMSE 0.399443  duty 0.539  relock
+ 12  unlock 13  meanLock 41.5
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979016   orbit_seed 13075496520564732781 VPT  35 steps ( 0.63 lt)  RMSE 0.341382  duty 0.712  relock
+ 13  unlock 13  meanLock 50.9
+arm fwd-only seed 21979016   orbit_seed 18109467897393425238 VPT 234 steps ( 4.24 lt)  RMSE 0.314287  duty 0.707  relock
+ 14  unlock 15  meanLock 47.1
+arm fwd-only seed 21979016   orbit_seed 110890624606369167 VPT 116 steps ( 2.10 lt)  RMSE 0.362133  duty 0.698  relock 1
+3  unlock 14  meanLock 49.9
+arm fwd-only seed 21979016   orbit_seed 1249439214165998073 VPT 217 steps ( 3.93 lt)  RMSE 0.371646  duty 0.689  relock
+13  unlock 13  meanLock 49.2
+arm fwd-only seed 21979016   orbit_seed 9180653851401757815 VPT 194 steps ( 3.51 lt)  RMSE 0.359124  duty 0.680  relock
+13  unlock 14  meanLock 48.6
+arm fwd-only seed 21979016   orbit_seed 2097179478975684523 VPT 100 steps ( 1.81 lt)  RMSE 0.377577  duty 0.677  relock
+17  unlock 18  meanLock 37.6
+arm fwd-only seed 21979016   orbit_seed 12661963445150923806 VPT  92 steps ( 1.67 lt)  RMSE 0.407000  duty 0.646  relock
+ 14  unlock 14  meanLock 43.1
+arm fwd-only seed 21979016   orbit_seed 1006469775667417434 VPT  74 steps ( 1.34 lt)  RMSE 0.398364  duty 0.640  relock
+13  unlock 14  meanLock 45.7
+arm fwd-only seed 21979016   orbit_seed 9333312947715283458 VPT 332 steps ( 6.01 lt)  RMSE 0.349327  duty 0.634  relock
+13  unlock 14  meanLock 45.3
+arm fwd-only seed 21979016   orbit_seed 9136586738710644795 VPT 118 steps ( 2.14 lt)  RMSE 0.370206  duty 0.634  relock
+12  unlock 13  meanLock 48.8
+
+=== ESN seed 21979017 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=7.41  mean=1.54  median=1.25  std=1.26
+  free-run RMSE        n=100  min=0.340136  max=0.507628  mean=0.430319  median=0.433737  std=0.032981
+  duty (<=theta)       n=100  min=0.144  max=0.722  mean=0.443  median=0.450  std=0.126
+  n_relock             n=100  min=7.0  max=23.0  mean=16.0  median=16.0  std=3.7
+  n_unlock             n=100  min=8.0  max=23.0  mean=16.6  median=17.0  std=3.7
+  meanLock (steps)     n=100  min=12.3  max=55.5  mean=26.8  median=26.1  std=8.0
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979017   orbit_seed 11569254123151793499 VPT 229 steps ( 4.15 lt)  RMSE 0.340136  duty 0.647  relock
+ 14  unlock 14  meanLock 43.1
+arm fwd-only seed 21979017   orbit_seed 12997851309749444307 VPT  27 steps ( 0.49 lt)  RMSE 0.342008  duty 0.722  relock
+ 12  unlock 13  meanLock 55.5
+arm fwd-only seed 21979017   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.342162  duty 0.601  relock
+12  unlock 13  meanLock 46.2
+arm fwd-only seed 21979017   orbit_seed 2610235269337149668 VPT 187 steps ( 3.39 lt)  RMSE 0.344116  duty 0.638  relock
+17  unlock 18  meanLock 35.4
+arm fwd-only seed 21979017   orbit_seed 13095175807113877781 VPT 106 steps ( 1.92 lt)  RMSE 0.357197  duty 0.634  relock
+ 17  unlock 18  meanLock 35.2
+arm fwd-only seed 21979017   orbit_seed 7367918243184862287 VPT 143 steps ( 2.59 lt)  RMSE 0.378120  duty 0.661  relock
+14  unlock 15  meanLock 44.1
+arm fwd-only seed 21979017   orbit_seed 17609291198829902110 VPT  63 steps ( 1.14 lt)  RMSE 0.378236  duty 0.549  relock
+ 17  unlock 18  meanLock 30.5
+arm fwd-only seed 21979017   orbit_seed 14645204808822872881 VPT 154 steps ( 2.79 lt)  RMSE 0.381324  duty 0.649  relock
+ 19  unlock 20  meanLock 32.5
+arm fwd-only seed 21979017   orbit_seed 9333312947715283458 VPT 296 steps ( 5.36 lt)  RMSE 0.382267  duty 0.561  relock
+15  unlock 15  meanLock 35.1
+arm fwd-only seed 21979017   orbit_seed 7658040265663960149 VPT 174 steps ( 3.15 lt)  RMSE 0.389767  duty 0.574  relock
+20  unlock 21  meanLock 27.3
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979017   orbit_seed 4007931443343602940 VPT 409 steps ( 7.41 lt)  RMSE 0.342162  duty 0.601  relock
+12  unlock 13  meanLock 46.2
+arm fwd-only seed 21979017   orbit_seed 9333312947715283458 VPT 296 steps ( 5.36 lt)  RMSE 0.382267  duty 0.561  relock
+15  unlock 15  meanLock 35.1
+arm fwd-only seed 21979017   orbit_seed 11569254123151793499 VPT 229 steps ( 4.15 lt)  RMSE 0.340136  duty 0.647  relock
+ 14  unlock 14  meanLock 43.1
+arm fwd-only seed 21979017   orbit_seed 248130967593251468 VPT 221 steps ( 4.00 lt)  RMSE 0.409962  duty 0.603  relock 1
+6  unlock 16  meanLock 35.5
+arm fwd-only seed 21979017   orbit_seed 12735002845385499196 VPT 199 steps ( 3.60 lt)  RMSE 0.421931  duty 0.452  relock
+ 14  unlock 15  meanLock 30.1
+arm fwd-only seed 21979017   orbit_seed 14719543417854726190 VPT 197 steps ( 3.57 lt)  RMSE 0.433655  duty 0.452  relock
+ 15  unlock 16  meanLock 28.2
+arm fwd-only seed 21979017   orbit_seed 15001926598183616335 VPT 194 steps ( 3.51 lt)  RMSE 0.406374  duty 0.542  relock
+ 18  unlock 18  meanLock 28.5
+arm fwd-only seed 21979017   orbit_seed 2610235269337149668 VPT 187 steps ( 3.39 lt)  RMSE 0.344116  duty 0.638  relock
+17  unlock 18  meanLock 35.4
+arm fwd-only seed 21979017   orbit_seed 8542863739336868721 VPT 179 steps ( 3.24 lt)  RMSE 0.436832  duty 0.369  relock
+8  unlock 9  meanLock 41.0
+arm fwd-only seed 21979017   orbit_seed 11957716583852103447 VPT 177 steps ( 3.21 lt)  RMSE 0.407286  duty 0.570  relock
+ 17  unlock 17  meanLock 31.7
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979017   orbit_seed 12997851309749444307 VPT  27 steps ( 0.49 lt)  RMSE 0.342008  duty 0.722  relock
+ 12  unlock 13  meanLock 55.5
+arm fwd-only seed 21979017   orbit_seed 7367918243184862287 VPT 143 steps ( 2.59 lt)  RMSE 0.378120  duty 0.661  relock
+14  unlock 15  meanLock 44.1
+arm fwd-only seed 21979017   orbit_seed 14645204808822872881 VPT 154 steps ( 2.79 lt)  RMSE 0.381324  duty 0.649  relock
+ 19  unlock 20  meanLock 32.5
+arm fwd-only seed 21979017   orbit_seed 11569254123151793499 VPT 229 steps ( 4.15 lt)  RMSE 0.340136  duty 0.647  relock
+ 14  unlock 14  meanLock 43.1
+arm fwd-only seed 21979017   orbit_seed 16400381301927481083 VPT 140 steps ( 2.54 lt)  RMSE 0.415864  duty 0.638  relock
+ 16  unlock 16  meanLock 37.5
+arm fwd-only seed 21979017   orbit_seed 2610235269337149668 VPT 187 steps ( 3.39 lt)  RMSE 0.344116  duty 0.638  relock
+17  unlock 18  meanLock 35.4
+arm fwd-only seed 21979017   orbit_seed 9916893445636222244 VPT  12 steps ( 0.22 lt)  RMSE 0.401031  duty 0.635  relock
+16  unlock 16  meanLock 37.4
+arm fwd-only seed 21979017   orbit_seed 13095175807113877781 VPT 106 steps ( 1.92 lt)  RMSE 0.357197  duty 0.634  relock
+ 17  unlock 18  meanLock 35.2
+arm fwd-only seed 21979017   orbit_seed 11198218363179429788 VPT  17 steps ( 0.31 lt)  RMSE 0.422957  duty 0.633  relock
+ 17  unlock 18  meanLock 35.2
+arm fwd-only seed 21979017   orbit_seed 656605956440221769 VPT 151 steps ( 2.73 lt)  RMSE 0.394087  duty 0.620  relock 1
+4  unlock 15  meanLock 41.3
+
+=== ESN seed 21979018 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.20  max=5.90  mean=1.62  median=1.33  std=1.29
+  free-run RMSE        n=100  min=0.316440  max=0.496507  mean=0.428886  median=0.430899  std=0.034977
+  duty (<=theta)       n=100  min=0.171  max=0.747  mean=0.442  median=0.453  std=0.121
+  n_relock             n=100  min=10.0  max=25.0  mean=16.3  median=16.0  std=3.4
+  n_unlock             n=100  min=11.0  max=26.0  mean=17.0  median=17.0  std=3.4
+  meanLock (steps)     n=100  min=10.7  max=57.5  mean=26.6  median=25.2  std=9.4
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979018   orbit_seed 7401924419259460404 VPT  47 steps ( 0.85 lt)  RMSE 0.316440  duty 0.747  relock
+12  unlock 12  meanLock 57.5
+arm fwd-only seed 21979018   orbit_seed 12997851309749444307 VPT  26 steps ( 0.47 lt)  RMSE 0.358188  duty 0.702  relock
+ 15  unlock 15  meanLock 43.9
+arm fwd-only seed 21979018   orbit_seed 57026663349024645 VPT 180 steps ( 3.26 lt)  RMSE 0.359905  duty 0.635  relock 15
+  unlock 15  meanLock 39.7
+arm fwd-only seed 21979018   orbit_seed 3077346833989813773 VPT 132 steps ( 2.39 lt)  RMSE 0.367233  duty 0.611  relock
+15  unlock 16  meanLock 38.2
+arm fwd-only seed 21979018   orbit_seed 9333312947715283458 VPT 326 steps ( 5.90 lt)  RMSE 0.370136  duty 0.533  relock
+15  unlock 15  meanLock 33.3
+arm fwd-only seed 21979018   orbit_seed 4007931443343602940 VPT 315 steps ( 5.71 lt)  RMSE 0.371800  duty 0.527  relock
+11  unlock 12  meanLock 43.9
+arm fwd-only seed 21979018   orbit_seed 14283968312830459669 VPT 128 steps ( 2.32 lt)  RMSE 0.373914  duty 0.604  relock
+ 15  unlock 16  meanLock 37.8
+arm fwd-only seed 21979018   orbit_seed 13095175807113877781 VPT 135 steps ( 2.45 lt)  RMSE 0.376575  duty 0.660  relock
+ 13  unlock 14  meanLock 47.1
+arm fwd-only seed 21979018   orbit_seed 6960850931340156210 VPT  18 steps ( 0.33 lt)  RMSE 0.378425  duty 0.493  relock
+13  unlock 14  meanLock 35.2
+arm fwd-only seed 21979018   orbit_seed 4712281022348717183 VPT 123 steps ( 2.23 lt)  RMSE 0.378692  duty 0.628  relock
+20  unlock 21  meanLock 29.9
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979018   orbit_seed 9333312947715283458 VPT 326 steps ( 5.90 lt)  RMSE 0.370136  duty 0.533  relock
+15  unlock 15  meanLock 33.3
+arm fwd-only seed 21979018   orbit_seed 656605956440221769 VPT 319 steps ( 5.78 lt)  RMSE 0.383109  duty 0.539  relock 1
+0  unlock 11  meanLock 49.0
+arm fwd-only seed 21979018   orbit_seed 4007931443343602940 VPT 315 steps ( 5.71 lt)  RMSE 0.371800  duty 0.527  relock
+11  unlock 12  meanLock 43.9
+arm fwd-only seed 21979018   orbit_seed 2097179478975684523 VPT 283 steps ( 5.13 lt)  RMSE 0.389341  duty 0.523  relock
+14  unlock 15  meanLock 34.9
+arm fwd-only seed 21979018   orbit_seed 6440932397460161416 VPT 267 steps ( 4.84 lt)  RMSE 0.402713  duty 0.459  relock
+10  unlock 11  meanLock 41.7
+arm fwd-only seed 21979018   orbit_seed 5743361355973698255 VPT 240 steps ( 4.35 lt)  RMSE 0.400936  duty 0.503  relock
+15  unlock 16  meanLock 31.4
+arm fwd-only seed 21979018   orbit_seed 9136586738710644795 VPT 230 steps ( 4.17 lt)  RMSE 0.411947  duty 0.480  relock
+16  unlock 16  meanLock 28.2
+arm fwd-only seed 21979018   orbit_seed 7658040265663960149 VPT 198 steps ( 3.59 lt)  RMSE 0.405412  duty 0.388  relock
+19  unlock 20  meanLock 19.4
+arm fwd-only seed 21979018   orbit_seed 2696958202838730100 VPT 195 steps ( 3.53 lt)  RMSE 0.438466  duty 0.390  relock
+11  unlock 11  meanLock 32.5
+arm fwd-only seed 21979018   orbit_seed 10278487631456564348 VPT 187 steps ( 3.39 lt)  RMSE 0.403783  duty 0.453  relock
+ 14  unlock 15  meanLock 30.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979018   orbit_seed 7401924419259460404 VPT  47 steps ( 0.85 lt)  RMSE 0.316440  duty 0.747  relock
+12  unlock 12  meanLock 57.5
+arm fwd-only seed 21979018   orbit_seed 12997851309749444307 VPT  26 steps ( 0.47 lt)  RMSE 0.358188  duty 0.702  relock
+ 15  unlock 15  meanLock 43.9
+arm fwd-only seed 21979018   orbit_seed 10603344179402640566 VPT  51 steps ( 0.92 lt)  RMSE 0.381990  duty 0.678  relock
+ 15  unlock 15  meanLock 42.4
+arm fwd-only seed 21979018   orbit_seed 13095175807113877781 VPT 135 steps ( 2.45 lt)  RMSE 0.376575  duty 0.660  relock
+ 13  unlock 14  meanLock 47.1
+arm fwd-only seed 21979018   orbit_seed 57026663349024645 VPT 180 steps ( 3.26 lt)  RMSE 0.359905  duty 0.635  relock 15
+  unlock 15  meanLock 39.7
+arm fwd-only seed 21979018   orbit_seed 4712281022348717183 VPT 123 steps ( 2.23 lt)  RMSE 0.378692  duty 0.628  relock
+20  unlock 21  meanLock 29.9
+arm fwd-only seed 21979018   orbit_seed 15378080442305734864 VPT  88 steps ( 1.59 lt)  RMSE 0.381676  duty 0.616  relock
+ 14  unlock 15  meanLock 41.1
+arm fwd-only seed 21979018   orbit_seed 3077346833989813773 VPT 132 steps ( 2.39 lt)  RMSE 0.367233  duty 0.611  relock
+15  unlock 16  meanLock 38.2
+arm fwd-only seed 21979018   orbit_seed 16400381301927481083 VPT  65 steps ( 1.18 lt)  RMSE 0.410939  duty 0.611  relock
+ 21  unlock 21  meanLock 27.8
+arm fwd-only seed 21979018   orbit_seed 8425156953022204017 VPT  81 steps ( 1.47 lt)  RMSE 0.394123  duty 0.610  relock
+15  unlock 16  meanLock 38.1
+
+=== ESN seed 21979019 : 100 free-runs (orbit seed 72983498) ===
+
+=== Free-run stats (100 runs) ===
+  VPT (lt)             n=100  min=0.22  max=8.24  mean=2.15  median=1.79  std=1.64
+  free-run RMSE        n=100  min=0.307562  max=0.487435  mean=0.418616  median=0.424590  std=0.036945
+  duty (<=theta)       n=100  min=0.166  max=0.772  mean=0.479  median=0.473  std=0.120
+  n_relock             n=100  min=5.0  max=24.0  mean=16.3  median=16.0  std=3.6
+  n_unlock             n=100  min=5.0  max=24.0  mean=16.9  median=17.0  std=3.6
+  meanLock (steps)     n=100  min=11.9  max=68.4  mean=29.1  median=26.7  std=10.9
+  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=0.30 (GS re-lock proxies; VPT is first upcrossing only)
+
+=== Top 10 lowest free-run RMSE ===
+arm fwd-only seed 21979019   orbit_seed 1937234734715600964 VPT 139 steps ( 2.52 lt)  RMSE 0.307562  duty 0.698  relock
+19  unlock 19  meanLock 34.9
+arm fwd-only seed 21979019   orbit_seed 9180653851401757815 VPT 344 steps ( 6.23 lt)  RMSE 0.323235  duty 0.772  relock
+11  unlock 12  meanLock 64.3
+arm fwd-only seed 21979019   orbit_seed 15001926598183616335 VPT 455 steps ( 8.24 lt)  RMSE 0.324898  duty 0.752  relock
+ 10  unlock 11  meanLock 68.4
+arm fwd-only seed 21979019   orbit_seed 248130967593251468 VPT 376 steps ( 6.81 lt)  RMSE 0.325392  duty 0.753  relock 1
+1  unlock 11  meanLock 62.8
+arm fwd-only seed 21979019   orbit_seed 5237269684808350417 VPT 142 steps ( 2.57 lt)  RMSE 0.341266  duty 0.708  relock
+18  unlock 18  meanLock 37.3
+arm fwd-only seed 21979019   orbit_seed 651436683848788812 VPT 216 steps ( 3.91 lt)  RMSE 0.343052  duty 0.644  relock 1
+3  unlock 13  meanLock 46.0
+arm fwd-only seed 21979019   orbit_seed 11569254123151793499 VPT 229 steps ( 4.15 lt)  RMSE 0.357382  duty 0.667  relock
+ 12  unlock 12  meanLock 51.3
+arm fwd-only seed 21979019   orbit_seed 6960850931340156210 VPT 317 steps ( 5.74 lt)  RMSE 0.358397  duty 0.613  relock
+16  unlock 16  meanLock 36.1
+arm fwd-only seed 21979019   orbit_seed 11101717626751391262 VPT  77 steps ( 1.39 lt)  RMSE 0.366913  duty 0.639  relock
+ 13  unlock 13  meanLock 45.6
+arm fwd-only seed 21979019   orbit_seed 5743361355973698255 VPT 247 steps ( 4.47 lt)  RMSE 0.369151  duty 0.605  relock
+13  unlock 13  meanLock 43.2
+
+=== Top 10 highest VPT (lt) ===
+arm fwd-only seed 21979019   orbit_seed 15001926598183616335 VPT 455 steps ( 8.24 lt)  RMSE 0.324898  duty 0.752  relock
+ 10  unlock 11  meanLock 68.4
+arm fwd-only seed 21979019   orbit_seed 248130967593251468 VPT 376 steps ( 6.81 lt)  RMSE 0.325392  duty 0.753  relock 1
+1  unlock 11  meanLock 62.8
+arm fwd-only seed 21979019   orbit_seed 9180653851401757815 VPT 344 steps ( 6.23 lt)  RMSE 0.323235  duty 0.772  relock
+11  unlock 12  meanLock 64.3
+arm fwd-only seed 21979019   orbit_seed 6960850931340156210 VPT 317 steps ( 5.74 lt)  RMSE 0.358397  duty 0.613  relock
+16  unlock 16  meanLock 36.1
+arm fwd-only seed 21979019   orbit_seed 656605956440221769 VPT 306 steps ( 5.54 lt)  RMSE 0.381671  duty 0.457  relock 1
+0  unlock 11  meanLock 41.5
+arm fwd-only seed 21979019   orbit_seed 9333312947715283458 VPT 296 steps ( 5.36 lt)  RMSE 0.411831  duty 0.428  relock
+13  unlock 14  meanLock 30.6
+arm fwd-only seed 21979019   orbit_seed 4364257658748689037 VPT 270 steps ( 4.89 lt)  RMSE 0.389739  duty 0.568  relock
+13  unlock 14  meanLock 40.6
+arm fwd-only seed 21979019   orbit_seed 17774587888087229762 VPT 253 steps ( 4.58 lt)  RMSE 0.409717  duty 0.463  relock
+ 13  unlock 14  meanLock 33.1
+arm fwd-only seed 21979019   orbit_seed 4007931443343602940 VPT 251 steps ( 4.55 lt)  RMSE 0.416777  duty 0.395  relock
+12  unlock 12  meanLock 30.4
+arm fwd-only seed 21979019   orbit_seed 5743361355973698255 VPT 247 steps ( 4.47 lt)  RMSE 0.369151  duty 0.605  relock
+13  unlock 13  meanLock 43.2
+
+=== Top 10 highest duty (<=theta) ===
+arm fwd-only seed 21979019   orbit_seed 9180653851401757815 VPT 344 steps ( 6.23 lt)  RMSE 0.323235  duty 0.772  relock
+11  unlock 12  meanLock 64.3
+arm fwd-only seed 21979019   orbit_seed 248130967593251468 VPT 376 steps ( 6.81 lt)  RMSE 0.325392  duty 0.753  relock 1
+1  unlock 11  meanLock 62.8
+arm fwd-only seed 21979019   orbit_seed 15001926598183616335 VPT 455 steps ( 8.24 lt)  RMSE 0.324898  duty 0.752  relock
+ 10  unlock 11  meanLock 68.4
+arm fwd-only seed 21979019   orbit_seed 5237269684808350417 VPT 142 steps ( 2.57 lt)  RMSE 0.341266  duty 0.708  relock
+18  unlock 18  meanLock 37.3
+arm fwd-only seed 21979019   orbit_seed 1937234734715600964 VPT 139 steps ( 2.52 lt)  RMSE 0.307562  duty 0.698  relock
+19  unlock 19  meanLock 34.9
+arm fwd-only seed 21979019   orbit_seed 7401924419259460404 VPT 163 steps ( 2.95 lt)  RMSE 0.382067  duty 0.678  relock
+15  unlock 15  meanLock 42.4
+arm fwd-only seed 21979019   orbit_seed 11569254123151793499 VPT 229 steps ( 4.15 lt)  RMSE 0.357382  duty 0.667  relock
+ 12  unlock 12  meanLock 51.3
+arm fwd-only seed 21979019   orbit_seed 2869500753416085466 VPT  50 steps ( 0.91 lt)  RMSE 0.383001  duty 0.654  relock
+16  unlock 16  meanLock 38.5
+arm fwd-only seed 21979019   orbit_seed 651436683848788812 VPT 216 steps ( 3.91 lt)  RMSE 0.343052  duty 0.644  relock 1
+3  unlock 13  meanLock 46.0
+arm fwd-only seed 21979019   orbit_seed 11101717626751391262 VPT  77 steps ( 1.39 lt)  RMSE 0.366913  duty 0.639  relock
+ 13  unlock 13  meanLock 45.6
+[seed 21979007] free-run 100/100
+
+Process finished with exit code 0
