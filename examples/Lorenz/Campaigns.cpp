@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -55,6 +56,41 @@ fs::path EnsureResultsDir()
     return dir;
 }
 
+const char* ActivationName(ReadoutActivation a)
+{
+    switch (a)
+    {
+    case ReadoutActivation::TANH:       return "TANH";
+    case ReadoutActivation::RELU:       return "RELU";
+    case ReadoutActivation::LEAKY_RELU: return "LEAKY_RELU";
+    default:                            return "NONE";
+    }
+}
+
+// Two compact fixed-knob lines for roll-up banners (M is per-row, omitted).
+void AppendCompactConfigLines(std::ostream& o)
+{
+    o << "config: DIM=" << config::DIM
+      << " N=" << (size_t{1} << config::DIM)
+      << "  epochs=" << config::EPOCHS
+      << "  train_win=" << config::TRAINING_WINDOW_SIZE
+      << "  warmup=" << config::WARMUP_STEPS
+      << "  freerun_win=" << config::FREE_RUN_WINDOW_SIZE
+      << "  SR=" << config::SPECTRAL_RADIUS
+      << "  in_scale=" << config::INPUT_SCALING
+      << "  leak=" << config::LEAK_RATE
+      << "\n";
+    o << "config: pool=" << (config::USE_POOLING ? "on" : "off")
+      << "  slices=" << config::READOUT_SLICES
+      << "  ch=" << config::CONV_CHANNELS
+      << "  layers=" << config::NUM_LAYERS
+      << "  act=" << ActivationName(config::READOUT_ACTIVATION)
+      << "  lr=" << config::LEARNING_RATE << ".." << config::LEARNING_RATE_MIN
+      << "  theta=" << config::VPT_THRESHOLD
+      << "  load_w=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
+      << "\n";
+}
+
 // Full run metadata for post-analysis (comment lines in CSV; prose in .txt).
 void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& timestamp,
                         uint64_t base_seed, uint64_t orbit_seed,
@@ -80,10 +116,7 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "  readout_slices=" << config::READOUT_SLICES
       << "  pooling=" << (config::USE_POOLING ? "on" : "off")
       << "  num_layers=" << config::NUM_LAYERS
-      << "  activation="
-      << (config::READOUT_ACTIVATION == ReadoutActivation::TANH ? "TANH" :
-          config::READOUT_ACTIVATION == ReadoutActivation::RELU ? "RELU" :
-          config::READOUT_ACTIVATION == ReadoutActivation::LEAKY_RELU ? "LEAKY_RELU" : "NONE")
+      << "  activation=" << ActivationName(config::READOUT_ACTIVATION)
       << "\n"
       << "# base_seed=" << base_seed
       << "  orbit_seed=" << orbit_seed
@@ -157,9 +190,11 @@ void WriteSurveyResultFiles(const SurveySummary& s)
         txt << "  wall_seconds=" << s.wall_seconds << "  ok=" << (s.ok ? 1 : 0) << "\n";
     }
 
-    std::fprintf(stderr, "[results] wrote %s\n", csv_path.string().c_str());
-    std::fprintf(stderr, "[results] wrote %s\n", txt_path.string().c_str());
-    std::fflush(stderr);
+    // stdout (not stderr): CLion/Windows consoles merge streams asynchronously and will
+    // splice stderr mid-line into printf tables if we log "wrote" on a different stream.
+    std::printf("[results] wrote %s\n", csv_path.string().c_str());
+    std::printf("[results] wrote %s\n", txt_path.string().c_str());
+    std::fflush(stdout);
 }
 
 // M-sweep roll-up: one CSV (metadata + all M rows) + matching TXT.
@@ -210,6 +245,7 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
         WriteMetadataBlock(txt, "Msweep", ts, base_seed, orbit_seed,
                            num_threads, num_runs, proto, M_meta);
         txt << "\nM-sweep roll-up (mean of trial-means; code-computed)\n";
+        AppendCompactConfigLines(txt);
         if (rows.empty())
         {
             txt << "(no successful M rows)\n";
@@ -252,9 +288,10 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
         }
     }
 
-    std::fprintf(stderr, "[results] wrote %s\n", csv_path.string().c_str());
-    std::fprintf(stderr, "[results] wrote %s\n", txt_path.string().c_str());
-    std::fflush(stderr);
+    // Same stream as the roll-up table (see WriteSurveyResultFiles).
+    std::printf("[results] wrote %s\n", csv_path.string().c_str());
+    std::printf("[results] wrote %s\n", txt_path.string().c_str());
+    std::fflush(stdout);
 }
 
 // Sample mean + sample std (n-1). Empty => mean=std=0.
@@ -835,80 +872,114 @@ int Campaign_HistoryDepthSweep(std::initializer_list<size_t> history_depths,
     }
 
     // ---- Roll-up: all numbers from SurveySummary (code-crunched), not estimated ----
+    // Flush any prior survey [results] lines before the table so the console stays clean.
+    std::fflush(stdout);
+
     size_t i_best_vpt = 0;
     size_t i_best_duty = 0;
 
-    std::printf("\n========================================================================\n");
-    std::printf("=== M-sweep roll-up (mean of trial-means; code-computed) ===\n");
-    std::printf("========================================================================\n");
-    if (rows.empty())
+    // Build the entire roll-up as one string, then one write + flush: avoids mid-line
+    // splice if any other stream noise races the console host.
     {
-        std::printf("(no successful M rows)\n");
-    }
-    else
-    {
-        std::printf("protocol=%s  trials/M=%zu  freeruns/trial=%d  theta=%.2f\n",
-                    Lorenz::ProtocolName(rows.front().protocol),
-                    rows.front().num_trials, rows.front().num_runs,
-                    config::VPT_THRESHOLD);
-        std::printf("%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
-                    "M", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd", "duty_mn", "duty_sd",
-                    "relk_mn", "relk_sd", "trials_ok", "wall_s");
-        std::printf("%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
-                    "------", "--------", "--------", "----------", "--------", "--------",
-                    "----------", "--------", "--------", "----------", "----------");
-
-        for (size_t i = 0; i < rows.size(); ++i)
+        std::ostringstream roll;
+        roll << "\n========================================================================\n"
+             << "=== M-sweep roll-up (mean of trial-means; code-computed) ===\n"
+             << "========================================================================\n";
+        AppendCompactConfigLines(roll);
+        if (rows.empty())
         {
-            const auto& r = rows[i];
-            std::printf("%-6zu %8.3f %8.3f %10.6f %8.6f %8.3f %10.3f %8.1f %8.1f %10zu %10.1f\n",
-                        r.history_depth,
-                        r.mean_vpt, r.std_vpt,
-                        r.mean_rmse, r.std_rmse,
-                        r.mean_duty, r.std_duty,
-                        r.mean_n_relock, r.std_n_relock,
-                        r.n_trials_ok, r.wall_seconds);
-            if (r.mean_vpt > rows[i_best_vpt].mean_vpt)
-                i_best_vpt = i;
-            if (r.mean_duty > rows[i_best_duty].mean_duty)
-                i_best_duty = i;
+            roll << "(no successful M rows)\n";
+        }
+        else
+        {
+            char line[512];
+            std::snprintf(line, sizeof line,
+                          "protocol=%s  trials/M=%zu  freeruns/trial=%d  theta=%.2f\n",
+                          Lorenz::ProtocolName(rows.front().protocol),
+                          rows.front().num_trials, rows.front().num_runs,
+                          config::VPT_THRESHOLD);
+            roll << line;
+
+            std::snprintf(line, sizeof line,
+                          "%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                          "M", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd", "duty_mn", "duty_sd",
+                          "relk_mn", "relk_sd", "trials_ok", "wall_s");
+            roll << line;
+            std::snprintf(line, sizeof line,
+                          "%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                          "------", "--------", "--------", "----------", "--------", "--------",
+                          "----------", "--------", "--------", "----------", "----------");
+            roll << line;
+
+            for (size_t i = 0; i < rows.size(); ++i)
+            {
+                const auto& r = rows[i];
+                std::snprintf(line, sizeof line,
+                              "%-6zu %8.3f %8.3f %10.6f %8.6f %8.3f %10.3f %8.1f %8.1f %10zu %10.1f\n",
+                              r.history_depth,
+                              r.mean_vpt, r.std_vpt,
+                              r.mean_rmse, r.std_rmse,
+                              r.mean_duty, r.std_duty,
+                              r.mean_n_relock, r.std_n_relock,
+                              r.n_trials_ok, r.wall_seconds);
+                roll << line;
+                if (r.mean_vpt > rows[i_best_vpt].mean_vpt)
+                    i_best_vpt = i;
+                if (r.mean_duty > rows[i_best_duty].mean_duty)
+                    i_best_duty = i;
+            }
+
+            // Delta vs first successful row (baseline = first M that ran)
+            std::snprintf(line, sizeof line, "\nDeltas vs first row (M=%zu):\n",
+                          rows.front().history_depth);
+            roll << line;
+            std::snprintf(line, sizeof line, "%-6s %10s %12s %10s %12s\n",
+                          "M", "dVPT", "dRMSE", "dDuty", "dRelock");
+            roll << line;
+            const auto& b = rows.front();
+            for (const auto& r : rows)
+            {
+                std::snprintf(line, sizeof line,
+                              "%-6zu %+10.3f %+12.6f %+10.3f %+12.1f\n",
+                              r.history_depth,
+                              r.mean_vpt - b.mean_vpt,
+                              r.mean_rmse - b.mean_rmse,
+                              r.mean_duty - b.mean_duty,
+                              r.mean_n_relock - b.mean_n_relock);
+                roll << line;
+            }
+
+            roll << "\nCode picks (max mean among successful M):\n";
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT  : M=%zu  VPT=%.3f +/- %.3f\n",
+                          rows[i_best_vpt].history_depth,
+                          rows[i_best_vpt].mean_vpt, rows[i_best_vpt].std_vpt);
+            roll << line;
+            std::snprintf(line, sizeof line,
+                          "  best mean duty : M=%zu  duty=%.3f +/- %.3f\n",
+                          rows[i_best_duty].history_depth,
+                          rows[i_best_duty].mean_duty, rows[i_best_duty].std_duty);
+            roll << line;
         }
 
-        // Delta vs first successful row (baseline = first M that ran)
-        std::printf("\nDeltas vs first row (M=%zu):\n", rows.front().history_depth);
-        std::printf("%-6s %10s %12s %10s %12s\n",
-                    "M", "dVPT", "dRMSE", "dDuty", "dRelock");
-        const auto& b = rows.front();
-        for (const auto& r : rows)
-        {
-            std::printf("%-6zu %+10.3f %+12.6f %+10.3f %+12.1f\n",
-                        r.history_depth,
-                        r.mean_vpt - b.mean_vpt,
-                        r.mean_rmse - b.mean_rmse,
-                        r.mean_duty - b.mean_duty,
-                        r.mean_n_relock - b.mean_n_relock);
-        }
+        const double elapsed =
+            std::chrono::duration<double>(clock::now() - t0).count();
+        char time_buf[64];
+        FormatWallTime(time_buf, sizeof time_buf, elapsed);
+        char wall_line[160];
+        std::snprintf(wall_line, sizeof wall_line,
+                      "\n=== M-sweep wall time: %s (restoring HISTORY_DEPTH=%zu) ===\n",
+                      time_buf, restore.saved);
+        roll << wall_line;
 
-        std::printf("\nCode picks (max mean among successful M):\n");
-        std::printf("  best mean VPT  : M=%zu  VPT=%.3f +/- %.3f\n",
-                    rows[i_best_vpt].history_depth,
-                    rows[i_best_vpt].mean_vpt, rows[i_best_vpt].std_vpt);
-        std::printf("  best mean duty : M=%zu  duty=%.3f +/- %.3f\n",
-                    rows[i_best_duty].history_depth,
-                    rows[i_best_duty].mean_duty, rows[i_best_duty].std_duty);
+        const std::string block = roll.str();
+        std::fwrite(block.data(), 1, block.size(), stdout);
+        std::fflush(stdout);
+
+        // Always persist roll-up under RESULTS_DIR for post-analysis (CSV + TXT).
+        WriteMsweepResultFiles(rows, base_seed, orbit_seed, num_threads, num_runs, elapsed,
+                               i_best_vpt, i_best_duty);
     }
-
-    const double elapsed =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("\n=== M-sweep wall time: %s (restoring HISTORY_DEPTH=%zu) ===\n",
-                time_buf, restore.saved);
-    std::fflush(stdout);
-
-    // Always persist roll-up under RESULTS_DIR for post-analysis (CSV + TXT).
-    WriteMsweepResultFiles(rows, base_seed, orbit_seed, num_threads, num_runs, elapsed,
-                           i_best_vpt, i_best_duty);
 
     Beep(2500, 3000);
     return first_err;
