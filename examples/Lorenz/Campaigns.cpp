@@ -985,9 +985,16 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
                 static_cast<unsigned long long>(target_orbit),
                 epochs);
     if (weights_stem && weights_stem[0] != '\0')
-        std::printf("[train] save stem: %s\n", weights_stem);
+        std::printf("[train] campaign will SAVE weights to stem: %s\n"
+                    "        (.hcnw + .arch.json appended)\n",
+                    weights_stem);
     else
-        std::printf("[train] save stem: (default under %s)\n", config::MODEL_SAVE_DIR);
+        std::printf("[train] campaign will SAVE weights to default under %s\n"
+                    "        (lorenz_seed{S}_D{DIM}_M{M}_in{Nin})\n",
+                    config::MODEL_SAVE_DIR);
+    std::printf("[train] note: config banner may say save=off — that is only\n"
+                "        config::SAVE_TRAINED_WEIGHTS (auto-save inside Lorenz::Train).\n"
+                "        This campaign always calls SaveTrainedWeights after train.\n");
     std::printf("[train] remixed orbits x %zu epochs, then save weights\n", epochs);
     std::fflush(stdout);
 
@@ -1005,12 +1012,13 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
     config::ENABLE_PRINTF = true;
     Lorenz lorenz(esn_seed, target_orbit);
     std::cout << lorenz.ReadoutArchSummary();
-    lorenz.Train(); // uses config::EPOCHS; may also save if SAVE_TRAINED_WEIGHTS
+    lorenz.Train(); // uses config::EPOCHS; auto-save only if SAVE_TRAINED_WEIGHTS
 
     try
     {
         // Always write the campaign stem (or default) so FreeRun can load it.
         lorenz.SaveTrainedWeights(weights_stem);
+        std::printf("[train] weights saved OK\n");
     }
     catch (const std::exception& e)
     {
