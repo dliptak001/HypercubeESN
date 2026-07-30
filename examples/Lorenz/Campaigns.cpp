@@ -43,6 +43,7 @@ struct ConfigRestore
 };
 using ConfigSizeRestore = ConfigRestore<size_t>;
 using ConfigDriveRestore = ConfigRestore<DriveLayout>;
+using ConfigFloatRestore = ConfigRestore<float>;
 
 // Reservoir requires 5 <= dim <= 16 (see Reservoir.cpp).
 bool ValidateDim(size_t dim, const char* campaign)
@@ -2250,6 +2251,313 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
 
     WriteDriveAbResultFiles(arm_a, arm_b, dim, history_depth, base_seed, orbit_seed,
                             num_threads, num_runs, elapsed);
+
+    Beep(2500, 3000);
+    return first_err;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign_SpectralRadiusAB
+// ---------------------------------------------------------------------------
+bool ValidateSpectralRadius(float sr, const char* campaign)
+{
+    if (std::isfinite(sr) && sr > 0.0f)
+        return true;
+    std::fprintf(stderr, "[%s] refused: spectral_radius=%g (need finite and > 0)\n",
+                 campaign, static_cast<double>(sr));
+    return false;
+}
+
+void WriteSrAbResultFiles(const SurveySummary& a, const SurveySummary& b,
+                          float sr_a, float sr_b,
+                          size_t dim, size_t history_depth,
+                          uint64_t base_seed, uint64_t orbit_seed,
+                          size_t num_threads, int num_runs,
+                          double total_wall_s)
+{
+    const fs::path dir = EnsureResultsDir();
+    if (!fs::exists(dir))
+        return;
+
+    const std::string ts = TimestampNow();
+    const fs::path csv_path = dir / ("SrAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".csv");
+    const fs::path txt_path = dir / ("SrAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".txt");
+
+    auto write_row = [](std::ostream& o, float sr, const SurveySummary& s) {
+        o << sr << ','
+          << s.history_depth << ','
+          << s.mean_vpt << ',' << s.std_vpt << ','
+          << s.mean_rmse << ',' << s.std_rmse << ','
+          << s.mean_duty << ',' << s.std_duty << ','
+          << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
+          << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
+          << s.wall_seconds << ','
+          << Lorenz::ProtocolName(s.protocol) << ','
+          << (s.ok ? 1 : 0) << '\n';
+    };
+
+    {
+        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
+        if (!csv)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", csv_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(csv, "SrAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        csv << "# dim=" << dim << "  fixed_M=" << history_depth
+            << "  sr_a=" << sr_a << "  sr_b=" << sr_b
+            << "  total_wall_seconds=" << total_wall_s << "\n";
+        csv << "SR,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
+               "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
+               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+        if (a.ok) write_row(csv, sr_a, a);
+        if (b.ok) write_row(csv, sr_b, b);
+        if (a.ok && b.ok)
+        {
+            csv << "# deltas (B - A): dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
+        }
+    }
+    {
+        std::ofstream txt(txt_path, std::ios::out | std::ios::trunc);
+        if (!txt)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", txt_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(txt, "SrAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        txt << "\nSpectral-radius A/B (fixed dim/M; mean of trial-means)\n";
+        txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
+            << "  M=" << history_depth
+            << "  sr_a=" << sr_a << "  sr_b=" << sr_b << "\n";
+        AppendCompactConfigLines(txt);
+        txt << "\narm,SR,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
+               "VxD_mn,VxD_sd,trials_ok,wall_s\n";
+        auto arm_line = [&](const char* tag, float sr, const SurveySummary& s) {
+            if (!s.ok)
+            {
+                txt << tag << ',' << sr << ",(failed)\n";
+                return;
+            }
+            txt << tag << ',' << sr << ','
+                << s.mean_vpt << ',' << s.std_vpt << ','
+                << s.mean_rmse << ',' << s.std_rmse << ','
+                << s.mean_duty << ',' << s.std_duty << ','
+                << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
+                << s.n_trials_ok << ',' << s.wall_seconds << '\n';
+        };
+        arm_line("A", sr_a, a);
+        arm_line("B", sr_b, b);
+        if (a.ok && b.ok)
+        {
+            txt << "\nDeltas (B - A) = SR " << sr_b << " - " << sr_a << "\n";
+            txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
+            txt << "\nCode picks among successful arms:\n";
+            const bool b_vpt = b.mean_vpt >= a.mean_vpt;
+            txt << "  best mean VPT : SR=" << (b_vpt ? sr_b : sr_a)
+                << "  VPT=" << (b_vpt ? b.mean_vpt : a.mean_vpt)
+                << " +/- " << (b_vpt ? b.std_vpt : a.std_vpt) << "\n";
+            const bool b_vxd = b.mean_vpt_x_duty >= a.mean_vpt_x_duty;
+            txt << "  best mean VPT*duty : SR=" << (b_vxd ? sr_b : sr_a)
+                << "  VPT*duty=" << (b_vxd ? b.mean_vpt_x_duty : a.mean_vpt_x_duty)
+                << " +/- " << (b_vxd ? b.std_vpt_x_duty : a.std_vpt_x_duty) << "\n";
+            txt << "  total_wall_seconds=" << total_wall_s << "\n";
+        }
+    }
+
+    ReportWrote("results", csv_path);
+    ReportWrote("results", txt_path);
+}
+
+int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
+                              float sr_a, float sr_b,
+                              size_t num_threads, int num_runs,
+                              uint64_t base_seed, uint64_t orbit_seed)
+{
+    if (!ValidateDim(dim, "SrAB"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "SrAB"))
+        return 2;
+    if (!ValidateSpectralRadius(sr_a, "SrAB") || !ValidateSpectralRadius(sr_b, "SrAB"))
+        return 2;
+
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[SrAB] refused: LOAD_TRAINED_WEIGHTS is on. "
+                     "A/B needs a fresh train per spectral radius.\n");
+        return 2;
+    }
+
+    if (config::SAVE_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[SrAB] NOTE: SAVE_TRAINED_WEIGHTS is on; default stems do not "
+                     "include SR — arm B will overwrite arm A weights. Turn save off "
+                     "or use distinct stems for durable A/B models.\n");
+        std::fflush(stderr);
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigFloatRestore sr_restore(config::SPECTRAL_RADIUS, config::SPECTRAL_RADIUS);
+
+    std::printf("=== HypercubeESN: Lorenz / spectral-radius A/B ===\n");
+    std::printf("[SrAB] DIM=%zu (N=%zu)  M=%zu  SR_A=%.4f  SR_B=%.4f\n",
+                config::DIM, size_t{1} << config::DIM, history_depth,
+                static_cast<double>(sr_a), static_cast<double>(sr_b));
+    std::printf("[SrAB] survey threads=%zu  runs=%d  (0 threads => HW)\n",
+                num_threads, num_runs);
+    std::printf("[SrAB] matched seeds/protocol/drive; train per arm (not load)\n");
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    const float srs[2] = {sr_a, sr_b};
+    SurveySummary arm_a{};
+    SurveySummary arm_b{};
+    int first_err = 0;
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        config::SPECTRAL_RADIUS = srs[i];
+        std::printf("\n########## SrAB arm %zu/2: SR=%.4f  M=%zu ##########\n",
+                    i + 1, static_cast<double>(srs[i]), history_depth);
+        std::fflush(stdout);
+
+        SurveySummary sum;
+        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
+                                           /*completion_beep=*/false, &sum);
+        if (i == 0)
+            arm_a = sum;
+        else
+            arm_b = sum;
+        if (rc != 0 && first_err == 0)
+            first_err = rc;
+    }
+
+    std::fflush(stdout);
+
+    const double elapsed = std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+
+    {
+        std::ostringstream roll;
+        roll << "\n========================================================================\n"
+             << "=== Spectral-radius A/B roll-up (fixed M; mean of trial-means) ===\n"
+             << "========================================================================\n";
+        // Print both SRs explicitly; compact config shows the last arm's SR after loop.
+        roll << "config: SR_A=" << sr_a << "  SR_B=" << sr_b
+             << "  (last-arm SPECTRAL_RADIUS restored on exit)\n";
+        AppendCompactConfigLines(roll);
+
+        char line[512];
+        std::snprintf(line, sizeof line,
+                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      dim, size_t{1} << dim, history_depth,
+                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+                      arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
+                      num_runs, config::VPT_THRESHOLD);
+        roll << line;
+
+        std::snprintf(line, sizeof line,
+                      "%-8s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
+                      "SR", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
+                      "duty_mn", "duty_sd", "VxD_mn", "VxD_sd", "trials_ok");
+        roll << line;
+        std::snprintf(line, sizeof line,
+                      "%-8s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
+                      "--------", "--------", "--------", "----------", "--------",
+                      "--------", "--------", "--------", "--------", "----------");
+        roll << line;
+
+        auto row = [&](float sr, const SurveySummary& s) {
+            if (!s.ok)
+            {
+                std::snprintf(line, sizeof line, "%-8.4f  (failed)\n",
+                              static_cast<double>(sr));
+                roll << line;
+                return;
+            }
+            std::snprintf(line, sizeof line,
+                          "%-8.4f %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu\n",
+                          static_cast<double>(sr),
+                          s.mean_vpt, s.std_vpt,
+                          s.mean_rmse, s.std_rmse,
+                          s.mean_duty, s.std_duty,
+                          s.mean_vpt_x_duty, s.std_vpt_x_duty,
+                          s.n_trials_ok);
+            roll << line;
+        };
+        row(sr_a, arm_a);
+        row(sr_b, arm_b);
+
+        if (arm_a.ok && arm_b.ok)
+        {
+            roll << "\nDeltas (B - A) = SR " << sr_b << " - " << sr_a << ":\n";
+            std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
+                          "", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
+            roll << line;
+            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.3f\n",
+                          "B - A",
+                          arm_b.mean_vpt - arm_a.mean_vpt,
+                          arm_b.mean_rmse - arm_a.mean_rmse,
+                          arm_b.mean_duty - arm_a.mean_duty,
+                          arm_b.mean_vpt_x_duty - arm_a.mean_vpt_x_duty);
+            roll << line;
+
+            roll << "\nCode picks among successful arms:\n";
+            const bool b_vpt = arm_b.mean_vpt >= arm_a.mean_vpt;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT  : SR=%.4f  VPT=%.3f +/- %.3f\n",
+                          static_cast<double>(b_vpt ? sr_b : sr_a),
+                          b_vpt ? arm_b.mean_vpt : arm_a.mean_vpt,
+                          b_vpt ? arm_b.std_vpt : arm_a.std_vpt);
+            roll << line;
+            const bool b_duty = arm_b.mean_duty >= arm_a.mean_duty;
+            std::snprintf(line, sizeof line,
+                          "  best mean duty : SR=%.4f  duty=%.3f +/- %.3f\n",
+                          static_cast<double>(b_duty ? sr_b : sr_a),
+                          b_duty ? arm_b.mean_duty : arm_a.mean_duty,
+                          b_duty ? arm_b.std_duty : arm_a.std_duty);
+            roll << line;
+            const bool b_vxd = arm_b.mean_vpt_x_duty >= arm_a.mean_vpt_x_duty;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT*duty : SR=%.4f  VPT*duty=%.3f +/- %.3f\n",
+                          static_cast<double>(b_vxd ? sr_b : sr_a),
+                          b_vxd ? arm_b.mean_vpt_x_duty : arm_a.mean_vpt_x_duty,
+                          b_vxd ? arm_b.std_vpt_x_duty : arm_a.std_vpt_x_duty);
+            roll << line;
+        }
+        else if (!arm_a.ok && !arm_b.ok)
+        {
+            roll << "(no successful arms)\n";
+        }
+
+        std::snprintf(line, sizeof line,
+                      "\n=== Sr A/B wall time: %s (restoring DIM=%zu M=%zu SR=%.4f) ===\n",
+                      time_buf, dim_restore.saved, m_restore.saved,
+                      static_cast<double>(sr_restore.saved));
+        roll << line;
+
+        const std::string block = roll.str();
+        std::fwrite(block.data(), 1, block.size(), stdout);
+        std::fflush(stdout);
+    }
+
+    WriteSrAbResultFiles(arm_a, arm_b, sr_a, sr_b, dim, history_depth,
+                         base_seed, orbit_seed, num_threads, num_runs, elapsed);
 
     Beep(2500, 3000);
     return first_err;

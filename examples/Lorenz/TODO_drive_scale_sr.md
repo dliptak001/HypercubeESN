@@ -6,7 +6,8 @@ layouts) did not move us the right way. Remaining cheap levers are **dynamics
 knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 
 **Date parked:** 2026-07-30  
-**Status:** (4) code landed (defaults unity). (1) and (3) still config-only A/B.
+**Status:** (4) code landed (defaults unity). (3) `Campaign_SpectralRadiusAB` ready.
+(1) still config-only A/B.
 
 **Out of scope (already known bad or not believed useful here):**
 
@@ -54,10 +55,10 @@ Unseen metrics, documented next to the seed/M that won.
 
 ---
 
-## 3. Spectral radius a notch off the edge  (config-only)
+## 3. Spectral radius a notch off the edge  (campaign ready)
 
 ```text
-SPECTRAL_RADIUS = 0.99   // current
+SPECTRAL_RADIUS = 0.99   // house default; reassignable for A/B
 ```
 
 Near-edge SR can amplify prediction error in closed loop. Mild contraction is
@@ -67,7 +68,17 @@ cheap to test and often flat — still worth one matched pass **after** (1).
 |----:|
 | 0.95, 0.97, 0.98, **0.99** |
 
-**How:** change only `config::SPECTRAL_RADIUS` at the scale winner from (1).
+**How:** `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs)` —
+matched SeedSurvey per arm, roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
+Example (DIM12 M12, baseline vs contractive):
+
+```cpp
+return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
+                                 /*sr_a=*/0.95f, /*sr_b=*/0.99f,
+                                 /*num_threads=*/0, /*num_runs=*/50);
+```
+
+Or flip `config::SPECTRAL_RADIUS` for a single-arm run.
 
 **Done when:** clear win, or “flat / baseline is fine” written down so we stop
 retuning SR.

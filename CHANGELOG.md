@@ -80,6 +80,9 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   default all 1.0). Constructor banner and campaign metadata print `drive_ch`;
   train/load must match gains. A/B notes in `TODO_drive_scale_sr.md` (global
   scale, SR, channel gains).
+- **`Campaign_SpectralRadiusAB`:** matched SeedSurvey A/B for two spectral
+  radii at fixed dim/M; roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
+  `config::SPECTRAL_RADIUS` is reassignable (restored on exit).
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

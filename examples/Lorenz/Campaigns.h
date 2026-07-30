@@ -158,3 +158,18 @@ int Campaign_DriveLayoutAB(size_t dim,
                            int num_runs = 50,
                            uint64_t base_seed = 21978990,
                            uint64_t orbit_seed = 72983498);
+
+/// A/B spectral radius at fixed dim/M: arm A = @p sr_a then arm B = @p sr_b.
+/// Matched seeds/protocol/drive; trains separately per arm (SeedSurvey).
+/// Code-computed roll-up + CSV/TXT under RESULTS_DIR. Restores DIM, M, SR on exit.
+/// @param dim            Reservoir hypercube dim (N = 2^dim).
+/// @param history_depth  Fixed M for both arms (1..64).
+/// @param sr_a, sr_b     Spectral radii (must be finite and > 0).
+int Campaign_SpectralRadiusAB(size_t dim,
+                              size_t history_depth,
+                              float sr_a,
+                              float sr_b,
+                              size_t num_threads = 0,
+                              int num_runs = 50,
+                              uint64_t base_seed = 21978990,
+                              uint64_t orbit_seed = 72983498);

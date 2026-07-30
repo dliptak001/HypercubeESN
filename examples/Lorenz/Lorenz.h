@@ -57,7 +57,8 @@ namespace config
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 11;
     constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
-    constexpr float SPECTRAL_RADIUS = 0.99f;
+    // Not constexpr: Campaign_SpectralRadiusAB reassigns for matched A/B.
+    inline float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.04f;
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
     // after feature build, train + free-run). Index order matches DriveLayout:
