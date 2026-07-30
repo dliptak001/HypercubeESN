@@ -86,6 +86,10 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **`Campaign_DriveGainAB`:** matched SeedSurvey A/B for two `INPUT_SCALE_CH`
   vectors at fixed dim/M (lists size = drive `n_in`); roll-up +
   `GainAB_*.csv/txt` under `RESULTS_DIR`. Restores channel gains on exit.
+- **`SeedSweep` SR / input scaling:** optional trailing `spectral_radius` /
+  `input_scaling` (>0 override `config::` for the sweep, restored on exit; 0 =
+  keep config). `INPUT_SCALING` is reassignable. Console banners use ASCII only
+  (no em-dash / times) for Windows OEM consoles; `MODEL_SAVE_DIR` single-backslash path.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

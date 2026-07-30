@@ -29,10 +29,10 @@ int main()
 
     // Per-channel drive gains A/B at fixed dim/M (XyzXz: [x,y,z,xz]).
     // Arm A = unity baseline; arm B = soft z / xz from TODO_drive_scale_sr §4.
-    return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
-                                /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
-                                /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
-                                /*num_threads=*/0, /*num_runs=*/50);
+    // return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
+    //                             /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
+    //                             /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
+    //                             /*num_threads=*/0, /*num_runs=*/50);
 
     // Spectral-radius A/B at fixed dim/M (SeedSurvey per arm; roll-up under campaigns/).
     // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
@@ -41,17 +41,19 @@ int main()
 
     // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
     // SeedSweep (Train+survey each seed, rank by mean VPT*duty).
-    // constexpr size_t kDim = 12;
-    // constexpr size_t kM = 12;
-    // return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-    //                  /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull,
-    //                                 421978990ull, 521978990ull},
-    //                  /*epochs=*/400,
-    //                  /*freerun_runs=*/1000,
-    //                  /*train_orbit=*/933312947715283458ull,
-    //                  /*freerun_orbit_seed=*/729893498ull,
-    //                  /*top_k=*/10,
-    //                  /*do_train=*/true);
+    constexpr size_t kDim = 11;
+    constexpr size_t kM = 31;
+    return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
+                     /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull,
+                                    421978990ull, 521978990ull},
+                     /*epochs=*/200,
+                     /*freerun_runs=*/1000,
+                     /*train_orbit=*/933312947715283458ull,
+                     /*freerun_orbit_seed=*/729893498ull,
+                     /*top_k=*/10,
+                     /*do_train=*/true,
+                     /*spectral_radius=*/0.96f,   // >0 sets config::SPECTRAL_RADIUS
+                     /*input_scaling=*/0.07f);    // >0 sets config::INPUT_SCALING
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(12, 12, 221978990ull, 1000, 72983498ull,

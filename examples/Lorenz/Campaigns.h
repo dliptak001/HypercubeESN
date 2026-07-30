@@ -126,8 +126,12 @@ int Train(size_t dim,
 /// For each ESN seed: optional Train → FreeRunSurvey; rank seeds by mean VPT*duty
 /// (best-half freerun pool). Weight stem per seed:
 ///   {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
-/// Restores DIM / HISTORY_DEPTH / EPOCHS on exit.
-/// @param do_train  If true, Train each seed first; if false, only survey existing stems.
+/// Restores DIM / HISTORY_DEPTH / EPOCHS / SPECTRAL_RADIUS / INPUT_SCALING on exit.
+/// @param do_train          If true, Train each seed first; if false, only survey existing stems.
+/// @param spectral_radius   If > 0, set config::SPECTRAL_RADIUS for the whole sweep.
+///                          If <= 0 (default), keep the current config value.
+/// @param input_scaling     If > 0, set config::INPUT_SCALING for the whole sweep.
+///                          If <= 0 (default), keep the current config value.
 int SeedSweep(size_t dim,
               size_t history_depth,
               std::initializer_list<uint64_t> esn_seeds,
@@ -136,7 +140,9 @@ int SeedSweep(size_t dim,
               uint64_t train_orbit = 9333312947715283458ull,
               uint64_t freerun_orbit_seed = 72983498ull,
               int top_k = 10,
-              bool do_train = true);
+              bool do_train = true,
+              float spectral_radius = 0.f,
+              float input_scaling = 0.f);
 
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up
 /// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.

@@ -47,8 +47,9 @@ that does not change architecture.
 | **0.04** | current baseline |
 | 0.05, 0.06, 0.08 | stronger drive (watch saturation / worse duty) |
 
-**How:** flip `config::INPUT_SCALING` only (or a tiny scale-sweep campaign later
-if the grid gets tedious). Keep SR and layout fixed.
+**How:** flip `config::INPUT_SCALING`, or pass `input_scaling` into `SeedSweep`
+(>0 overrides for the sweep; 0 keeps config). Keep SR and layout fixed for a
+pure scale A/B.
 
 **Done when:** best scale is locked (or baseline confirmed) on survey-scale
 Unseen metrics, documented next to the seed/M that won.

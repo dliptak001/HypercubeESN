@@ -105,7 +105,7 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
             std::printf("[Lorenz config] drive_ch:  [");
             for (size_t i = 0; i < n_in; ++i)
                 std::printf("%s%.3f", i ? ", " : "", config::INPUT_SCALE_CH[i]);
-            std::printf("]  (× global INPUT_SCALING)\n");
+            std::printf("]  (x global INPUT_SCALING)\n");
         }
         std::printf("[Lorenz config] free-run:  protocol=%s  warmup=%zu  window=%zu\n",
                     ProtocolName(config::FREE_RUN_PROTOCOL),
@@ -328,7 +328,7 @@ void Lorenz::SaveTrainedWeights(const char* stem) const
                        "_in" + std::to_string(NumDriveChannels(config::DRIVE_LAYOUT)))).string();
     }
 
-    // Stem only — SaveReadoutHcnnModel appends .hcnw and .arch.json.
+    // Stem only -- SaveReadoutHcnnModel appends .hcnw and .arch.json.
     esn_.SaveReadoutHcnnModel(path);
     std::fprintf(stderr, "[Lorenz] saved trained readout: %s.hcnw (+ .arch.json)\n",
                  path.c_str());

@@ -255,7 +255,9 @@ trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`.
 
 **`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey`; rank by
 mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking CSV +
-`.partial.csv` under `RUNS_DIR/surveys/`.
+`.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing
+`spectral_radius` / `input_scaling` (>0 override `config::` for the sweep and
+restore on exit; 0 = keep config). Stems omit SR/IS — banner records them.
 
 | Function | Role |
 |----------|------|

@@ -64,6 +64,24 @@ bool ValidateHistoryDepth(size_t M, const char* campaign)
     return false;
 }
 
+bool ValidateSpectralRadius(float sr, const char* campaign)
+{
+    if (std::isfinite(sr) && sr > 0.0f)
+        return true;
+    std::fprintf(stderr, "[%s] refused: spectral_radius=%g (need finite and > 0)\n",
+                 campaign, static_cast<double>(sr));
+    return false;
+}
+
+bool ValidateInputScaling(float is, const char* campaign)
+{
+    if (std::isfinite(is) && is > 0.0f)
+        return true;
+    std::fprintf(stderr, "[%s] refused: input_scaling=%g (need finite and > 0)\n",
+                 campaign, static_cast<double>(is));
+    return false;
+}
+
 std::string TimestampNow()
 {
     using clock = std::chrono::system_clock;
@@ -230,7 +248,7 @@ void AppendCompactConfigLines(std::ostream& o)
                 o << ',';
             o << config::INPUT_SCALE_CH[i];
         }
-        o << "] (× in_scale)\n";
+        o << "] (x in_scale)\n";
     }
 }
 
@@ -278,7 +296,7 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
                 o << ',';
             o << config::INPUT_SCALE_CH[i];
         }
-        o << "] (× input_scaling; layout feature order)\n";
+        o << "] (x input_scaling; layout feature order)\n";
     }
     o << "# metrics=mean_of_trial_means (sample std across trials)\n"
       << "# score_vpt_x_duty=VPT_lt*duty\n"
@@ -906,7 +924,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
 // Campaign_Trace
 // ---------------------------------------------------------------------------
 // Train one ESN seed, free-run, write per-step CSV (pred + true xyz).
-// Output dir is absolute: {config::RESULTS_DIR}/traces/ (CWD-independent —
+// Output dir is absolute: {config::RESULTS_DIR}/traces/ (CWD-independent --
 // CLion runs with build-dir CWD, so relative paths are unreliable).
 // When target_orbit != 0: free-run that orbit once and print every generative step.
 int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t target_orbit,
@@ -933,7 +951,7 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
     std::printf("[trace] train %zu epochs then free-run; CSV dir: %s\n",
                 config::EPOCHS, trace_dir.string().c_str());
     if (target_orbit != 0)
-        std::printf("[trace] fixed orbit %llu — one free-run, every step printed + CSV\n",
+        std::printf("[trace] fixed orbit %llu -- one free-run, every step printed + CSV\n",
                     static_cast<unsigned long long>(target_orbit));
     std::fflush(stdout);
 
@@ -1092,7 +1110,7 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
                 static_cast<unsigned long long>(target_orbit),
                 epochs);
     std::printf("[train] save stem: %s  (.hcnw + .arch.json)\n", stem.c_str());
-    std::printf("[train] note: config banner may say save=off — that is only\n"
+    std::printf("[train] note: config banner may say save=off -- that is only\n"
                 "        config::SAVE_TRAINED_WEIGHTS (auto-save inside Lorenz::Train).\n"
                 "        This campaign always calls SaveTrainedWeights after train.\n");
     std::printf("[train] remixed orbits x %zu epochs, then save weights\n", epochs);
@@ -1240,7 +1258,7 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
 // ---------------------------------------------------------------------------
 // FreeRunSurvey (campaign: load weights + many Unseen freeruns + rank ICs)
 // ---------------------------------------------------------------------------
-// Pipeline middle step: Train → FreeRunSurvey → FreeRun (cherry-pick IC).
+// Pipeline middle step: Train -> FreeRunSurvey -> FreeRun (cherry-pick IC).
 int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                   int num_runs, uint64_t orbit_seed, const char* weights_stem,
                   int top_k, FreeRunSurveySummary* out)
@@ -1468,13 +1486,14 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
 }
 
 // ---------------------------------------------------------------------------
-// SeedSweep (Train? → FreeRunSurvey per seed; rank seeds by mean VPT*duty)
+// SeedSweep (Train? -> FreeRunSurvey per seed; rank seeds by mean VPT*duty)
 // ---------------------------------------------------------------------------
 int SeedSweep(size_t dim, size_t history_depth,
               std::initializer_list<uint64_t> esn_seeds,
               size_t epochs, int freerun_runs,
               uint64_t train_orbit, uint64_t freerun_orbit_seed,
-              int top_k, bool do_train)
+              int top_k, bool do_train,
+              float spectral_radius, float input_scaling)
 {
     if (!ValidateDim(dim, "seed-sweep"))
         return 2;
@@ -1497,11 +1516,36 @@ int SeedSweep(size_t dim, size_t history_depth,
                      epochs);
         return 2;
     }
+    // Optional overrides: 0 keeps config::; > 0 must be finite and positive; < 0 refused.
+    if (spectral_radius < 0.0f)
+    {
+        std::fprintf(stderr,
+                     "[seed-sweep] refused: spectral_radius=%g (use > 0 to set, or 0 to keep config)\n",
+                     static_cast<double>(spectral_radius));
+        return 2;
+    }
+    if (input_scaling < 0.0f)
+    {
+        std::fprintf(stderr,
+                     "[seed-sweep] refused: input_scaling=%g (use > 0 to set, or 0 to keep config)\n",
+                     static_cast<double>(input_scaling));
+        return 2;
+    }
+    if (spectral_radius > 0.0f && !ValidateSpectralRadius(spectral_radius, "seed-sweep"))
+        return 2;
+    if (input_scaling > 0.0f && !ValidateInputScaling(input_scaling, "seed-sweep"))
+        return 2;
 
     // RAII: campaigns below also restore; outer restore keeps caller knobs stable.
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
     ConfigSizeRestore epochs_restore(config::EPOCHS, do_train ? epochs : config::EPOCHS);
+    ConfigFloatRestore sr_restore(
+        config::SPECTRAL_RADIUS,
+        spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
+    ConfigFloatRestore is_restore(
+        config::INPUT_SCALING,
+        input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
 
     const fs::path model_dir = config::MODEL_SAVE_DIR;
     const fs::path survey_dir = SurveysDir();
@@ -1527,10 +1571,16 @@ int SeedSweep(size_t dim, size_t history_depth,
                 "do_train=%s  top_k=%d\n",
                 dim, history_depth, esn_seeds.size(), epochs, freerun_runs,
                 do_train ? "yes" : "no", top_k);
+    std::printf("[seed-sweep] SR=%.4f%s  input_scaling=%.4f%s\n",
+                static_cast<double>(config::SPECTRAL_RADIUS),
+                spectral_radius > 0.0f ? " (override)" : " (config)",
+                static_cast<double>(config::INPUT_SCALING),
+                input_scaling > 0.0f ? " (override)" : " (config)");
     std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
                 static_cast<unsigned long long>(train_orbit),
                 static_cast<unsigned long long>(freerun_orbit_seed));
-    std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu\n",
+    std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu  "
+                "(stems omit SR/IS -- document in ranking banner)\n",
                 model_dir.string().c_str(), dim, history_depth);
     std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
     std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
@@ -1646,7 +1696,7 @@ int SeedSweep(size_t dim, size_t history_depth,
                                 sr.stem.c_str());
             if (sr.train_rc != 0)
             {
-                std::fprintf(stderr, "[seed-sweep] Train failed for seed %llu (rc=%d) — skip survey\n",
+                std::fprintf(stderr, "[seed-sweep] Train failed for seed %llu (rc=%d) -- skip survey\n",
                              static_cast<unsigned long long>(seed), sr.train_rc);
                 sr.survey_rc = -1; // not run
                 seed_rows.push_back(std::move(sr));
@@ -2259,15 +2309,6 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
 // ---------------------------------------------------------------------------
 // Campaign_SpectralRadiusAB
 // ---------------------------------------------------------------------------
-bool ValidateSpectralRadius(float sr, const char* campaign)
-{
-    if (std::isfinite(sr) && sr > 0.0f)
-        return true;
-    std::fprintf(stderr, "[%s] refused: spectral_radius=%g (need finite and > 0)\n",
-                 campaign, static_cast<double>(sr));
-    return false;
-}
-
 void WriteSrAbResultFiles(const SurveySummary& a, const SurveySummary& b,
                           float sr_a, float sr_b,
                           size_t dim, size_t history_depth,
@@ -2402,7 +2443,7 @@ int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
     {
         std::fprintf(stderr,
                      "[SrAB] NOTE: SAVE_TRAINED_WEIGHTS is on; default stems do not "
-                     "include SR — arm B will overwrite arm A weights. Turn save off "
+                     "include SR -- arm B will overwrite arm A weights. Turn save off "
                      "or use distinct stems for durable A/B models.\n");
         std::fflush(stderr);
     }
@@ -2776,7 +2817,7 @@ int Campaign_DriveGainAB(size_t dim, size_t history_depth,
     {
         std::fprintf(stderr,
                      "[GainAB] NOTE: SAVE_TRAINED_WEIGHTS is on; default stems do not "
-                     "include drive_ch — arm B will overwrite arm A weights. Turn save "
+                     "include drive_ch -- arm B will overwrite arm A weights. Turn save "
                      "off or use distinct stems for durable A/B models.\n");
         std::fflush(stderr);
     }

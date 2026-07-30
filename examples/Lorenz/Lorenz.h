@@ -57,9 +57,10 @@ namespace config
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 11;
     constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
-    // Not constexpr: Campaign_SpectralRadiusAB reassigns for matched A/B.
+    // Not constexpr: campaigns (SrAB, SeedSweep) reassign for matched A/B / sweeps.
     inline float SPECTRAL_RADIUS = 0.99f;
-    constexpr float INPUT_SCALING = 0.04f;
+    // Not constexpr: SeedSweep / scale grids reassign (restored on campaign exit).
+    inline float INPUT_SCALING = 0.04f;
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
     // after feature build, train + free-run). Index order matches DriveLayout:
     //   XyzXz:      [x, y, z, x*z]
@@ -113,7 +114,7 @@ namespace config
     //   {MODEL_SAVE_DIR}\lorenz_seed{SEED}_D{DIM}_M{M}_in{Nin}.hcnw + .arch.json
     // (DIM / M / num_inputs in the stem so layout and geometry do not collide.)
     constexpr bool SAVE_TRAINED_WEIGHTS = false;
-    constexpr const char* MODEL_SAVE_DIR = R"(C:\\HypercubeESN\\models)";
+    constexpr const char* MODEL_SAVE_DIR = R"(C:\HypercubeESN\models)";
 
     // Load: off by default. When true, skip Train() and load readout from stem
     // (no extension). ESN seed/arch/drive layout must match the run that produced
