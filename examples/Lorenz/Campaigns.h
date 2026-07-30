@@ -173,3 +173,17 @@ int Campaign_SpectralRadiusAB(size_t dim,
                               int num_runs = 50,
                               uint64_t base_seed = 21978990,
                               uint64_t orbit_seed = 72983498);
+
+/// A/B per-channel drive gains at fixed dim/M: arm A = @p gains_a then arm B = @p gains_b.
+/// Each list must have exactly @c NumDriveChannels(DRIVE_LAYOUT) entries (layout
+/// feature order; e.g. XyzXz = 4: [x,y,z,xz]). Values must be finite and >= 0.
+/// Matched seeds/protocol/SR; trains separately per arm (SeedSurvey).
+/// Restores DIM, M, and INPUT_SCALE_CH on exit. Writes GainAB_*.csv/txt under RESULTS_DIR.
+int Campaign_DriveGainAB(size_t dim,
+                         size_t history_depth,
+                         std::initializer_list<float> gains_a,
+                         std::initializer_list<float> gains_b,
+                         size_t num_threads = 0,
+                         int num_runs = 50,
+                         uint64_t base_seed = 21978990,
+                         uint64_t orbit_seed = 72983498);

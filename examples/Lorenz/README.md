@@ -197,10 +197,14 @@ int main()
 {
     // return Campaign_SeedSurvey(/*dim=*/11, /*threads=*/0, /*runs=*/50);
     // return Campaign_Trace(/*dim=*/11, /*seed=*/21978990, /*max_freeruns=*/30);
-    // Spectral-radius A/B at fixed dim/M (SeedSurvey per arm):
-    return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
-                                     /*sr_a=*/0.95f, /*sr_b=*/0.99f,
-                                     /*num_threads=*/0, /*num_runs=*/50);
+    // Drive-gain A/B (XyzXz [x,y,z,xz]): unity vs soft z/xz:
+    return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
+                                /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
+                                /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
+                                /*num_threads=*/0, /*num_runs=*/50);
+    // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
+    //                                  /*sr_a=*/0.95f, /*sr_b=*/0.99f,
+    //                                  /*num_threads=*/0, /*num_runs=*/50);
     // Load weights + freerun one attractor IC (CSV under HypercubeESNRuns):
     // return FreeRun(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
     //                /*ic_x=*/0.43, /*ic_y=*/0.30, /*ic_z=*/0.64);
@@ -233,12 +237,13 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 |--------|-----------|
 | `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
 | `surveys/` | `FreeRunSurvey`, `SeedSweep` leaderboards |
-| `campaigns/` | `Campaign_SeedSurvey`, M-sweep, DriveAB, SrAB (`RESULTS_DIR`) |
+| `campaigns/` | `Campaign_SeedSurvey`, M-sweep, DriveAB, SrAB, GainAB (`RESULTS_DIR`) |
 
 **Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
 `[train]` / `[freerun]` / `[freerun-survey]` / `[seed-sweep]` / `[trace]` /
-`[survey]` / `[SrAB]` / `[DriveAB]`, freerun scores as `VPT / duty / VPT*duty / RMSE`,
-and `[tag] wrote path (bytes)` + `[tag] done wall time: …`.
+`[survey]` / `[SrAB]` / `[DriveAB]` / `[GainAB]`, freerun scores as
+`VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
+`[tag] done wall time: …`.
 
 **`FreeRunSurvey`** — load-only middle step: free-run `num_runs` **Unseen** orbits
 (remix from `orbit_seed`), aggregate best-half VPT / duty / VPT×duty / RMSE, print
@@ -259,10 +264,11 @@ mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking CSV
 | `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
 | `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
 | `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs, ...)` | A/B spectral radius at fixed dim/M; matched seeds/protocol; train per arm |
+| `Campaign_DriveGainAB(dim, M, gains_a, gains_b, threads, runs, ...)` | A/B `INPUT_SCALE_CH` vectors at fixed dim/M; lists size = `n_in` |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit
-(along with M / drive / SR when a campaign reassigns them). Protocol, epochs,
-load/save, etc. live in `Lorenz.h` `config::`. Campaign signatures are in
+(along with M / drive / SR / drive_ch when a campaign reassigns them). Protocol,
+epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign signatures are in
 `Campaigns.h`. Progress on **stderr**; reports on **stdout**.
 
 **`Campaign_SpectralRadiusAB`** — two `Campaign_SeedSurvey` arms with
@@ -278,6 +284,20 @@ Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
                           /*num_threads=*/0, /*num_runs=*/50);
 ```
 
+**`Campaign_DriveGainAB`** — two SeedSurvey arms with `config::INPUT_SCALE_CH`
+set from `gains_a` then `gains_b`. Each list must have exactly
+`NumDriveChannels(DRIVE_LAYOUT)` entries (layout feature order; XyzXz =
+`[x,y,z,xz]`). Gains must be finite and ≥ 0. Same load/save caveats as SrAB
+(stems omit drive_ch). Restores DIM, M, and channel gains on exit. Example:
+unity baseline vs soft z/xz (TODO §4):
+
+```cpp
+Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
+                     /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
+                     /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
+                     /*num_threads=*/0, /*num_runs=*/50);
+```
+
 **Results files** (under `RESULTS_DIR` = `C:\HypercubeESNRuns\results\campaigns\`,
 created if needed):
 
@@ -287,9 +307,10 @@ created if needed):
 | M-sweep | `Msweep_YYYYMMDD_HHMMSS.csv` + `.txt` (metadata + all M rows, deltas, code picks) |
 | Drive A/B | `DriveAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas) |
 | SR A/B | `SrAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas B−A + code picks) |
+| Gain A/B | `GainAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both gain vectors + deltas B−A) |
 
 CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp protocol,
-dim, N, M, epochs, θ, SR, seeds, etc.
+dim, N, M, epochs, θ, SR, drive_ch, seeds, etc.
 
 ---
 

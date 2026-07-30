@@ -83,6 +83,9 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **`Campaign_SpectralRadiusAB`:** matched SeedSurvey A/B for two spectral
   radii at fixed dim/M; roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
   `config::SPECTRAL_RADIUS` is reassignable (restored on exit).
+- **`Campaign_DriveGainAB`:** matched SeedSurvey A/B for two `INPUT_SCALE_CH`
+  vectors at fixed dim/M (lists size = drive `n_in`); roll-up +
+  `GainAB_*.csv/txt` under `RESULTS_DIR`. Restores channel gains on exit.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

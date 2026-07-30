@@ -2562,3 +2562,382 @@ int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
     Beep(2500, 3000);
     return first_err;
 }
+
+// ---------------------------------------------------------------------------
+// Campaign_DriveGainAB
+// ---------------------------------------------------------------------------
+struct ConfigDriveGainsRestore
+{
+    float saved[kMaxDriveChannels]{};
+    ConfigDriveGainsRestore()
+    {
+        for (size_t i = 0; i < kMaxDriveChannels; ++i)
+            saved[i] = config::INPUT_SCALE_CH[i];
+    }
+    ~ConfigDriveGainsRestore()
+    {
+        for (size_t i = 0; i < kMaxDriveChannels; ++i)
+            config::INPUT_SCALE_CH[i] = saved[i];
+    }
+    ConfigDriveGainsRestore(const ConfigDriveGainsRestore&) = delete;
+    ConfigDriveGainsRestore& operator=(const ConfigDriveGainsRestore&) = delete;
+};
+
+bool ParseDriveGains(std::initializer_list<float> src, float* dst, size_t n_in,
+                     const char* arm_tag)
+{
+    if (src.size() != n_in)
+    {
+        std::fprintf(stderr,
+                     "[GainAB] refused: gains_%s has %zu entries; need exactly %zu "
+                     "(current drive layout channel count)\n",
+                     arm_tag, src.size(), n_in);
+        return false;
+    }
+    size_t i = 0;
+    for (float g : src)
+    {
+        if (!std::isfinite(g) || g < 0.0f)
+        {
+            std::fprintf(stderr,
+                         "[GainAB] refused: gains_%s[%zu]=%g (need finite and >= 0)\n",
+                         arm_tag, i, static_cast<double>(g));
+            return false;
+        }
+        dst[i++] = g;
+    }
+    for (; i < kMaxDriveChannels; ++i)
+        dst[i] = 1.0f;
+    return true;
+}
+
+void ApplyDriveGains(const float* gains)
+{
+    for (size_t i = 0; i < kMaxDriveChannels; ++i)
+        config::INPUT_SCALE_CH[i] = gains[i];
+}
+
+std::string FormatDriveGains(const float* gains, size_t n)
+{
+    std::ostringstream o;
+    o << '[';
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (i)
+            o << ',';
+        o << gains[i];
+    }
+    o << ']';
+    return o.str();
+}
+
+void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
+                            const float* gains_a, const float* gains_b, size_t n_in,
+                            size_t dim, size_t history_depth,
+                            uint64_t base_seed, uint64_t orbit_seed,
+                            size_t num_threads, int num_runs,
+                            double total_wall_s)
+{
+    const fs::path dir = EnsureResultsDir();
+    if (!fs::exists(dir))
+        return;
+
+    const std::string ts = TimestampNow();
+    const fs::path csv_path = dir / ("GainAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".csv");
+    const fs::path txt_path = dir / ("GainAB_" + ts + "_D" + std::to_string(dim) +
+                                     "_M" + std::to_string(history_depth) + ".txt");
+
+    const std::string ga = FormatDriveGains(gains_a, n_in);
+    const std::string gb = FormatDriveGains(gains_b, n_in);
+
+    auto write_row = [&](std::ostream& o, const char* tag, const float* g,
+                         const SurveySummary& s) {
+        o << tag << ',' << FormatDriveGains(g, n_in) << ','
+          << s.history_depth << ','
+          << s.mean_vpt << ',' << s.std_vpt << ','
+          << s.mean_rmse << ',' << s.std_rmse << ','
+          << s.mean_duty << ',' << s.std_duty << ','
+          << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
+          << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
+          << s.wall_seconds << ','
+          << Lorenz::ProtocolName(s.protocol) << ','
+          << (s.ok ? 1 : 0) << '\n';
+    };
+
+    {
+        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
+        if (!csv)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", csv_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(csv, "GainAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        csv << "# dim=" << dim << "  fixed_M=" << history_depth
+            << "  gains_a=" << ga << "  gains_b=" << gb
+            << "  total_wall_seconds=" << total_wall_s << "\n";
+        csv << "arm,drive_ch,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
+               "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
+               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+        if (a.ok) write_row(csv, "A", gains_a, a);
+        if (b.ok) write_row(csv, "B", gains_b, b);
+        if (a.ok && b.ok)
+        {
+            csv << "# deltas (B - A): dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
+        }
+    }
+    {
+        std::ofstream txt(txt_path, std::ios::out | std::ios::trunc);
+        if (!txt)
+        {
+            std::fprintf(stderr, "[results] failed to write %s\n", txt_path.string().c_str());
+            return;
+        }
+        WriteMetadataBlock(txt, "GainAB", ts, base_seed, orbit_seed,
+                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+        txt << "\nDrive-gain A/B (fixed dim/M; mean of trial-means)\n";
+        txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
+            << "  M=" << history_depth
+            << "  drive=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
+            << "  n_in=" << n_in << "\n";
+        txt << "gains_a=" << ga << "\ngains_b=" << gb << "\n";
+        AppendCompactConfigLines(txt);
+        txt << "\narm,drive_ch,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
+               "VxD_mn,VxD_sd,trials_ok,wall_s\n";
+        auto arm_line = [&](const char* tag, const float* g, const SurveySummary& s) {
+            if (!s.ok)
+            {
+                txt << tag << ',' << FormatDriveGains(g, n_in) << ",(failed)\n";
+                return;
+            }
+            txt << tag << ',' << FormatDriveGains(g, n_in) << ','
+                << s.mean_vpt << ',' << s.std_vpt << ','
+                << s.mean_rmse << ',' << s.std_rmse << ','
+                << s.mean_duty << ',' << s.std_duty << ','
+                << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
+                << s.n_trials_ok << ',' << s.wall_seconds << '\n';
+        };
+        arm_line("A", gains_a, a);
+        arm_line("B", gains_b, b);
+        if (a.ok && b.ok)
+        {
+            txt << "\nDeltas (B - A)\n";
+            txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
+                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
+                << "  dDuty=" << (b.mean_duty - a.mean_duty)
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
+            txt << "\nCode picks among successful arms:\n";
+            const bool b_vpt = b.mean_vpt >= a.mean_vpt;
+            txt << "  best mean VPT : " << (b_vpt ? gb : ga)
+                << "  VPT=" << (b_vpt ? b.mean_vpt : a.mean_vpt)
+                << " +/- " << (b_vpt ? b.std_vpt : a.std_vpt) << "\n";
+            const bool b_vxd = b.mean_vpt_x_duty >= a.mean_vpt_x_duty;
+            txt << "  best mean VPT*duty : " << (b_vxd ? gb : ga)
+                << "  VPT*duty=" << (b_vxd ? b.mean_vpt_x_duty : a.mean_vpt_x_duty)
+                << " +/- " << (b_vxd ? b.std_vpt_x_duty : a.std_vpt_x_duty) << "\n";
+            txt << "  total_wall_seconds=" << total_wall_s << "\n";
+        }
+    }
+
+    ReportWrote("results", csv_path);
+    ReportWrote("results", txt_path);
+}
+
+int Campaign_DriveGainAB(size_t dim, size_t history_depth,
+                         std::initializer_list<float> gains_a,
+                         std::initializer_list<float> gains_b,
+                         size_t num_threads, int num_runs,
+                         uint64_t base_seed, uint64_t orbit_seed)
+{
+    if (!ValidateDim(dim, "GainAB"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "GainAB"))
+        return 2;
+
+    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+    float ga[kMaxDriveChannels]{};
+    float gb[kMaxDriveChannels]{};
+    if (!ParseDriveGains(gains_a, ga, n_in, "a") || !ParseDriveGains(gains_b, gb, n_in, "b"))
+        return 2;
+
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[GainAB] refused: LOAD_TRAINED_WEIGHTS is on. "
+                     "A/B needs a fresh train per drive-gain vector.\n");
+        return 2;
+    }
+
+    if (config::SAVE_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[GainAB] NOTE: SAVE_TRAINED_WEIGHTS is on; default stems do not "
+                     "include drive_ch — arm B will overwrite arm A weights. Turn save "
+                     "off or use distinct stems for durable A/B models.\n");
+        std::fflush(stderr);
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigDriveGainsRestore gains_restore;
+
+    const std::string ga_s = FormatDriveGains(ga, n_in);
+    const std::string gb_s = FormatDriveGains(gb, n_in);
+
+    std::printf("=== HypercubeESN: Lorenz / drive-gain A/B ===\n");
+    std::printf("[GainAB] DIM=%zu (N=%zu)  M=%zu  drive=%s  n_in=%zu\n",
+                config::DIM, size_t{1} << config::DIM, history_depth,
+                Lorenz::DriveLayoutName(config::DRIVE_LAYOUT), n_in);
+    std::printf("[GainAB] gains_a=%s\n", ga_s.c_str());
+    std::printf("[GainAB] gains_b=%s\n", gb_s.c_str());
+    std::printf("[GainAB] survey threads=%zu  runs=%d  (0 threads => HW)\n",
+                num_threads, num_runs);
+    std::printf("[GainAB] matched seeds/protocol/SR; train per arm (not load)\n");
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    const float* arms[2] = {ga, gb};
+    SurveySummary arm_a{};
+    SurveySummary arm_b{};
+    int first_err = 0;
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        ApplyDriveGains(arms[i]);
+        std::printf("\n########## GainAB arm %zu/2: drive_ch=%s  M=%zu ##########\n",
+                    i + 1, FormatDriveGains(arms[i], n_in).c_str(), history_depth);
+        std::fflush(stdout);
+
+        SurveySummary sum;
+        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
+                                           /*completion_beep=*/false, &sum);
+        if (i == 0)
+            arm_a = sum;
+        else
+            arm_b = sum;
+        if (rc != 0 && first_err == 0)
+            first_err = rc;
+    }
+
+    std::fflush(stdout);
+
+    const double elapsed = std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+
+    {
+        std::ostringstream roll;
+        roll << "\n========================================================================\n"
+             << "=== Drive-gain A/B roll-up (fixed M; mean of trial-means) ===\n"
+             << "========================================================================\n";
+        roll << "config: gains_a=" << ga_s << "  gains_b=" << gb_s
+             << "  (INPUT_SCALE_CH restored on exit)\n";
+        AppendCompactConfigLines(roll);
+
+        char line[640];
+        std::snprintf(line, sizeof line,
+                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      dim, size_t{1} << dim, history_depth,
+                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+                      arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
+                      num_runs, config::VPT_THRESHOLD);
+        roll << line;
+
+        std::snprintf(line, sizeof line,
+                      "%-4s %-28s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
+                      "arm", "drive_ch", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
+                      "duty_mn", "duty_sd", "VxD_mn", "VxD_sd", "trials_ok");
+        roll << line;
+        std::snprintf(line, sizeof line,
+                      "%-4s %-28s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
+                      "----", "----------------------------", "--------", "--------",
+                      "----------", "--------", "--------", "--------", "--------",
+                      "--------", "----------");
+        roll << line;
+
+        auto row = [&](const char* tag, const float* g, const SurveySummary& s) {
+            const std::string gs = FormatDriveGains(g, n_in);
+            if (!s.ok)
+            {
+                std::snprintf(line, sizeof line, "%-4s %-28s  (failed)\n",
+                              tag, gs.c_str());
+                roll << line;
+                return;
+            }
+            std::snprintf(line, sizeof line,
+                          "%-4s %-28s %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu\n",
+                          tag, gs.c_str(),
+                          s.mean_vpt, s.std_vpt,
+                          s.mean_rmse, s.std_rmse,
+                          s.mean_duty, s.std_duty,
+                          s.mean_vpt_x_duty, s.std_vpt_x_duty,
+                          s.n_trials_ok);
+            roll << line;
+        };
+        row("A", ga, arm_a);
+        row("B", gb, arm_b);
+
+        if (arm_a.ok && arm_b.ok)
+        {
+            roll << "\nDeltas (B - A):\n";
+            std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
+                          "", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
+            roll << line;
+            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.3f\n",
+                          "B - A",
+                          arm_b.mean_vpt - arm_a.mean_vpt,
+                          arm_b.mean_rmse - arm_a.mean_rmse,
+                          arm_b.mean_duty - arm_a.mean_duty,
+                          arm_b.mean_vpt_x_duty - arm_a.mean_vpt_x_duty);
+            roll << line;
+
+            roll << "\nCode picks among successful arms:\n";
+            const bool b_vpt = arm_b.mean_vpt >= arm_a.mean_vpt;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT  : %s  VPT=%.3f +/- %.3f\n",
+                          (b_vpt ? gb_s : ga_s).c_str(),
+                          b_vpt ? arm_b.mean_vpt : arm_a.mean_vpt,
+                          b_vpt ? arm_b.std_vpt : arm_a.std_vpt);
+            roll << line;
+            const bool b_duty = arm_b.mean_duty >= arm_a.mean_duty;
+            std::snprintf(line, sizeof line,
+                          "  best mean duty : %s  duty=%.3f +/- %.3f\n",
+                          (b_duty ? gb_s : ga_s).c_str(),
+                          b_duty ? arm_b.mean_duty : arm_a.mean_duty,
+                          b_duty ? arm_b.std_duty : arm_a.std_duty);
+            roll << line;
+            const bool b_vxd = arm_b.mean_vpt_x_duty >= arm_a.mean_vpt_x_duty;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT*duty : %s  VPT*duty=%.3f +/- %.3f\n",
+                          (b_vxd ? gb_s : ga_s).c_str(),
+                          b_vxd ? arm_b.mean_vpt_x_duty : arm_a.mean_vpt_x_duty,
+                          b_vxd ? arm_b.std_vpt_x_duty : arm_a.std_vpt_x_duty);
+            roll << line;
+        }
+        else if (!arm_a.ok && !arm_b.ok)
+        {
+            roll << "(no successful arms)\n";
+        }
+
+        std::snprintf(line, sizeof line,
+                      "\n=== Gain A/B wall time: %s (restoring DIM=%zu M=%zu drive_ch) ===\n",
+                      time_buf, dim_restore.saved, m_restore.saved);
+        roll << line;
+
+        const std::string block = roll.str();
+        std::fwrite(block.data(), 1, block.size(), stdout);
+        std::fflush(stdout);
+    }
+
+    WriteGainAbResultFiles(arm_a, arm_b, ga, gb, n_in, dim, history_depth,
+                           base_seed, orbit_seed, num_threads, num_runs, elapsed);
+
+    Beep(2500, 3000);
+    return first_err;
+}

@@ -6,8 +6,8 @@ layouts) did not move us the right way. Remaining cheap levers are **dynamics
 knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 
 **Date parked:** 2026-07-30  
-**Status:** (4) code landed (defaults unity). (3) `Campaign_SpectralRadiusAB` ready.
-(1) still config-only A/B.
+**Status:** (4) gains + `Campaign_DriveGainAB` ready. (3) `Campaign_SpectralRadiusAB`
+ready. (1) still config-only A/B.
 
 **Out of scope (already known bad or not believed useful here):**
 
@@ -85,10 +85,9 @@ retuning SR.
 
 ---
 
-## 4. Per-channel input gains  (implemented — tuning open)
+## 4. Per-channel input gains  (campaign ready — tuning open)
 
-**Status:** code landed. Default all `1.0` (behavior = global scale only).
-A/B by editing `config::INPUT_SCALE_CH` in `Lorenz.h` (or reassign before Train).
+**Status:** `INPUT_SCALE_CH` + `Campaign_DriveGainAB` landed. Default all `1.0`.
 
 **Problem:** one global `INPUT_SCALING` treats `x`, `y`, `z`, and `x*z` the same.
 Normalized stream is ~[-1,1] per channel, but product scale and channel roles
@@ -116,15 +115,18 @@ Suggested first grid (multipliers on top of locked global scale from (1)):
 | z | 2 | 0.7 … 1.2 |
 | x*z | 3 | 0.5 … 1.0 |
 
-Example (z=0.9, xz=0.7):
+**How:** matched A/B via campaign (lists size = `n_in` for current drive layout):
 
 ```cpp
-config::INPUT_SCALE_CH[2] = 0.9f;
-config::INPUT_SCALE_CH[3] = 0.7f;
-// leave [0],[1] at 1.0
+return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
+                            /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
+                            /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
+                            /*num_threads=*/0, /*num_runs=*/50);
 ```
 
-Coarse 2D (z-gain × xz-gain) is enough; do not start a 4D grid.
+Or assign `config::INPUT_SCALE_CH[i]` for a single-arm run. Coarse 2D
+(z-gain × xz-gain) is enough; do not start a 4D grid. Pair further candidates
+as new B arms against the locked winner.
 
 **Tuning done when:** clear Unseen best-half lift vs global-only baseline, or a
 documented negative so we stop chasing per-channel gains.

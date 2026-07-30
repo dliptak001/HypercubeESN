@@ -27,11 +27,17 @@ int main()
     //                       /*target_orbit=*/9333312947715283458ull);
 
 
+    // Per-channel drive gains A/B at fixed dim/M (XyzXz: [x,y,z,xz]).
+    // Arm A = unity baseline; arm B = soft z / xz from TODO_drive_scale_sr §4.
+    return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
+                                /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
+                                /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
+                                /*num_threads=*/0, /*num_runs=*/50);
+
     // Spectral-radius A/B at fixed dim/M (SeedSurvey per arm; roll-up under campaigns/).
-    // Default house SR is 0.99; pair against a slightly contractive arm.
-    return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
-                                     /*sr_a=*/0.98f, /*sr_b=*/0.99f,
-                                     /*num_threads=*/0, /*num_runs=*/50);
+    // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
+    //                                  /*sr_a=*/0.98f, /*sr_b=*/0.99f,
+    //                                  /*num_threads=*/0, /*num_runs=*/50);
 
     // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
     // SeedSweep (Train+survey each seed, rank by mean VPT*duty).
