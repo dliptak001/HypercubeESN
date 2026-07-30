@@ -122,7 +122,7 @@ namespace config
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";
 
     // ---- Free-run scoring ----
-    constexpr float VPT_THRESHOLD = 0.2f;
+    constexpr float VPT_THRESHOLD = 0.25f;
     constexpr double LYAPUNOV_EXPONENT = 0.9056;
 }
 

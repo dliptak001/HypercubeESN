@@ -33,7 +33,7 @@ int main()
     constexpr size_t kM = 12;
 
     return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-                     /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull, 421978990ull},
+                     /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull, 421978990ull, 521978990ull},
                      /*epochs=*/400,
                      /*freerun_runs=*/1000,
                      /*train_orbit=*/933312947715283458ull,
