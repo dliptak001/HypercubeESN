@@ -69,6 +69,8 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
   load-only freerun with plottable CSV under `...\traces\` (see
   `plot_freerun_overlay.py`).
+- **`SeedSweep`:** loop ESN seeds (optional Train + FreeRunSurvey); rank seeds by
+  mean VPT×duty; atomic ranking CSV + `.partial.csv` after each seed for overnight runs.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

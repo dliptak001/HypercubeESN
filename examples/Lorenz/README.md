@@ -203,11 +203,13 @@ int main()
 }
 ```
 
-### `Train` / `FreeRunSurvey` / `FreeRun` (campaign pipeline)
+### `Train` / `FreeRunSurvey` / `FreeRun` / `SeedSweep` (campaign pipeline)
 
 ```text
 Train  →  FreeRunSurvey  →  FreeRun
  weights     rank orbits       plot one IC
+
+SeedSweep: for each esn_seed → Train? + FreeRunSurvey → rank seeds by mean VPT×duty
 ```
 
 **`Train`** — train-only (no freerun): remixed orbits for `epochs` from remix base
@@ -233,6 +235,11 @@ trace (err / x / y / z vs Lyapunov time). Writes:
 `C:\HypercubeESNRuns\results\traces\seed{esn}_ic{x}_{y}_{z}.csv`
 
 Plot with `plot_freerun_overlay.py`. Distinct from member `Lorenz::FreeRun`.
+
+**`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey` per seed;
+rank seeds by **mean VPT×duty** (best-half freerun pool). Stems:
+`{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Seed ranking CSV under
+`C:\HypercubeESNRuns\results\surveys\seed_sweep_D*_M*_n*_seeds*.csv`.
 
 | Function | Role |
 |----------|------|

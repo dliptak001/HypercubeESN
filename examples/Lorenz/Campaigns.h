@@ -84,41 +84,60 @@ int FreeRun(size_t dim,
             double ic_x, double ic_y, double ic_z,
             const char* weights_stem = nullptr);
 
+/// Aggregate from one @ref FreeRunSurvey (best-half freerun pool means).
+struct FreeRunSurveySummary
+{
+    bool ok = false;
+    uint64_t esn_seed = 0;
+    size_t n_valid = 0;
+    double mean_vpt = 0;
+    double mean_duty = 0;
+    double mean_vpt_x_duty = 0; ///< primary seed-ranking score
+    double mean_rmse = 0;
+    double best_vpt_x_duty = 0;
+    double best_ic_x = 0, best_ic_y = 0, best_ic_z = 0;
+    uint64_t best_orbit_seed = 0;
+};
+
 /// Load weights, free-run @p num_runs Unseen orbits (remix from @p orbit_seed),
 /// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
 /// Writes a leaderboard CSV under C:\\HypercubeESNRuns\\results\\surveys\\.
 /// Restores DIM and HISTORY_DEPTH on exit.
-/// @param dim            Reservoir hypercube dim (N = 2^dim); match model.
-/// @param history_depth  Reservoir delay-line M; match model.
-/// @param esn_seed       Reservoir seed; match model.
-/// @param num_runs       Number of freerun orbits to score.
-/// @param orbit_seed     Remix-chain base for freerun ICs.
-/// @param weights_stem   Optional load stem; else config::LOAD_WEIGHTS_STEM.
-/// @param top_k          How many best rows to print (by VPT*duty).
+/// @param out  Optional; filled with best-half means and top freerun IC.
 int FreeRunSurvey(size_t dim,
                   size_t history_depth,
                   uint64_t esn_seed,
                   int num_runs,
                   uint64_t orbit_seed = 72983498,
                   const char* weights_stem = nullptr,
-                  int top_k = 10);
+                  int top_k = 10,
+                  FreeRunSurveySummary* out = nullptr);
 
 /// Train-only complement to @ref FreeRun: remixed orbits for @p epochs starting
 /// from @p target_orbit remix seed; save readout to @p weights_stem (or default
 /// under MODEL_SAVE_DIR). No free-run. Restores DIM, HISTORY_DEPTH, EPOCHS on exit.
-/// @param dim            Reservoir hypercube dim (N = 2^dim).
-/// @param history_depth  Reservoir delay-line M (1..64).
-/// @param esn_seed       Reservoir / readout seed.
-/// @param target_orbit   Orbit-seed remix base for training ICs (not freerun).
-/// @param epochs         Train epochs (e.g. 100–500).
-/// @param weights_stem   Optional save path stem (no .hcnw); null → default name.
 int Train(size_t dim,
           size_t history_depth,
           uint64_t esn_seed,
           uint64_t target_orbit,
           size_t epochs,
           const char* weights_stem = nullptr);
+
+/// For each ESN seed: optional Train → FreeRunSurvey; rank seeds by mean VPT*duty
+/// (best-half freerun pool). Weight stem per seed:
+///   {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
+/// Restores DIM / HISTORY_DEPTH / EPOCHS on exit.
+/// @param do_train  If true, Train each seed first; if false, only survey existing stems.
+int SeedSweep(size_t dim,
+              size_t history_depth,
+              std::initializer_list<uint64_t> esn_seeds,
+              size_t epochs,
+              int freerun_runs,
+              uint64_t train_orbit = 9333312947715283458ull,
+              uint64_t freerun_orbit_seed = 72983498ull,
+              int top_k = 10,
+              bool do_train = true);
 
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up
 /// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.

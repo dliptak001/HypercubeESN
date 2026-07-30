@@ -1174,8 +1174,11 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
 // Pipeline middle step: Train → FreeRunSurvey → FreeRun (cherry-pick IC).
 int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                   int num_runs, uint64_t orbit_seed, const char* weights_stem,
-                  int top_k)
+                  int top_k, FreeRunSurveySummary* out)
 {
+    if (out)
+        *out = FreeRunSurveySummary{};
+
     if (!ValidateDim(dim, "freerun-survey"))
         return 2;
     if (!ValidateHistoryDepth(history_depth, "freerun-survey"))
@@ -1282,6 +1285,11 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     if (rows.empty())
     {
         std::printf("[freerun-survey] no valid freeruns\n");
+        if (out)
+        {
+            out->ok = false;
+            out->esn_seed = esn_seed;
+        }
         return 1;
     }
 
@@ -1352,18 +1360,19 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                     ic.x, ic.y, ic.z);
     }
 
-    // Full ranked table for post-analysis.
+    // Full ranked table for post-analysis (atomic tmp→rename).
     const fs::path csv_path = survey_dir /
         ("survey_seed" + std::to_string(esn_seed) +
          "_D" + std::to_string(config::DIM) +
          "_M" + std::to_string(config::HISTORY_DEPTH) +
          "_n" + std::to_string(num_runs) + ".csv");
     {
-        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
+        const fs::path tmp = fs::path(csv_path.string() + ".tmp");
+        std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
         if (!csv)
         {
             std::fprintf(stderr, "[freerun-survey] failed to write %s\n",
-                         csv_path.string().c_str());
+                         tmp.string().c_str());
         }
         else
         {
@@ -1378,9 +1387,50 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                     << row.r.vpt_x_duty << ',' << row.r.rmse << ','
                     << (row.r.crossed ? 1 : 0) << '\n';
             }
-            std::printf("\n[freerun-survey] wrote leaderboard %s  (%zu rows)\n",
-                        csv_path.string().c_str(), order.size());
+            csv.flush();
+            if (!csv.good())
+            {
+                std::fprintf(stderr, "[freerun-survey] write error on %s\n",
+                             tmp.string().c_str());
+            }
+            else
+            {
+                csv.close();
+                std::error_code ec;
+                fs::remove(csv_path, ec);
+                fs::rename(tmp, csv_path, ec);
+                if (ec)
+                {
+                    std::fprintf(stderr, "[freerun-survey] rename failed: %s\n",
+                                 ec.message().c_str());
+                }
+                else
+                {
+                    const auto sz = fs::file_size(csv_path, ec);
+                    std::printf("\n[freerun-survey] wrote leaderboard %s  (%zu rows, %llu bytes)\n",
+                                csv_path.string().c_str(), order.size(),
+                                ec ? 0ull : static_cast<unsigned long long>(sz));
+                }
+            }
         }
+    }
+    std::fflush(stdout);
+
+    if (out)
+    {
+        out->ok = true;
+        out->esn_seed = esn_seed;
+        out->n_valid = n_full;
+        out->mean_vpt = MeanOf(vpt_best);
+        out->mean_duty = MeanOf(duty_best);
+        out->mean_vpt_x_duty = MeanOf(vxd_best);
+        out->mean_rmse = MeanOf(rmse_best);
+        const auto& best = rows[order[0]];
+        out->best_vpt_x_duty = best.r.vpt_x_duty;
+        out->best_orbit_seed = best.r.orbit_seed;
+        out->best_ic_x = best.ic.x;
+        out->best_ic_y = best.ic.y;
+        out->best_ic_z = best.ic.z;
     }
 
     const double elapsed =
@@ -1389,6 +1439,300 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     FormatWallTime(time_buf, sizeof time_buf, elapsed);
     std::printf("[freerun-survey] done  wall time: %s\n", time_buf);
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// SeedSweep (Train? → FreeRunSurvey per seed; rank seeds by mean VPT*duty)
+// ---------------------------------------------------------------------------
+int SeedSweep(size_t dim, size_t history_depth,
+              std::initializer_list<uint64_t> esn_seeds,
+              size_t epochs, int freerun_runs,
+              uint64_t train_orbit, uint64_t freerun_orbit_seed,
+              int top_k, bool do_train)
+{
+    if (!ValidateDim(dim, "seed-sweep"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "seed-sweep"))
+        return 2;
+    if (esn_seeds.size() == 0)
+    {
+        std::fprintf(stderr, "[seed-sweep] empty esn_seeds list\n");
+        return 2;
+    }
+    if (freerun_runs < 1)
+    {
+        std::fprintf(stderr, "[seed-sweep] refused: freerun_runs=%d (need >= 1)\n",
+                     freerun_runs);
+        return 2;
+    }
+    if (do_train && epochs < 1)
+    {
+        std::fprintf(stderr, "[seed-sweep] refused: epochs=%zu (need >= 1 when do_train)\n",
+                     epochs);
+        return 2;
+    }
+
+    // RAII: campaigns below also restore; outer restore keeps caller knobs stable.
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigSizeRestore epochs_restore(config::EPOCHS, do_train ? epochs : config::EPOCHS);
+
+    const fs::path model_dir = config::MODEL_SAVE_DIR;
+    const fs::path survey_dir = R"(C:\HypercubeESNRuns\results\surveys)";
+    {
+        std::error_code ec1, ec2;
+        fs::create_directories(model_dir, ec1);
+        fs::create_directories(survey_dir, ec2);
+        if (ec1)
+            std::fprintf(stderr, "[seed-sweep] create_directories(%s) failed: %s\n",
+                         model_dir.string().c_str(), ec1.message().c_str());
+        if (ec2)
+        {
+            std::fprintf(stderr, "[seed-sweep] create_directories(%s) failed: %s\n",
+                         survey_dir.string().c_str(), ec2.message().c_str());
+            return 2;
+        }
+    }
+
+    // Final + partial ranking paths (partial updated after each seed for crash safety).
+    const fs::path rank_csv = survey_dir /
+        ("seed_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_n" + std::to_string(freerun_runs) +
+         "_seeds" + std::to_string(esn_seeds.size()) + ".csv");
+    const fs::path rank_csv_partial = survey_dir /
+        ("seed_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_n" + std::to_string(freerun_runs) +
+         "_seeds" + std::to_string(esn_seeds.size()) + ".partial.csv");
+
+    std::printf("=== HypercubeESN: Lorenz / SeedSweep ===\n");
+    std::printf("[seed-sweep] DIM=%zu  M=%zu  n_seeds=%zu  epochs=%zu  freerun_runs=%d  "
+                "do_train=%s  top_k=%d\n",
+                dim, history_depth, esn_seeds.size(), epochs, freerun_runs,
+                do_train ? "yes" : "no", top_k);
+    std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
+                static_cast<unsigned long long>(train_orbit),
+                static_cast<unsigned long long>(freerun_orbit_seed));
+    std::printf("[seed-sweep] weight stems: %s\\lorenz_seed{S}_D%zu_M%zu\n",
+                model_dir.string().c_str(), dim, history_depth);
+    std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
+    std::printf("[seed-sweep] ranking CSV: %s\n", rank_csv.string().c_str());
+    std::printf("[seed-sweep] partial CSV (after each seed): %s\n",
+                rank_csv_partial.string().c_str());
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    struct SeedRow
+    {
+        uint64_t seed = 0;
+        FreeRunSurveySummary sum{};
+        int train_rc = 0;
+        int survey_rc = 0;
+        std::string stem;
+    };
+    std::vector<SeedRow> seed_rows;
+    seed_rows.reserve(esn_seeds.size());
+
+    // Write ranked/partial seed table. Columns (16):
+    // rank,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,
+    // best_vpt_x_duty,best_orbit_seed,best_ic_x,best_ic_y,best_ic_z,
+    // n_valid,train_rc,survey_rc,stem
+    auto write_seed_rank_csv = [&](const fs::path& path) -> bool {
+        const fs::path tmp = fs::path(path.string() + ".tmp");
+        {
+            std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
+            if (!csv)
+            {
+                std::fprintf(stderr, "[seed-sweep] failed to open %s\n",
+                             tmp.string().c_str());
+                return false;
+            }
+            csv << "rank,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,"
+                   "best_vpt_x_duty,best_orbit_seed,best_ic_x,best_ic_y,best_ic_z,"
+                   "n_valid,train_rc,survey_rc,stem\n";
+
+            std::vector<size_t> ord;
+            ord.reserve(seed_rows.size());
+            for (size_t i = 0; i < seed_rows.size(); ++i)
+                if (seed_rows[i].sum.ok)
+                    ord.push_back(i);
+            std::sort(ord.begin(), ord.end(), [&](size_t a, size_t b) {
+                return seed_rows[a].sum.mean_vpt_x_duty > seed_rows[b].sum.mean_vpt_x_duty;
+            });
+
+            size_t rank = 0;
+            for (size_t idx : ord)
+            {
+                const auto& sr = seed_rows[idx];
+                const auto& s = sr.sum;
+                ++rank;
+                // 16 fields
+                csv << rank << ',' << s.esn_seed << ",1,"
+                    << s.mean_vpt_x_duty << ',' << s.mean_vpt << ','
+                    << s.mean_duty << ',' << s.mean_rmse << ','
+                    << s.best_vpt_x_duty << ',' << s.best_orbit_seed << ','
+                    << s.best_ic_x << ',' << s.best_ic_y << ',' << s.best_ic_z << ','
+                    << s.n_valid << ',' << sr.train_rc << ',' << sr.survey_rc << ','
+                    << sr.stem << '\n';
+            }
+            for (const auto& sr : seed_rows)
+            {
+                if (sr.sum.ok)
+                    continue;
+                // 16 fields: empty rank, seed, ok=0, 10 empty metrics, train_rc, survey_rc, stem
+                // After "0" use exactly 10 commas then train_rc (no extra empty).
+                csv << ',' << sr.seed << ",0,,,,,,,,,,"
+                    << sr.train_rc << ',' << sr.survey_rc << ',' << sr.stem << '\n';
+            }
+            csv.flush();
+            if (!csv.good())
+            {
+                std::fprintf(stderr, "[seed-sweep] write failed for %s\n",
+                             tmp.string().c_str());
+                return false;
+            }
+        }
+        std::error_code ec;
+        fs::remove(path, ec);
+        fs::rename(tmp, path, ec);
+        if (ec)
+        {
+            std::fprintf(stderr, "[seed-sweep] rename %s -> %s failed: %s\n",
+                         tmp.string().c_str(), path.string().c_str(),
+                         ec.message().c_str());
+            return false;
+        }
+        return true;
+    };
+
+    size_t step = 0;
+    const size_t n_seeds = esn_seeds.size();
+    for (uint64_t seed : esn_seeds)
+    {
+        ++step;
+        SeedRow sr;
+        sr.seed = seed;
+        sr.stem = (model_dir / ("lorenz_seed" + std::to_string(seed) +
+                                "_D" + std::to_string(dim) +
+                                "_M" + std::to_string(history_depth))).string();
+
+        std::printf("\n########## SeedSweep %zu/%zu  esn_seed=%llu ##########\n",
+                    step, n_seeds, static_cast<unsigned long long>(seed));
+        std::printf("[seed-sweep] stem: %s\n", sr.stem.c_str());
+        std::fflush(stdout);
+
+        if (do_train)
+        {
+            sr.train_rc = Train(dim, history_depth, seed, train_orbit, epochs,
+                                sr.stem.c_str());
+            if (sr.train_rc != 0)
+            {
+                std::fprintf(stderr, "[seed-sweep] Train failed for seed %llu (rc=%d) — skip survey\n",
+                             static_cast<unsigned long long>(seed), sr.train_rc);
+                seed_rows.push_back(std::move(sr));
+                write_seed_rank_csv(rank_csv_partial);
+                std::fflush(stdout);
+                std::fflush(stderr);
+                continue;
+            }
+        }
+
+        sr.survey_rc = FreeRunSurvey(dim, history_depth, seed, freerun_runs,
+                                     freerun_orbit_seed, sr.stem.c_str(), top_k,
+                                     &sr.sum);
+        if (sr.survey_rc != 0 || !sr.sum.ok)
+        {
+            std::fprintf(stderr, "[seed-sweep] FreeRunSurvey failed for seed %llu (rc=%d)\n",
+                         static_cast<unsigned long long>(seed), sr.survey_rc);
+        }
+        else
+        {
+            std::printf("[seed-sweep] seed %llu  mean VPT*duty=%.3f  mean VPT=%.2f  "
+                        "mean duty=%.3f  mean RMSE=%.6f  best VPT*duty=%.3f\n",
+                        static_cast<unsigned long long>(seed),
+                        sr.sum.mean_vpt_x_duty, sr.sum.mean_vpt, sr.sum.mean_duty,
+                        sr.sum.mean_rmse, sr.sum.best_vpt_x_duty);
+            std::printf("[seed-sweep]   best IC=(%.6f, %.6f, %.6f)  orbit_seed=%llu\n",
+                        sr.sum.best_ic_x, sr.sum.best_ic_y, sr.sum.best_ic_z,
+                        static_cast<unsigned long long>(sr.sum.best_orbit_seed));
+        }
+        seed_rows.push_back(std::move(sr));
+        write_seed_rank_csv(rank_csv_partial);
+        std::fflush(stdout);
+        std::fflush(stderr);
+    }
+
+    // Rank successful seeds by mean VPT*duty.
+    std::vector<size_t> order;
+    for (size_t i = 0; i < seed_rows.size(); ++i)
+        if (seed_rows[i].sum.ok)
+            order.push_back(i);
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return seed_rows[a].sum.mean_vpt_x_duty > seed_rows[b].sum.mean_vpt_x_duty;
+    });
+
+    std::printf("\n========================================================================\n");
+    std::printf("=== SeedSweep ranking by mean VPT*duty (best-half freeruns) ===\n");
+    std::printf("========================================================================\n");
+    if (order.empty())
+    {
+        std::printf("(no successful seed surveys)\n");
+    }
+    else
+    {
+        std::printf("%-4s %14s %10s %8s %8s %10s %10s\n",
+                    "rank", "esn_seed", "VxD_mn", "VPT_mn", "duty_mn", "RMSE_mn", "VxD_best");
+        for (size_t rank = 0; rank < order.size(); ++rank)
+        {
+            const auto& s = seed_rows[order[rank]].sum;
+            std::printf("%-4zu %14llu %10.3f %8.2f %8.3f %10.6f %10.3f\n",
+                        rank + 1,
+                        static_cast<unsigned long long>(s.esn_seed),
+                        s.mean_vpt_x_duty, s.mean_vpt, s.mean_duty,
+                        s.mean_rmse, s.best_vpt_x_duty);
+        }
+
+        const auto& best = seed_rows[order[0]];
+        std::printf("\nBest seed: %llu  mean VPT*duty=%.3f\n",
+                    static_cast<unsigned long long>(best.seed),
+                    best.sum.mean_vpt_x_duty);
+        std::printf("  stem: %s\n", best.stem.c_str());
+        std::printf("  best freerun IC=(%.6f, %.6f, %.6f)  VPT*duty=%.3f\n",
+                    best.sum.best_ic_x, best.sum.best_ic_y, best.sum.best_ic_z,
+                    best.sum.best_vpt_x_duty);
+        std::printf("  FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, \"%s\");\n",
+                    dim, history_depth,
+                    static_cast<unsigned long long>(best.seed),
+                    best.sum.best_ic_x, best.sum.best_ic_y, best.sum.best_ic_z,
+                    best.stem.c_str());
+    }
+    std::fflush(stdout);
+
+    if (write_seed_rank_csv(rank_csv))
+    {
+        std::error_code ec;
+        const auto sz = fs::file_size(rank_csv, ec);
+        std::printf("\n[seed-sweep] wrote %s  (%llu bytes)\n",
+                    rank_csv.string().c_str(),
+                    ec ? 0ull : static_cast<unsigned long long>(sz));
+        // Keep partial as a copy of final for convenience.
+        write_seed_rank_csv(rank_csv_partial);
+    }
+    else
+    {
+        std::fprintf(stderr, "[seed-sweep] FAILED to write final ranking CSV\n");
+    }
+
+    const double elapsed =
+        std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+    std::printf("[seed-sweep] done  wall time: %s\n", time_buf);
+    std::fflush(stdout);
+    return order.empty() ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
