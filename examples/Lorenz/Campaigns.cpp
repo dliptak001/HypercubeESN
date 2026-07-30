@@ -1625,6 +1625,7 @@ int SeedSweep(size_t dim, size_t history_depth,
             {
                 std::fprintf(stderr, "[seed-sweep] Train failed for seed %llu (rc=%d) — skip survey\n",
                              static_cast<unsigned long long>(seed), sr.train_rc);
+                sr.survey_rc = -1; // not run
                 seed_rows.push_back(std::move(sr));
                 write_seed_rank_csv(rank_csv_partial);
                 std::fflush(stdout);
@@ -1640,14 +1641,18 @@ int SeedSweep(size_t dim, size_t history_depth,
         {
             std::fprintf(stderr, "[seed-sweep] FreeRunSurvey failed for seed %llu (rc=%d)\n",
                          static_cast<unsigned long long>(seed), sr.survey_rc);
+            sr.sum.ok = false;
         }
         else
         {
-            std::printf("[seed-sweep] seed %llu  (best-half means)\n",
-                        static_cast<unsigned long long>(seed));
-            ReportFreerunScores("seed-sweep", sr.sum.mean_vpt, sr.sum.mean_duty,
-                                sr.sum.mean_vpt_x_duty, sr.sum.mean_rmse);
-            std::printf("[seed-sweep]   best freerun VPT*duty=%.3f  IC=(%.6f, %.6f, %.6f)  "
+            // Explicit "mean" labels so overnight logs are not confused with one freerun.
+            std::printf("[seed-sweep] seed %llu  best-half means:  "
+                        "VPT=%.2f lt  duty=%.3f  VPT*duty=%.3f  RMSE=%.6f  "
+                        "(rank key = VPT*duty)\n",
+                        static_cast<unsigned long long>(seed),
+                        sr.sum.mean_vpt, sr.sum.mean_duty,
+                        sr.sum.mean_vpt_x_duty, sr.sum.mean_rmse);
+            std::printf("[seed-sweep]   best freerun: VPT*duty=%.3f  IC=(%.6f, %.6f, %.6f)  "
                         "orbit_seed=%llu\n",
                         sr.sum.best_vpt_x_duty,
                         sr.sum.best_ic_x, sr.sum.best_ic_y, sr.sum.best_ic_z,
