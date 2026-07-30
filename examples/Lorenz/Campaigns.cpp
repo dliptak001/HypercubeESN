@@ -1486,6 +1486,74 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
 }
 
 // ---------------------------------------------------------------------------
+// Drive-channel gains (shared: SeedSweep, Campaign_DriveGainAB)
+// ---------------------------------------------------------------------------
+struct ConfigDriveGainsRestore
+{
+    float saved[kMaxDriveChannels]{};
+    ConfigDriveGainsRestore()
+    {
+        for (size_t i = 0; i < kMaxDriveChannels; ++i)
+            saved[i] = config::INPUT_SCALE_CH[i];
+    }
+    ~ConfigDriveGainsRestore()
+    {
+        for (size_t i = 0; i < kMaxDriveChannels; ++i)
+            config::INPUT_SCALE_CH[i] = saved[i];
+    }
+    ConfigDriveGainsRestore(const ConfigDriveGainsRestore&) = delete;
+    ConfigDriveGainsRestore& operator=(const ConfigDriveGainsRestore&) = delete;
+};
+
+bool ParseDriveGains(std::initializer_list<float> src, float* dst, size_t n_in,
+                     const char* campaign)
+{
+    if (src.size() != n_in)
+    {
+        std::fprintf(stderr,
+                     "[%s] refused: drive_gains has %zu entries; need exactly %zu "
+                     "(current drive layout channel count)\n",
+                     campaign, src.size(), n_in);
+        return false;
+    }
+    size_t i = 0;
+    for (float g : src)
+    {
+        if (!std::isfinite(g) || g < 0.0f)
+        {
+            std::fprintf(stderr,
+                         "[%s] refused: drive_gains[%zu]=%g (need finite and >= 0)\n",
+                         campaign, i, static_cast<double>(g));
+            return false;
+        }
+        dst[i++] = g;
+    }
+    for (; i < kMaxDriveChannels; ++i)
+        dst[i] = 1.0f;
+    return true;
+}
+
+void ApplyDriveGains(const float* gains)
+{
+    for (size_t i = 0; i < kMaxDriveChannels; ++i)
+        config::INPUT_SCALE_CH[i] = gains[i];
+}
+
+std::string FormatDriveGains(const float* gains, size_t n)
+{
+    std::ostringstream o;
+    o << '[';
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (i)
+            o << ',';
+        o << gains[i];
+    }
+    o << ']';
+    return o.str();
+}
+
+// ---------------------------------------------------------------------------
 // SeedSweep (Train? -> FreeRunSurvey per seed; rank seeds by mean VPT*duty)
 // ---------------------------------------------------------------------------
 int SeedSweep(size_t dim, size_t history_depth,
@@ -1493,7 +1561,8 @@ int SeedSweep(size_t dim, size_t history_depth,
               size_t epochs, int freerun_runs,
               uint64_t train_orbit, uint64_t freerun_orbit_seed,
               int top_k, bool do_train,
-              float spectral_radius, float input_scaling)
+              float spectral_radius, float input_scaling,
+              std::initializer_list<float> drive_gains)
 {
     if (!ValidateDim(dim, "seed-sweep"))
         return 2;
@@ -1536,6 +1605,12 @@ int SeedSweep(size_t dim, size_t history_depth,
     if (input_scaling > 0.0f && !ValidateInputScaling(input_scaling, "seed-sweep"))
         return 2;
 
+    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+    float gains_buf[kMaxDriveChannels]{};
+    const bool override_gains = drive_gains.size() > 0;
+    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "seed-sweep"))
+        return 2;
+
     // RAII: campaigns below also restore; outer restore keeps caller knobs stable.
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
@@ -1546,6 +1621,9 @@ int SeedSweep(size_t dim, size_t history_depth,
     ConfigFloatRestore is_restore(
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
+    ConfigDriveGainsRestore gains_restore;
+    if (override_gains)
+        ApplyDriveGains(gains_buf);
 
     const fs::path model_dir = config::MODEL_SAVE_DIR;
     const fs::path survey_dir = SurveysDir();
@@ -1576,11 +1654,18 @@ int SeedSweep(size_t dim, size_t history_depth,
                 spectral_radius > 0.0f ? " (override)" : " (config)",
                 static_cast<double>(config::INPUT_SCALING),
                 input_scaling > 0.0f ? " (override)" : " (config)");
+    {
+        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
+        std::printf("[seed-sweep] drive_ch=%s%s  drive=%s  n_in=%zu\n",
+                    ch.c_str(),
+                    override_gains ? " (override)" : " (config)",
+                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT), n_in);
+    }
     std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
                 static_cast<unsigned long long>(train_orbit),
                 static_cast<unsigned long long>(freerun_orbit_seed));
     std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu  "
-                "(stems omit SR/IS -- document in ranking banner)\n",
+                "(stems omit SR/IS/drive_ch -- document in ranking banner)\n",
                 model_dir.string().c_str(), dim, history_depth);
     std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
     std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
@@ -2607,71 +2692,6 @@ int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
 // ---------------------------------------------------------------------------
 // Campaign_DriveGainAB
 // ---------------------------------------------------------------------------
-struct ConfigDriveGainsRestore
-{
-    float saved[kMaxDriveChannels]{};
-    ConfigDriveGainsRestore()
-    {
-        for (size_t i = 0; i < kMaxDriveChannels; ++i)
-            saved[i] = config::INPUT_SCALE_CH[i];
-    }
-    ~ConfigDriveGainsRestore()
-    {
-        for (size_t i = 0; i < kMaxDriveChannels; ++i)
-            config::INPUT_SCALE_CH[i] = saved[i];
-    }
-    ConfigDriveGainsRestore(const ConfigDriveGainsRestore&) = delete;
-    ConfigDriveGainsRestore& operator=(const ConfigDriveGainsRestore&) = delete;
-};
-
-bool ParseDriveGains(std::initializer_list<float> src, float* dst, size_t n_in,
-                     const char* arm_tag)
-{
-    if (src.size() != n_in)
-    {
-        std::fprintf(stderr,
-                     "[GainAB] refused: gains_%s has %zu entries; need exactly %zu "
-                     "(current drive layout channel count)\n",
-                     arm_tag, src.size(), n_in);
-        return false;
-    }
-    size_t i = 0;
-    for (float g : src)
-    {
-        if (!std::isfinite(g) || g < 0.0f)
-        {
-            std::fprintf(stderr,
-                         "[GainAB] refused: gains_%s[%zu]=%g (need finite and >= 0)\n",
-                         arm_tag, i, static_cast<double>(g));
-            return false;
-        }
-        dst[i++] = g;
-    }
-    for (; i < kMaxDriveChannels; ++i)
-        dst[i] = 1.0f;
-    return true;
-}
-
-void ApplyDriveGains(const float* gains)
-{
-    for (size_t i = 0; i < kMaxDriveChannels; ++i)
-        config::INPUT_SCALE_CH[i] = gains[i];
-}
-
-std::string FormatDriveGains(const float* gains, size_t n)
-{
-    std::ostringstream o;
-    o << '[';
-    for (size_t i = 0; i < n; ++i)
-    {
-        if (i)
-            o << ',';
-        o << gains[i];
-    }
-    o << ']';
-    return o.str();
-}
-
 void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
                             const float* gains_a, const float* gains_b, size_t n_in,
                             size_t dim, size_t history_depth,
@@ -2802,7 +2822,8 @@ int Campaign_DriveGainAB(size_t dim, size_t history_depth,
     const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
     float ga[kMaxDriveChannels]{};
     float gb[kMaxDriveChannels]{};
-    if (!ParseDriveGains(gains_a, ga, n_in, "a") || !ParseDriveGains(gains_b, gb, n_in, "b"))
+    if (!ParseDriveGains(gains_a, ga, n_in, "GainAB") ||
+        !ParseDriveGains(gains_b, gb, n_in, "GainAB"))
         return 2;
 
     if (config::LOAD_TRAINED_WEIGHTS)

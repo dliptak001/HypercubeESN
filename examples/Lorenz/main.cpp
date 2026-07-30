@@ -53,7 +53,8 @@ int main()
                      /*top_k=*/10,
                      /*do_train=*/true,
                      /*spectral_radius=*/0.96f,   // >0 sets config::SPECTRAL_RADIUS
-                     /*input_scaling=*/0.07f);    // >0 sets config::INPUT_SCALING
+                     /*input_scaling=*/0.07f,     // >0 sets config::INPUT_SCALING
+                     /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f}); // XyzXz [x,y,z,xz]; {} keeps config
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(12, 12, 221978990ull, 1000, 72983498ull,
