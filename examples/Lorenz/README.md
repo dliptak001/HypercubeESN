@@ -78,7 +78,8 @@ Switch with `config::DRIVE_LAYOUT` in `Lorenz.h` (`num_inputs` must divide `N = 
 
 | `DriveLayout` | Channels | Features |
 |---------------|---------:|----------|
-| `XyzXz` (default) | 4 | `[x, y, z, x·z]` |
+| `XyzXz` (default) | 4 | `[x, y, z, x·z]` (ODE bilinear in y-dot) |
+| `XyzXy` | 4 | `[x, y, z, x·y]` (ODE bilinear in z-dot) |
 | `Quadratic8` | 8 | `[x, y, z, x·y, x·z, x², y², z²]` |
 
 ```text
@@ -254,11 +255,12 @@ Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
 trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`.
 
 **`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey`; rank by
-mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking CSV +
-`.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing overrides (restored
-on exit): `spectral_radius` / `input_scaling` (>0 set, 0 = keep config) and
-`drive_gains` (non-empty list size = `n_in` sets `INPUT_SCALE_CH`; `{}` keeps
-config). Stems omit SR/IS/drive_ch — banner records them.
+mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking
+CSV + `.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing overrides
+(restored on exit): `spectral_radius` / `input_scaling` (>0 set, 0 = keep config),
+`drive_layout` (`std::optional`; `nullopt` keeps config; e.g. `DriveLayout::XyzXy`),
+and `drive_gains` (non-empty list size = `n_in` sets `INPUT_SCALE_CH`; `{}` keeps
+config). Stems omit SR/IS/layout/drive_ch — banner records them.
 
 | Function | Role |
 |----------|------|

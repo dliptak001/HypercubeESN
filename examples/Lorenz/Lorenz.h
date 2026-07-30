@@ -36,6 +36,8 @@ enum class DriveLayout
     /// 8 channels: [x, y, z, x*y, x*z, x*x, y*y, z*z]
     /// Both ODE bilinears + pure quadratic pad (drops y*z; full deg-2 is 9).
     Quadratic8 = 1,
+    /// 4 channels: [x, y, z, x*y]  (ODE bilinear in z-dot). Sibling of XyzXz.
+    XyzXy = 2,
 };
 
 /// Max channels among DriveLayout variants (stack buffers / CSV).
@@ -64,6 +66,7 @@ namespace config
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
     // after feature build, train + free-run). Index order matches DriveLayout:
     //   XyzXz:      [x, y, z, x*z]
+    //   XyzXy:      [x, y, z, x*y]
     //   Quadratic8: [x, y, z, x*y, x*z, x*x, y*y, z*z]
     // Unused trailing slots ignored. Default unity = global scale only.
     // Reassignable for A/B; train and free-run/load must use the same gains.

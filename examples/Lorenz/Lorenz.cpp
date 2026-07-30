@@ -18,6 +18,7 @@ size_t Lorenz::NumDriveChannels(const DriveLayout layout)
     switch (layout)
     {
     case DriveLayout::XyzXz:      return 4;
+    case DriveLayout::XyzXy:      return 4;
     case DriveLayout::Quadratic8: return 8;
     }
     return 4;
@@ -28,6 +29,7 @@ const char* Lorenz::DriveLayoutName(const DriveLayout layout)
     switch (layout)
     {
     case DriveLayout::XyzXz:      return "XyzXz";       // [x,y,z,xz]
+    case DriveLayout::XyzXy:      return "XyzXy";       // [x,y,z,xy]
     case DriveLayout::Quadratic8: return "Quadratic8";  // [x,y,z,xy,xz,xx,yy,zz]
     }
     return "Unknown";
@@ -177,6 +179,10 @@ void Lorenz::FillDrive(float* drive, const float x, const float y, const float z
     case DriveLayout::XyzXz:
         // [x, y, z, x*z]
         drive[3] = x * z;
+        break;
+    case DriveLayout::XyzXy:
+        // [x, y, z, x*y]
+        drive[3] = x * y;
         break;
     case DriveLayout::Quadratic8:
         // [x, y, z, x*y, x*z, x*x, y*y, z*z]
@@ -448,6 +454,8 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
             csv << "step,lt,err,locked,pred_x,pred_y,pred_z,true_x,true_y,true_z";
             if (config::DRIVE_LAYOUT == DriveLayout::Quadratic8)
                 csv << ",drive_x,drive_y,drive_z,drive_xy,drive_xz,drive_xx,drive_yy,drive_zz\n";
+            else if (config::DRIVE_LAYOUT == DriveLayout::XyzXy)
+                csv << ",drive_x,drive_y,drive_z,drive_xy\n";
             else
                 csv << ",drive_x,drive_y,drive_z,drive_xz\n";
         }

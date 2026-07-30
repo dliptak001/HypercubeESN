@@ -93,6 +93,9 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **`SeedSweep` drive_gains:** optional `std::initializer_list<float>` sets
   `INPUT_SCALE_CH` for the sweep (size = drive `n_in`; empty keeps config;
   restored on exit). Shared gain helpers with `Campaign_DriveGainAB`.
+- **`DriveLayout::XyzXy`:** 4-in `[x,y,z,x*y]` (z-dot bilinear). Free-run CSV
+  `drive_xy`. `SeedSweep` optional `drive_layout` (`std::optional`; nullopt keeps
+  config); applied before gains so `n_in` matches.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

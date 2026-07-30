@@ -42,7 +42,7 @@ int main()
     // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
     // SeedSweep (Train+survey each seed, rank by mean VPT*duty).
     constexpr size_t kDim = 11;
-    constexpr size_t kM = 22;//31;
+    constexpr size_t kM = 22;
     return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
                      /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull,
                                     421978990ull, 521978990ull},
@@ -53,8 +53,9 @@ int main()
                      /*top_k=*/10,
                      /*do_train=*/true,
                      /*spectral_radius=*/0.95f,   // >0 sets config::SPECTRAL_RADIUS
-                     /*input_scaling=*/0.07f,     // >0 sets config::INPUT_SCALING
-                     /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f}); // XyzXz [x,y,z,xz]; {} keeps config
+                     /*input_scaling=*/0.02f,     // >0 sets config::INPUT_SCALING
+                     /*drive_layout=*/DriveLayout::XyzXy, // or XyzXz / Quadratic8; nullopt keeps config
+                     /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f}); // [x,y,z,xy]; {} keeps config        XyzXz{1.f, 1.f, 0.9f, 0.7f}
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(12, 12, 221978990ull, 1000, 72983498ull,

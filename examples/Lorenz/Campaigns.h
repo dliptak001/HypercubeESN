@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <optional>
 
 // ---------------------------------------------------------------------------
 // Campaign entry points -- plain functions. Call them from main.cpp (copy/paste).
@@ -133,9 +134,11 @@ int Train(size_t dim,
 ///                          If <= 0 (default), keep the current config value.
 /// @param input_scaling     If > 0, set config::INPUT_SCALING for the whole sweep.
 ///                          If <= 0 (default), keep the current config value.
+/// @param drive_layout      If set, set config::DRIVE_LAYOUT for the sweep
+///                          (XyzXz / XyzXy / Quadratic8). nullopt (default) keeps config.
 /// @param drive_gains       If non-empty, set config::INPUT_SCALE_CH for the sweep.
-///                          Must have exactly NumDriveChannels(DRIVE_LAYOUT) entries
-///                          (layout feature order; XyzXz = [x,y,z,xz]). Empty (default)
+///                          Must have exactly NumDriveChannels(active layout) entries
+///                          (layout feature order; e.g. XyzXz/XyzXy = 4). Empty (default)
 ///                          keeps current channel gains.
 int SeedSweep(size_t dim,
               size_t history_depth,
@@ -148,6 +151,7 @@ int SeedSweep(size_t dim,
               bool do_train = true,
               float spectral_radius = 0.f,
               float input_scaling = 0.f,
+              std::optional<DriveLayout> drive_layout = std::nullopt,
               std::initializer_list<float> drive_gains = {});
 
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up

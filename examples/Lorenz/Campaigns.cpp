@@ -1562,6 +1562,7 @@ int SeedSweep(size_t dim, size_t history_depth,
               uint64_t train_orbit, uint64_t freerun_orbit_seed,
               int top_k, bool do_train,
               float spectral_radius, float input_scaling,
+              std::optional<DriveLayout> drive_layout,
               std::initializer_list<float> drive_gains)
 {
     if (!ValidateDim(dim, "seed-sweep"))
@@ -1605,22 +1606,26 @@ int SeedSweep(size_t dim, size_t history_depth,
     if (input_scaling > 0.0f && !ValidateInputScaling(input_scaling, "seed-sweep"))
         return 2;
 
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float gains_buf[kMaxDriveChannels]{};
-    const bool override_gains = drive_gains.size() > 0;
-    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "seed-sweep"))
-        return 2;
-
     // RAII: campaigns below also restore; outer restore keeps caller knobs stable.
+    // Drive layout first so n_in / gains match the active layout.
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
     ConfigSizeRestore epochs_restore(config::EPOCHS, do_train ? epochs : config::EPOCHS);
+    ConfigDriveRestore drive_restore(
+        config::DRIVE_LAYOUT,
+        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
     ConfigFloatRestore is_restore(
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
+
+    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+    float gains_buf[kMaxDriveChannels]{};
+    const bool override_gains = drive_gains.size() > 0;
+    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "seed-sweep"))
+        return 2;
     ConfigDriveGainsRestore gains_restore;
     if (override_gains)
         ApplyDriveGains(gains_buf);
@@ -1656,16 +1661,18 @@ int SeedSweep(size_t dim, size_t history_depth,
                 input_scaling > 0.0f ? " (override)" : " (config)");
     {
         const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
-        std::printf("[seed-sweep] drive_ch=%s%s  drive=%s  n_in=%zu\n",
+        std::printf("[seed-sweep] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
+                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
+                    drive_layout.has_value() ? " (override)" : " (config)",
+                    n_in,
                     ch.c_str(),
-                    override_gains ? " (override)" : " (config)",
-                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT), n_in);
+                    override_gains ? " (override)" : " (config)");
     }
     std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
                 static_cast<unsigned long long>(train_orbit),
                 static_cast<unsigned long long>(freerun_orbit_seed));
     std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu  "
-                "(stems omit SR/IS/drive_ch -- document in ranking banner)\n",
+                "(stems omit SR/IS/layout/drive_ch -- document in ranking banner)\n",
                 model_dir.string().c_str(), dim, history_depth);
     std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
     std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
