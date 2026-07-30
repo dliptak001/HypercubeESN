@@ -13,20 +13,6 @@
 //  CONFIGURATION — consolidation point for primary variables of interest
 // ============================================================================
 
-/// Free-run protocol (orbit choice + where generative scoring starts).
-enum class FreeRunProtocol
-{
-    /// Challenge (default): new IC each free-run (not a train replay);
-    /// edge warmup then free-run past span on that orbit.
-    Unseen = 0,
-    /// Easy / in-sample: replay a training orbit; warmup from start of train;
-    /// free-run scores only while still inside the train window (index <= span).
-    TrainInSample = 1,
-    /// Temporal holdout on a train orbit: edge warmup on last W of train;
-    /// free-run starts at span+1 (first point past the train section).
-    TrainHoldout = 2,
-};
-
 /// Reservoir input-drive layout (num_inputs must divide N = 2^DIM).
 /// Free-run rebuilds products from predicted (x,y,z) -- no denorm/renorm.
 enum class DriveLayout
@@ -83,7 +69,7 @@ namespace config
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
-    constexpr float LEARNING_RATE_MIN = 0.000002f;
+    constexpr float LEARNING_RATE_MIN = 0.000001f;
     // Not constexpr: campaigns may reassign (surveys / heavy train).
     // Typical: 50–100 rapid A/B; 100–200 refine; 300–500 heavy train.
     inline size_t EPOCHS = 100;
@@ -105,12 +91,9 @@ namespace config
     // ---- Stage control ----
     // Teacher-forced open-loop reservoir drive before the useful phase:
     // train → before TrainStep; free-run → before generative scoring.
-    // Free-run seating: Unseen/TrainHoldout = last W of train (edge);
-    // TrainInSample = first W of train. Clamped to [1, span+1] at free-run use.
+    // Free-run seating: last W of train (edge), then generative from span+1.
+    // W clamped to [1, span+1] at free-run use.
     constexpr size_t WARMUP_STEPS = 1000;
-
-    // Default free-run arm (trainholdout).
-    constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
 
     // ---- Model I/O (readout HCNW + arch sidecar; reservoir is seed-reproducible) ----
     // Save: off by default. When true, Train() writes after the last epoch:
@@ -121,7 +104,7 @@ namespace config
 
     // Load: off by default. When true, skip Train() and load readout from stem
     // (no extension). ESN seed/arch/drive layout must match the run that produced
-    // the file. Free-run after load is Unseen only (no train-orbit list).
+    // the file. Free-run after load uses fixed IC / remix orbits (no train required).
     // Example stem (match save naming):
     //   C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4
     constexpr bool LOAD_TRAINED_WEIGHTS = false;
@@ -146,7 +129,6 @@ struct FreeRunResult
     bool valid = false;
     uint64_t seed = 0;
     uint64_t orbit_seed = 0;
-    FreeRunProtocol protocol = FreeRunProtocol::Unseen;
     size_t vpt_steps = 0;
     bool crossed = false;
     double vpt_lt = 0.0;
@@ -166,8 +148,9 @@ struct FreeRunResult
 ///       v
 ///   ESN (fixed reservoir + online HCNN readout; external feedback off)
 ///
-/// Train(): multi-orbit online epochs (new IC each epoch). FreeRun(): one of three
-/// protocols (Unseen / TrainInSample / TrainHoldout) — see FreeRunProtocol.
+/// Train(): multi-orbit online epochs (new IC each epoch); full train+runway stream.
+/// FreeRun(): multi-IC challenge — edge warmup then generative past span; stream is
+/// slim (wash + free-run runway only, with discarded burn-in for orbit phase).
 class Lorenz
 {
 public:
@@ -177,8 +160,7 @@ public:
 
     /// Load readout from @p stem (no .hcnw extension), or config::LOAD_WEIGHTS_STEM
     /// when @p stem is null/empty. Throws if stem empty / load fails.
-    /// Clears train-orbit list (TrainInSample / TrainHoldout list pick unavailable
-    /// until Train(); FreeRun with fixed_ic / fixed_orbit_seed still works).
+    /// FreeRun with fixed_ic / fixed_orbit_seed / remix still works after load.
     void LoadTrainedWeights(const char* stem = nullptr);
 
     /// Save readout to @p stem (no .hcnw extension). If null/empty, uses the
@@ -186,19 +168,15 @@ public:
     /// Always writes (unlike SaveTrainedWeightsIfEnabled, which is config-gated).
     void SaveTrainedWeights(const char* stem = nullptr) const;
 
-    /// Free-run under @p protocol (default @c config::FREE_RUN_PROTOCOL).
+    /// Free-run: edge warmup (last W of train section) then generative past span.
     /// @p warmup_steps 0 → config::WARMUP_STEPS.
-    /// @p train_orbit_index for TrainInSample / TrainHoldout: which stored train
-    /// orbit (SIZE_MAX = auto-cycle). Ignored when a fixed stream is supplied.
-    /// @p fixed_orbit_seed if non-zero, build the stream from this seed (no remix /
-    /// train-list pick). Use for replaying a known orbit under the current protocol.
-    /// @p fixed_ic if non-null, build the stream from this attractor IC (takes
-    /// priority over @p fixed_orbit_seed). Same IC space as IcFromOrbitSeed.
+    /// @p fixed_orbit_seed if non-zero, build the stream from this seed (no remix).
+    /// @p fixed_ic if non-null, build from this attractor IC (takes priority over
+    /// @p fixed_orbit_seed). Same IC space as IcFromOrbitSeed.
+    /// Otherwise remixed new orbit (multi-IC challenge).
     /// When @p verbose and ENABLE_PRINTF, prints every generative step (pred + true xyz).
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr,
                           size_t warmup_steps = 0,
-                          FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL,
-                          size_t train_orbit_index = static_cast<size_t>(-1),
                           uint64_t fixed_orbit_seed = 0,
                           const LorenzAttractor::State* fixed_ic = nullptr);
 
@@ -206,37 +184,30 @@ public:
         return esn_.ReadoutArchSummary();
     }
 
-    [[nodiscard]] size_t NumTrainOrbits() const { return train_orbit_seeds_.size(); }
-
-    /// Config protocol, or Unseen when load-only (no train-orbit list).
-    [[nodiscard]] FreeRunProtocol EffectiveFreeRunProtocol() const;
-
-    static const char* ProtocolName(FreeRunProtocol p);
     static const char* DriveLayoutName(DriveLayout layout = config::DRIVE_LAYOUT);
     /// Channel count for @p layout (4 or 8); must divide N.
     static size_t NumDriveChannels(DriveLayout layout = config::DRIVE_LAYOUT);
 
-    /// Map orbit seed → attractor IC (same map as freerun Unseen / train remix).
+    /// Map orbit seed → attractor IC (same map as freerun remix / train remix).
     /// Public so FreeRunSurvey can print ICs for FreeRun cherry-picks.
     static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 
 private:
     uint64_t seed_, orbit_seed_;
-    /// Post-mix seeds used for each training epoch (for TrainInSample / TrainHoldout).
-    std::vector<uint64_t> train_orbit_seeds_;
-    size_t next_train_orbit_pick_ = 0;
-    bool weights_loaded_ = false; // true after LoadTrainedWeights(); skips train-orbit free-run
 
     ESNConfig esn_config_;
     ESN esn_;
     std::unique_ptr<LorenzDatastream> data_stream_;
 
-    /// Advance remix chain and build a new stream (train + Unseen free-run).
+    /// Advance remix chain and build a full train-length stream (Train only).
     void RebuildDatastream(bool verbose);
-    /// Build stream from a fixed orbit seed without advancing orbit_seed_.
+    /// Build full train+runway stream from a fixed orbit seed (Train path).
     void BuildDatastreamFromSeed(uint64_t orbit_seed, bool verbose);
-    /// Build stream from an explicit attractor IC (no remix / seed map).
+    /// Build full train+runway stream from an explicit attractor IC (Train path).
     void BuildDatastreamFromIC(LorenzAttractor::State ic, bool verbose);
+
+    /// Free-run only: slim stream (wash + runway) with burn-in discard for phase.
+    void BuildFreeRunDatastream(LorenzAttractor::State ic, size_t warmup_steps);
 
     /// If config::SAVE_TRAINED_WEIGHTS, write default-stem readout under MODEL_SAVE_DIR.
     void SaveTrainedWeightsIfEnabled() const;
@@ -248,6 +219,10 @@ private:
     static void ExtractTargets(float targets[3], const NormalizedState& state);
 
     static ESNConfig MakeESNConfig(uint64_t seed);
+    /// Full train window + free-run runway (Train).
     static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State orbit);
+    /// Compact free-run stream sized for @p warmup_steps + FREE_RUN_WINDOW_SIZE.
+    static LorenzDatastreamConfig MakeFreeRunDatastreamConfig(LorenzAttractor::State orbit,
+                                                             size_t warmup_steps);
     static float LrProfile(float lr_max, float lr_min, size_t epochs, size_t current_epoch);
 };

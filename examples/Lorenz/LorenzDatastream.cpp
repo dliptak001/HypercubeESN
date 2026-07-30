@@ -17,7 +17,8 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
     if (static_cast<size_t>(cfg.span) > cfg.stream_length)
         throw std::out_of_range("LorenzDatastream: span exceeds stream_length");
 
-    Normalize(Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt));
+    Normalize(Build(cfg.stream_length, cfg.discard_steps, cfg.initial_lorenz_state,
+                    cfg.lorenz_dt));
 
     if (print_header)
     {
@@ -32,8 +33,9 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
             return std::string(pad, '.') + cell;
         };
 
-        std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  span=%d  window=[0, %d]\n",
-                    N, cfg.lorenz_dt, span, span);
+        std::printf("[LorenzDatastream] %zu+1 samples  dt=%.3f  span=%d  window=[0, %d]"
+                    "  discard=%zu\n",
+                    N, cfg.lorenz_dt, span, span, cfg.discard_steps);
         std::printf("  array index n:%14d%s%s\n", 0, dots(span).c_str(),
                     dots(static_cast<long long>(N)).c_str());
         std::printf("%16s%14s%14s%14s\n", "", "|", "|", "|");
@@ -69,12 +71,17 @@ void LorenzDatastream::PrintOrbit() const
 }
 
 std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_length,
+                                                            const size_t discard_steps,
                                                             const LorenzAttractor::State& seed,
                                                             const float dt)
 {
     LorenzAttractor attractor(seed);
+    // Burn-in without storage (free-run slim path): same phase as a long prefix, no RAM.
+    for (size_t i = 0; i < discard_steps; ++i)
+        (void)attractor.step(dt);
+
     std::vector<LorenzAttractor::State> raw(stream_length + 1);
-    raw[0] = seed;
+    raw[0] = attractor.state; // seed if discard_steps==0; else state after burn-in
     for (size_t i = 0; i < stream_length; ++i)
         raw[i + 1] = attractor.step(dt);
     return raw;

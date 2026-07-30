@@ -256,12 +256,12 @@ void AppendCompactConfigLines(std::ostream& o)
 void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& timestamp,
                         uint64_t base_seed, uint64_t orbit_seed,
                         size_t num_trials, int num_runs,
-                        FreeRunProtocol protocol, size_t history_depth)
+                        size_t history_depth)
 {
     o << "# HypercubeESN Lorenz results\n"
       << "# job=" << job << "\n"
       << "# timestamp=" << timestamp << "\n"
-      << "# protocol=" << Lorenz::ProtocolName(protocol) << "\n"
+      << "# freerun=edge_warmup_then_past_span\n"
       << "# dim=" << config::DIM
       << "  N=" << (size_t{1} << config::DIM)
       << "  history_depth_M=" << history_depth << "\n"
@@ -309,8 +309,7 @@ const char* SurveyCsvHeader()
 {
     return "M,mean_vpt,std_vpt,mean_rmse,std_rmse,mean_duty,std_duty,"
            "mean_vpt_x_duty,std_vpt_x_duty,"
-           "n_trials_ok,num_trials,num_runs,wall_seconds,"
-           "protocol,ok\n";
+           "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
 }
 
 void WriteSurveyCsvRow(std::ostream& o, const SurveySummary& s)
@@ -322,7 +321,6 @@ void WriteSurveyCsvRow(std::ostream& o, const SurveySummary& s)
       << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
       << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
       << s.wall_seconds << ','
-      << Lorenz::ProtocolName(s.protocol) << ','
       << (s.ok ? 1 : 0) << '\n';
 }
 
@@ -345,7 +343,7 @@ void WriteSurveyResultFiles(const SurveySummary& s)
             return;
         }
         WriteMetadataBlock(csv, "survey", ts, s.base_seed, s.orbit_seed,
-                           s.num_trials, s.num_runs, s.protocol, s.history_depth);
+                           s.num_trials, s.num_runs, s.history_depth);
         csv << SurveyCsvHeader();
         WriteSurveyCsvRow(csv, s);
     }
@@ -357,7 +355,7 @@ void WriteSurveyResultFiles(const SurveySummary& s)
             return;
         }
         WriteMetadataBlock(txt, "survey", ts, s.base_seed, s.orbit_seed,
-                           s.num_trials, s.num_runs, s.protocol, s.history_depth);
+                           s.num_trials, s.num_runs, s.history_depth);
         txt << "\nSurvey aggregate (mean of trial-means)\n";
         txt << "  M=" << s.history_depth
             << "  trials_ok=" << s.n_trials_ok << "/" << s.num_trials
@@ -395,7 +393,6 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
     const fs::path csv_path = dir / ("Msweep_" + ts + ".csv");
     const fs::path txt_path = dir / ("Msweep_" + ts + ".txt");
 
-    const FreeRunProtocol proto = rows.empty() ? config::FREE_RUN_PROTOCOL : rows.front().protocol;
     const size_t M_meta = rows.empty() ? config::HISTORY_DEPTH : rows.front().history_depth;
 
     {
@@ -406,7 +403,7 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
             return;
         }
         WriteMetadataBlock(csv, "Msweep", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, proto, M_meta);
+                           num_threads, num_runs, M_meta);
         csv << "# note=history_depth_M column varies per row; metadata M is first successful row\n";
         csv << "# total_wall_seconds=" << total_wall_s << "\n";
         if (!rows.empty())
@@ -427,7 +424,7 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
             return;
         }
         WriteMetadataBlock(txt, "Msweep", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, proto, M_meta);
+                           num_threads, num_runs, M_meta);
         txt << "\nM-sweep roll-up (mean of trial-means; code-computed)\n";
         AppendCompactConfigLines(txt);
         if (rows.empty())
@@ -436,8 +433,7 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
         }
         else
         {
-            txt << "protocol=" << Lorenz::ProtocolName(rows.front().protocol)
-                << "  trials/M=" << rows.front().num_trials
+            txt << "trials/M=" << rows.front().num_trials
                 << "  freeruns/trial=" << rows.front().num_runs
                 << "  theta=" << config::VPT_THRESHOLD << "\n\n";
             txt << "M,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
@@ -570,26 +566,12 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         progress("train done; start free-runs", 0, num_runs);
     }
 
-    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
-    const size_t n_train_orbits = lorenz.NumTrainOrbits();
-    if ((protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
-    {
-        std::fprintf(stderr,
-                     "[seed %llu] WARN: %d free-runs > %zu train orbits (protocol=%s) -- "
-                     "extra free-runs reuse train ICs (modulo). Not unique coverage.\n",
-                     static_cast<unsigned long long>(esn_seed), num_runs, n_train_orbits,
-                     Lorenz::ProtocolName(protocol));
-        std::fflush(stderr);
-    }
-
     std::vector<FreeRunResult> results;
     results.reserve(num_runs);
     const int prog_every = (num_runs <= 20) ? 1 : std::max(10, num_runs / 20);
     for (int i = 0; i < num_runs; i++)
     {
-        results.push_back(lorenz.FreeRun(false, nullptr, 0, protocol));
+        results.push_back(lorenz.FreeRun(false, nullptr, 0));
         if ((i + 1) % prog_every == 0 || i + 1 == num_runs)
             progress("free-run", i + 1, num_runs);
     }
@@ -599,21 +581,10 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
     auto emit = [&](const char* s) { out += s; };
 
     std::snprintf(buf, sizeof buf,
-                  "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) protocol=%s ===\n",
+                  "\n=== ESN seed %llu : %d free-runs (orbit seed %llu) ===\n",
                   static_cast<unsigned long long>(esn_seed), num_runs,
-                  static_cast<unsigned long long>(orbit_seed),
-                  Lorenz::ProtocolName(protocol));
+                  static_cast<unsigned long long>(orbit_seed));
     emit(buf);
-    if ((protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(num_runs) > n_train_orbits)
-    {
-        std::snprintf(buf, sizeof buf,
-                      "  note: free-runs (%d) exceed train orbits (%zu); extras reuse train ICs "
-                      "(modulo) -- not unique coverage\n",
-                      num_runs, n_train_orbits);
-        emit(buf);
-    }
 
     std::vector<double> vpt_lts, rmses, duties, vpt_x_duties;
     size_t censored = 0, invalid = 0;
@@ -692,11 +663,6 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
     emit("  note: freerun stats = VPT, duty, VPT*duty, RMSE only; best 50% of ICs per "
          "metric (odd n keeps ceil(n/2); higher: VPT duty VPT*duty; lower: RMSE). "
          "Weak ICs discarded on purpose; see examples/Lorenz/README.md\n");
-    if (protocol == FreeRunProtocol::TrainInSample)
-    {
-        emit("  note: TrainInSample free-run scores inside the train window (in-sample generative;"
-             " not a held-out free-run claim)\n");
-    }
     if (config::LOAD_TRAINED_WEIGHTS)
         emit("  note: readout loaded from disk (Train skipped)\n");
     if (censored)
@@ -789,21 +755,10 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
         static_cast<long long>(num_runs) *
         (static_cast<long long>(config::WARMUP_STEPS) +
          static_cast<long long>(config::FREE_RUN_WINDOW_SIZE));
-    std::printf("[survey] protocol=%s  load_weights=%s  (input-bank free-run; ext-fb off)\n",
-                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
+    std::printf("[survey] load_weights=%s  (edge-warmup free-run; ext-fb off)\n",
                 config::LOAD_TRAINED_WEIGHTS ? "on" : "off");
     if (config::LOAD_TRAINED_WEIGHTS)
         std::printf("[survey] load stem: %s\n", config::LOAD_WEIGHTS_STEM);
-    if ((config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainInSample ||
-         config::FREE_RUN_PROTOCOL == FreeRunProtocol::TrainHoldout) &&
-        !config::LOAD_TRAINED_WEIGHTS &&
-        static_cast<size_t>(num_runs) > config::EPOCHS)
-    {
-        std::printf("[survey] WARN: NUM_RUNS=%d > EPOCHS=%zu for %s -- free-runs will reuse "
-                    "train ICs (modulo); not unique coverage (not clamped)\n",
-                    num_runs, config::EPOCHS,
-                    Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL));
-    }
     std::printf("[survey] %zu trial(s) x %d free-run(s)  DIM=%zu N=%zu  history_depth(M)=%zu  "
                 "epochs=%zu  train_window=%d  warmup=%zu  freerun_window=%zu\n",
                 num_threads, num_runs, config::DIM, size_t{1} << config::DIM,
@@ -882,7 +837,6 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
     sum.num_trials = num_threads;
     sum.num_runs = num_runs;
     sum.n_trials_ok = trial_vpt.size();
-    sum.protocol = config::FREE_RUN_PROTOCOL;
     sum.base_seed = base_seed;
     sum.orbit_seed = orbit_seed;
     MeanStd(trial_vpt, sum.mean_vpt, sum.std_vpt);
@@ -942,9 +896,8 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
         return 2;
 
     ReportBanner("Trace");
-    std::printf("[trace] protocol=%s  DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  max_freeruns=%d  "
+    std::printf("[trace] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  max_freeruns=%d  "
                 "target_orbit=%llu\n",
-                Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
                 config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
                 static_cast<unsigned long long>(esn_seed), max_freeruns,
                 static_cast<unsigned long long>(target_orbit));
@@ -962,19 +915,6 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
         lorenz.LoadTrainedWeights();
     else
         lorenz.Train();
-    const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
-    const size_t n_train_orbits = lorenz.NumTrainOrbits();
-    if (target_orbit == 0 &&
-        (protocol == FreeRunProtocol::TrainInSample ||
-         protocol == FreeRunProtocol::TrainHoldout) &&
-        n_train_orbits > 0 && static_cast<size_t>(max_freeruns) > n_train_orbits)
-    {
-        std::fprintf(stderr,
-                     "[trace] WARN: max_freeruns=%d > %zu train orbits (protocol=%s); "
-                     "extras reuse train ICs (modulo)\n",
-                     max_freeruns, n_train_orbits, Lorenz::ProtocolName(protocol));
-        std::fflush(stderr);
-    }
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
@@ -1014,7 +954,7 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
 
         // ENABLE_PRINTF stays true so every generative step is printed.
         FreeRunResult r = lorenz.FreeRun(/*verbose=*/true, out_path.string().c_str(),
-                                         0, protocol, static_cast<size_t>(-1), target_orbit);
+                                         0, target_orbit);
         if (!r.valid)
         {
             std::printf("[trace] free-run invalid\n");
@@ -1038,7 +978,7 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
         for (int i = 0; i < max_freeruns; ++i)
         {
             const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
-            FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, protocol);
+            FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0);
             if (!r.valid)
             {
                 std::printf("[trace] free-run %d invalid - stop\n", i);
@@ -1190,12 +1130,8 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
     const fs::path out_path = trace_dir /
         ("seed" + std::to_string(esn_seed) + "_" + ic_tag + ".csv");
 
-    // Seating only: fixed IC builds the stream (no train-orbit list required).
-    const FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL;
-
     ReportBanner("FreeRun (load-only)");
-    std::printf("[freerun] protocol=%s  DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu\n",
-                Lorenz::ProtocolName(protocol),
+    std::printf("[freerun] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu\n",
                 config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
                 static_cast<unsigned long long>(esn_seed));
     std::printf("[freerun] IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
@@ -1220,13 +1156,11 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
         return 1;
     }
 
-    std::printf("[freerun] free-run fixed IC under protocol=%s (no train)\n",
-                Lorenz::ProtocolName(protocol));
+    std::printf("[freerun] free-run fixed IC (no train)\n");
     std::fflush(stdout);
 
     FreeRunResult r = lorenz.FreeRun(/*verbose=*/true, out_path.string().c_str(),
-                                     0, protocol, static_cast<size_t>(-1),
-                                     /*fixed_orbit_seed=*/0, &ic);
+                                     0, /*fixed_orbit_seed=*/0, &ic);
     if (!r.valid)
     {
         std::printf("[freerun] free-run invalid\n");
@@ -1256,7 +1190,7 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
 }
 
 // ---------------------------------------------------------------------------
-// FreeRunSurvey (campaign: load weights + many Unseen freeruns + rank ICs)
+// FreeRunSurvey (campaign: load weights + many freeruns + rank ICs)
 // ---------------------------------------------------------------------------
 // Pipeline middle step: Train -> FreeRunSurvey -> FreeRun (cherry-pick IC).
 int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
@@ -1304,7 +1238,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                 static_cast<unsigned long long>(esn_seed), num_runs,
                 static_cast<unsigned long long>(orbit_seed), top_k);
     std::printf("[freerun-survey] load stem: %s\n", stem);
-    std::printf("[freerun-survey] freerun protocol=Unseen (remix IC each run); "
+    std::printf("[freerun-survey] freerun remix IC each run; "
                 "stats use best-half pool; metrics=VPT,duty,VPT*duty,RMSE\n");
     std::printf("[freerun-survey] CSV dir: %s\n", survey_dir.string().c_str());
     std::fflush(stdout);
@@ -1338,9 +1272,8 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
 
     for (int i = 0; i < num_runs; ++i)
     {
-        // Unseen: remixes orbit_seed_ each call; no train-orbit list needed.
-        FreeRunResult r = lorenz.FreeRun(/*verbose=*/false, /*csv=*/nullptr,
-                                         0, FreeRunProtocol::Unseen);
+        // Remix orbit_seed_ each call (multi-IC challenge).
+        FreeRunResult r = lorenz.FreeRun(/*verbose=*/false, /*csv=*/nullptr, 0);
         if (!r.valid)
         {
             std::fprintf(stderr, "[freerun-survey] freerun %d/%d invalid - skip\n",
@@ -1999,8 +1932,7 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
         {
             char line[640];
             std::snprintf(line, sizeof line,
-                          "protocol=%s  trials/M=%zu  freeruns/trial=%d  theta=%.2f\n",
-                          Lorenz::ProtocolName(rows.front().protocol),
+                          "trials/M=%zu  freeruns/trial=%d  theta=%.2f\n",
                           rows.front().num_trials, rows.front().num_runs,
                           config::VPT_THRESHOLD);
             roll << line;
@@ -2124,7 +2056,6 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
           << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
           << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
           << s.wall_seconds << ','
-          << Lorenz::ProtocolName(s.protocol) << ','
           << (s.ok ? 1 : 0) << '\n';
     };
 
@@ -2136,12 +2067,12 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(csv, "DriveAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         csv << "# dim=" << dim << "  fixed_M=" << history_depth
             << "  total_wall_seconds=" << total_wall_s << "\n";
         csv << "drive,num_inputs,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
                "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
-               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+               "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
         if (a.ok) write_row(csv, a);
         if (b.ok) write_row(csv, b);
         if (a.ok && b.ok)
@@ -2160,7 +2091,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(txt, "DriveAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         txt << "\nDrive-layout A/B (fixed M; mean of trial-means)\n";
         txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
             << "  M=" << history_depth << "\n";
@@ -2298,9 +2229,8 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
 
         char line[512];
         std::snprintf(line, sizeof line,
-                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      "DIM=%zu  N=%zu  M=%zu  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
                       dim, size_t{1} << dim, history_depth,
-                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
                       arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
                       num_runs, config::VPT_THRESHOLD);
         roll << line;
@@ -2427,7 +2357,6 @@ void WriteSrAbResultFiles(const SurveySummary& a, const SurveySummary& b,
           << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
           << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
           << s.wall_seconds << ','
-          << Lorenz::ProtocolName(s.protocol) << ','
           << (s.ok ? 1 : 0) << '\n';
     };
 
@@ -2439,13 +2368,13 @@ void WriteSrAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(csv, "SrAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         csv << "# dim=" << dim << "  fixed_M=" << history_depth
             << "  sr_a=" << sr_a << "  sr_b=" << sr_b
             << "  total_wall_seconds=" << total_wall_s << "\n";
         csv << "SR,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
                "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
-               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+               "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
         if (a.ok) write_row(csv, sr_a, a);
         if (b.ok) write_row(csv, sr_b, b);
         if (a.ok && b.ok)
@@ -2464,7 +2393,7 @@ void WriteSrAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(txt, "SrAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         txt << "\nSpectral-radius A/B (fixed dim/M; mean of trial-means)\n";
         txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
             << "  M=" << history_depth
@@ -2597,9 +2526,8 @@ int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
 
         char line[512];
         std::snprintf(line, sizeof line,
-                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      "DIM=%zu  N=%zu  M=%zu  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
                       dim, size_t{1} << dim, history_depth,
-                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
                       arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
                       num_runs, config::VPT_THRESHOLD);
         roll << line;
@@ -2729,7 +2657,6 @@ void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
           << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
           << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
           << s.wall_seconds << ','
-          << Lorenz::ProtocolName(s.protocol) << ','
           << (s.ok ? 1 : 0) << '\n';
     };
 
@@ -2741,13 +2668,13 @@ void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(csv, "GainAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         csv << "# dim=" << dim << "  fixed_M=" << history_depth
             << "  gains_a=" << ga << "  gains_b=" << gb
             << "  total_wall_seconds=" << total_wall_s << "\n";
         csv << "arm,drive_ch,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
                "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
-               "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
+               "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
         if (a.ok) write_row(csv, "A", gains_a, a);
         if (b.ok) write_row(csv, "B", gains_b, b);
         if (a.ok && b.ok)
@@ -2766,7 +2693,7 @@ void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             return;
         }
         WriteMetadataBlock(txt, "GainAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, config::FREE_RUN_PROTOCOL, history_depth);
+                           num_threads, num_runs, history_depth);
         txt << "\nDrive-gain A/B (fixed dim/M; mean of trial-means)\n";
         txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
             << "  M=" << history_depth
@@ -2911,9 +2838,8 @@ int Campaign_DriveGainAB(size_t dim, size_t history_depth,
 
         char line[640];
         std::snprintf(line, sizeof line,
-                      "DIM=%zu  N=%zu  M=%zu  protocol=%s  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
+                      "DIM=%zu  N=%zu  M=%zu  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
                       dim, size_t{1} << dim, history_depth,
-                      Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
                       arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
                       num_runs, config::VPT_THRESHOLD);
         roll << line;

@@ -20,7 +20,7 @@ Cursor  →  LorenzAttractor  →  LorenzDatastream  →  Lorenz (ESN train / fr
 Ballpark for **standard (vanilla) Echo State Network** free-run on Lorenz-63,
 scored versus Lyapunov time. Unassisted closed loop after teacher-forced
 training. Do not quote these ranges as HypercubeESN results until the example
-survey is re-run under the current protocol.
+survey is re-run with the same free-run seating.
 
 | Class | Valid prediction horizon (Lyapunov times) |
 |-------|-------------------------------------------|
@@ -107,33 +107,25 @@ Per epoch:
 
 ## 6. Free-run (`Lorenz::FreeRun`)
 
-Three protocols (`FreeRunProtocol` / `config::FREE_RUN_PROTOCOL`):
+Single multi-IC challenge path (no train-orbit replay modes):
 
-| Protocol | Orbit | Warmup | Generative scores |
-|----------|--------|--------|-------------------|
-| **Unseen** (default, challenge) | New IC (remix after train) | Last W of train on that orbit | From `span+1` (eval runway) |
-| **TrainInSample** (easy) | Replay a train-epoch IC | First W of train | While `index ≤ span` only |
-| **TrainHoldout** (same-orbit holdout) | Replay a train-epoch IC | Last W of train | From `span+1` |
-
-Train stores each epoch’s orbit seed; TrainInSample / TrainHoldout cycle those seeds
-(`FreeRun(..., train_orbit_index)`; default auto-cycles).
+| | Orbit | Warmup | Generative scores |
+|--|--------|--------|-------------------|
+| Free-run | New IC (remix), or fixed orbit seed / fixed attractor IC | Last W of train on that orbit | From `span+1` (eval runway) |
 
 Warmup length: `WARMUP_STEPS` (shared with train; override free-run via `warmup_steps`;
-`0` = default). Teacher-forced open-loop before the useful phase.
+`0` = default). Teacher-forced open-loop on the edge of the train section, then
+generative scoring past span.
 
-Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
+Generative loop: for up to `FREE_RUN_WINDOW_SIZE` steps —
 
 - `Predict` → pack prediction as input drive → `ReservoirStep(drive, nullptr)`
 - Score vs true `S[index]` (normalized channel-RMS)
 - Primary metrics: **VPT**, **duty**, **VPT×duty**, **RMSE** (θ = `VPT_THRESHOLD`)
 - Per-step `locked` is still written to trace CSVs for plots (not aggregated)
 
-**Claim discipline:** Unseen = multi-IC generalization; TrainHoldout ≈ single-trajectory
-temporal free-run; TrainInSample = in-sample generative (do not treat as holdout VPT).
-
-For **TrainInSample / TrainHoldout**, free-run count is independent of epochs, but if
-`NUM_RUNS > EPOCHS` (train-orbit count) the harness **warns** and still runs — extras
-reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epochs.
+**Claim discipline:** free-run numbers are multi-IC generalization (remix or fixed
+IC/orbit), not in-sample train-window generative score.
 
 | Field | Meaning |
 |-------|---------|
@@ -172,11 +164,11 @@ that trial’s best-half freeruns. CSV metadata records
 | Diagnostics | `ENABLE_PRINTF` (verbose); `ENABLE_PROGRESS` (stderr heartbeats; off for quiet overnight) |
 | Reservoir | dim, seed, `SPECTRAL_RADIUS` (reassignable; SrAB), `INPUT_SCALING`, `INPUT_SCALE_CH[]`, leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
-| Stream | train span, free-run window, stream length, dt |
+| Stream | train span + freerun runway for **Train**; free-run stores only wash + runway (burn-in discarded) |
 | Stage | `WARMUP_STEPS` (train and free-run) |
-| Free-run | `FREE_RUN_PROTOCOL` (Unseen / TrainInSample / TrainHoldout) |
+| Free-run | Edge warmup (`WARMUP_STEPS`) then `FREE_RUN_WINDOW_SIZE` past span |
 | Export | `SAVE_TRAINED_WEIGHTS` (off) → `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` HCNW + arch |
-| Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only (Unseen) |
+| Load | `LOAD_TRAINED_WEIGHTS` (off) + `LOAD_WEIGHTS_STEM` — skip train, free-run only |
 | Score | VPT threshold, Lyapunov exponent |
 
 No runtime config file — edit constants and rebuild.
@@ -246,7 +238,7 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 `VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
 `[tag] done wall time: …`.
 
-**`FreeRunSurvey`** — load-only middle step: free-run `num_runs` **Unseen** orbits
+**`FreeRunSurvey`** — load-only middle step: free-run `num_runs` remixed orbits
 (remix from `orbit_seed`), aggregate best-half VPT / duty / VPT×duty / RMSE, print
 **top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
 Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
@@ -268,7 +260,7 @@ config). Stems omit SR/IS/layout/drive_ch — banner records them.
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
 | `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
-| `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs, ...)` | A/B spectral radius at fixed dim/M; matched seeds/protocol; train per arm |
+| `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs, ...)` | A/B spectral radius at fixed dim/M; matched seeds; train per arm |
 | `Campaign_DriveGainAB(dim, M, gains_a, gains_b, threads, runs, ...)` | A/B `INPUT_SCALE_CH` vectors at fixed dim/M; lists size = `n_in` |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit
@@ -278,7 +270,7 @@ epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign signatures are i
 
 **`Campaign_SpectralRadiusAB`** — two `Campaign_SeedSurvey` arms with
 `config::SPECTRAL_RADIUS` set to `sr_a` then `sr_b` (must be finite and > 0).
-Matched dim/M/seeds/protocol/drive. Refuses if `LOAD_TRAINED_WEIGHTS` is on.
+Matched dim/M/seeds/drive. Refuses if `LOAD_TRAINED_WEIGHTS` is on.
 If `SAVE_TRAINED_WEIGHTS` is on, default stems omit SR (arm B can overwrite arm A);
 prefer save off for pure A/B, or use distinct stems. Restores DIM, M, and SR on exit.
 Example: DIM12 M12, contractive vs house default:
@@ -314,7 +306,7 @@ created if needed):
 | SR A/B | `SrAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas B−A + code picks) |
 | Gain A/B | `GainAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both gain vectors + deltas B−A) |
 
-CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp protocol,
+CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp
 dim, N, M, epochs, θ, SR, drive_ch, seeds, etc.
 
 ---

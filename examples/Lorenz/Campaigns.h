@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Lorenz.h" // FreeRunProtocol
+#include "Lorenz.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +24,6 @@ struct SurveySummary
     size_t num_trials = 0;    ///< parallel ESN seeds
     int num_runs = 0;         ///< free-runs per trial
     size_t n_trials_ok = 0;   ///< trials with >=1 valid free-run
-    FreeRunProtocol protocol = FreeRunProtocol::Unseen;
     uint64_t base_seed = 0;
     uint64_t orbit_seed = 0;
 
@@ -70,7 +69,7 @@ int Campaign_Trace(size_t dim,
 /// Load readout weights from file + one free-run on an explicit attractor IC
 /// (not an orbit seed). Does **not** train. Weights stem: @p weights_stem if
 /// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
-/// Protocol from config::FREE_RUN_PROTOCOL seats warmup/score on the IC stream.
+/// Edge warmup then free-run past span on the IC stream.
 /// Writes one CSV under RUNS_DIR/traces/ (plottable with plot_freerun_overlay.py).
 /// Restores DIM and HISTORY_DEPTH on exit.
 /// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
@@ -99,7 +98,7 @@ struct FreeRunSurveySummary
     uint64_t best_orbit_seed = 0;
 };
 
-/// Load weights, free-run @p num_runs Unseen orbits (remix from @p orbit_seed),
+/// Load weights, free-run @p num_runs remixed orbits (from @p orbit_seed),
 /// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
 /// Writes a leaderboard CSV under RUNS_DIR/surveys/.
@@ -165,7 +164,7 @@ int Campaign_HistoryDepthSweep(size_t dim,
                                uint64_t orbit_seed = 72983498);
 
 /// A/B drive layouts at one fixed history depth M: XyzXz (4-in) then Quadratic8 (8-in).
-/// Matched dim/M/seeds/protocol; trains separately per arm. Code-computed roll-up.
+/// Matched dim/M/seeds; trains separately per arm. Code-computed roll-up.
 /// @param dim            Reservoir hypercube dim (N = 2^dim). Restored on exit.
 /// @param history_depth  Fixed M for both arms (1..64). Restored on exit.
 int Campaign_DriveLayoutAB(size_t dim,
@@ -176,7 +175,7 @@ int Campaign_DriveLayoutAB(size_t dim,
                            uint64_t orbit_seed = 72983498);
 
 /// A/B spectral radius at fixed dim/M: arm A = @p sr_a then arm B = @p sr_b.
-/// Matched seeds/protocol/drive; trains separately per arm (SeedSurvey).
+/// Matched seeds/drive; trains separately per arm (SeedSurvey).
 /// Code-computed roll-up + CSV/TXT under RESULTS_DIR. Restores DIM, M, SR on exit.
 /// @param dim            Reservoir hypercube dim (N = 2^dim).
 /// @param history_depth  Fixed M for both arms (1..64).
@@ -193,7 +192,7 @@ int Campaign_SpectralRadiusAB(size_t dim,
 /// A/B per-channel drive gains at fixed dim/M: arm A = @p gains_a then arm B = @p gains_b.
 /// Each list must have exactly @c NumDriveChannels(DRIVE_LAYOUT) entries (layout
 /// feature order; e.g. XyzXz = 4: [x,y,z,xz]). Values must be finite and >= 0.
-/// Matched seeds/protocol/SR; trains separately per arm (SeedSurvey).
+/// Matched seeds/SR; trains separately per arm (SeedSurvey).
 /// Restores DIM, M, and INPUT_SCALE_CH on exit. Writes GainAB_*.csv/txt under RESULTS_DIR.
 int Campaign_DriveGainAB(size_t dim,
                          size_t history_depth,

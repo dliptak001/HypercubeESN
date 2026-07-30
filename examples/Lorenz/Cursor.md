@@ -44,6 +44,6 @@ int32_t Span() const;
 ## How the example uses it
 
 - **Train:** `Reset()` then teacher-force while `!OOB()`.
-- **Free-run warmup:** `Seek` then teacher-force W steps — edge of train
-  (`span − W + 1`) for Unseen / TrainHoldout, or start of train (`0`) for
-  TrainInSample — then generative free-run with prediction on the **input** bank.
+- **Free-run warmup:** stream is slim (wash + runway only; optional discard burn-in
+  for orbit phase). `Seek` to the edge of the local train section (`span − W + 1`),
+  teacher-force W steps, then generative free-run past span on the **input** bank.
