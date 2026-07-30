@@ -352,10 +352,21 @@ void Lorenz::LoadTrainedWeights(const char* stem)
     next_train_orbit_pick_ = 0;
     weights_loaded_ = true;
 
-    std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
-                         "seed=%llu  (train-list free-run unavailable until Train(); "
-                         "fixed IC/orbit freerun OK)\n",
-                 path, static_cast<unsigned long long>(seed_));
+    // Unseen (and fixed IC/orbit freeruns) do not need the train-orbit list.
+    // Only warn when config still points at TrainInSample / TrainHoldout.
+    if (config::FREE_RUN_PROTOCOL == FreeRunProtocol::Unseen)
+    {
+        std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
+                             "seed=%llu\n",
+                     path, static_cast<unsigned long long>(seed_));
+    }
+    else
+    {
+        std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
+                             "seed=%llu  (train-list free-run unavailable until Train(); "
+                             "fixed IC/orbit freerun OK; Unseen OK)\n",
+                     path, static_cast<unsigned long long>(seed_));
+    }
     std::fflush(stderr);
 }
 
