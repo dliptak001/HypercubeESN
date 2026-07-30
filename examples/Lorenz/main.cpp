@@ -44,8 +44,8 @@ int main()
     constexpr size_t kDim = 11;
     constexpr size_t kM = 22;
     return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-                     /*esn_seeds=*/{121978990ull, 221978990ull, 321978990ull,
-                                    421978990ull, 521978990ull},
+                     /*esn_seeds=*/{10121978990ull, 10221978990ull, 10321978990ull,
+                                    10421978990ull, 10521978990ull, 10621978990ull, 10721978990ull, 10821978990ull, 10921978990ull},
                      /*epochs=*/200,
                      /*freerun_runs=*/1000,
                      /*train_orbit=*/933312947715283458ull,
