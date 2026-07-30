@@ -161,13 +161,18 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "  save_weights=" << (config::SAVE_TRAINED_WEIGHTS ? "on" : "off") << "\n"
       << "# drive_layout=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
       << "  num_inputs=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT) << "\n"
-      << "# metrics=mean_of_trial_means (sample std across trials)\n";
+      << "# metrics=mean_of_trial_means (sample std across trials)\n"
+      << "# score_vpt_x_duty=VPT_lt*duty\n"
+      << "# freerun_metrics=VPT,duty,VPT*duty,RMSE\n"
+      << "# freerun_pool=best_half_per_metric (ceil(n/2); weak ICs discarded; "
+         "higher: VPT duty VPT*duty; lower: RMSE)\n";
 }
 
 const char* SurveyCsvHeader()
 {
     return "M,mean_vpt,std_vpt,mean_rmse,std_rmse,mean_duty,std_duty,"
-           "mean_n_relock,std_n_relock,n_trials_ok,num_trials,num_runs,wall_seconds,"
+           "mean_vpt_x_duty,std_vpt_x_duty,"
+           "n_trials_ok,num_trials,num_runs,wall_seconds,"
            "protocol,ok\n";
 }
 
@@ -177,7 +182,7 @@ void WriteSurveyCsvRow(std::ostream& o, const SurveySummary& s)
       << s.mean_vpt << ',' << s.std_vpt << ','
       << s.mean_rmse << ',' << s.std_rmse << ','
       << s.mean_duty << ',' << s.std_duty << ','
-      << s.mean_n_relock << ',' << s.std_n_relock << ','
+      << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
       << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
       << s.wall_seconds << ','
       << Lorenz::ProtocolName(s.protocol) << ','
@@ -220,10 +225,14 @@ void WriteSurveyResultFiles(const SurveySummary& s)
         txt << "  M=" << s.history_depth
             << "  trials_ok=" << s.n_trials_ok << "/" << s.num_trials
             << "  freeruns/trial=" << s.num_runs << "\n";
-        txt << "  VPT   mean=" << s.mean_vpt << "  std=" << s.std_vpt << "\n";
-        txt << "  RMSE  mean=" << s.mean_rmse << "  std=" << s.std_rmse << "\n";
-        txt << "  duty  mean=" << s.mean_duty << "  std=" << s.std_duty << "\n";
-        txt << "  relock mean=" << s.mean_n_relock << "  std=" << s.std_n_relock << "\n";
+        txt << "  VPT   mean=" << s.mean_vpt << "  std=" << s.std_vpt
+            << "  (best half freeruns)\n";
+        txt << "  RMSE  mean=" << s.mean_rmse << "  std=" << s.std_rmse
+            << "  (best half freeruns, lower-is-better)\n";
+        txt << "  duty  mean=" << s.mean_duty << "  std=" << s.std_duty
+            << "  (best half freeruns)\n";
+        txt << "  VPT*duty mean=" << s.mean_vpt_x_duty << "  std=" << s.std_vpt_x_duty
+            << "  (best half freeruns)\n";
         txt << "  wall_seconds=" << s.wall_seconds << "  ok=" << (s.ok ? 1 : 0) << "\n";
     }
 
@@ -239,7 +248,8 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
                             uint64_t base_seed, uint64_t orbit_seed,
                             size_t num_threads, int num_runs,
                             double total_wall_s,
-                            size_t i_best_vpt, size_t i_best_duty)
+                            size_t i_best_vpt, size_t i_best_duty,
+                            size_t i_best_vxd)
 {
     const fs::path dir = EnsureResultsDir();
     if (!fs::exists(dir))
@@ -266,7 +276,8 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
         if (!rows.empty())
         {
             csv << "# best_mean_vpt_M=" << rows[i_best_vpt].history_depth
-                << "  best_mean_duty_M=" << rows[i_best_duty].history_depth << "\n";
+                << "  best_mean_duty_M=" << rows[i_best_duty].history_depth
+                << "  best_mean_vpt_x_duty_M=" << rows[i_best_vxd].history_depth << "\n";
         }
         csv << SurveyCsvHeader();
         for (const auto& r : rows)
@@ -293,18 +304,19 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
                 << "  trials/M=" << rows.front().num_trials
                 << "  freeruns/trial=" << rows.front().num_runs
                 << "  theta=" << config::VPT_THRESHOLD << "\n\n";
-            txt << "M,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,relk_mn,relk_sd,trials_ok,wall_s\n";
+            txt << "M,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
+                   "VxD_mn,VxD_sd,trials_ok,wall_s\n";
             for (const auto& r : rows)
             {
                 txt << r.history_depth << ','
                     << r.mean_vpt << ',' << r.std_vpt << ','
                     << r.mean_rmse << ',' << r.std_rmse << ','
                     << r.mean_duty << ',' << r.std_duty << ','
-                    << r.mean_n_relock << ',' << r.std_n_relock << ','
+                    << r.mean_vpt_x_duty << ',' << r.std_vpt_x_duty << ','
                     << r.n_trials_ok << ',' << r.wall_seconds << '\n';
             }
             txt << "\nDeltas vs first row (M=" << rows.front().history_depth << ")\n";
-            txt << "M,dVPT,dRMSE,dDuty,dRelock\n";
+            txt << "M,dVPT,dRMSE,dDuty,dVPT*duty\n";
             const auto& b = rows.front();
             for (const auto& r : rows)
             {
@@ -312,7 +324,7 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
                     << (r.mean_vpt - b.mean_vpt) << ','
                     << (r.mean_rmse - b.mean_rmse) << ','
                     << (r.mean_duty - b.mean_duty) << ','
-                    << (r.mean_n_relock - b.mean_n_relock) << '\n';
+                    << (r.mean_vpt_x_duty - b.mean_vpt_x_duty) << '\n';
             }
             txt << "\nCode picks:\n";
             txt << "  best mean VPT  : M=" << rows[i_best_vpt].history_depth
@@ -321,6 +333,9 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
             txt << "  best mean duty : M=" << rows[i_best_duty].history_depth
                 << "  duty=" << rows[i_best_duty].mean_duty
                 << " +/- " << rows[i_best_duty].std_duty << "\n";
+            txt << "  best mean VPT*duty : M=" << rows[i_best_vxd].history_depth
+                << "  VPT*duty=" << rows[i_best_vxd].mean_vpt_x_duty
+                << " +/- " << rows[i_best_vxd].std_vpt_x_duty << "\n";
             txt << "  total_wall_seconds=" << total_wall_s << "\n";
         }
     }
@@ -359,6 +374,26 @@ double MeanOf(const std::vector<double>& v)
     return m;
 }
 
+/// Upper half of a higher-is-better sample (best 50%). Odd n: keep ceil(n/2).
+std::vector<double> BestHalfHigherIsBetter(std::vector<double> v)
+{
+    if (v.size() <= 1)
+        return v;
+    std::sort(v.begin(), v.end());
+    const size_t keep = (v.size() + 1) / 2; // ceil(n/2)
+    return std::vector<double>(v.end() - static_cast<std::ptrdiff_t>(keep), v.end());
+}
+
+/// Lower half of a lower-is-better sample (best 50%). Odd n: keep ceil(n/2).
+std::vector<double> BestHalfLowerIsBetter(std::vector<double> v)
+{
+    if (v.size() <= 1)
+        return v;
+    std::sort(v.begin(), v.end());
+    const size_t keep = (v.size() + 1) / 2; // ceil(n/2)
+    return std::vector<double>(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(keep));
+}
+
 /// One trial: report text + per-trial free-run means (valid free-runs only).
 struct TrialBundle
 {
@@ -367,8 +402,8 @@ struct TrialBundle
     double mean_vpt = 0;
     double mean_rmse = 0;
     double mean_duty = 0;
-    double mean_n_relock = 0;
-    size_t n_valid = 0;
+    double mean_vpt_x_duty = 0;
+    size_t n_valid = 0; ///< valid freeruns before best-half filter
     double wall_seconds = 0;
 };
 
@@ -446,7 +481,7 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         emit(buf);
     }
 
-    std::vector<double> vpt_lts, rmses, duties, relocks, unlocks, mean_locks;
+    std::vector<double> vpt_lts, rmses, duties, vpt_x_duties;
     size_t censored = 0, invalid = 0;
     for (const auto& r : results)
     {
@@ -458,24 +493,30 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         vpt_lts.push_back(r.vpt_lt);
         rmses.push_back(r.rmse);
         duties.push_back(r.duty);
-        relocks.push_back(static_cast<double>(r.n_relock));
-        unlocks.push_back(static_cast<double>(r.n_unlock));
-        mean_locks.push_back(r.mean_locked_sojourn);
+        vpt_x_duties.push_back(r.vpt_x_duty);
         if (!r.crossed) ++censored;
     }
 
-    // Crunched trial-level means (valid free-runs only) -- used by survey / M-sweep.
-    tb.n_valid = vpt_lts.size();
-    tb.ok = tb.n_valid > 0;
+    // Best half of ICs per metric (independent). Higher: VPT, duty, VPT*duty.
+    // Lower: RMSE. Weak ICs discarded on purpose.
+    const size_t n_full = vpt_lts.size();
+    const std::vector<double> vpt_best = BestHalfHigherIsBetter(vpt_lts);
+    const std::vector<double> duty_best = BestHalfHigherIsBetter(duties);
+    const std::vector<double> vxd_best = BestHalfHigherIsBetter(vpt_x_duties);
+    const std::vector<double> rmse_best = BestHalfLowerIsBetter(rmses);
+
+    tb.n_valid = n_full;
+    tb.ok = n_full > 0;
     if (tb.ok)
     {
-        tb.mean_vpt = MeanOf(vpt_lts);
-        tb.mean_rmse = MeanOf(rmses);
-        tb.mean_duty = MeanOf(duties);
-        tb.mean_n_relock = MeanOf(relocks);
+        tb.mean_vpt = MeanOf(vpt_best);
+        tb.mean_rmse = MeanOf(rmse_best);
+        tb.mean_duty = MeanOf(duty_best);
+        tb.mean_vpt_x_duty = MeanOf(vxd_best);
     }
 
-    auto report = [&](const char* label, std::vector<double> v, int prec)
+    auto report = [&](const char* label, std::vector<double> v, int prec,
+                      size_t n_pool = 0)
     {
         if (v.empty())
         {
@@ -488,24 +529,35 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         double mean = 0, sd = 0;
         MeanStd(v, mean, sd);
         const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::snprintf(buf, sizeof buf, "  %-20s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
-                      label, n, prec, v.front(), prec, v.back(), prec, mean, prec, median, prec, sd);
+        if (n_pool > 0 && n_pool != n)
+            std::snprintf(buf, sizeof buf,
+                          "  %-20s n=%2zu (best half of %zu)  min=%.*f  max=%.*f  "
+                          "mean=%.*f  median=%.*f  std=%.*f\n",
+                          label, n, n_pool,
+                          prec, v.front(), prec, v.back(),
+                          prec, mean, prec, median, prec, sd);
+        else
+            std::snprintf(buf, sizeof buf,
+                          "  %-20s n=%2zu  min=%.*f  max=%.*f  mean=%.*f  median=%.*f  std=%.*f\n",
+                          label, n, prec, v.front(), prec, v.back(),
+                          prec, mean, prec, median, prec, sd);
         emit(buf);
     };
 
     std::snprintf(buf, sizeof buf, "\n=== Free-run stats (%d runs) ===\n", num_runs);
     emit(buf);
-    report("VPT (lt)", vpt_lts, 2);
-    report("free-run RMSE", rmses, 6);
-    report("duty (<=theta)", duties, 3);
-    report("n_relock", relocks, 1);
-    report("n_unlock", unlocks, 1);
-    report("meanLock (steps)", mean_locks, 1);
+    report("VPT (lt)", vpt_best, 2, n_full);
+    report("free-run RMSE", rmse_best, 6, n_full);
+    report("duty (<=theta)", duty_best, 3, n_full);
+    report("VPT*duty (lt)", vxd_best, 3, n_full);
     std::snprintf(buf, sizeof buf,
-                  "  note: duty/relock/unlock/meanLock use theta=VPT_THRESHOLD=%.2f "
-                  "(re-lock proxies; VPT is first upcrossing only)\n",
+                  "  note: VPT / duty use theta=VPT_THRESHOLD=%.2f; "
+                  "VPT*duty = VPT_lt * duty\n",
                   config::VPT_THRESHOLD);
     emit(buf);
+    emit("  note: freerun stats = VPT, duty, VPT*duty, RMSE only; best 50% of ICs per "
+         "metric (odd n keeps ceil(n/2); higher: VPT duty VPT*duty; lower: RMSE). "
+         "Weak ICs discarded on purpose; see examples/Lorenz/README.md\n");
     if (protocol == FreeRunProtocol::TrainInSample)
     {
         emit("  note: TrainInSample free-run scores inside the train window (in-sample generative;"
@@ -518,7 +570,7 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         std::snprintf(buf, sizeof buf,
                       "  note: %zu/%zu run(s) never crossed VPT_THRESHOLD=%.2f; "
                       "their VPT is counted at the window floor (a lower bound)\n",
-                      censored, vpt_lts.size(), config::VPT_THRESHOLD);
+                      censored, n_full, config::VPT_THRESHOLD);
         emit(buf);
     }
     if (invalid)
@@ -527,7 +579,7 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         emit(buf);
     }
 
-    // Leaderboards: VPT and duty only (no RMSE top list -- aggregates cover RMSE).
+    // Leaderboards: VPT, duty, VPT*duty (no RMSE top list -- aggregates cover RMSE).
     std::vector<const FreeRunResult*> valid;
     valid.reserve(results.size());
     for (const auto& r : results)
@@ -546,6 +598,15 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
     emit(buf);
     std::sort(valid.begin(), valid.end(),
               [](const FreeRunResult* a, const FreeRunResult* b) { return a->duty > b->duty; });
+    for (size_t i = 0; i < top_n; i++)
+        emit(valid[i]->row.c_str());
+
+    std::snprintf(buf, sizeof buf, "\n=== Top %zu highest VPT*duty (lt) ===\n", top_n);
+    emit(buf);
+    std::sort(valid.begin(), valid.end(),
+              [](const FreeRunResult* a, const FreeRunResult* b) {
+                  return a->vpt_x_duty > b->vpt_x_duty;
+              });
     for (size_t i = 0; i < top_n; i++)
         emit(valid[i]->row.c_str());
 
@@ -665,11 +726,11 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
         std::fputs(tr.report.c_str(), stdout);
 
     // Mean-of-trial-means (and std across trials) -- same style as historical TRACKING.
-    std::vector<double> trial_vpt, trial_rmse, trial_duty, trial_relock;
+    std::vector<double> trial_vpt, trial_rmse, trial_duty, trial_vxd;
     trial_vpt.reserve(num_threads);
     trial_rmse.reserve(num_threads);
     trial_duty.reserve(num_threads);
-    trial_relock.reserve(num_threads);
+    trial_vxd.reserve(num_threads);
     for (const auto& tr : trials)
     {
         if (!tr.ok)
@@ -677,7 +738,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
         trial_vpt.push_back(tr.mean_vpt);
         trial_rmse.push_back(tr.mean_rmse);
         trial_duty.push_back(tr.mean_duty);
-        trial_relock.push_back(tr.mean_n_relock);
+        trial_vxd.push_back(tr.mean_vpt_x_duty);
     }
 
     SurveySummary sum;
@@ -693,7 +754,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
     MeanStd(trial_vpt, sum.mean_vpt, sum.std_vpt);
     MeanStd(trial_rmse, sum.mean_rmse, sum.std_rmse);
     MeanStd(trial_duty, sum.mean_duty, sum.std_duty);
-    MeanStd(trial_relock, sum.mean_n_relock, sum.std_n_relock);
+    MeanStd(trial_vxd, sum.mean_vpt_x_duty, sum.std_vpt_x_duty);
     sum.wall_seconds = std::chrono::duration<double>(clock::now() - survey_t0).count();
     sum.ok = sum.n_trials_ok > 0;
 
@@ -703,14 +764,14 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
                 time_buf, num_threads, sum.n_trials_ok);
     if (sum.ok)
     {
-        std::printf("[survey] aggregate (mean of %zu trial-means):  "
+        std::printf("[survey] aggregate (mean of %zu trial-means; best-half ICs):  "
                     "VPT mean=%.3f std=%.3f  RMSE mean=%.6f std=%.6f  "
-                    "duty mean=%.3f std=%.3f  n_relock mean=%.1f std=%.1f  M=%zu\n",
+                    "duty mean=%.3f std=%.3f  VPT*duty mean=%.3f std=%.3f  M=%zu\n",
                     sum.n_trials_ok,
                     sum.mean_vpt, sum.std_vpt,
                     sum.mean_rmse, sum.std_rmse,
                     sum.mean_duty, sum.std_duty,
-                    sum.mean_n_relock, sum.std_n_relock,
+                    sum.mean_vpt_x_duty, sum.std_vpt_x_duty,
                     sum.history_depth);
     }
     std::fflush(stdout);
@@ -728,6 +789,10 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
 // ---------------------------------------------------------------------------
 // Campaign_Trace
 // ---------------------------------------------------------------------------
+// Train one ESN seed, free-run, write per-step CSV (pred + true xyz).
+// Output dir is absolute: {config::RESULTS_DIR}/traces/ (CWD-independent —
+// CLion runs with build-dir CWD, so relative paths are unreliable).
+// When target_orbit != 0: free-run that orbit once and print every generative step.
 int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t target_orbit,
                    uint64_t orbit_seed)
 {
@@ -738,6 +803,19 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
     if (max_freeruns < 1)
         max_freeruns = 1;
 
+    // Absolute path under RESULTS_DIR so CLion/build CWD does not scatter files.
+    const fs::path trace_dir = EnsureResultsDir() / "traces";
+    {
+        std::error_code ec;
+        fs::create_directories(trace_dir, ec);
+        if (ec)
+        {
+            std::fprintf(stderr, "[trace] create_directories(%s) failed: %s\n",
+                         trace_dir.string().c_str(), ec.message().c_str());
+            return 2;
+        }
+    }
+
     std::printf("=== HypercubeESN: Lorenz / trace ===\n");
     std::printf("[trace] protocol=%s  DIM=%zu (N=%zu)  esn_seed=%llu  max_freeruns=%d  "
                 "target_orbit=%llu  history_depth(M)=%zu\n",
@@ -745,8 +823,11 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
                 config::DIM, size_t{1} << config::DIM,
                 static_cast<unsigned long long>(esn_seed), max_freeruns,
                 static_cast<unsigned long long>(target_orbit), config::HISTORY_DEPTH);
-    std::printf("[trace] train %zu epochs then free-run; CSV under examples/Lorenz/traces/\n",
-                config::EPOCHS);
+    std::printf("[trace] train %zu epochs then free-run; CSV dir: %s\n",
+                config::EPOCHS, trace_dir.string().c_str());
+    if (target_orbit != 0)
+        std::printf("[trace] fixed orbit %llu — one free-run, every step printed + CSV\n",
+                    static_cast<unsigned long long>(target_orbit));
     std::fflush(stdout);
 
     config::ENABLE_PRINTF = true;
@@ -756,10 +837,10 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
         lorenz.LoadTrainedWeights();
     else
         lorenz.Train();
-    config::ENABLE_PRINTF = false;
     const FreeRunProtocol protocol = lorenz.EffectiveFreeRunProtocol();
     const size_t n_train_orbits = lorenz.NumTrainOrbits();
-    if ((protocol == FreeRunProtocol::TrainInSample ||
+    if (target_orbit == 0 &&
+        (protocol == FreeRunProtocol::TrainInSample ||
          protocol == FreeRunProtocol::TrainHoldout) &&
         n_train_orbits > 0 && static_cast<size_t>(max_freeruns) > n_train_orbits)
     {
@@ -770,38 +851,84 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
         std::fflush(stderr);
     }
 
-    namespace fs = std::filesystem;
-    const fs::path trace_dir = fs::path("examples") / "Lorenz" / "traces";
-    std::error_code ec;
-    fs::create_directories(trace_dir, ec);
-    if (ec)
-        std::fprintf(stderr, "[trace] create_directories(%s): %s\n",
-                     trace_dir.string().c_str(), ec.message().c_str());
-
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
+    std::error_code ec;
+
+    auto verify_csv = [](const fs::path& path) -> bool {
+        std::error_code e;
+        if (!fs::exists(path, e) || e)
+        {
+            std::fprintf(stderr, "[trace] CSV missing after free-run: %s\n",
+                         path.string().c_str());
+            return false;
+        }
+        const auto sz = fs::file_size(path, e);
+        if (e || sz == 0)
+        {
+            std::fprintf(stderr, "[trace] CSV empty or unreadable: %s\n",
+                         path.string().c_str());
+            return false;
+        }
+        std::printf("[trace] wrote %s  (%llu bytes)\n",
+                    path.string().c_str(),
+                    static_cast<unsigned long long>(sz));
+        return true;
+    };
 
     int dumped = 0;
-    for (int i = 0; i < max_freeruns; ++i)
+
+    // Fixed orbit: one free-run, verbose step table + CSV (pred/true xyz).
+    if (target_orbit != 0)
     {
-        const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
-        FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, protocol);
-        if (!r.valid)
-        {
-            std::printf("[trace] free-run %d invalid - stop\n", i);
-            break;
-        }
-        const bool want = (target_orbit == 0) || (r.orbit_seed == target_orbit);
-        std::printf("[trace] freerun %d/%d  orbit=%llu  VPT=%.2f lt  duty=%.3f  "
-                    "relock=%zu unlock=%zu meanLock=%.1f  %s\n",
-                    i + 1, max_freeruns,
-                    static_cast<unsigned long long>(r.orbit_seed),
-                    r.vpt_lt, r.duty, r.n_relock, r.n_unlock, r.mean_locked_sojourn,
-                    want ? "DUMP" : "skip");
+        const fs::path out_path = trace_dir /
+            ("seed" + std::to_string(esn_seed) + "_orbit" +
+             std::to_string(target_orbit) + ".csv");
+        std::printf("[trace] free-run fixed orbit=%llu  CSV=%s\n",
+                    static_cast<unsigned long long>(target_orbit),
+                    out_path.string().c_str());
         std::fflush(stdout);
 
-        if (want)
+        // ENABLE_PRINTF stays true so every generative step is printed.
+        FreeRunResult r = lorenz.FreeRun(/*verbose=*/true, out_path.string().c_str(),
+                                         0, protocol, static_cast<size_t>(-1), target_orbit);
+        if (!r.valid)
         {
+            std::printf("[trace] free-run invalid\n");
+            return 1;
+        }
+        std::printf("[trace] freerun orbit=%llu  VPT=%.2f lt  duty=%.3f  "
+                    "VPT*duty=%.3f  RMSE=%.6f\n",
+                    static_cast<unsigned long long>(r.orbit_seed),
+                    r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+        std::printf("%s", r.row.c_str());
+        if (!verify_csv(out_path))
+            return 1;
+        std::printf("[trace] plot:\n"
+                    "  python examples/Lorenz/plot_freerun_overlay.py \"%s\"\n",
+                    out_path.string().c_str());
+        dumped = 1;
+    }
+    else
+    {
+        // Hunt/dump mode: cycle free-runs (no per-step print; CSV only).
+        config::ENABLE_PRINTF = false;
+        for (int i = 0; i < max_freeruns; ++i)
+        {
+            const fs::path tmp_path = trace_dir / ("_tmp_" + std::to_string(esn_seed) + ".csv");
+            FreeRunResult r = lorenz.FreeRun(false, tmp_path.string().c_str(), 0, protocol);
+            if (!r.valid)
+            {
+                std::printf("[trace] free-run %d invalid - stop\n", i);
+                break;
+            }
+            std::printf("[trace] freerun %d/%d  orbit=%llu  VPT=%.2f lt  duty=%.3f  "
+                        "VPT*duty=%.3f  RMSE=%.6f  DUMP\n",
+                        i + 1, max_freeruns,
+                        static_cast<unsigned long long>(r.orbit_seed),
+                        r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+            std::fflush(stdout);
+
             const fs::path out_path = trace_dir /
                 ("seed" + std::to_string(esn_seed) + "_orbit" +
                  std::to_string(r.orbit_seed) + ".csv");
@@ -811,17 +938,14 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
             {
                 std::printf("[trace] rename failed (%s) - CSV left at %s\n",
                             ec.message().c_str(), tmp_path.string().c_str());
+                if (verify_csv(tmp_path))
+                    ++dumped;
             }
-            else
-                std::printf("[trace] wrote %s\n", out_path.string().c_str());
-            std::printf("%s", r.row.c_str());
-            ++dumped;
-            if (target_orbit != 0)
-                break;
-        }
-        else
-        {
-            fs::remove(tmp_path, ec);
+            else if (verify_csv(out_path))
+            {
+                std::printf("%s", r.row.c_str());
+                ++dumped;
+            }
         }
     }
 
@@ -831,6 +955,432 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
     FormatWallTime(time_buf, sizeof time_buf, elapsed);
     std::printf("[trace] done - %d CSV file(s)  wall time: %s\n", dumped, time_buf);
     return dumped > 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// Train (campaign: remixed train + save weights; no freerun)
+// ---------------------------------------------------------------------------
+// Distinct from Lorenz::Train (member).
+int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
+          uint64_t target_orbit, size_t epochs, const char* weights_stem)
+{
+    if (!ValidateDim(dim, "train"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "train"))
+        return 2;
+    if (epochs < 1)
+    {
+        std::fprintf(stderr, "[train] refused: epochs=%zu (need >= 1)\n", epochs);
+        return 2;
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
+
+    std::printf("=== HypercubeESN: Lorenz / Train (save-only; no freerun) ===\n");
+    std::printf("[train] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  target_orbit=%llu  epochs=%zu\n",
+                config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
+                static_cast<unsigned long long>(esn_seed),
+                static_cast<unsigned long long>(target_orbit),
+                epochs);
+    if (weights_stem && weights_stem[0] != '\0')
+        std::printf("[train] save stem: %s\n", weights_stem);
+    else
+        std::printf("[train] save stem: (default under %s)\n", config::MODEL_SAVE_DIR);
+    std::printf("[train] remixed orbits x %zu epochs, then save weights\n", epochs);
+    std::fflush(stdout);
+
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[train] refused: LOAD_TRAINED_WEIGHTS is on "
+                     "(this campaign always trains from scratch)\n");
+        return 2;
+    }
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    config::ENABLE_PRINTF = true;
+    Lorenz lorenz(esn_seed, target_orbit);
+    std::cout << lorenz.ReadoutArchSummary();
+    lorenz.Train(); // uses config::EPOCHS; may also save if SAVE_TRAINED_WEIGHTS
+
+    try
+    {
+        // Always write the campaign stem (or default) so FreeRun can load it.
+        lorenz.SaveTrainedWeights(weights_stem);
+    }
+    catch (const std::exception& e)
+    {
+        std::fprintf(stderr, "[train] save failed: %s\n", e.what());
+        return 1;
+    }
+
+    const double elapsed =
+        std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+    std::printf("[train] done  wall time: %s\n", time_buf);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// FreeRun (campaign: load weights + freerun one attractor IC)
+// ---------------------------------------------------------------------------
+// Load readout from file; free-run once on an explicit attractor IC (no train).
+// CSV under C:\HypercubeESNRuns\results\traces\ (independent of RESULTS_DIR).
+// Distinct from Lorenz::FreeRun (member).
+int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
+            double ic_x, double ic_y, double ic_z,
+            const char* weights_stem)
+{
+    if (!ValidateDim(dim, "freerun"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "freerun"))
+        return 2;
+
+    const char* stem = (weights_stem && weights_stem[0] != '\0')
+                           ? weights_stem
+                           : config::LOAD_WEIGHTS_STEM;
+    if (stem == nullptr || stem[0] == '\0')
+    {
+        std::fprintf(stderr,
+                     "[freerun] refused: no weights stem "
+                     "(pass weights_stem or set config::LOAD_WEIGHTS_STEM)\n");
+        return 2;
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+
+    // Dedicated run tree (user request); not config::RESULTS_DIR.
+    const fs::path trace_dir = R"(C:\HypercubeESNRuns\results\traces)";
+    {
+        std::error_code ec;
+        fs::create_directories(trace_dir, ec);
+        if (ec)
+        {
+            std::fprintf(stderr, "[freerun] create_directories(%s) failed: %s\n",
+                         trace_dir.string().c_str(), ec.message().c_str());
+            return 2;
+        }
+    }
+
+    const LorenzAttractor::State ic{ic_x, ic_y, ic_z};
+
+    char ic_tag[96];
+    std::snprintf(ic_tag, sizeof ic_tag, "ic%.6f_%.6f_%.6f", ic_x, ic_y, ic_z);
+    for (char* p = ic_tag; *p; ++p)
+        if (*p == '.')
+            *p = 'p';
+
+    const fs::path out_path = trace_dir /
+        ("seed" + std::to_string(esn_seed) + "_" + ic_tag + ".csv");
+
+    // Seating only: fixed IC builds the stream (no train-orbit list required).
+    const FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL;
+
+    std::printf("=== HypercubeESN: Lorenz / FreeRun (load-only) ===\n");
+    std::printf("[freerun] protocol=%s  DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu\n",
+                Lorenz::ProtocolName(protocol),
+                config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
+                static_cast<unsigned long long>(esn_seed));
+    std::printf("[freerun] freerun IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
+    std::printf("[freerun] load stem: %s\n", stem);
+    std::printf("[freerun] CSV: %s\n", out_path.string().c_str());
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    config::ENABLE_PRINTF = true;
+    // orbit_seed unused (no Train); keep a stable constructor arg.
+    Lorenz lorenz(esn_seed, /*orbit_seed=*/0);
+    std::cout << lorenz.ReadoutArchSummary();
+
+    try
+    {
+        lorenz.LoadTrainedWeights(stem);
+    }
+    catch (const std::exception& e)
+    {
+        std::fprintf(stderr, "[freerun] load failed: %s\n", e.what());
+        return 1;
+    }
+
+    std::printf("[freerun] free-run fixed IC under protocol=%s (no train)\n",
+                Lorenz::ProtocolName(protocol));
+    std::fflush(stdout);
+
+    FreeRunResult r = lorenz.FreeRun(/*verbose=*/true, out_path.string().c_str(),
+                                     0, protocol, static_cast<size_t>(-1),
+                                     /*fixed_orbit_seed=*/0, &ic);
+    if (!r.valid)
+    {
+        std::printf("[freerun] free-run invalid\n");
+        return 1;
+    }
+
+    std::printf("[freerun] freerun IC=(%.6f,%.6f,%.6f)  VPT=%.2f lt  duty=%.3f  "
+                "VPT*duty=%.3f  RMSE=%.6f\n",
+                ic_x, ic_y, ic_z, r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+    std::printf("%s", r.row.c_str());
+
+    {
+        std::error_code e;
+        if (!fs::exists(out_path, e) || e)
+        {
+            std::fprintf(stderr, "[freerun] CSV missing after free-run: %s\n",
+                         out_path.string().c_str());
+            return 1;
+        }
+        const auto sz = fs::file_size(out_path, e);
+        if (e || sz == 0)
+        {
+            std::fprintf(stderr, "[freerun] CSV empty or unreadable: %s\n",
+                         out_path.string().c_str());
+            return 1;
+        }
+        std::printf("[freerun] wrote %s  (%llu bytes)\n",
+                    out_path.string().c_str(),
+                    static_cast<unsigned long long>(sz));
+    }
+
+    std::printf("[freerun] plot:\n"
+                "  python examples/Lorenz/plot_freerun_overlay.py \"%s\"\n",
+                out_path.string().c_str());
+
+    const double elapsed =
+        std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+    std::printf("[freerun] done  wall time: %s\n", time_buf);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// FreeRunSurvey (campaign: load weights + many Unseen freeruns + rank ICs)
+// ---------------------------------------------------------------------------
+// Pipeline middle step: Train → FreeRunSurvey → FreeRun (cherry-pick IC).
+int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
+                  int num_runs, uint64_t orbit_seed, const char* weights_stem,
+                  int top_k)
+{
+    if (!ValidateDim(dim, "freerun-survey"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "freerun-survey"))
+        return 2;
+    if (num_runs < 1)
+    {
+        std::fprintf(stderr, "[freerun-survey] refused: num_runs=%d (need >= 1)\n",
+                     num_runs);
+        return 2;
+    }
+    if (top_k < 1)
+        top_k = 1;
+
+    const char* stem = (weights_stem && weights_stem[0] != '\0')
+                           ? weights_stem
+                           : config::LOAD_WEIGHTS_STEM;
+    if (stem == nullptr || stem[0] == '\0')
+    {
+        std::fprintf(stderr,
+                     "[freerun-survey] refused: no weights stem "
+                     "(pass weights_stem or set config::LOAD_WEIGHTS_STEM)\n");
+        return 2;
+    }
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+
+    const fs::path survey_dir = R"(C:\HypercubeESNRuns\results\surveys)";
+    {
+        std::error_code ec;
+        fs::create_directories(survey_dir, ec);
+        if (ec)
+        {
+            std::fprintf(stderr, "[freerun-survey] create_directories(%s) failed: %s\n",
+                         survey_dir.string().c_str(), ec.message().c_str());
+            return 2;
+        }
+    }
+
+    std::printf("=== HypercubeESN: Lorenz / FreeRunSurvey (load-only; multi-orbit) ===\n");
+    std::printf("[freerun-survey] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  num_runs=%d  "
+                "orbit_seed=%llu  top_k=%d\n",
+                config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
+                static_cast<unsigned long long>(esn_seed), num_runs,
+                static_cast<unsigned long long>(orbit_seed), top_k);
+    std::printf("[freerun-survey] load stem: %s\n", stem);
+    std::printf("[freerun-survey] freerun protocol=Unseen (remix IC each run); "
+                "stats use best-half pool (see README)\n");
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    // Quiet per-step freerun; still print epoch-level survey progress.
+    config::ENABLE_PRINTF = false;
+    config::ENABLE_PROGRESS = true;
+
+    Lorenz lorenz(esn_seed, orbit_seed);
+    std::cout << lorenz.ReadoutArchSummary();
+    try
+    {
+        lorenz.LoadTrainedWeights(stem);
+    }
+    catch (const std::exception& e)
+    {
+        std::fprintf(stderr, "[freerun-survey] load failed: %s\n", e.what());
+        return 1;
+    }
+
+    struct Row
+    {
+        FreeRunResult r;
+        LorenzAttractor::State ic{};
+    };
+    std::vector<Row> rows;
+    rows.reserve(static_cast<size_t>(num_runs));
+
+    for (int i = 0; i < num_runs; ++i)
+    {
+        // Unseen: remixes orbit_seed_ each call; no train-orbit list needed.
+        FreeRunResult r = lorenz.FreeRun(/*verbose=*/false, /*csv=*/nullptr,
+                                         0, FreeRunProtocol::Unseen);
+        if (!r.valid)
+        {
+            std::fprintf(stderr, "[freerun-survey] freerun %d/%d invalid - skip\n",
+                         i + 1, num_runs);
+            continue;
+        }
+        Row row;
+        row.r = std::move(r);
+        row.ic = Lorenz::IcFromOrbitSeed(row.r.orbit_seed);
+        rows.push_back(std::move(row));
+
+        if (config::ENABLE_PROGRESS &&
+            ((i + 1) % 10 == 0 || i + 1 == num_runs))
+        {
+            std::fprintf(stderr, "[freerun-survey] freerun %d/%d  last VPT=%.2f lt  "
+                                 "VPT*duty=%.3f\n",
+                         i + 1, num_runs, rows.back().r.vpt_lt, rows.back().r.vpt_x_duty);
+            std::fflush(stderr);
+        }
+    }
+
+    if (rows.empty())
+    {
+        std::printf("[freerun-survey] no valid freeruns\n");
+        return 1;
+    }
+
+    std::vector<double> vpt_lts, rmses, duties, vxds;
+    vpt_lts.reserve(rows.size());
+    rmses.reserve(rows.size());
+    duties.reserve(rows.size());
+    vxds.reserve(rows.size());
+    for (const auto& row : rows)
+    {
+        vpt_lts.push_back(row.r.vpt_lt);
+        rmses.push_back(row.r.rmse);
+        duties.push_back(row.r.duty);
+        vxds.push_back(row.r.vpt_x_duty);
+    }
+
+    const size_t n_full = rows.size();
+    const auto vpt_best = BestHalfHigherIsBetter(vpt_lts);
+    const auto duty_best = BestHalfHigherIsBetter(duties);
+    const auto vxd_best = BestHalfHigherIsBetter(vxds);
+    const auto rmse_best = BestHalfLowerIsBetter(rmses);
+
+    auto report = [](const char* label, std::vector<double> v, int prec, size_t n_pool) {
+        if (v.empty())
+            return;
+        std::sort(v.begin(), v.end());
+        double mean = 0, sd = 0;
+        MeanStd(v, mean, sd);
+        const size_t n = v.size();
+        const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+        std::printf("  %-14s n=%zu (best half of %zu)  min=%.*f  max=%.*f  "
+                    "mean=%.*f  median=%.*f  std=%.*f\n",
+                    label, n, n_pool, prec, v.front(), prec, v.back(),
+                    prec, mean, prec, median, prec, sd);
+    };
+
+    std::printf("\n=== FreeRunSurvey stats (%zu valid / %d requested) ===\n",
+                n_full, num_runs);
+    report("VPT (lt)", vpt_best, 2, n_full);
+    report("RMSE", rmse_best, 6, n_full);
+    report("duty", duty_best, 3, n_full);
+    report("VPT*duty", vxd_best, 3, n_full);
+    std::printf("  note: best-half per metric; primary sort key for leaderboard = VPT*duty\n");
+
+    // Rank all rows by VPT*duty (higher better) for cherry-picks.
+    std::vector<size_t> order(rows.size());
+    for (size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return rows[a].r.vpt_x_duty > rows[b].r.vpt_x_duty;
+    });
+
+    const size_t k = std::min(static_cast<size_t>(top_k), order.size());
+    std::printf("\n=== Top %zu freeruns by VPT*duty (paste IC into FreeRun) ===\n", k);
+    for (size_t rank = 0; rank < k; ++rank)
+    {
+        const auto& row = rows[order[rank]];
+        const auto& r = row.r;
+        const auto& ic = row.ic;
+        std::printf("  #%zu  VPT*duty=%.3f  VPT=%.2f lt  duty=%.3f  RMSE=%.6f  "
+                    "orbit_seed=%llu\n",
+                    rank + 1, r.vpt_x_duty, r.vpt_lt, r.duty, r.rmse,
+                    static_cast<unsigned long long>(r.orbit_seed));
+        std::printf("       IC=(%.6f, %.6f, %.6f)\n", ic.x, ic.y, ic.z);
+        std::printf("       FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, stem);\n",
+                    config::DIM, config::HISTORY_DEPTH,
+                    static_cast<unsigned long long>(esn_seed),
+                    ic.x, ic.y, ic.z);
+    }
+
+    // Full ranked table for post-analysis.
+    const fs::path csv_path = survey_dir /
+        ("survey_seed" + std::to_string(esn_seed) +
+         "_D" + std::to_string(config::DIM) +
+         "_M" + std::to_string(config::HISTORY_DEPTH) +
+         "_n" + std::to_string(num_runs) + ".csv");
+    {
+        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
+        if (!csv)
+        {
+            std::fprintf(stderr, "[freerun-survey] failed to write %s\n",
+                         csv_path.string().c_str());
+        }
+        else
+        {
+            csv << "rank,orbit_seed,ic_x,ic_y,ic_z,vpt_lt,duty,vpt_x_duty,rmse,crossed\n";
+            for (size_t rank = 0; rank < order.size(); ++rank)
+            {
+                const auto& row = rows[order[rank]];
+                csv << (rank + 1) << ','
+                    << row.r.orbit_seed << ','
+                    << row.ic.x << ',' << row.ic.y << ',' << row.ic.z << ','
+                    << row.r.vpt_lt << ',' << row.r.duty << ','
+                    << row.r.vpt_x_duty << ',' << row.r.rmse << ','
+                    << (row.r.crossed ? 1 : 0) << '\n';
+            }
+            std::printf("\n[freerun-survey] wrote leaderboard %s  (%zu rows)\n",
+                        csv_path.string().c_str(), order.size());
+        }
+    }
+
+    const double elapsed =
+        std::chrono::duration<double>(clock::now() - t0).count();
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, elapsed);
+    std::printf("[freerun-survey] done  wall time: %s\n", time_buf);
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -924,6 +1474,7 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
 
     size_t i_best_vpt = 0;
     size_t i_best_duty = 0;
+    size_t i_best_vxd = 0;
 
     // Build the entire roll-up as one string, then one write + flush: avoids mid-line
     // splice if any other stream noise races the console host.
@@ -939,7 +1490,7 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
         }
         else
         {
-            char line[512];
+            char line[640];
             std::snprintf(line, sizeof line,
                           "protocol=%s  trials/M=%zu  freeruns/trial=%d  theta=%.2f\n",
                           Lorenz::ProtocolName(rows.front().protocol),
@@ -948,32 +1499,34 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
             roll << line;
 
             std::snprintf(line, sizeof line,
-                          "%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                          "%-6s %8s %8s %10s %8s %8s %8s %8s %8s %10s %10s\n",
                           "M", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd", "duty_mn", "duty_sd",
-                          "relk_mn", "relk_sd", "trials_ok", "wall_s");
+                          "VxD_mn", "VxD_sd", "trials_ok", "wall_s");
             roll << line;
             std::snprintf(line, sizeof line,
-                          "%-6s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                          "%-6s %8s %8s %10s %8s %8s %8s %8s %8s %10s %10s\n",
                           "------", "--------", "--------", "----------", "--------", "--------",
-                          "----------", "--------", "--------", "----------", "----------");
+                          "--------", "--------", "--------", "----------", "----------");
             roll << line;
 
             for (size_t i = 0; i < rows.size(); ++i)
             {
                 const auto& r = rows[i];
                 std::snprintf(line, sizeof line,
-                              "%-6zu %8.3f %8.3f %10.6f %8.6f %8.3f %10.3f %8.1f %8.1f %10zu %10.1f\n",
+                              "%-6zu %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu %10.1f\n",
                               r.history_depth,
                               r.mean_vpt, r.std_vpt,
                               r.mean_rmse, r.std_rmse,
                               r.mean_duty, r.std_duty,
-                              r.mean_n_relock, r.std_n_relock,
+                              r.mean_vpt_x_duty, r.std_vpt_x_duty,
                               r.n_trials_ok, r.wall_seconds);
                 roll << line;
                 if (r.mean_vpt > rows[i_best_vpt].mean_vpt)
                     i_best_vpt = i;
                 if (r.mean_duty > rows[i_best_duty].mean_duty)
                     i_best_duty = i;
+                if (r.mean_vpt_x_duty > rows[i_best_vxd].mean_vpt_x_duty)
+                    i_best_vxd = i;
             }
 
             // Delta vs first successful row (baseline = first M that ran)
@@ -981,18 +1534,18 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
                           rows.front().history_depth);
             roll << line;
             std::snprintf(line, sizeof line, "%-6s %10s %12s %10s %12s\n",
-                          "M", "dVPT", "dRMSE", "dDuty", "dRelock");
+                          "M", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
             roll << line;
             const auto& b = rows.front();
             for (const auto& r : rows)
             {
                 std::snprintf(line, sizeof line,
-                              "%-6zu %+10.3f %+12.6f %+10.3f %+12.1f\n",
+                              "%-6zu %+10.3f %+12.6f %+10.3f %+12.3f\n",
                               r.history_depth,
                               r.mean_vpt - b.mean_vpt,
                               r.mean_rmse - b.mean_rmse,
                               r.mean_duty - b.mean_duty,
-                              r.mean_n_relock - b.mean_n_relock);
+                              r.mean_vpt_x_duty - b.mean_vpt_x_duty);
                 roll << line;
             }
 
@@ -1006,6 +1559,11 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
                           "  best mean duty : M=%zu  duty=%.3f +/- %.3f\n",
                           rows[i_best_duty].history_depth,
                           rows[i_best_duty].mean_duty, rows[i_best_duty].std_duty);
+            roll << line;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT*duty : M=%zu  VPT*duty=%.3f +/- %.3f\n",
+                          rows[i_best_vxd].history_depth,
+                          rows[i_best_vxd].mean_vpt_x_duty, rows[i_best_vxd].std_vpt_x_duty);
             roll << line;
         }
 
@@ -1025,7 +1583,7 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
 
         // Always persist roll-up under RESULTS_DIR for post-analysis (CSV + TXT).
         WriteMsweepResultFiles(rows, base_seed, orbit_seed, num_threads, num_runs, elapsed,
-                               i_best_vpt, i_best_duty);
+                               i_best_vpt, i_best_duty, i_best_vxd);
     }
 
     Beep(2500, 3000);
@@ -1056,7 +1614,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
           << s.mean_vpt << ',' << s.std_vpt << ','
           << s.mean_rmse << ',' << s.std_rmse << ','
           << s.mean_duty << ',' << s.std_duty << ','
-          << s.mean_n_relock << ',' << s.std_n_relock << ','
+          << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
           << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
           << s.wall_seconds << ','
           << Lorenz::ProtocolName(s.protocol) << ','
@@ -1075,7 +1633,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
         csv << "# dim=" << dim << "  fixed_M=" << history_depth
             << "  total_wall_seconds=" << total_wall_s << "\n";
         csv << "drive,num_inputs,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
-               "mean_duty,std_duty,mean_n_relock,std_n_relock,"
+               "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
                "n_trials_ok,num_trials,num_runs,wall_seconds,protocol,ok\n";
         if (a.ok) write_row(csv, a);
         if (b.ok) write_row(csv, b);
@@ -1084,7 +1642,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             csv << "# deltas (Quadratic8 - XyzXz): dVPT=" << (b.mean_vpt - a.mean_vpt)
                 << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
                 << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dRelock=" << (b.mean_n_relock - a.mean_n_relock) << "\n";
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
         }
     }
     {
@@ -1101,7 +1659,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             << "  M=" << history_depth << "\n";
         AppendCompactConfigLines(txt);
         txt << "\narm,drive,n_in,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
-               "relk_mn,relk_sd,trials_ok,wall_s\n";
+               "VxD_mn,VxD_sd,trials_ok,wall_s\n";
         auto arm_line = [&](const char* tag, const SurveySummary& s) {
             if (!s.ok)
             {
@@ -1114,7 +1672,7 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
                 << s.mean_vpt << ',' << s.std_vpt << ','
                 << s.mean_rmse << ',' << s.std_rmse << ','
                 << s.mean_duty << ',' << s.std_duty << ','
-                << s.mean_n_relock << ',' << s.std_n_relock << ','
+                << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
                 << s.n_trials_ok << ',' << s.wall_seconds << '\n';
         };
         arm_line("A", a);
@@ -1125,11 +1683,16 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
             txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
                 << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
                 << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dRelock=" << (b.mean_n_relock - a.mean_n_relock) << "\n";
-            txt << "\nCode pick (max mean VPT among successful arms):\n";
+                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
+            txt << "\nCode picks among successful arms:\n";
             const SurveySummary& best = (b.mean_vpt >= a.mean_vpt) ? b : a;
-            txt << "  " << Lorenz::DriveLayoutName(best.drive_layout)
+            txt << "  best mean VPT : " << Lorenz::DriveLayoutName(best.drive_layout)
                 << "  VPT=" << best.mean_vpt << " +/- " << best.std_vpt << "\n";
+            const SurveySummary& best_vxd =
+                (b.mean_vpt_x_duty >= a.mean_vpt_x_duty) ? b : a;
+            txt << "  best mean VPT*duty : " << Lorenz::DriveLayoutName(best_vxd.drive_layout)
+                << "  VPT*duty=" << best_vxd.mean_vpt_x_duty
+                << " +/- " << best_vxd.std_vpt_x_duty << "\n";
             txt << "  total_wall_seconds=" << total_wall_s << "\n";
         }
     }
@@ -1237,14 +1800,14 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
         roll << line;
 
         std::snprintf(line, sizeof line,
-                      "%-12s %5s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                      "%-12s %5s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
                       "drive", "n_in", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
-                      "duty_mn", "duty_sd", "relk_mn", "relk_sd", "trials_ok", "wall_s");
+                      "duty_mn", "duty_sd", "VxD_mn", "VxD_sd", "trials_ok");
         roll << line;
         std::snprintf(line, sizeof line,
-                      "%-12s %5s %8s %8s %10s %8s %8s %10s %8s %8s %10s %10s\n",
+                      "%-12s %5s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
                       "------------", "-----", "--------", "--------", "----------", "--------",
-                      "--------", "----------", "--------", "--------", "----------", "----------");
+                      "--------", "--------", "--------", "--------", "----------");
         roll << line;
 
         auto row = [&](const SurveySummary& s) {
@@ -1256,13 +1819,13 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
                 return;
             }
             std::snprintf(line, sizeof line,
-                          "%-12s %5zu %8.3f %8.3f %10.6f %8.6f %8.3f %10.3f %8.1f %8.1f %10zu %10.1f\n",
+                          "%-12s %5zu %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu\n",
                           Lorenz::DriveLayoutName(s.drive_layout), s.num_inputs,
                           s.mean_vpt, s.std_vpt,
                           s.mean_rmse, s.std_rmse,
                           s.mean_duty, s.std_duty,
-                          s.mean_n_relock, s.std_n_relock,
-                          s.n_trials_ok, s.wall_seconds);
+                          s.mean_vpt_x_duty, s.std_vpt_x_duty,
+                          s.n_trials_ok);
             roll << line;
         };
         row(arm_a);
@@ -1272,17 +1835,17 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
         {
             roll << "\nDeltas (Quadratic8 - XyzXz):\n";
             std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
-                          "", "dVPT", "dRMSE", "dDuty", "dRelock");
+                          "", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
             roll << line;
-            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.1f\n",
+            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.3f\n",
                           "B - A",
                           arm_b.mean_vpt - arm_a.mean_vpt,
                           arm_b.mean_rmse - arm_a.mean_rmse,
                           arm_b.mean_duty - arm_a.mean_duty,
-                          arm_b.mean_n_relock - arm_a.mean_n_relock);
+                          arm_b.mean_vpt_x_duty - arm_a.mean_vpt_x_duty);
             roll << line;
 
-            roll << "\nCode pick (max mean VPT among successful arms):\n";
+            roll << "\nCode picks among successful arms:\n";
             const SurveySummary& best =
                 (arm_b.mean_vpt >= arm_a.mean_vpt) ? arm_b : arm_a;
             std::snprintf(line, sizeof line,
@@ -1296,6 +1859,14 @@ int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
                           "  best mean duty : %s  duty=%.3f +/- %.3f  (n_in=%zu)\n",
                           Lorenz::DriveLayoutName(best_d.drive_layout),
                           best_d.mean_duty, best_d.std_duty, best_d.num_inputs);
+            roll << line;
+            const SurveySummary& best_vxd =
+                (arm_b.mean_vpt_x_duty >= arm_a.mean_vpt_x_duty) ? arm_b : arm_a;
+            std::snprintf(line, sizeof line,
+                          "  best mean VPT*duty : %s  VPT*duty=%.3f +/- %.3f  (n_in=%zu)\n",
+                          Lorenz::DriveLayoutName(best_vxd.drive_layout),
+                          best_vxd.mean_vpt_x_duty, best_vxd.std_vpt_x_duty,
+                          best_vxd.num_inputs);
             roll << line;
         }
         else if (!arm_a.ok && !arm_b.ok)

@@ -27,14 +27,16 @@ struct SurveySummary
     uint64_t base_seed = 0;
     uint64_t orbit_seed = 0;
 
-    double mean_vpt = 0;      ///< mean of per-trial mean VPT (lt)
-    double std_vpt = 0;       ///< sample std of per-trial mean VPT
+    /// Trial freerun means use best half of ICs per metric (see README).
+    /// Primary metrics only: VPT, duty, VPT*duty, RMSE.
+    double mean_vpt = 0;
+    double std_vpt = 0;
     double mean_rmse = 0;
     double std_rmse = 0;
     double mean_duty = 0;
     double std_duty = 0;
-    double mean_n_relock = 0;
-    double std_n_relock = 0;
+    double mean_vpt_x_duty = 0;
+    double std_vpt_x_duty = 0;
 
     double wall_seconds = 0;  ///< survey wall time (parallel pool)
 };
@@ -52,13 +54,71 @@ int Campaign_SeedSurvey(size_t dim,
                         bool completion_beep = true,
                         SurveySummary* out = nullptr);
 
-/// Single-seed train/load + free-run CSV dumps under examples/Lorenz/traces/.
+/// Single-seed train/load + free-run CSV dumps under {RESULTS_DIR}/traces/
+/// (absolute; CWD-independent). CSV columns: step, lt, err, locked,
+/// pred_x/y/z, true_x/y/z, drive_*.
+/// When @p target_orbit != 0: free-run that orbit once (fixed seed), print every
+/// generative step to stdout, write one CSV for Python overlay plots.
+/// When @p target_orbit == 0: dump up to @p max_freeruns free-runs (CSV only).
 /// @param dim  Reservoir hypercube dim (N = 2^dim). Restored on exit.
 int Campaign_Trace(size_t dim,
                    uint64_t esn_seed,
                    int max_freeruns = 30,
                    uint64_t target_orbit = 0,
                    uint64_t orbit_seed = 72983498);
+
+/// Load readout weights from file + one free-run on an explicit attractor IC
+/// (not an orbit seed). Does **not** train. Weights stem: @p weights_stem if
+/// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
+/// Protocol from config::FREE_RUN_PROTOCOL seats warmup/score on the IC stream.
+/// Writes one CSV under C:\\HypercubeESNRuns\\results\\traces\\ (plottable with
+/// plot_freerun_overlay.py). Restores DIM and HISTORY_DEPTH on exit.
+/// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
+/// @param history_depth  Reservoir delay-line M (1..64); must match model.
+/// @param esn_seed       Reservoir seed; must match the run that produced weights.
+/// @param ic_x,ic_y,ic_z Attractor IC (same space as IcFromOrbitSeed).
+/// @param weights_stem   Optional override of config::LOAD_WEIGHTS_STEM.
+int FreeRun(size_t dim,
+            size_t history_depth,
+            uint64_t esn_seed,
+            double ic_x, double ic_y, double ic_z,
+            const char* weights_stem = nullptr);
+
+/// Load weights, free-run @p num_runs Unseen orbits (remix from @p orbit_seed),
+/// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
+/// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
+/// Writes a leaderboard CSV under C:\\HypercubeESNRuns\\results\\surveys\\.
+/// Restores DIM and HISTORY_DEPTH on exit.
+/// @param dim            Reservoir hypercube dim (N = 2^dim); match model.
+/// @param history_depth  Reservoir delay-line M; match model.
+/// @param esn_seed       Reservoir seed; match model.
+/// @param num_runs       Number of freerun orbits to score.
+/// @param orbit_seed     Remix-chain base for freerun ICs.
+/// @param weights_stem   Optional load stem; else config::LOAD_WEIGHTS_STEM.
+/// @param top_k          How many best rows to print (by VPT*duty).
+int FreeRunSurvey(size_t dim,
+                  size_t history_depth,
+                  uint64_t esn_seed,
+                  int num_runs,
+                  uint64_t orbit_seed = 72983498,
+                  const char* weights_stem = nullptr,
+                  int top_k = 10);
+
+/// Train-only complement to @ref FreeRun: remixed orbits for @p epochs starting
+/// from @p target_orbit remix seed; save readout to @p weights_stem (or default
+/// under MODEL_SAVE_DIR). No free-run. Restores DIM, HISTORY_DEPTH, EPOCHS on exit.
+/// @param dim            Reservoir hypercube dim (N = 2^dim).
+/// @param history_depth  Reservoir delay-line M (1..64).
+/// @param esn_seed       Reservoir / readout seed.
+/// @param target_orbit   Orbit-seed remix base for training ICs (not freerun).
+/// @param epochs         Train epochs (e.g. 100–500).
+/// @param weights_stem   Optional save path stem (no .hcnw); null → default name.
+int Train(size_t dim,
+          size_t history_depth,
+          uint64_t esn_seed,
+          uint64_t target_orbit,
+          size_t epochs,
+          const char* weights_stem = nullptr);
 
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up
 /// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.

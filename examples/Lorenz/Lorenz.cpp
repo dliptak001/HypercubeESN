@@ -146,6 +146,13 @@ void Lorenz::BuildDatastreamFromSeed(const uint64_t orbit_seed, const bool verbo
         data_stream_->PrintOrbit();
 }
 
+void Lorenz::BuildDatastreamFromIC(const LorenzAttractor::State ic, const bool verbose)
+{
+    data_stream_ = std::make_unique<LorenzDatastream>(MakeDatastreamConfig(ic));
+    if (verbose)
+        data_stream_->PrintOrbit();
+}
+
 void Lorenz::RebuildDatastream(const bool verbose)
 {
     orbit_seed_ = mix64(orbit_seed_ ^ (0x100000001B3ULL));
@@ -272,34 +279,58 @@ void Lorenz::Train()
     SaveTrainedWeightsIfEnabled();
 }
 
+void Lorenz::SaveTrainedWeights(const char* stem) const
+{
+    namespace fs = std::filesystem;
+    std::string path;
+    if (stem && stem[0] != '\0')
+    {
+        path = stem;
+        const fs::path parent = fs::path(path).parent_path();
+        if (!parent.empty())
+        {
+            std::error_code ec;
+            fs::create_directories(parent, ec);
+            if (ec)
+            {
+                std::fprintf(stderr, "[Lorenz] SaveTrainedWeights: create_directories(%s) failed: %s\n",
+                             parent.string().c_str(), ec.message().c_str());
+                throw std::runtime_error("SaveTrainedWeights: could not create parent directory");
+            }
+        }
+    }
+    else
+    {
+        const fs::path dir = config::MODEL_SAVE_DIR;
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        if (ec)
+        {
+            std::fprintf(stderr, "[Lorenz] SaveTrainedWeights: create_directories(%s) failed: %s\n",
+                         dir.string().c_str(), ec.message().c_str());
+            throw std::runtime_error("SaveTrainedWeights: could not create MODEL_SAVE_DIR");
+        }
+        // Include DIM, M, num_inputs so geometry / drive-layout A/B do not collide.
+        path = (dir / ("lorenz_seed" + std::to_string(seed_) +
+                       "_D" + std::to_string(config::DIM) +
+                       "_M" + std::to_string(config::HISTORY_DEPTH) +
+                       "_in" + std::to_string(NumDriveChannels(config::DRIVE_LAYOUT)))).string();
+    }
+
+    // Stem only — SaveReadoutHcnnModel appends .hcnw and .arch.json.
+    esn_.SaveReadoutHcnnModel(path);
+    std::fprintf(stderr, "[Lorenz] saved trained readout: %s.hcnw (+ .arch.json)\n",
+                 path.c_str());
+    std::fflush(stderr);
+}
+
 void Lorenz::SaveTrainedWeightsIfEnabled() const
 {
     if (!config::SAVE_TRAINED_WEIGHTS || weights_loaded_)
         return; // no-op after load-only path (never trained this session)
-
-    namespace fs = std::filesystem;
-    const fs::path dir = config::MODEL_SAVE_DIR;
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-    if (ec)
-    {
-        std::fprintf(stderr, "[Lorenz] SAVE_TRAINED_WEIGHTS: create_directories(%s) failed: %s\n",
-                     dir.string().c_str(), ec.message().c_str());
-        return;
-    }
-
-    // Stem only - SaveReadoutHcnnModel appends .hcnw and .arch.json.
-    // Include DIM, M, and num_inputs so geometry / drive-layout A/B do not collide.
-    const fs::path stem = dir / ("lorenz_seed" + std::to_string(seed_) +
-                                 "_D" + std::to_string(config::DIM) +
-                                 "_M" + std::to_string(config::HISTORY_DEPTH) +
-                                 "_in" + std::to_string(NumDriveChannels(config::DRIVE_LAYOUT)));
     try
     {
-        esn_.SaveReadoutHcnnModel(stem.string());
-        std::fprintf(stderr, "[Lorenz] saved trained readout: %s.hcnw (+ .arch.json)\n",
-                     stem.string().c_str());
-        std::fflush(stderr);
+        SaveTrainedWeights(nullptr);
     }
     catch (const std::exception& e)
     {
@@ -308,22 +339,23 @@ void Lorenz::SaveTrainedWeightsIfEnabled() const
     }
 }
 
-void Lorenz::LoadTrainedWeights()
+void Lorenz::LoadTrainedWeights(const char* stem)
 {
-    if (config::LOAD_WEIGHTS_STEM == nullptr || config::LOAD_WEIGHTS_STEM[0] == '\0')
+    const char* path = (stem && stem[0] != '\0') ? stem : config::LOAD_WEIGHTS_STEM;
+    if (path == nullptr || path[0] == '\0')
         throw std::invalid_argument(
-            "LoadTrainedWeights: config::LOAD_WEIGHTS_STEM is empty "
-            "(set path stem without .hcnw extension)");
+            "LoadTrainedWeights: stem empty "
+            "(pass a path or set config::LOAD_WEIGHTS_STEM without .hcnw)");
 
-    esn_.LoadReadoutHcnnModel(config::LOAD_WEIGHTS_STEM);
+    esn_.LoadReadoutHcnnModel(path);
     train_orbit_seeds_.clear();
     next_train_orbit_pick_ = 0;
     weights_loaded_ = true;
 
     std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
-                         "seed=%llu  (free-run: Unseen only until Train())\n",
-                 config::LOAD_WEIGHTS_STEM,
-                 static_cast<unsigned long long>(seed_));
+                         "seed=%llu  (train-list free-run unavailable until Train(); "
+                         "fixed IC/orbit freerun OK)\n",
+                 path, static_cast<unsigned long long>(seed_));
     std::fflush(stderr);
 }
 
@@ -342,7 +374,9 @@ FreeRunProtocol Lorenz::EffectiveFreeRunProtocol() const
 }
 
 FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_steps,
-                              FreeRunProtocol protocol, size_t train_orbit_index)
+                              FreeRunProtocol protocol, size_t train_orbit_index,
+                              uint64_t fixed_orbit_seed,
+                              const LorenzAttractor::State* fixed_ic)
 {
     float drive[kMaxDriveChannels] = {};
     float targets[3] = {};
@@ -354,7 +388,19 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
          protocol == FreeRunProtocol::TrainHoldout);
 
     uint64_t freerun_orbit_seed = 0;
-    if (use_train_orbit)
+    if (fixed_ic)
+    {
+        // Explicit attractor IC; protocol only seats warmup/score window.
+        freerun_orbit_seed = 0;
+        BuildDatastreamFromIC(*fixed_ic, false);
+    }
+    else if (fixed_orbit_seed != 0)
+    {
+        // Explicit orbit seed; protocol only seats warmup/score window.
+        freerun_orbit_seed = fixed_orbit_seed;
+        BuildDatastreamFromSeed(freerun_orbit_seed, false);
+    }
+    else if (use_train_orbit)
     {
         if (train_orbit_seeds_.empty())
             throw std::logic_error("FreeRun: TrainInSample/TrainHoldout require Train() first");
@@ -421,14 +467,6 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     size_t steps = 0;
     size_t vpt_steps = 0;
     size_t locked_steps = 0;
-    size_t n_relock = 0;
-    size_t n_unlock = 0;
-    size_t locked_sojourn_sum = 0;
-    size_t locked_run_count = 0;
-    size_t cur_locked_len = 0;
-    bool have_prev = false;
-    bool prev_locked = false;
-    bool slipped = false;
 
     for (size_t j = 0; j < config::FREE_RUN_WINDOW_SIZE; j++)
     {
@@ -478,40 +516,23 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
             csv << '\n';
         }
 
-        if (!have_prev)
+        if (verbose && config::ENABLE_PRINTF)
         {
-            have_prev = true;
-            prev_locked = locked;
-            if (locked)
-                cur_locked_len = 1;
-        }
-        else
-        {
-            if (locked && !prev_locked)
+            if (steps == 1)
             {
-                if (slipped)
-                    ++n_relock;
-                cur_locked_len = 1;
+                std::printf("%6s %8s %10s %6s  %10s %10s %10s  %10s %10s %10s\n",
+                            "step", "lt", "err", "lock",
+                            "pred_x", "pred_y", "pred_z",
+                            "true_x", "true_y", "true_z");
             }
-            else if (!locked && prev_locked)
-            {
-                ++n_unlock;
-                slipped = true;
-                locked_sojourn_sum += cur_locked_len;
-                ++locked_run_count;
-                cur_locked_len = 0;
-            }
-            else if (locked)
-            {
-                ++cur_locked_len;
-            }
-            prev_locked = locked;
+            std::printf("%6zu %8.4f %10.6f %6d  %10.6f %10.6f %10.6f  %10.6f %10.6f %10.6f\n",
+                        steps, steps / steps_per_lt, step_err, locked ? 1 : 0,
+                        outputs[0], outputs[1], outputs[2],
+                        targets[0], targets[1], targets[2]);
         }
 
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
-        if (verbose && config::ENABLE_PRINTF && steps % 25 == 0)
-            std::printf("free-run %4zu  (%5.2f lt)  err %.6f\n", steps, steps / steps_per_lt, step_err);
 
         if (steps == config::FREE_RUN_WINDOW_SIZE)
             break;
@@ -521,36 +542,47 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     if (steps == 0)
         return {};
 
-    if (prev_locked && cur_locked_len > 0)
-    {
-        locked_sojourn_sum += cur_locked_len;
-        ++locked_run_count;
-    }
-
     const bool crossed = vpt_steps > 0;
     const double rmse = std::sqrt(sq_err_sum / (3.0 * steps));
     const double vpt_lt = (crossed ? vpt_steps : steps) / steps_per_lt;
     const double duty = static_cast<double>(locked_steps) / static_cast<double>(steps);
-    const double mean_locked = locked_run_count > 0
-        ? static_cast<double>(locked_sojourn_sum) / static_cast<double>(locked_run_count)
-        : 0.0;
-    char buf[384];
-    if (crossed)
+    const double vpt_x_duty = vpt_lt * duty;
+    char buf[448];
+    if (fixed_ic)
+    {
+        if (crossed)
+            std::snprintf(buf, sizeof buf,
+                          "%-14s seed %-10llu IC (%.6f,%.6f,%.6f) VPT %3zu steps (%5.2f lt)  "
+                          "RMSE %.6f  duty %.3f  VPT*duty %.3f\n",
+                          ProtocolName(protocol),
+                          static_cast<unsigned long long>(seed_),
+                          fixed_ic->x, fixed_ic->y, fixed_ic->z,
+                          vpt_steps, vpt_lt, rmse, duty, vpt_x_duty);
+        else
+            std::snprintf(buf, sizeof buf,
+                          "%-14s seed %-10llu IC (%.6f,%.6f,%.6f) VPT >=%3zu steps (%5.2f lt)  "
+                          "RMSE %.6f  duty %.3f  VPT*duty %.3f  (never crossed %.2f)\n",
+                          ProtocolName(protocol),
+                          static_cast<unsigned long long>(seed_),
+                          fixed_ic->x, fixed_ic->y, fixed_ic->z,
+                          steps, vpt_lt, rmse, duty, vpt_x_duty, config::VPT_THRESHOLD);
+    }
+    else if (crossed)
         std::snprintf(buf, sizeof buf,
                       "%-14s seed %-10llu orbit_seed %-10llu VPT %3zu steps (%5.2f lt)  "
-                      "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f\n",
+                      "RMSE %.6f  duty %.3f  VPT*duty %.3f\n",
                       ProtocolName(protocol),
                       static_cast<unsigned long long>(seed_),
                       static_cast<unsigned long long>(freerun_orbit_seed),
-                      vpt_steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked);
+                      vpt_steps, vpt_lt, rmse, duty, vpt_x_duty);
     else
         std::snprintf(buf, sizeof buf,
                       "%-14s seed %-10llu orbit_seed %-10llu VPT >=%3zu steps (%5.2f lt)  "
-                      "RMSE %.6f  duty %.3f  relock %zu  unlock %zu  meanLock %.1f  (never crossed %.2f)\n",
+                      "RMSE %.6f  duty %.3f  VPT*duty %.3f  (never crossed %.2f)\n",
                       ProtocolName(protocol),
                       static_cast<unsigned long long>(seed_),
                       static_cast<unsigned long long>(freerun_orbit_seed),
-                      steps, vpt_lt, rmse, duty, n_relock, n_unlock, mean_locked, config::VPT_THRESHOLD);
+                      steps, vpt_lt, rmse, duty, vpt_x_duty, config::VPT_THRESHOLD);
 
     FreeRunResult r;
     r.valid = true;
@@ -563,9 +595,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     r.rmse = rmse;
     r.steps = steps;
     r.duty = duty;
-    r.n_relock = n_relock;
-    r.n_unlock = n_unlock;
-    r.mean_locked_sojourn = mean_locked;
+    r.vpt_x_duty = vpt_x_duty;
     r.row = buf;
     if (csv)
         csv.close();

@@ -56,7 +56,7 @@ namespace config
     // Hypercube dim (N = 2^DIM). Not constexpr: campaigns pass DIM as an argument.
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 11;
-    constexpr uint64_t SEED = 13649419;
+    constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.04f;
     constexpr float LEAK_RATE = 1.0f;
@@ -70,17 +70,19 @@ namespace config
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
     constexpr float LEARNING_RATE_MIN = 0.000002f;
-    constexpr size_t EPOCHS = 100;  // 50 for rapid comparison tests, 100 for reports
+    // Not constexpr: campaigns may reassign (surveys / heavy train).
+    // Typical: 50–100 rapid A/B; 100–200 refine; 300–500 heavy train.
+    inline size_t EPOCHS = 100;
     constexpr size_t READOUT_SLICES = 2;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
-    constexpr bool USE_POOLING = false;
-    constexpr ReadoutActivation READOUT_ACTIVATION = ReadoutActivation::RELU;
+    constexpr bool USE_POOLING = true;
+    constexpr ReadoutActivation READOUT_ACTIVATION = ReadoutActivation::TANH;
 
     // ---- Data stream (Lorenz-63 + forward cursor window) ----
     // Layout: train [0, TRAINING_WINDOW_SIZE] inclusive; free-run runway after span.
     constexpr int32_t TRAINING_WINDOW_SIZE = 20000;
-    constexpr size_t FREE_RUN_WINDOW_SIZE = 1000;
+    constexpr size_t FREE_RUN_WINDOW_SIZE = 2000;
     constexpr size_t STREAM_LENGTH =
         static_cast<size_t>(TRAINING_WINDOW_SIZE) + FREE_RUN_WINDOW_SIZE;
 
@@ -94,7 +96,7 @@ namespace config
     constexpr size_t WARMUP_STEPS = 1000;
 
     // Default free-run arm (trainholdout).
-    constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::TrainHoldout;
+    constexpr FreeRunProtocol FREE_RUN_PROTOCOL = FreeRunProtocol::Unseen;
 
     // ---- Model I/O (readout HCNW + arch sidecar; reservoir is seed-reproducible) ----
     // Save: off by default. When true, Train() writes after the last epoch:
@@ -116,7 +118,7 @@ namespace config
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESN\results)";
 
     // ---- Free-run scoring ----
-    constexpr float VPT_THRESHOLD = 0.3f;
+    constexpr float VPT_THRESHOLD = 0.2f;
     constexpr double LYAPUNOV_EXPONENT = 0.9056;
 }
 
@@ -133,9 +135,8 @@ struct FreeRunResult
     double rmse = 0.0;
     size_t steps = 0;
     double duty = 0.0;
-    size_t n_relock = 0;
-    size_t n_unlock = 0;
-    double mean_locked_sojourn = 0.0;
+    /// VPT (lt) * duty — first-hold length scaled by time-in-lock over the window.
+    double vpt_x_duty = 0.0;
     std::string row;
 };
 
@@ -156,18 +157,32 @@ public:
 
     void Train();
 
-    /// Load readout from config::LOAD_WEIGHTS_STEM (throws if stem empty / load fails).
-    /// Clears train-orbit list (TrainInSample / TrainHoldout unavailable until Train()).
-    void LoadTrainedWeights();
+    /// Load readout from @p stem (no .hcnw extension), or config::LOAD_WEIGHTS_STEM
+    /// when @p stem is null/empty. Throws if stem empty / load fails.
+    /// Clears train-orbit list (TrainInSample / TrainHoldout list pick unavailable
+    /// until Train(); FreeRun with fixed_ic / fixed_orbit_seed still works).
+    void LoadTrainedWeights(const char* stem = nullptr);
+
+    /// Save readout to @p stem (no .hcnw extension). If null/empty, uses the
+    /// default under MODEL_SAVE_DIR: lorenz_seed{S}_D{DIM}_M{M}_in{Nin}.
+    /// Always writes (unlike SaveTrainedWeightsIfEnabled, which is config-gated).
+    void SaveTrainedWeights(const char* stem = nullptr) const;
 
     /// Free-run under @p protocol (default @c config::FREE_RUN_PROTOCOL).
     /// @p warmup_steps 0 → config::WARMUP_STEPS.
     /// @p train_orbit_index for TrainInSample / TrainHoldout: which stored train
-    /// orbit (SIZE_MAX = auto-cycle). Ignored for Unseen.
+    /// orbit (SIZE_MAX = auto-cycle). Ignored when a fixed stream is supplied.
+    /// @p fixed_orbit_seed if non-zero, build the stream from this seed (no remix /
+    /// train-list pick). Use for replaying a known orbit under the current protocol.
+    /// @p fixed_ic if non-null, build the stream from this attractor IC (takes
+    /// priority over @p fixed_orbit_seed). Same IC space as IcFromOrbitSeed.
+    /// When @p verbose and ENABLE_PRINTF, prints every generative step (pred + true xyz).
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr,
                           size_t warmup_steps = 0,
                           FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL,
-                          size_t train_orbit_index = static_cast<size_t>(-1));
+                          size_t train_orbit_index = static_cast<size_t>(-1),
+                          uint64_t fixed_orbit_seed = 0,
+                          const LorenzAttractor::State* fixed_ic = nullptr);
 
     [[nodiscard]] std::string ReadoutArchSummary() const {
         return esn_.ReadoutArchSummary();
@@ -182,6 +197,10 @@ public:
     static const char* DriveLayoutName(DriveLayout layout = config::DRIVE_LAYOUT);
     /// Channel count for @p layout (4 or 8); must divide N.
     static size_t NumDriveChannels(DriveLayout layout = config::DRIVE_LAYOUT);
+
+    /// Map orbit seed → attractor IC (same map as freerun Unseen / train remix).
+    /// Public so FreeRunSurvey can print ICs for FreeRun cherry-picks.
+    static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 
 private:
     uint64_t seed_, orbit_seed_;
@@ -198,11 +217,11 @@ private:
     void RebuildDatastream(bool verbose);
     /// Build stream from a fixed orbit seed without advancing orbit_seed_.
     void BuildDatastreamFromSeed(uint64_t orbit_seed, bool verbose);
+    /// Build stream from an explicit attractor IC (no remix / seed map).
+    void BuildDatastreamFromIC(LorenzAttractor::State ic, bool verbose);
 
-    /// If config::SAVE_TRAINED_WEIGHTS, write readout HCNW under MODEL_SAVE_DIR.
+    /// If config::SAVE_TRAINED_WEIGHTS, write default-stem readout under MODEL_SAVE_DIR.
     void SaveTrainedWeightsIfEnabled() const;
-
-    static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 
     /// Fill drive[0..NumDriveChannels) from normalized (x,y,z).
     static void FillDrive(float* drive, float x, float y, float z);

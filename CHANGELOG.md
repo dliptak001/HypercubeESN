@@ -64,16 +64,24 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   deltas and VPT/duty picks; `DriveAB_*` CSV/TXT under `RESULTS_DIR`.
 - **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` / `HistoryDepthSweep`
   take reservoir `dim` first; RAII restore of `DIM` / `HISTORY_DEPTH` / drive.
+- **Lorenz Train / FreeRunSurvey / FreeRun pipeline:** train-only weight save;
+  multi-orbit Unseen freerun survey with best-half VPT / duty / VPT×duty / RMSE
+  and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
+  load-only freerun with plottable CSV under `...\traces\` (see
+  `plot_freerun_overlay.py`).
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 
 ### Changed
 
+- **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
+  free-run RMSE (best half of ICs per metric); GS lock-transition counters
+  dropped from campaign stats. Default `VPT_THRESHOLD=0.2`.
 - **Lorenz weight stems:** save/load use
   `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` so dim, history depth, and drive width
   do not collide; load must match train-time layout.
-- **Lorenz report knobs:** default `EPOCHS=100`, `READOUT_ACTIVATION=RELU`;
-  `main` points at dim-12 M-sweep grid for overnight runs.
+- **Lorenz report knobs:** reassignable `EPOCHS` / `HISTORY_DEPTH` for
+  Train/FreeRun campaigns; TANH+pooling house defaults remain in `config::`.
 - **HypercubeCNN kernel geometry** — see **Highlights** (dim → dim+1 with self
   tap). Retrain readouts that were frozen against older neighbor-only HCNN
   weights; blobs are not layout-compatible in spirit even when loaders succeed.

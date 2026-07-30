@@ -123,7 +123,8 @@ Generative loop (all arms): for up to `FREE_RUN_WINDOW_SIZE` steps —
 
 - `Predict` → pack prediction as input drive → `ReservoirStep(drive, nullptr)`
 - Score vs true `S[index]` (normalized channel-RMS)
-- VPT, free-run RMSE, duty / n_relock / n_unlock / meanLock (θ = `VPT_THRESHOLD`)
+- Primary metrics: **VPT**, **duty**, **VPT×duty**, **RMSE** (θ = `VPT_THRESHOLD`)
+- Per-step `locked` is still written to trace CSVs for plots (not aggregated)
 
 **Claim discipline:** Unseen = multi-IC generalization; TrainHoldout ≈ single-trajectory
 temporal free-run; TrainInSample = in-sample generative (do not treat as holdout VPT).
@@ -135,9 +136,30 @@ reuse train ICs via modulo (not unique coverage). Unseen is never coupled to epo
 | Field | Meaning |
 |-------|---------|
 | `vpt_steps` / `vpt_lt` | First step with channel-RMS `err > θ` (Lyapunov times) |
-| `rmse` | Free-run RMSE over scored steps |
 | `duty` | Fraction of steps with `err ≤ θ` |
-| `n_relock` | Unlocked→locked after a prior unlock |
+| `vpt_x_duty` | `VPT_lt × duty` — first-hold length scaled by time-in-lock |
+| `rmse` | Free-run RMSE over scored steps |
+
+### Aggregate freerun stats (best half of ICs)
+
+Across freeruns with different initial conditions, the four primary metrics keep
+only the **best 50%** of values **per metric** (odd `n` keeps `ceil(n/2)`). The
+other half is **discarded on purpose**.
+
+| Direction | Metrics |
+|-----------|---------|
+| Higher is better (keep upper half) | VPT, duty, VPT×duty |
+| Lower is better (keep lower half) | free-run RMSE |
+
+Rationale: some Lorenz ICs are hard for any autonomous model; mean-of-all is
+dominated by those weak orbits. Storefront and campaign numbers answer
+**how well the system can perform on the better half of starts**, not how poorly
+the worst half does. Filtering is **independent per metric**.
+
+Survey roll-ups are **mean of trial-means**, where each trial mean already used
+that trial’s best-half freeruns. CSV metadata records
+`freerun_metrics=VPT,duty,VPT*duty,RMSE` and
+`freerun_pool=best_half_per_metric`. Always state this when quoting aggregates.
 
 ---
 
@@ -174,13 +196,48 @@ int main()
 {
     return Campaign_SeedSurvey(/*dim=*/11, /*threads=*/0, /*runs=*/50);
     // return Campaign_Trace(/*dim=*/11, /*seed=*/21978990, /*max_freeruns=*/30);
+    // Load weights + freerun one attractor IC (CSV under HypercubeESNRuns):
+    // return FreeRun(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
+    //                /*ic_x=*/0.43, /*ic_y=*/0.30, /*ic_z=*/0.64);
+    // optional stem: ..., R"(C:\HypercubeESN\models\lorenz_seed..._D12_M18_in4)");
 }
 ```
+
+### `Train` / `FreeRunSurvey` / `FreeRun` (campaign pipeline)
+
+```text
+Train  →  FreeRunSurvey  →  FreeRun
+ weights     rank orbits       plot one IC
+```
+
+**`Train`** — train-only (no freerun): remixed orbits for `epochs` from remix base
+`target_orbit`, then save readout to `weights_stem` (or default under
+`MODEL_SAVE_DIR`). Distinct from member `Lorenz::Train`.
+
+```cpp
+Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
+      /*target_orbit=*/9333312947715283458ull, /*epochs=*/400,
+      /*weights_stem=*/R"(C:\HypercubeESN\models\lorenz_seed221978990_D12_M18_in4)");
+```
+
+**`FreeRunSurvey`** — load-only middle step: free-run `num_runs` **Unseen** orbits
+(remix from `orbit_seed`), aggregate best-half VPT / duty / VPT×duty / RMSE, print
+**top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
+Leaderboard CSV:
+
+`C:\HypercubeESNRuns\results\surveys\survey_seed{S}_D{D}_M{M}_n{N}.csv`
+
+**`FreeRun`** — load-only (no train): free-run **one** attractor IC for a plottable
+trace (err / x / y / z vs Lyapunov time). Writes:
+
+`C:\HypercubeESNRuns\results\traces\seed{esn}_ic{x}_{y}_{z}.csv`
+
+Plot with `plot_freerun_overlay.py`. Distinct from member `Lorenz::FreeRun`.
 
 | Function | Role |
 |----------|------|
 | `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
-| `Campaign_Trace(dim, esn_seed, max_freeruns, ...)` | One seed + CSV dumps under `examples/Lorenz/traces/` |
+| `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
 | `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
 
