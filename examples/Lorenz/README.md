@@ -222,24 +222,30 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
       /*weights_stem=*/R"(C:\HypercubeESN\models\lorenz_seed221978990_D12_M18_in4)");
 ```
 
+**Artifact tree** (`config::RUNS_DIR` = `C:\HypercubeESNRuns\results`):
+
+| Subdir | Campaigns |
+|--------|-----------|
+| `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
+| `surveys/` | `FreeRunSurvey`, `SeedSweep` leaderboards |
+| `campaigns/` | `Campaign_SeedSurvey`, M-sweep, DriveAB (`RESULTS_DIR`) |
+
+**Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
+`[train]` / `[freerun]` / `[freerun-survey]` / `[seed-sweep]` / `[trace]` /
+`[survey]`, freerun scores as `VPT / duty / VPT*duty / RMSE`, and
+`[tag] wrote path (bytes)` + `[tag] done wall time: …`.
+
 **`FreeRunSurvey`** — load-only middle step: free-run `num_runs` **Unseen** orbits
 (remix from `orbit_seed`), aggregate best-half VPT / duty / VPT×duty / RMSE, print
 **top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
-Leaderboard CSV:
-
-`C:\HypercubeESNRuns\results\surveys\survey_seed{S}_D{D}_M{M}_n{N}.csv`
+Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
 
 **`FreeRun`** — load-only (no train): free-run **one** attractor IC for a plottable
-trace (err / x / y / z vs Lyapunov time). Writes:
+trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`.
 
-`C:\HypercubeESNRuns\results\traces\seed{esn}_ic{x}_{y}_{z}.csv`
-
-Plot with `plot_freerun_overlay.py`. Distinct from member `Lorenz::FreeRun`.
-
-**`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey` per seed;
-rank seeds by **mean VPT×duty** (best-half freerun pool). Stems:
-`{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Seed ranking CSV under
-`C:\HypercubeESNRuns\results\surveys\seed_sweep_D*_M*_n*_seeds*.csv`.
+**`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey`; rank by
+mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking CSV +
+`.partial.csv` under `RUNS_DIR/surveys/`.
 
 | Function | Role |
 |----------|------|

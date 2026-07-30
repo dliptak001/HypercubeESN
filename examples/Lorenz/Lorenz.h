@@ -114,8 +114,12 @@ namespace config
     constexpr const char* LOAD_WEIGHTS_STEM =
         R"(C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4)";
 
-    // Campaign results (survey aggregates, M-sweep roll-ups). Created if missing.
-    constexpr const char* RESULTS_DIR = R"(C:\HypercubeESN\results)";
+    // Campaign artifacts (CWD-independent). Layout:
+    //   RUNS_DIR/traces/     FreeRun + Campaign_Trace freerun CSVs
+    //   RUNS_DIR/surveys/    FreeRunSurvey + SeedSweep leaderboards
+    //   RUNS_DIR/campaigns/  SeedSurvey / M-sweep / DriveAB roll-ups (RESULTS_DIR)
+    constexpr const char* RUNS_DIR = R"(C:\HypercubeESNRuns\results)";
+    constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.2f;

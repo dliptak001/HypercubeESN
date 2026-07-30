@@ -71,6 +71,10 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `plot_freerun_overlay.py`).
 - **`SeedSweep`:** loop ESN seeds (optional Train + FreeRunSurvey); rank seeds by
   mean VPT×duty; atomic ranking CSV + `.partial.csv` after each seed for overnight runs.
+- **Lorenz campaign I/O consistency:** shared `RUNS_DIR` tree
+  (`traces/` / `surveys/` / `campaigns/`), common report helpers (banner, freerun
+  score line, wrote bytes, wall time), atomic CSV writes, default weight stem
+  `lorenz_seed{S}_D{D}_M{M}`.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

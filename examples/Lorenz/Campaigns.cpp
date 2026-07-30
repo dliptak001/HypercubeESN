@@ -78,15 +78,111 @@ std::string TimestampNow()
     return buf;
 }
 
-fs::path EnsureResultsDir()
+// ---- Shared paths (all campaigns) -----------------------------------------
+// C:\HypercubeESNRuns\results\{traces|surveys|campaigns}
+
+fs::path RunsRoot() { return config::RUNS_DIR; }
+fs::path TracesDir() { return RunsRoot() / "traces"; }
+fs::path SurveysDir() { return RunsRoot() / "surveys"; }
+fs::path CampaignsDir() { return config::RESULTS_DIR; } // .../campaigns
+
+// Create dir; log and return false on failure. tag e.g. "train", "freerun".
+bool EnsureDir(const fs::path& dir, const char* tag)
 {
-    const fs::path dir = config::RESULTS_DIR;
     std::error_code ec;
     fs::create_directories(dir, ec);
     if (ec)
-        std::fprintf(stderr, "[results] create_directories(%s) failed: %s\n",
-                     dir.string().c_str(), ec.message().c_str());
-    return dir;
+    {
+        std::fprintf(stderr, "[%s] create_directories(%s) failed: %s\n",
+                     tag, dir.string().c_str(), ec.message().c_str());
+        return false;
+    }
+    return true;
+}
+
+fs::path EnsureResultsDir()
+{
+    EnsureDir(CampaignsDir(), "results");
+    return CampaignsDir();
+}
+
+// Atomic write: full content to path via path.tmp then rename. Returns false on fail.
+bool WriteAtomicFile(const fs::path& path, const std::string& content, const char* tag)
+{
+    if (!EnsureDir(path.parent_path(), tag))
+        return false;
+    const fs::path tmp = fs::path(path.string() + ".tmp");
+    {
+        std::ofstream out(tmp, std::ios::out | std::ios::trunc | std::ios::binary);
+        if (!out)
+        {
+            std::fprintf(stderr, "[%s] failed to open %s\n", tag, tmp.string().c_str());
+            return false;
+        }
+        out.write(content.data(), static_cast<std::streamsize>(content.size()));
+        out.flush();
+        if (!out.good())
+        {
+            std::fprintf(stderr, "[%s] write failed for %s\n", tag, tmp.string().c_str());
+            return false;
+        }
+    }
+    std::error_code ec;
+    fs::remove(path, ec);
+    fs::rename(tmp, path, ec);
+    if (ec)
+    {
+        std::fprintf(stderr, "[%s] rename %s -> %s failed: %s\n",
+                     tag, tmp.string().c_str(), path.string().c_str(),
+                     ec.message().c_str());
+        return false;
+    }
+    return true;
+}
+
+void ReportWrote(const char* tag, const fs::path& path)
+{
+    std::error_code ec;
+    const auto sz = fs::file_size(path, ec);
+    if (ec)
+        std::printf("[%s] wrote %s\n", tag, path.string().c_str());
+    else
+        std::printf("[%s] wrote %s  (%llu bytes)\n",
+                    tag, path.string().c_str(),
+                    static_cast<unsigned long long>(sz));
+    std::fflush(stdout);
+}
+
+void ReportDone(const char* tag, double wall_seconds)
+{
+    char time_buf[64];
+    FormatWallTime(time_buf, sizeof time_buf, wall_seconds);
+    std::printf("[%s] done  wall time: %s\n", tag, time_buf);
+    std::fflush(stdout);
+}
+
+// Primary freerun score line (all campaigns that emit freerun metrics).
+void ReportFreerunScores(const char* tag,
+                         double vpt_lt, double duty, double vpt_x_duty, double rmse)
+{
+    std::printf("[%s] VPT=%.2f lt  duty=%.3f  VPT*duty=%.3f  RMSE=%.6f\n",
+                tag, vpt_lt, duty, vpt_x_duty, rmse);
+    std::fflush(stdout);
+}
+
+void ReportBanner(const char* campaign_name)
+{
+    std::printf("=== HypercubeESN: Lorenz / %s ===\n", campaign_name);
+    std::fflush(stdout);
+}
+
+// Default weight stem: {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
+std::string DefaultWeightStem(uint64_t esn_seed, size_t dim, size_t history_depth)
+{
+    return (fs::path(config::MODEL_SAVE_DIR) /
+            ("lorenz_seed" + std::to_string(esn_seed) +
+             "_D" + std::to_string(dim) +
+             "_M" + std::to_string(history_depth))).string();
 }
 
 const char* ActivationName(ReadoutActivation a)
@@ -238,9 +334,8 @@ void WriteSurveyResultFiles(const SurveySummary& s)
 
     // stdout (not stderr): CLion/Windows consoles merge streams asynchronously and will
     // splice stderr mid-line into printf tables if we log "wrote" on a different stream.
-    std::printf("[results] wrote %s\n", csv_path.string().c_str());
-    std::printf("[results] wrote %s\n", txt_path.string().c_str());
-    std::fflush(stdout);
+    ReportWrote("results", csv_path);
+    ReportWrote("results", txt_path);
 }
 
 // M-sweep roll-up: one CSV (metadata + all M rows) + matching TXT.
@@ -340,10 +435,8 @@ void WriteMsweepResultFiles(const std::vector<SurveySummary>& rows,
         }
     }
 
-    // Same stream as the roll-up table (see WriteSurveyResultFiles).
-    std::printf("[results] wrote %s\n", csv_path.string().c_str());
-    std::printf("[results] wrote %s\n", txt_path.string().c_str());
-    std::fflush(stdout);
+    ReportWrote("results", csv_path);
+    ReportWrote("results", txt_path);
 }
 
 // Sample mean + sample std (n-1). Empty => mean=std=0.
@@ -631,7 +724,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
         return 2;
     ConfigSizeRestore dim_restore(config::DIM, dim);
 
-    std::cout << "=== HypercubeESN: Lorenz / survey ===\n";
+    ReportBanner("SeedSurvey");
 
     config::ENABLE_PRINTF = false;
 
@@ -803,26 +896,17 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
     if (max_freeruns < 1)
         max_freeruns = 1;
 
-    // Absolute path under RESULTS_DIR so CLion/build CWD does not scatter files.
-    const fs::path trace_dir = EnsureResultsDir() / "traces";
-    {
-        std::error_code ec;
-        fs::create_directories(trace_dir, ec);
-        if (ec)
-        {
-            std::fprintf(stderr, "[trace] create_directories(%s) failed: %s\n",
-                         trace_dir.string().c_str(), ec.message().c_str());
-            return 2;
-        }
-    }
+    const fs::path trace_dir = TracesDir();
+    if (!EnsureDir(trace_dir, "trace"))
+        return 2;
 
-    std::printf("=== HypercubeESN: Lorenz / trace ===\n");
-    std::printf("[trace] protocol=%s  DIM=%zu (N=%zu)  esn_seed=%llu  max_freeruns=%d  "
-                "target_orbit=%llu  history_depth(M)=%zu\n",
+    ReportBanner("Trace");
+    std::printf("[trace] protocol=%s  DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  max_freeruns=%d  "
+                "target_orbit=%llu\n",
                 Lorenz::ProtocolName(config::FREE_RUN_PROTOCOL),
-                config::DIM, size_t{1} << config::DIM,
+                config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
                 static_cast<unsigned long long>(esn_seed), max_freeruns,
-                static_cast<unsigned long long>(target_orbit), config::HISTORY_DEPTH);
+                static_cast<unsigned long long>(target_orbit));
     std::printf("[trace] train %zu epochs then free-run; CSV dir: %s\n",
                 config::EPOCHS, trace_dir.string().c_str());
     if (target_orbit != 0)
@@ -870,9 +954,7 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
                          path.string().c_str());
             return false;
         }
-        std::printf("[trace] wrote %s  (%llu bytes)\n",
-                    path.string().c_str(),
-                    static_cast<unsigned long long>(sz));
+        ReportWrote("trace", path);
         return true;
     };
 
@@ -897,10 +979,9 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
             std::printf("[trace] free-run invalid\n");
             return 1;
         }
-        std::printf("[trace] freerun orbit=%llu  VPT=%.2f lt  duty=%.3f  "
-                    "VPT*duty=%.3f  RMSE=%.6f\n",
-                    static_cast<unsigned long long>(r.orbit_seed),
-                    r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+        std::printf("[trace] freerun orbit=%llu\n",
+                    static_cast<unsigned long long>(r.orbit_seed));
+        ReportFreerunScores("trace", r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
         std::printf("%s", r.row.c_str());
         if (!verify_csv(out_path))
             return 1;
@@ -922,11 +1003,10 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
                 std::printf("[trace] free-run %d invalid - stop\n", i);
                 break;
             }
-            std::printf("[trace] freerun %d/%d  orbit=%llu  VPT=%.2f lt  duty=%.3f  "
-                        "VPT*duty=%.3f  RMSE=%.6f  DUMP\n",
+            std::printf("[trace] freerun %d/%d  orbit=%llu  DUMP\n",
                         i + 1, max_freeruns,
-                        static_cast<unsigned long long>(r.orbit_seed),
-                        r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+                        static_cast<unsigned long long>(r.orbit_seed));
+            ReportFreerunScores("trace", r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
             std::fflush(stdout);
 
             const fs::path out_path = trace_dir /
@@ -951,9 +1031,8 @@ int Campaign_Trace(size_t dim, uint64_t esn_seed, int max_freeruns, uint64_t tar
 
     const double elapsed =
         std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("[trace] done - %d CSV file(s)  wall time: %s\n", dumped, time_buf);
+    std::printf("[trace] CSV file(s): %d\n", dumped);
+    ReportDone("trace", elapsed);
     return dumped > 0 ? 0 : 1;
 }
 
@@ -978,20 +1057,18 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
     ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
 
-    std::printf("=== HypercubeESN: Lorenz / Train (save-only; no freerun) ===\n");
+    const std::string stem =
+        (weights_stem && weights_stem[0] != '\0')
+            ? std::string(weights_stem)
+            : DefaultWeightStem(esn_seed, dim, history_depth);
+
+    ReportBanner("Train (save-only; no freerun)");
     std::printf("[train] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  target_orbit=%llu  epochs=%zu\n",
                 config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
                 static_cast<unsigned long long>(esn_seed),
                 static_cast<unsigned long long>(target_orbit),
                 epochs);
-    if (weights_stem && weights_stem[0] != '\0')
-        std::printf("[train] campaign will SAVE weights to stem: %s\n"
-                    "        (.hcnw + .arch.json appended)\n",
-                    weights_stem);
-    else
-        std::printf("[train] campaign will SAVE weights to default under %s\n"
-                    "        (lorenz_seed{S}_D{DIM}_M{M}_in{Nin})\n",
-                    config::MODEL_SAVE_DIR);
+    std::printf("[train] save stem: %s  (.hcnw + .arch.json)\n", stem.c_str());
     std::printf("[train] note: config banner may say save=off — that is only\n"
                 "        config::SAVE_TRAINED_WEIGHTS (auto-save inside Lorenz::Train).\n"
                 "        This campaign always calls SaveTrainedWeights after train.\n");
@@ -1016,9 +1093,8 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
 
     try
     {
-        // Always write the campaign stem (or default) so FreeRun can load it.
-        lorenz.SaveTrainedWeights(weights_stem);
-        std::printf("[train] weights saved OK\n");
+        lorenz.SaveTrainedWeights(stem.c_str());
+        ReportWrote("train", fs::path(stem + ".hcnw"));
     }
     catch (const std::exception& e)
     {
@@ -1026,11 +1102,7 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
         return 1;
     }
 
-    const double elapsed =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("[train] done  wall time: %s\n", time_buf);
+    ReportDone("train", std::chrono::duration<double>(clock::now() - t0).count());
     return 0;
 }
 
@@ -1038,8 +1110,7 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
 // FreeRun (campaign: load weights + freerun one attractor IC)
 // ---------------------------------------------------------------------------
 // Load readout from file; free-run once on an explicit attractor IC (no train).
-// CSV under C:\HypercubeESNRuns\results\traces\ (independent of RESULTS_DIR).
-// Distinct from Lorenz::FreeRun (member).
+// CSV under RUNS_DIR/traces/. Distinct from Lorenz::FreeRun (member).
 int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
             double ic_x, double ic_y, double ic_z,
             const char* weights_stem)
@@ -1063,18 +1134,9 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
 
-    // Dedicated run tree (user request); not config::RESULTS_DIR.
-    const fs::path trace_dir = R"(C:\HypercubeESNRuns\results\traces)";
-    {
-        std::error_code ec;
-        fs::create_directories(trace_dir, ec);
-        if (ec)
-        {
-            std::fprintf(stderr, "[freerun] create_directories(%s) failed: %s\n",
-                         trace_dir.string().c_str(), ec.message().c_str());
-            return 2;
-        }
-    }
+    const fs::path trace_dir = TracesDir();
+    if (!EnsureDir(trace_dir, "freerun"))
+        return 2;
 
     const LorenzAttractor::State ic{ic_x, ic_y, ic_z};
 
@@ -1090,21 +1152,20 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
     // Seating only: fixed IC builds the stream (no train-orbit list required).
     const FreeRunProtocol protocol = config::FREE_RUN_PROTOCOL;
 
-    std::printf("=== HypercubeESN: Lorenz / FreeRun (load-only) ===\n");
+    ReportBanner("FreeRun (load-only)");
     std::printf("[freerun] protocol=%s  DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu\n",
                 Lorenz::ProtocolName(protocol),
                 config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
                 static_cast<unsigned long long>(esn_seed));
-    std::printf("[freerun] freerun IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
+    std::printf("[freerun] IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
     std::printf("[freerun] load stem: %s\n", stem);
-    std::printf("[freerun] CSV: %s\n", out_path.string().c_str());
+    std::printf("[freerun] CSV dir: %s\n", trace_dir.string().c_str());
     std::fflush(stdout);
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
 
     config::ENABLE_PRINTF = true;
-    // orbit_seed unused (no Train); keep a stable constructor arg.
     Lorenz lorenz(esn_seed, /*orbit_seed=*/0);
     std::cout << lorenz.ReadoutArchSummary();
 
@@ -1131,40 +1192,25 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
         return 1;
     }
 
-    std::printf("[freerun] freerun IC=(%.6f,%.6f,%.6f)  VPT=%.2f lt  duty=%.3f  "
-                "VPT*duty=%.3f  RMSE=%.6f\n",
-                ic_x, ic_y, ic_z, r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
+    ReportFreerunScores("freerun", r.vpt_lt, r.duty, r.vpt_x_duty, r.rmse);
     std::printf("%s", r.row.c_str());
 
     {
         std::error_code e;
-        if (!fs::exists(out_path, e) || e)
+        if (!fs::exists(out_path, e) || e || fs::file_size(out_path, e) == 0)
         {
-            std::fprintf(stderr, "[freerun] CSV missing after free-run: %s\n",
+            std::fprintf(stderr, "[freerun] CSV missing/empty after free-run: %s\n",
                          out_path.string().c_str());
             return 1;
         }
-        const auto sz = fs::file_size(out_path, e);
-        if (e || sz == 0)
-        {
-            std::fprintf(stderr, "[freerun] CSV empty or unreadable: %s\n",
-                         out_path.string().c_str());
-            return 1;
-        }
-        std::printf("[freerun] wrote %s  (%llu bytes)\n",
-                    out_path.string().c_str(),
-                    static_cast<unsigned long long>(sz));
+        ReportWrote("freerun", out_path);
     }
 
     std::printf("[freerun] plot:\n"
                 "  python examples/Lorenz/plot_freerun_overlay.py \"%s\"\n",
                 out_path.string().c_str());
 
-    const double elapsed =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("[freerun] done  wall time: %s\n", time_buf);
+    ReportDone("freerun", std::chrono::duration<double>(clock::now() - t0).count());
     return 0;
 }
 
@@ -1206,19 +1252,11 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
 
-    const fs::path survey_dir = R"(C:\HypercubeESNRuns\results\surveys)";
-    {
-        std::error_code ec;
-        fs::create_directories(survey_dir, ec);
-        if (ec)
-        {
-            std::fprintf(stderr, "[freerun-survey] create_directories(%s) failed: %s\n",
-                         survey_dir.string().c_str(), ec.message().c_str());
-            return 2;
-        }
-    }
+    const fs::path survey_dir = SurveysDir();
+    if (!EnsureDir(survey_dir, "freerun-survey"))
+        return 2;
 
-    std::printf("=== HypercubeESN: Lorenz / FreeRunSurvey (load-only; multi-orbit) ===\n");
+    ReportBanner("FreeRunSurvey (load-only; multi-orbit)");
     std::printf("[freerun-survey] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu  num_runs=%d  "
                 "orbit_seed=%llu  top_k=%d\n",
                 config::DIM, size_t{1} << config::DIM, config::HISTORY_DEPTH,
@@ -1226,7 +1264,8 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                 static_cast<unsigned long long>(orbit_seed), top_k);
     std::printf("[freerun-survey] load stem: %s\n", stem);
     std::printf("[freerun-survey] freerun protocol=Unseen (remix IC each run); "
-                "stats use best-half pool (see README)\n");
+                "stats use best-half pool; metrics=VPT,duty,VPT*duty,RMSE\n");
+    std::printf("[freerun-survey] CSV dir: %s\n", survey_dir.string().c_str());
     std::fflush(stdout);
 
     using clock = std::chrono::steady_clock;
@@ -1360,61 +1399,28 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                     ic.x, ic.y, ic.z);
     }
 
-    // Full ranked table for post-analysis (atomic tmp→rename).
+    // Full ranked table for post-analysis (atomic write).
     const fs::path csv_path = survey_dir /
         ("survey_seed" + std::to_string(esn_seed) +
          "_D" + std::to_string(config::DIM) +
          "_M" + std::to_string(config::HISTORY_DEPTH) +
          "_n" + std::to_string(num_runs) + ".csv");
     {
-        const fs::path tmp = fs::path(csv_path.string() + ".tmp");
-        std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
-        if (!csv)
+        std::ostringstream body;
+        body << "rank,orbit_seed,ic_x,ic_y,ic_z,vpt_lt,duty,vpt_x_duty,rmse,crossed\n";
+        for (size_t rank = 0; rank < order.size(); ++rank)
         {
-            std::fprintf(stderr, "[freerun-survey] failed to write %s\n",
-                         tmp.string().c_str());
+            const auto& row = rows[order[rank]];
+            body << (rank + 1) << ','
+                 << row.r.orbit_seed << ','
+                 << row.ic.x << ',' << row.ic.y << ',' << row.ic.z << ','
+                 << row.r.vpt_lt << ',' << row.r.duty << ','
+                 << row.r.vpt_x_duty << ',' << row.r.rmse << ','
+                 << (row.r.crossed ? 1 : 0) << '\n';
         }
-        else
-        {
-            csv << "rank,orbit_seed,ic_x,ic_y,ic_z,vpt_lt,duty,vpt_x_duty,rmse,crossed\n";
-            for (size_t rank = 0; rank < order.size(); ++rank)
-            {
-                const auto& row = rows[order[rank]];
-                csv << (rank + 1) << ','
-                    << row.r.orbit_seed << ','
-                    << row.ic.x << ',' << row.ic.y << ',' << row.ic.z << ','
-                    << row.r.vpt_lt << ',' << row.r.duty << ','
-                    << row.r.vpt_x_duty << ',' << row.r.rmse << ','
-                    << (row.r.crossed ? 1 : 0) << '\n';
-            }
-            csv.flush();
-            if (!csv.good())
-            {
-                std::fprintf(stderr, "[freerun-survey] write error on %s\n",
-                             tmp.string().c_str());
-            }
-            else
-            {
-                csv.close();
-                std::error_code ec;
-                fs::remove(csv_path, ec);
-                fs::rename(tmp, csv_path, ec);
-                if (ec)
-                {
-                    std::fprintf(stderr, "[freerun-survey] rename failed: %s\n",
-                                 ec.message().c_str());
-                }
-                else
-                {
-                    const auto sz = fs::file_size(csv_path, ec);
-                    std::printf("\n[freerun-survey] wrote leaderboard %s  (%zu rows, %llu bytes)\n",
-                                csv_path.string().c_str(), order.size(),
-                                ec ? 0ull : static_cast<unsigned long long>(sz));
-                }
-            }
-        }
+        if (WriteAtomicFile(csv_path, body.str(), "freerun-survey"))
+            ReportWrote("freerun-survey", csv_path);
     }
-    std::fflush(stdout);
 
     if (out)
     {
@@ -1433,11 +1439,8 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
         out->best_ic_z = best.ic.z;
     }
 
-    const double elapsed =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("[freerun-survey] done  wall time: %s\n", time_buf);
+    ReportDone("freerun-survey",
+               std::chrono::duration<double>(clock::now() - t0).count());
     return 0;
 }
 
@@ -1478,21 +1481,11 @@ int SeedSweep(size_t dim, size_t history_depth,
     ConfigSizeRestore epochs_restore(config::EPOCHS, do_train ? epochs : config::EPOCHS);
 
     const fs::path model_dir = config::MODEL_SAVE_DIR;
-    const fs::path survey_dir = R"(C:\HypercubeESNRuns\results\surveys)";
-    {
-        std::error_code ec1, ec2;
-        fs::create_directories(model_dir, ec1);
-        fs::create_directories(survey_dir, ec2);
-        if (ec1)
-            std::fprintf(stderr, "[seed-sweep] create_directories(%s) failed: %s\n",
-                         model_dir.string().c_str(), ec1.message().c_str());
-        if (ec2)
-        {
-            std::fprintf(stderr, "[seed-sweep] create_directories(%s) failed: %s\n",
-                         survey_dir.string().c_str(), ec2.message().c_str());
-            return 2;
-        }
-    }
+    const fs::path survey_dir = SurveysDir();
+    if (!EnsureDir(model_dir, "seed-sweep"))
+        std::fprintf(stderr, "[seed-sweep] WARN: model dir may be unwritable\n");
+    if (!EnsureDir(survey_dir, "seed-sweep"))
+        return 2;
 
     // Final + partial ranking paths (partial updated after each seed for crash safety).
     const fs::path rank_csv = survey_dir /
@@ -1506,7 +1499,7 @@ int SeedSweep(size_t dim, size_t history_depth,
          "_n" + std::to_string(freerun_runs) +
          "_seeds" + std::to_string(esn_seeds.size()) + ".partial.csv");
 
-    std::printf("=== HypercubeESN: Lorenz / SeedSweep ===\n");
+    ReportBanner("SeedSweep");
     std::printf("[seed-sweep] DIM=%zu  M=%zu  n_seeds=%zu  epochs=%zu  freerun_runs=%d  "
                 "do_train=%s  top_k=%d\n",
                 dim, history_depth, esn_seeds.size(), epochs, freerun_runs,
@@ -1514,9 +1507,11 @@ int SeedSweep(size_t dim, size_t history_depth,
     std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
                 static_cast<unsigned long long>(train_orbit),
                 static_cast<unsigned long long>(freerun_orbit_seed));
-    std::printf("[seed-sweep] weight stems: %s\\lorenz_seed{S}_D%zu_M%zu\n",
+    std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu\n",
                 model_dir.string().c_str(), dim, history_depth);
     std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
+    std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
+                survey_dir.string().c_str());
     std::printf("[seed-sweep] ranking CSV: %s\n", rank_csv.string().c_str());
     std::printf("[seed-sweep] partial CSV (after each seed): %s\n",
                 rank_csv_partial.string().c_str());
@@ -1615,9 +1610,7 @@ int SeedSweep(size_t dim, size_t history_depth,
         ++step;
         SeedRow sr;
         sr.seed = seed;
-        sr.stem = (model_dir / ("lorenz_seed" + std::to_string(seed) +
-                                "_D" + std::to_string(dim) +
-                                "_M" + std::to_string(history_depth))).string();
+        sr.stem = DefaultWeightStem(seed, dim, history_depth);
 
         std::printf("\n########## SeedSweep %zu/%zu  esn_seed=%llu ##########\n",
                     step, n_seeds, static_cast<unsigned long long>(seed));
@@ -1650,12 +1643,13 @@ int SeedSweep(size_t dim, size_t history_depth,
         }
         else
         {
-            std::printf("[seed-sweep] seed %llu  mean VPT*duty=%.3f  mean VPT=%.2f  "
-                        "mean duty=%.3f  mean RMSE=%.6f  best VPT*duty=%.3f\n",
-                        static_cast<unsigned long long>(seed),
-                        sr.sum.mean_vpt_x_duty, sr.sum.mean_vpt, sr.sum.mean_duty,
-                        sr.sum.mean_rmse, sr.sum.best_vpt_x_duty);
-            std::printf("[seed-sweep]   best IC=(%.6f, %.6f, %.6f)  orbit_seed=%llu\n",
+            std::printf("[seed-sweep] seed %llu  (best-half means)\n",
+                        static_cast<unsigned long long>(seed));
+            ReportFreerunScores("seed-sweep", sr.sum.mean_vpt, sr.sum.mean_duty,
+                                sr.sum.mean_vpt_x_duty, sr.sum.mean_rmse);
+            std::printf("[seed-sweep]   best freerun VPT*duty=%.3f  IC=(%.6f, %.6f, %.6f)  "
+                        "orbit_seed=%llu\n",
+                        sr.sum.best_vpt_x_duty,
                         sr.sum.best_ic_x, sr.sum.best_ic_y, sr.sum.best_ic_z,
                         static_cast<unsigned long long>(sr.sum.best_orbit_seed));
         }
@@ -1713,25 +1707,16 @@ int SeedSweep(size_t dim, size_t history_depth,
 
     if (write_seed_rank_csv(rank_csv))
     {
-        std::error_code ec;
-        const auto sz = fs::file_size(rank_csv, ec);
-        std::printf("\n[seed-sweep] wrote %s  (%llu bytes)\n",
-                    rank_csv.string().c_str(),
-                    ec ? 0ull : static_cast<unsigned long long>(sz));
-        // Keep partial as a copy of final for convenience.
-        write_seed_rank_csv(rank_csv_partial);
+        ReportWrote("seed-sweep", rank_csv);
+        write_seed_rank_csv(rank_csv_partial); // final snapshot of partial
     }
     else
     {
         std::fprintf(stderr, "[seed-sweep] FAILED to write final ranking CSV\n");
     }
 
-    const double elapsed =
-        std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-    std::printf("[seed-sweep] done  wall time: %s\n", time_buf);
-    std::fflush(stdout);
+    ReportDone("seed-sweep",
+               std::chrono::duration<double>(clock::now() - t0).count());
     return order.empty() ? 1 : 0;
 }
 
@@ -2049,9 +2034,8 @@ void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
         }
     }
 
-    std::printf("[results] wrote %s\n", csv_path.string().c_str());
-    std::printf("[results] wrote %s\n", txt_path.string().c_str());
-    std::fflush(stdout);
+    ReportWrote("results", csv_path);
+    ReportWrote("results", txt_path);
 }
 
 // ---------------------------------------------------------------------------

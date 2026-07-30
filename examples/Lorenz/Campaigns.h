@@ -54,9 +54,8 @@ int Campaign_SeedSurvey(size_t dim,
                         bool completion_beep = true,
                         SurveySummary* out = nullptr);
 
-/// Single-seed train/load + free-run CSV dumps under {RESULTS_DIR}/traces/
-/// (absolute; CWD-independent). CSV columns: step, lt, err, locked,
-/// pred_x/y/z, true_x/y/z, drive_*.
+/// Single-seed train/load + free-run CSV dumps under RUNS_DIR/traces/.
+/// CSV columns: step, lt, err, locked, pred_x/y/z, true_x/y/z, drive_*.
 /// When @p target_orbit != 0: free-run that orbit once (fixed seed), print every
 /// generative step to stdout, write one CSV for Python overlay plots.
 /// When @p target_orbit == 0: dump up to @p max_freeruns free-runs (CSV only).
@@ -71,8 +70,8 @@ int Campaign_Trace(size_t dim,
 /// (not an orbit seed). Does **not** train. Weights stem: @p weights_stem if
 /// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
 /// Protocol from config::FREE_RUN_PROTOCOL seats warmup/score on the IC stream.
-/// Writes one CSV under C:\\HypercubeESNRuns\\results\\traces\\ (plottable with
-/// plot_freerun_overlay.py). Restores DIM and HISTORY_DEPTH on exit.
+/// Writes one CSV under RUNS_DIR/traces/ (plottable with plot_freerun_overlay.py).
+/// Restores DIM and HISTORY_DEPTH on exit.
 /// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
 /// @param history_depth  Reservoir delay-line M (1..64); must match model.
 /// @param esn_seed       Reservoir seed; must match the run that produced weights.
@@ -102,7 +101,7 @@ struct FreeRunSurveySummary
 /// Load weights, free-run @p num_runs Unseen orbits (remix from @p orbit_seed),
 /// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
-/// Writes a leaderboard CSV under C:\\HypercubeESNRuns\\results\\surveys\\.
+/// Writes a leaderboard CSV under RUNS_DIR/surveys/.
 /// Restores DIM and HISTORY_DEPTH on exit.
 /// @param out  Optional; filled with best-half means and top freerun IC.
 int FreeRunSurvey(size_t dim,
