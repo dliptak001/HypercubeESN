@@ -30,7 +30,7 @@ except ImportError:
     print("matplotlib required: pip install matplotlib", file=sys.stderr)
     sys.exit(1)
 
-THETA = 0.2  # must match config::VPT_THRESHOLD unless you override --theta
+THETA = 0.25  # must match config::VPT_THRESHOLD unless you override --theta
 
 
 def load_csv(path: Path) -> np.ndarray:
