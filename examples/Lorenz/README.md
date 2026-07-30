@@ -86,8 +86,9 @@ Switch with `config::DRIVE_LAYOUT` in `Lorenz.h` (`num_inputs` must divide `N = 
 ```
 
 - Products use the same-step `(x,y,z)` (normalized). Free-run rebuilds from predictions.
-- Single global `INPUT_SCALING` (no per-channel gains yet).
-- Load/save readout must match the layout used at train time.
+- Global `INPUT_SCALING` (reservoir) plus optional per-channel `INPUT_SCALE_CH[]`
+  (layout feature order; default all 1.0). Applied in `FillDrive` train + free-run.
+- Load/save readout must match the layout **and** channel gains used at train time.
 
 ---
 

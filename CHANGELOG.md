@@ -75,6 +75,11 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   (`traces/` / `surveys/` / `campaigns/`), common report helpers (banner, freerun
   score line, wrote bytes, wall time), atomic CSV writes, default weight stem
   `lorenz_seed{S}_D{D}_M{M}`.
+- **Lorenz per-channel drive gains:** `config::INPUT_SCALE_CH[]` multipliers on
+  top of global `INPUT_SCALING` (applied in `FillDrive` after feature build;
+  default all 1.0). Constructor banner and campaign metadata print `drive_ch`;
+  train/load must match gains. A/B notes in `TODO_drive_scale_sr.md` (global
+  scale, SR, channel gains).
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

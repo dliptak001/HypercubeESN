@@ -220,6 +220,17 @@ void AppendCompactConfigLines(std::ostream& o)
       << "  drive=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
       << "  n_in=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT)
       << "\n";
+    {
+        const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+        o << "config: drive_ch=[";
+        for (size_t i = 0; i < n_in; ++i)
+        {
+            if (i)
+                o << ',';
+            o << config::INPUT_SCALE_CH[i];
+        }
+        o << "] (× in_scale)\n";
+    }
 }
 
 // Full run metadata for post-analysis (comment lines in CSV; prose in .txt).
@@ -256,8 +267,19 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "# load_weights=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
       << "  save_weights=" << (config::SAVE_TRAINED_WEIGHTS ? "on" : "off") << "\n"
       << "# drive_layout=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
-      << "  num_inputs=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT) << "\n"
-      << "# metrics=mean_of_trial_means (sample std across trials)\n"
+      << "  num_inputs=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT) << "\n";
+    {
+        const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+        o << "# drive_ch=[";
+        for (size_t i = 0; i < n_in; ++i)
+        {
+            if (i)
+                o << ',';
+            o << config::INPUT_SCALE_CH[i];
+        }
+        o << "] (× input_scaling; layout feature order)\n";
+    }
+    o << "# metrics=mean_of_trial_means (sample std across trials)\n"
       << "# score_vpt_x_duty=VPT_lt*duty\n"
       << "# freerun_metrics=VPT,duty,VPT*duty,RMSE\n"
       << "# freerun_pool=best_half_per_metric (ceil(n/2); weak ICs discarded; "

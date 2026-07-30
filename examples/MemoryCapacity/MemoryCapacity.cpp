@@ -656,15 +656,15 @@ int main(int argc, char* argv[])
     // ---- Base reservoir op-point (seed, is fixed across a grid cell) ----
     // Reference multi-DIM tables used seed 47397376, is=0.06.
     // main() knobs below are the local campaign; they need not match the tables.
-    constexpr std::size_t DIM = 9;
+    constexpr std::size_t DIM = 12;
 
     ReservoirConfig base;
     base.dim = DIM;
-    base.seed = 73896 * 2; // alt reference seed: 47397376
+    base.seed = 7221978990ull;//73896 * 2; // alt reference seed: 47397376
     base.num_inputs = 1;
     base.spectral_radius = 0.99f; // grid axes below override sr / leak / M
     base.leak_rate = 1.0f;
-    base.input_scaling = 0.06f; // weak-drive / memory-margin (tanh)
+    base.input_scaling = 0.1;//0.06f; // weak-drive / memory-margin (tanh)
     base.history_depth = 8;
 
     MemoryCapacityMeter meter(DIM, mccfg);
@@ -683,7 +683,7 @@ int main(int argc, char* argv[])
     // else one sr x leak grid per M. Reference multi-DIM tables used
     // sr={0.9,0.95,1.0}, leak={1.0}, M={1,2,4,8,16,32,40,48,56,64}.
     RunGridSweep(meter, base,
-                 {1.0f},
+                 {0.99f},
                  {1.00f},
                  {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
                   17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});

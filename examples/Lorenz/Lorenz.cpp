@@ -100,6 +100,13 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::HISTORY_DEPTH);
         std::printf("[Lorenz config] ports:     input=%zu drive=%s  ext_feedback=0 (off)\n",
                     esn_config_.reservoir.num_inputs, DriveLayoutName(config::DRIVE_LAYOUT));
+        {
+            const size_t n_in = esn_config_.reservoir.num_inputs;
+            std::printf("[Lorenz config] drive_ch:  [");
+            for (size_t i = 0; i < n_in; ++i)
+                std::printf("%s%.3f", i ? ", " : "", config::INPUT_SCALE_CH[i]);
+            std::printf("]  (× global INPUT_SCALING)\n");
+        }
         std::printf("[Lorenz config] free-run:  protocol=%s  warmup=%zu  window=%zu\n",
                     ProtocolName(config::FREE_RUN_PROTOCOL),
                     config::WARMUP_STEPS, config::FREE_RUN_WINDOW_SIZE);
@@ -180,6 +187,10 @@ void Lorenz::FillDrive(float* drive, const float x, const float y, const float z
         drive[7] = z * z;
         break;
     }
+    // Relative gains on top of reservoir input_scaling (global INPUT_SCALING).
+    const size_t n = NumDriveChannels(config::DRIVE_LAYOUT);
+    for (size_t i = 0; i < n; ++i)
+        drive[i] *= config::INPUT_SCALE_CH[i];
 }
 
 void Lorenz::ExtractDriveReal(float* drive, const NormalizedState& state)

@@ -59,6 +59,15 @@ namespace config
     constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
     constexpr float SPECTRAL_RADIUS = 0.99f;
     constexpr float INPUT_SCALING = 0.04f;
+    // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
+    // after feature build, train + free-run). Index order matches DriveLayout:
+    //   XyzXz:      [x, y, z, x*z]
+    //   Quadratic8: [x, y, z, x*y, x*z, x*x, y*y, z*z]
+    // Unused trailing slots ignored. Default unity = global scale only.
+    // Reassignable for A/B; train and free-run/load must use the same gains.
+    // See TODO_drive_scale_sr.md §4 for a first z / xz grid.
+    inline float INPUT_SCALE_CH[kMaxDriveChannels] = {
+        1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     constexpr float LEAK_RATE = 1.0f;
     // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
     // Reservoir requires M in [1, 64].
