@@ -7,8 +7,9 @@ knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 
 **Date parked:** 2026-07-30  
 **Status:** (4) gains **locked** as `constexpr INPUT_SCALE_CH = {1,1,0.9,0.7}`;
-`Campaign_DriveGainAB` and campaign `drive_gains` overrides **removed**.
-(3) `Campaign_SpectralRadiusAB` ready. (1) still config-only A/B.
+`Campaign_DriveGainAB` / `drive_gains` / `HistoryDepthSweep` / `SpectralRadiusAB`
+**removed**. (3) SR: flip `config::SPECTRAL_RADIUS` or campaign SR override (no A/B helper).
+(1) still config-only A/B for global scale.
 
 **Out of scope (already known bad or not believed useful here):**
 
@@ -59,10 +60,10 @@ Unseen metrics, documented next to the seed/M that won.
 
 ---
 
-## 3. Spectral radius a notch off the edge  (campaign ready)
+## 3. Spectral radius a notch off the edge  (config / override only)
 
 ```text
-SPECTRAL_RADIUS = 0.99   // house default; reassignable for A/B
+SPECTRAL_RADIUS = 0.999   // house default; reassignable per campaign arg
 ```
 
 Near-edge SR can amplify prediction error in closed loop. Mild contraction is
@@ -70,19 +71,11 @@ cheap to test and often flat — still worth one matched pass **after** (1).
 
 | Try |
 |----:|
-| 0.95, 0.97, 0.98, **0.99** |
+| 0.95, 0.97, 0.98, **0.999** |
 
-**How:** `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs)` —
-matched SeedSurvey per arm, roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
-Example (DIM12 M12, baseline vs contractive):
-
-```cpp
-return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
-                                 /*sr_a=*/0.95f, /*sr_b=*/0.99f,
-                                 /*num_threads=*/0, /*num_runs=*/50);
-```
-
-Or flip `config::SPECTRAL_RADIUS` for a single-arm run.
+**How:** flip `config::SPECTRAL_RADIUS` in `Lorenz.h`, or pass `spectral_radius`
+on SeedSweep / Parallel* / FreeRun* (`>0` overrides for that run). No dedicated
+A/B campaign (`Campaign_SpectralRadiusAB` removed).
 
 **Done when:** clear win, or “flat / baseline is fine” written down so we stop
 retuning SR.

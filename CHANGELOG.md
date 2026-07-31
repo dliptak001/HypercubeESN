@@ -60,8 +60,8 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   GS operational metrics (`duty`, `n_relock`, `n_unlock`, `mean_locked_sojourn`).
 - **Lorenz drive (fixed):** 4-in `[x, y, z, x*z]` only (`kNumDriveChannels = 4`).
   Multi-layout enum / `Campaign_DriveLayoutAB` removed (see Changed).
-- **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` / `HistoryDepthSweep`
-  take reservoir `dim` first; RAII restore of `DIM` / `HISTORY_DEPTH` / drive.
+- **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` take reservoir `dim`
+  first; RAII restore of `DIM` / `HISTORY_DEPTH`.
 - **Lorenz Train / FreeRunSurvey / FreeRun pipeline:** train-only weight save;
   multi-orbit Unseen freerun survey with top-10% VPT / duty / VPT×duty / RMSE
   and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
@@ -77,9 +77,6 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   = `{1, 1, 0.9, 0.7}` for `[x,y,z,xz]` on top of global `INPUT_SCALING`
   (applied in `FillDrive`). Constructor banner and campaign metadata print
   `drive_ch`; train/load must match gains. Edit `Lorenz.h` to change gains.
-- **`Campaign_SpectralRadiusAB`:** matched SeedSurvey A/B for two spectral
-  radii at fixed dim/M; roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
-  `config::SPECTRAL_RADIUS` is reassignable (restored on exit).
 - **`SeedSweep` SR / input scaling:** optional trailing `spectral_radius` /
   `input_scaling` (>0 override `config::` for the sweep, restored on exit; 0 =
   keep config). `INPUT_SCALING` is reassignable. Console banners use ASCII only
@@ -111,6 +108,9 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `{1,1,0.9,0.7}`. Removed `Campaign_DriveGainAB`, campaign `drive_gains`
   parameters, and mutable gain apply/restore helpers. Banners still print
   locked `drive_ch`.
+- **Lorenz campaign cull:** removed `Campaign_HistoryDepthSweep` (M-sweep) and
+  `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers). SR still
+  overridable via SeedSweep / Parallel* / FreeRun* args or `config::`.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default

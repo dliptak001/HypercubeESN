@@ -12,12 +12,6 @@ int main()
     // Multi-seed survey (0 threads => hardware_concurrency)
     // return Campaign_SeedSurvey(/*dim=*/11, /*num_threads=*/0, /*num_runs=*/50);
 
-    // Sweep reservoir history depth M (list is an argument, not CLI):
-    // return Campaign_HistoryDepthSweep(/*dim=*/11, {2, 4, 6}, /*threads=*/16, /*runs=*/50);
-
-    // Longer overnight-style M grid:
-    //return Campaign_HistoryDepthSweep(/*dim=*/12, {8, 10, 12, 14, 15, 16, 17, 18, 19, 20, 22, 24}, /*threads=*/16, /*runs=*/50);
-
     // Train seed 21978990, free-run fixed orbit 9333312947715283458:
     // every step printed + CSV under C:/HypercubeESN/results/traces/
     // Plot (absolute path is also printed at end of run):
@@ -27,11 +21,6 @@ int main()
     //                       /*max_freeruns=*/1,
     //                       /*target_orbit=*/9333312947715283458ull);
 
-
-    // Spectral-radius A/B at fixed dim/M (SeedSurvey per arm; roll-up under campaigns/).
-    // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
-    //                                  /*sr_a=*/0.98f, /*sr_b=*/0.99f,
-    //                                  /*num_threads=*/0, /*num_runs=*/50);
 
     // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
     // SeedSweep (serial Train+survey each seed) or ParallelSeedSweep (overnight).

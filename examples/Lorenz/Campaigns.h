@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 /// Aggregates from one multi-seed survey (means are mean-of-trial-means).
-/// Filled by Campaign_SeedSurvey when @p out is non-null; used by M-sweep roll-up.
+/// Filled by Campaign_SeedSurvey when @p out is non-null.
 struct SurveySummary
 {
     bool ok = false;
@@ -196,29 +196,3 @@ int ParallelOrbitSweep(size_t dim,
                        int top_k = 10,
                        float spectral_radius = 0.f,
                        float input_scaling = 0.f);
-
-/// Sequential surveys for each M in @p history_depths, then a comparative roll-up
-/// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.
-/// @param dim  Reservoir hypercube dim (N = 2^dim), fixed for the whole sweep. Restored on exit.
-int Campaign_HistoryDepthSweep(size_t dim,
-                               std::initializer_list<size_t> history_depths,
-                               size_t num_threads = 0,
-                               int num_runs = 50,
-                               uint64_t base_seed = 21978990,
-                               uint64_t orbit_seed = 72983498);
-
-
-/// A/B spectral radius at fixed dim/M: arm A = @p sr_a then arm B = @p sr_b.
-/// Matched seeds/drive; trains separately per arm (SeedSurvey).
-/// Code-computed roll-up + CSV/TXT under RESULTS_DIR. Restores DIM, M, SR on exit.
-/// @param dim            Reservoir hypercube dim (N = 2^dim).
-/// @param history_depth  Fixed M for both arms (1..64).
-/// @param sr_a, sr_b     Spectral radii (must be finite and > 0).
-int Campaign_SpectralRadiusAB(size_t dim,
-                              size_t history_depth,
-                              float sr_a,
-                              float sr_b,
-                              size_t num_threads = 0,
-                              int num_runs = 50,
-                              uint64_t base_seed = 21978990,
-                              uint64_t orbit_seed = 72983498);

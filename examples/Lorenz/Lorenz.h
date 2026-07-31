@@ -34,7 +34,7 @@ namespace config
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 10;
     constexpr uint64_t SEED = 665127;
-    // Not constexpr: campaigns (SrAB, SeedSweep) reassign for matched A/B / sweeps.
+    // Not constexpr: SeedSweep / Parallel* may reassign for a run (RAII restore).
     inline float SPECTRAL_RADIUS = 0.999f;
     // Not constexpr: SeedSweep / scale grids reassign (restored on campaign exit).
     inline float INPUT_SCALING = 0.015f;
@@ -43,7 +43,7 @@ namespace config
     // Train and free-run/load must use the same gains (edit here, rebuild).
     inline constexpr float INPUT_SCALE_CH[kNumDriveChannels] = {1.f, 1.f, 0.9f, 0.7f};
     constexpr float LEAK_RATE = 1.0f;
-    // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
+    // Delay-line depth M. Not constexpr: campaigns pass M as an argument.
     // Reservoir requires M in [1, 64].
     inline size_t HISTORY_DEPTH = 2;
 
@@ -94,7 +94,7 @@ namespace config
     // Campaign artifacts (CWD-independent). Layout:
     //   RUNS_DIR/traces/     FreeRun + Campaign_Trace freerun CSVs
     //   RUNS_DIR/surveys/    FreeRunSurvey + SeedSweep leaderboards
-    //   RUNS_DIR/campaigns/  SeedSurvey / M-sweep / DriveAB roll-ups (RESULTS_DIR)
+    //   RUNS_DIR/campaigns/  SeedSurvey roll-ups (RESULTS_DIR)
     constexpr const char* RUNS_DIR = R"(C:\HypercubeESNRuns\results)";
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";
 
