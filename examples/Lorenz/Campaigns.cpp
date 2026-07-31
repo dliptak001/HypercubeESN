@@ -2204,7 +2204,15 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
                 }
             });
         }
+    } // jthread join: all seed jobs complete before report
+
+    {
+        std::lock_guard<std::mutex> lock(stderr_mu);
+        std::fprintf(stderr, "[par-seed-sweep] all seeds finished (%zu/%zu)\n",
+                     done_count.load(std::memory_order_relaxed), num_seeds);
+        std::fflush(stderr);
     }
+    std::fflush(stdout);
 
     config::ENABLE_PRINTF = saved_printf;
     config::ENABLE_PROGRESS = saved_progress;
@@ -2276,8 +2284,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
         }
     }
 
-    auto emit_top = [&](const char* title, const std::vector<size_t>& ord,
-                        auto metric, const char* metric_label) {
+    auto emit_top = [&](const char* title, const std::vector<size_t>& ord) {
         emitf("\n--- Top %d by %s ---\n", top_k, title);
         if (ord.empty())
         {
@@ -2285,23 +2292,21 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
             return;
         }
         const size_t n = std::min(static_cast<size_t>(top_k), ord.size());
-        emitf("%-4s %6s %20s %12s %10s %10s %10s\n",
-              "rank", "idx", "esn_seed", metric_label, "VxD_mn", "VPT_mn", "duty_mn");
+        // Same columns for all tops; section title says sort key (no duplicate metric col).
+        emitf("%-4s %6s %20s %10s %10s %10s\n",
+              "rank", "idx", "esn_seed", "VxD_mn", "VPT_mn", "duty_mn");
         for (size_t r = 0; r < n; ++r)
         {
             const auto& s = rows[ord[r]];
-            emitf("%-4zu %6zu %20llu %12.4f %10.3f %10.2f %10.3f\n",
+            emitf("%-4zu %6zu %20llu %10.4f %10.4f %10.4f\n",
                   r + 1, s.index,
                   static_cast<unsigned long long>(s.esn_seed),
-                  metric(s), s.mean_vpt_x_duty, s.mean_vpt, s.mean_duty);
+                  s.mean_vpt_x_duty, s.mean_vpt, s.mean_duty);
         }
     };
-    emit_top("mean VPT*duty", by_vxd,
-             [](const ParSeedRow& s) { return s.mean_vpt_x_duty; }, "VxD_mn");
-    emit_top("mean VPT", by_vpt,
-             [](const ParSeedRow& s) { return s.mean_vpt; }, "VPT_mn");
-    emit_top("mean duty", by_duty,
-             [](const ParSeedRow& s) { return s.mean_duty; }, "duty_mn");
+    emit_top("mean VPT*duty", by_vxd);
+    emit_top("mean VPT", by_vpt);
+    emit_top("mean duty", by_duty);
 
     // Failed seeds (if any).
     size_t n_fail = 0;
@@ -2325,56 +2330,65 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
     std::fflush(stdout);
 
     // CSV: one row per seed with ranks on each metric.
+    // Windows: must close the ofstream before rename (open handle => I/O error).
     {
         const fs::path tmp = fs::path(rank_csv.string() + ".tmp");
-        std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
-        if (!csv)
+        bool wrote_ok = false;
         {
-            std::fprintf(stderr, "[par-seed-sweep] failed to open %s\n",
-                         tmp.string().c_str());
-        }
-        else
+            std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
+            if (!csv)
+            {
+                std::fprintf(stderr, "[par-seed-sweep] failed to open %s\n",
+                             tmp.string().c_str());
+            }
+            else
+            {
+                csv << "# ParallelSeedSweep\n"
+                    << "# freerun_pool=top_10pct_per_metric\n"
+                    << "# dim=" << dim << " history_depth=" << history_depth
+                    << " epochs=" << epochs << " freerun_runs=" << freerun_runs
+                    << " num_seeds=" << num_seeds << " num_threads=" << num_threads << "\n"
+                    << "# base_esn_seed=" << base_esn_seed
+                    << " base_orbit_seed=" << base_orbit_seed << "\n"
+                    << "idx,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,"
+                       "n_valid,rank_vpt_x_duty,rank_vpt,rank_duty\n";
+                for (size_t i : by_vxd)
+                {
+                    const auto& s = rows[i];
+                    csv << s.index << ',' << s.esn_seed << ",1,"
+                        << s.mean_vpt_x_duty << ',' << s.mean_vpt << ','
+                        << s.mean_duty << ',' << s.mean_rmse << ','
+                        << s.n_valid << ','
+                        << rank_of(by_vxd, i) << ','
+                        << rank_of(by_vpt, i) << ','
+                        << rank_of(by_duty, i) << '\n';
+                }
+                for (const auto& s : rows)
+                {
+                    if (s.ok)
+                        continue;
+                    csv << s.index << ',' << s.esn_seed << ",0,,,,"
+                        << s.n_valid << ",,,\n";
+                }
+                csv.flush();
+                wrote_ok = csv.good();
+            }
+        } // close handle before rename (required on Windows)
+        if (wrote_ok)
         {
-            csv << "# ParallelSeedSweep\n"
-                << "# freerun_pool=top_10pct_per_metric\n"
-                << "# dim=" << dim << " history_depth=" << history_depth
-                << " epochs=" << epochs << " freerun_runs=" << freerun_runs
-                << " num_seeds=" << num_seeds << " num_threads=" << num_threads << "\n"
-                << "# base_esn_seed=" << base_esn_seed
-                << " base_orbit_seed=" << base_orbit_seed << "\n"
-                << "idx,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,"
-                   "n_valid,rank_vpt_x_duty,rank_vpt,rank_duty\n";
-            // Write successful seeds in VPT*duty order, then failures.
-            for (size_t i : by_vxd)
+            std::error_code ec;
+            fs::remove(rank_csv, ec);
+            fs::rename(tmp, rank_csv, ec);
+            if (ec)
             {
-                const auto& s = rows[i];
-                csv << s.index << ',' << s.esn_seed << ",1,"
-                    << s.mean_vpt_x_duty << ',' << s.mean_vpt << ','
-                    << s.mean_duty << ',' << s.mean_rmse << ','
-                    << s.n_valid << ','
-                    << rank_of(by_vxd, i) << ','
-                    << rank_of(by_vpt, i) << ','
-                    << rank_of(by_duty, i) << '\n';
+                // Fallback: leave data at .tmp so the overnight run is not lost.
+                std::fprintf(stderr,
+                             "[par-seed-sweep] rename CSV failed: %s  "
+                             "(data left at %s)\n",
+                             ec.message().c_str(), tmp.string().c_str());
             }
-            for (const auto& s : rows)
-            {
-                if (s.ok)
-                    continue;
-                csv << s.index << ',' << s.esn_seed << ",0,,,,"
-                    << s.n_valid << ",,,\n";
-            }
-            csv.flush();
-            if (csv.good())
-            {
-                std::error_code ec;
-                fs::remove(rank_csv, ec);
-                fs::rename(tmp, rank_csv, ec);
-                if (ec)
-                    std::fprintf(stderr, "[par-seed-sweep] rename CSV failed: %s\n",
-                                 ec.message().c_str());
-                else
-                    ReportWrote("par-seed-sweep", rank_csv);
-            }
+            else
+                ReportWrote("par-seed-sweep", rank_csv);
         }
     }
 
