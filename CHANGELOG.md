@@ -93,6 +93,11 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **`SeedSweep` drive_gains:** optional `std::initializer_list<float>` sets
   `INPUT_SCALE_CH` for the sweep (size = drive `n_in`; empty keeps config;
   restored on exit). Shared gain helpers with `Campaign_DriveGainAB`.
+- **`FreeRun` / `FreeRunSurvey` dynamics overrides:** same optional trailing
+  `spectral_radius` / `input_scaling` / `drive_layout` / `drive_gains` as
+  `SeedSweep` (`>0` / non-empty / set override; `0` / empty / nullopt keep
+  config; RAII restore on exit). Shared `ValidateDynamicsOverrides` and
+  drive-gain helpers across SeedSweep, FreeRun, FreeRunSurvey, and GainAB.
 - **`DriveLayout::XyzXy`:** 4-in `[x,y,z,x*y]` (z-dot bilinear). Free-run CSV
   `drive_xy`. `SeedSweep` optional `drive_layout` (`std::optional`; nullopt keeps
   config); applied before gains so `n_in` matches.
