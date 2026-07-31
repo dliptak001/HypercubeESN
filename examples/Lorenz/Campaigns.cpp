@@ -2263,6 +2263,8 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
 
     // Full table sorted by VPT*duty (primary).
     emit("--- All seeds (sorted by mean VPT*duty) ---\n");
+    emit("note: VxD_mn is mean of top-10% (VPT*duty) products, not VPT_mn*duty_mn "
+         "(top-10% pools are independent per metric).\n");
     emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
           "rank", "idx", "esn_seed", "VxD_mn", "VPT_mn", "duty_mn", "RMSE_mn",
           "r_VxD", "r_VPT", "r_duty");
@@ -2350,6 +2352,8 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
                     << " num_seeds=" << num_seeds << " num_threads=" << num_threads << "\n"
                     << "# base_esn_seed=" << base_esn_seed
                     << " base_orbit_seed=" << base_orbit_seed << "\n"
+                    << "# note: mean_vpt_x_duty = mean of top-10% (VPT*duty) products; "
+                       "not mean_vpt*mean_duty (pools independent per metric)\n"
                     << "idx,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,"
                        "n_valid,rank_vpt_x_duty,rank_vpt,rank_duty\n";
                 for (size_t i : by_vxd)
