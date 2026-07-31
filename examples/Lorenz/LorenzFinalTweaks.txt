@@ -11,7 +11,7 @@ You sit at 0.04. Free-run is usually more sensitive to this than to almost anyth
 └──────────────────┴─────────────────────────────────────────────────────────────────────────────┘
 
 Test: one seed (or 3), fixed DIM/M/epochs, change only INPUT_SCALING, FreeRunSurvey Unseen.
-If one side wins by a clear margin on mean VPT×duty, lock it and re-SeedSweep.
+If one side wins by a clear margin on mean VPT×duty, lock it and re-run ParallelSeedSweep.
 
 
 

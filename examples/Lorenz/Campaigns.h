@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 
 // ---------------------------------------------------------------------------
 // Campaign entry points -- plain functions. Call them from main.cpp (copy/paste).
@@ -131,28 +130,6 @@ int Train(size_t dim,
           size_t epochs,
           const char* weights_stem = nullptr);
 
-/// For each ESN seed: optional Train → FreeRunSurvey; rank seeds by mean VPT*duty
-/// (top-10% freerun pool). Weight stem per seed:
-///   {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
-/// Restores DIM / HISTORY_DEPTH / EPOCHS / SPECTRAL_RADIUS / INPUT_SCALING on exit.
-/// Channel gains are fixed (`config::INPUT_SCALE_CH`).
-/// @param do_train          If true, Train each seed first; if false, only survey existing stems.
-/// @param spectral_radius   If > 0, set config::SPECTRAL_RADIUS for the whole sweep.
-///                          If <= 0 (default), keep the current config value.
-/// @param input_scaling     If > 0, set config::INPUT_SCALING for the whole sweep.
-///                          If <= 0 (default), keep the current config value.
-int SeedSweep(size_t dim,
-              size_t history_depth,
-              std::initializer_list<uint64_t> esn_seeds,
-              size_t epochs,
-              int freerun_runs,
-              uint64_t train_orbit = 9333312947715283458ull,
-              uint64_t freerun_orbit_seed = 72983498ull,
-              int top_k = 10,
-              bool do_train = true,
-              float spectral_radius = 0.f,
-              float input_scaling = 0.f);
-
 /// Parallel train+freerun seed search (no weight save). Spawns @p num_threads
 /// workers over @p num_seeds ESN seeds derived from @p base_esn_seed via
 /// SplitMix64 (decorrelated; not base+i). Each worker: Train in memory →
@@ -161,9 +138,10 @@ int SeedSweep(size_t dim,
 /// @p base_orbit_seed is the **shared remix root** for train and freerun
 /// (each phase advances its own orbit stream via mix64 — not a single orbit).
 /// Final report: full seed table + top_k highlights for VPT, duty, and
-/// VPT*duty (stdout and surveys/*.csv + *.txt). Dynamics overrides match
-/// SeedSweep (RAII restore). Always trains (no do_train / no load / no save).
-/// Refuses LOAD_TRAINED_WEIGHTS and SAVE_TRAINED_WEIGHTS. Requires
+/// VPT*duty (stdout and surveys/*.csv + *.txt). Dynamics overrides:
+/// @p spectral_radius / @p input_scaling >0 set for the run (RAII restore);
+/// 0 keeps config. Always trains (no load / no save). Refuses
+/// LOAD_TRAINED_WEIGHTS and SAVE_TRAINED_WEIGHTS. Requires
 /// Lorenz::kReadoutNumThreads == 1 (HCNN single-threaded per network).
 /// @p num_threads is capped to hardware_concurrency and to @p num_seeds.
 int ParallelSeedSweep(size_t dim,

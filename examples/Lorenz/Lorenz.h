@@ -34,9 +34,9 @@ namespace config
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 10;
     constexpr uint64_t SEED = 665127;
-    // Not constexpr: SeedSweep / Parallel* may reassign for a run (RAII restore).
+    // Not constexpr: Parallel* / FreeRun* may reassign for a run (RAII restore).
     inline float SPECTRAL_RADIUS = 0.999f;
-    // Not constexpr: SeedSweep / scale grids reassign (restored on campaign exit).
+    // Not constexpr: Parallel* / FreeRun* may reassign (restored on campaign exit).
     inline float INPUT_SCALING = 0.015f;
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
     // after feature build). Index order: [x, y, z, x*z]. Locked soft z/xz.
@@ -93,7 +93,7 @@ namespace config
 
     // Campaign artifacts (CWD-independent). Layout:
     //   RUNS_DIR/traces/     FreeRun + Campaign_Trace freerun CSVs
-    //   RUNS_DIR/surveys/    FreeRunSurvey + SeedSweep leaderboards
+    //   RUNS_DIR/surveys/    FreeRunSurvey + Parallel* leaderboards
     //   RUNS_DIR/campaigns/  SeedSurvey roll-ups (RESULTS_DIR)
     constexpr const char* RUNS_DIR = R"(C:\HypercubeESNRuns\results)";
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";

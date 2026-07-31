@@ -22,8 +22,8 @@ int main()
     //                       /*target_orbit=*/9333312947715283458ull);
 
 
-    // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
-    // SeedSweep (serial Train+survey each seed) or ParallelSeedSweep (overnight).
+    // Pipeline: ParallelSeedSweep (overnight seed search) → Train/FreeRunSurvey
+    // → FreeRun (plot one IC). Or ParallelOrbitSweep for orbit ranking on one seed.
     constexpr size_t kDim = 10;
     constexpr size_t kM = 2;
 
@@ -49,19 +49,6 @@ int main()
                               /*top_k=*/10,
                               /*spectral_radius=*/0.999f,
                               /*input_scaling=*/0.015f);
-
-    // 10221978990ull is a known BAD seed
-    // return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-    //                  /*esn_seeds=*/{10121978990ull, 10321978990ull,
-    //                                 10421978990ull, 10521978990ull, 10621978990ull, 10721978990ull, 10821978990ull, 10921978990ull},
-    //                  /*epochs=*/300,
-    //                  /*freerun_runs=*/1000,
-    //                  /*train_orbit=*/933312947715283458ull,
-    //                  /*freerun_orbit_seed=*/729893498ull,
-    //                  /*top_k=*/10,
-    //                  /*do_train=*/true,
-    //                  /*spectral_radius=*/0.999f,
-    //                  /*input_scaling=*/0.015f);
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(/*dim=*/12, /*history_depth=*/32,

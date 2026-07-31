@@ -194,13 +194,13 @@ int main()
 }
 ```
 
-### `Train` / `FreeRunSurvey` / `FreeRun` / `SeedSweep` (campaign pipeline)
+### `Train` / `FreeRunSurvey` / `FreeRun` (campaign pipeline)
 
 ```text
 Train  →  FreeRunSurvey  →  FreeRun
  weights     rank orbits       plot one IC
 
-SeedSweep: for each esn_seed → Train? + FreeRunSurvey → rank seeds by mean VPT×duty
+ParallelSeedSweep: multi-seed overnight search (train in memory; rank seeds)
 ```
 
 **`Train`** — train-only (no freerun): remixed orbits for `epochs` from remix base
@@ -218,11 +218,11 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 | Subdir | Campaigns |
 |--------|-----------|
 | `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
-| `surveys/` | `FreeRunSurvey`, `SeedSweep` leaderboards |
+| `surveys/` | `FreeRunSurvey`, `ParallelSeedSweep`, `ParallelOrbitSweep` leaderboards |
 | `campaigns/` | `Campaign_SeedSurvey` roll-ups (`RESULTS_DIR`) |
 
 **Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
-`[train]` / `[freerun]` / `[freerun-survey]` / `[seed-sweep]` / `[trace]` /
+`[train]` / `[freerun]` / `[freerun-survey]` / `[trace]` /
 `[survey]` / `[par-seed-sweep]` / `[par-orbit-sweep]`, freerun scores as
 `VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
 `[tag] done wall time: …`.
@@ -231,16 +231,13 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 (remix from `orbit_seed`), aggregate top-10% VPT / duty / VPT×duty / RMSE, print
 **top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
 Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
+Optional trailing overrides (restored on exit): `spectral_radius` /
+`input_scaling` (>0 set, 0 = keep config). Channel gains are fixed
+(`config::INPUT_SCALE_CH`).
 
 **`FreeRun`** — load-only (no train): free-run **one** attractor IC for a plottable
-trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`.
-
-**`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey`; rank by
-mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking
-CSV + `.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing overrides
-(restored on exit): `spectral_radius` / `input_scaling` (>0 set, 0 = keep config).
-Channel gains are fixed (`config::INPUT_SCALE_CH`). Stems omit SR/IS/drive_ch —
-banner records them.
+trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`. Same optional
+SR/IS overrides as FreeRunSurvey.
 
 **`ParallelSeedSweep`** — overnight parallel seed search. Always trains in
 memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
@@ -251,8 +248,9 @@ memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
 `num_threads` workers over `num_seeds` jobs; capped to `hardware_concurrency`
 and `num_seeds`. Header + mutexed stderr heartbeats only; final report on
 stdout and `RUNS_DIR/surveys/par_seed_sweep_*.csv|txt` with full table plus
-top_k by mean VPT, duty, and VPT×duty (top-10% freerun pool). Same dynamics
-overrides as SeedSweep.
+top_k by mean VPT, duty, and VPT×duty (top-10% freerun pool). Optional SR/IS
+overrides as FreeRunSurvey. Cherry-pick winners with Train / FreeRunSurvey /
+FreeRun.
 
 | Function | Role |
 |----------|------|
@@ -260,7 +258,7 @@ overrides as SeedSweep.
 | `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
 | `ParallelOrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, epochs, ...)` | Train one seed once; parallel one-freerun-per-orbit ranking |
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
-| `SeedSweep` / `Train` / `FreeRunSurvey` / `FreeRun` | Serial pipeline + multi-seed ranking (see above) |
+| `Train` / `FreeRunSurvey` / `FreeRun` | Serial train → survey orbits → plot one IC |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit
 (along with M / SR when a campaign reassigns them). Protocol,

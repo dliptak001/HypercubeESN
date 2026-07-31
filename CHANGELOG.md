@@ -67,8 +67,6 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
   load-only freerun with plottable CSV under `...\traces\` (see
   `plot_freerun_overlay.py`).
-- **`SeedSweep`:** loop ESN seeds (optional Train + FreeRunSurvey); rank seeds by
-  mean VPT×duty; atomic ranking CSV + `.partial.csv` after each seed for overnight runs.
 - **Lorenz campaign I/O consistency:** shared `RUNS_DIR` tree
   (`traces/` / `surveys/` / `campaigns/`), common report helpers (banner, freerun
   score line, wrote bytes, wall time), atomic CSV writes, default weight stem
@@ -77,18 +75,16 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   = `{1, 1, 0.9, 0.7}` for `[x,y,z,xz]` on top of global `INPUT_SCALING`
   (applied in `FillDrive`). Constructor banner and campaign metadata print
   `drive_ch`; train/load must match gains. Edit `Lorenz.h` to change gains.
-- **`SeedSweep` SR / input scaling:** optional trailing `spectral_radius` /
-  `input_scaling` (>0 override `config::` for the sweep, restored on exit; 0 =
-  keep config). `INPUT_SCALING` is reassignable. Console banners use ASCII only
-  (no em-dash / times) for Windows OEM consoles; `MODEL_SAVE_DIR` single-backslash path.
-- **`FreeRun` / `FreeRunSurvey` dynamics overrides:** same optional trailing
-  `spectral_radius` / `input_scaling` as `SeedSweep` (`>0` set override; `0`
-  keep config; RAII restore on exit).
+- **`FreeRun` / `FreeRunSurvey` dynamics overrides:** optional trailing
+  `spectral_radius` / `input_scaling` (`>0` set override; `0` keep config; RAII
+  restore on exit). Console banners use ASCII only (no em-dash / times) for
+  Windows OEM consoles; `MODEL_SAVE_DIR` single-backslash path.
 - **`ParallelSeedSweep`:** host-parallel overnight seed search. Mix64-derived
   ESN seeds from a base; in-memory train (no weight I/O); freerun means use
   top-10% pool; mutexed stderr heartbeats; final multi-metric ranking (stdout
   + surveys CSV/TXT). Caps threads to `hardware_concurrency`; requires
-  `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags.
+  `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags. Same
+  optional SR/IS overrides as FreeRun*.
 - **`ParallelOrbitSweep`:** train one ESN seed once; parallel one-freerun-per
   Mix64 orbit; rank orbit seeds by VPT / duty / VPT×duty (stdout + surveys
   CSV/TXT). Temp readout stem for worker load only (RAII delete); quiet
@@ -108,9 +104,10 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `{1,1,0.9,0.7}`. Removed `Campaign_DriveGainAB`, campaign `drive_gains`
   parameters, and mutable gain apply/restore helpers. Banners still print
   locked `drive_ch`.
-- **Lorenz campaign cull:** removed `Campaign_HistoryDepthSweep` (M-sweep) and
-  `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers). SR still
-  overridable via SeedSweep / Parallel* / FreeRun* args or `config::`.
+- **Lorenz campaign cull:** removed `Campaign_HistoryDepthSweep` (M-sweep),
+  `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers), and
+  serial `SeedSweep` (superseded by `ParallelSeedSweep`). SR still overridable
+  via Parallel* / FreeRun* args or `config::`.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default
