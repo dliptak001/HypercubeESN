@@ -27,7 +27,7 @@ struct SurveySummary
     uint64_t base_seed = 0;
     uint64_t orbit_seed = 0;
 
-    /// Trial freerun means use best half of ICs per metric (see README).
+    /// Trial freerun means use top 10% of ICs per metric (see README).
     /// Primary metrics only: VPT, duty, VPT*duty, RMSE.
     double mean_vpt = 0;
     double std_vpt = 0;
@@ -92,7 +92,7 @@ int FreeRun(size_t dim,
             std::optional<DriveLayout> drive_layout = std::nullopt,
             std::initializer_list<float> drive_gains = {});
 
-/// Aggregate from one @ref FreeRunSurvey (best-half freerun pool means).
+/// Aggregate from one @ref FreeRunSurvey (top-10% freerun pool means).
 struct FreeRunSurveySummary
 {
     bool ok = false;
@@ -108,12 +108,12 @@ struct FreeRunSurveySummary
 };
 
 /// Load weights, free-run @p num_runs remixed orbits (from @p orbit_seed),
-/// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
+/// print aggregate stats (top-10% pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
 /// Writes a leaderboard CSV under RUNS_DIR/surveys/.
 /// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING /
 /// DRIVE_LAYOUT / INPUT_SCALE_CH on exit.
-/// @param out  Optional; filled with best-half means and top freerun IC.
+/// @param out  Optional; filled with top-10% means and top freerun IC.
 /// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
 /// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
 /// @param drive_layout    If set, set config::DRIVE_LAYOUT; nullopt keeps config.
@@ -142,7 +142,7 @@ int Train(size_t dim,
           const char* weights_stem = nullptr);
 
 /// For each ESN seed: optional Train → FreeRunSurvey; rank seeds by mean VPT*duty
-/// (best-half freerun pool). Weight stem per seed:
+/// (top-10% freerun pool). Weight stem per seed:
 ///   {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
 /// Restores DIM / HISTORY_DEPTH / EPOCHS / SPECTRAL_RADIUS / INPUT_SCALING /
 /// INPUT_SCALE_CH on exit.

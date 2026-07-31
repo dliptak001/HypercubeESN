@@ -395,7 +395,7 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
     o << "# metrics=mean_of_trial_means (sample std across trials)\n"
       << "# score_vpt_x_duty=VPT_lt*duty\n"
       << "# freerun_metrics=VPT,duty,VPT*duty,RMSE\n"
-      << "# freerun_pool=best_half_per_metric (ceil(n/2); weak ICs discarded; "
+      << "# freerun_pool=top_10pct_per_metric (max(1,ceil(n/10)); weak ICs discarded; "
          "higher: VPT duty VPT*duty; lower: RMSE)\n";
 }
 
@@ -455,13 +455,13 @@ void WriteSurveyResultFiles(const SurveySummary& s)
             << "  trials_ok=" << s.n_trials_ok << "/" << s.num_trials
             << "  freeruns/trial=" << s.num_runs << "\n";
         txt << "  VPT   mean=" << s.mean_vpt << "  std=" << s.std_vpt
-            << "  (best half freeruns)\n";
+            << "  (top 10% freeruns)\n";
         txt << "  RMSE  mean=" << s.mean_rmse << "  std=" << s.std_rmse
-            << "  (best half freeruns, lower-is-better)\n";
+            << "  (top 10% freeruns, lower-is-better)\n";
         txt << "  duty  mean=" << s.mean_duty << "  std=" << s.std_duty
-            << "  (best half freeruns)\n";
+            << "  (top 10% freeruns)\n";
         txt << "  VPT*duty mean=" << s.mean_vpt_x_duty << "  std=" << s.std_vpt_x_duty
-            << "  (best half freeruns)\n";
+            << "  (top 10% freeruns)\n";
         txt << "  wall_seconds=" << s.wall_seconds << "  ok=" << (s.ok ? 1 : 0) << "\n";
     }
 
@@ -598,23 +598,33 @@ double MeanOf(const std::vector<double>& v)
     return m;
 }
 
-/// Upper half of a higher-is-better sample (best 50%). Odd n: keep ceil(n/2).
-std::vector<double> BestHalfHigherIsBetter(std::vector<double> v)
+/// Keep count for freerun pool: top 10% of n, at least 1 when n >= 1.
+/// max(1, ceil(n/10)); n=1000 -> 100.
+size_t Top10PoolKeep(size_t n)
+{
+    if (n == 0)
+        return 0;
+    const size_t keep = (n + 9) / 10; // ceil(n/10)
+    return keep < 1 ? 1 : keep;
+}
+
+/// Top 10% of a higher-is-better sample (largest values).
+std::vector<double> Top10HigherIsBetter(std::vector<double> v)
 {
     if (v.size() <= 1)
         return v;
     std::sort(v.begin(), v.end());
-    const size_t keep = (v.size() + 1) / 2; // ceil(n/2)
+    const size_t keep = Top10PoolKeep(v.size());
     return std::vector<double>(v.end() - static_cast<std::ptrdiff_t>(keep), v.end());
 }
 
-/// Lower half of a lower-is-better sample (best 50%). Odd n: keep ceil(n/2).
-std::vector<double> BestHalfLowerIsBetter(std::vector<double> v)
+/// Top 10% of a lower-is-better sample (smallest values).
+std::vector<double> Top10LowerIsBetter(std::vector<double> v)
 {
     if (v.size() <= 1)
         return v;
     std::sort(v.begin(), v.end());
-    const size_t keep = (v.size() + 1) / 2; // ceil(n/2)
+    const size_t keep = Top10PoolKeep(v.size());
     return std::vector<double>(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(keep));
 }
 
@@ -627,7 +637,7 @@ struct TrialBundle
     double mean_rmse = 0;
     double mean_duty = 0;
     double mean_vpt_x_duty = 0;
-    size_t n_valid = 0; ///< valid freeruns before best-half filter
+    size_t n_valid = 0; ///< valid freeruns before top-10% filter
     double wall_seconds = 0;
 };
 
@@ -696,13 +706,13 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         if (!r.crossed) ++censored;
     }
 
-    // Best half of ICs per metric (independent). Higher: VPT, duty, VPT*duty.
+    // Top 10% of ICs per metric (independent). Higher: VPT, duty, VPT*duty.
     // Lower: RMSE. Weak ICs discarded on purpose.
     const size_t n_full = vpt_lts.size();
-    const std::vector<double> vpt_best = BestHalfHigherIsBetter(vpt_lts);
-    const std::vector<double> duty_best = BestHalfHigherIsBetter(duties);
-    const std::vector<double> vxd_best = BestHalfHigherIsBetter(vpt_x_duties);
-    const std::vector<double> rmse_best = BestHalfLowerIsBetter(rmses);
+    const std::vector<double> vpt_best = Top10HigherIsBetter(vpt_lts);
+    const std::vector<double> duty_best = Top10HigherIsBetter(duties);
+    const std::vector<double> vxd_best = Top10HigherIsBetter(vpt_x_duties);
+    const std::vector<double> rmse_best = Top10LowerIsBetter(rmses);
 
     tb.n_valid = n_full;
     tb.ok = n_full > 0;
@@ -730,7 +740,7 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
         const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
         if (n_pool > 0 && n_pool != n)
             std::snprintf(buf, sizeof buf,
-                          "  %-20s n=%2zu (best half of %zu)  min=%.*f  max=%.*f  "
+                          "  %-20s n=%2zu (top 10%% of %zu)  min=%.*f  max=%.*f  "
                           "mean=%.*f  median=%.*f  std=%.*f\n",
                           label, n, n_pool,
                           prec, v.front(), prec, v.back(),
@@ -754,8 +764,8 @@ TrialBundle RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs)
                   "VPT*duty = VPT_lt * duty\n",
                   config::VPT_THRESHOLD);
     emit(buf);
-    emit("  note: freerun stats = VPT, duty, VPT*duty, RMSE only; best 50% of ICs per "
-         "metric (odd n keeps ceil(n/2); higher: VPT duty VPT*duty; lower: RMSE). "
+    emit("  note: freerun stats = VPT, duty, VPT*duty, RMSE only; top 10% of ICs per "
+         "metric (keep max(1,ceil(n/10)); higher: VPT duty VPT*duty; lower: RMSE). "
          "Weak ICs discarded on purpose; see examples/Lorenz/README.md\n");
     if (config::LOAD_TRAINED_WEIGHTS)
         emit("  note: readout loaded from disk (Train skipped)\n");
@@ -946,7 +956,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
                 time_buf, num_threads, sum.n_trials_ok);
     if (sum.ok)
     {
-        std::printf("[survey] aggregate (mean of %zu trial-means; best-half ICs):  "
+        std::printf("[survey] aggregate (mean of %zu trial-means; top-10%% ICs):  "
                     "VPT mean=%.3f std=%.3f  RMSE mean=%.6f std=%.6f  "
                     "duty mean=%.3f std=%.3f  VPT*duty mean=%.3f std=%.3f  M=%zu\n",
                     sum.n_trials_ok,
@@ -1405,7 +1415,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     }
     std::printf("[freerun-survey] load stem: %s\n", stem);
     std::printf("[freerun-survey] freerun remix IC each run; "
-                "stats use best-half pool; metrics=VPT,duty,VPT*duty,RMSE\n");
+                "stats use top-10%% pool; metrics=VPT,duty,VPT*duty,RMSE\n");
     std::printf("[freerun-survey] CSV dir: %s\n", survey_dir.string().c_str());
     std::fflush(stdout);
 
@@ -1486,10 +1496,10 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     }
 
     const size_t n_full = rows.size();
-    const auto vpt_best = BestHalfHigherIsBetter(vpt_lts);
-    const auto duty_best = BestHalfHigherIsBetter(duties);
-    const auto vxd_best = BestHalfHigherIsBetter(vxds);
-    const auto rmse_best = BestHalfLowerIsBetter(rmses);
+    const auto vpt_best = Top10HigherIsBetter(vpt_lts);
+    const auto duty_best = Top10HigherIsBetter(duties);
+    const auto vxd_best = Top10HigherIsBetter(vxds);
+    const auto rmse_best = Top10LowerIsBetter(rmses);
 
     auto report = [](const char* label, std::vector<double> v, int prec, size_t n_pool) {
         if (v.empty())
@@ -1499,7 +1509,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
         MeanStd(v, mean, sd);
         const size_t n = v.size();
         const double median = n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
-        std::printf("  %-14s n=%zu (best half of %zu)  min=%.*f  max=%.*f  "
+        std::printf("  %-14s n=%zu (top 10%% of %zu)  min=%.*f  max=%.*f  "
                     "mean=%.*f  median=%.*f  std=%.*f\n",
                     label, n, n_pool, prec, v.front(), prec, v.back(),
                     prec, mean, prec, median, prec, sd);
@@ -1511,7 +1521,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
     report("RMSE", rmse_best, 6, n_full);
     report("duty", duty_best, 3, n_full);
     report("VPT*duty", vxd_best, 3, n_full);
-    std::printf("  note: best-half per metric; primary sort key for leaderboard = VPT*duty\n");
+    std::printf("  note: top 10%% per metric; primary sort key for leaderboard = VPT*duty\n");
 
     // Rank all rows by VPT*duty (higher better) for cherry-picks.
     std::vector<size_t> order(rows.size());
@@ -1688,7 +1698,7 @@ int SeedSweep(size_t dim, size_t history_depth,
     std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu  "
                 "(stems omit SR/IS/layout/drive_ch -- document in ranking banner)\n",
                 model_dir.string().c_str(), dim, history_depth);
-    std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (best-half freeruns)\n");
+    std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (top-10%% freeruns)\n");
     std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
                 survey_dir.string().c_str());
     std::printf("[seed-sweep] ranking CSV: %s\n", rank_csv.string().c_str());
@@ -1825,7 +1835,7 @@ int SeedSweep(size_t dim, size_t history_depth,
         else
         {
             // Explicit "mean" labels so overnight logs are not confused with one freerun.
-            std::printf("[seed-sweep] seed %llu  best-half means:  "
+            std::printf("[seed-sweep] seed %llu  top-10%% means:  "
                         "VPT=%.2f lt  duty=%.3f  VPT*duty=%.3f  RMSE=%.6f  "
                         "(rank key = VPT*duty)\n",
                         static_cast<unsigned long long>(seed),
@@ -1853,7 +1863,7 @@ int SeedSweep(size_t dim, size_t history_depth,
     });
 
     std::printf("\n========================================================================\n");
-    std::printf("=== SeedSweep ranking by mean VPT*duty (best-half freeruns) ===\n");
+    std::printf("=== SeedSweep ranking by mean VPT*duty (top-10%% freeruns) ===\n");
     std::printf("========================================================================\n");
     if (order.empty())
     {

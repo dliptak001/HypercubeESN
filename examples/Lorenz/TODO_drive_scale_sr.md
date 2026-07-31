@@ -1,7 +1,7 @@
 # TODO — drive scale / spectral radius / per-channel gains
 
 **Context:** DIM12 + M10/M12 already look respectable on Unseen free-run
-(best-half VPT×duty). Architecture-side bets (external feedback, richer drive
+(top-10% VPT×duty). Architecture-side bets (external feedback, richer drive
 layouts) did not move us the right way. Remaining cheap levers are **dynamics
 knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 
@@ -18,7 +18,7 @@ ready. (1) still config-only A/B.
 | Scheduled sampling / “anti-overfit free-run mix” | Random multi-orbit ICs already mitigate open-loop overfit; not the failure mode we see |
 
 **Protocol for every arm:** one change at a time; fixed DIM/M/epochs/seed set;
-Unseen FreeRunSurvey (or short SeedSweep); report best-half freerun means
+Unseen FreeRunSurvey (or short SeedSweep); report top-10% freerun means
 (VPT, duty, VPT×duty, RMSE). Prefer matched seeds/orbits across arms.
 
 ---
@@ -129,7 +129,7 @@ Or assign `config::INPUT_SCALE_CH[i]` for a single-arm run. Coarse 2D
 (z-gain × xz-gain) is enough; do not start a 4D grid. Pair further candidates
 as new B arms against the locked winner.
 
-**Tuning done when:** clear Unseen best-half lift vs global-only baseline, or a
+**Tuning done when:** clear Unseen top-10% lift vs global-only baseline, or a
 documented negative so we stop chasing per-channel gains.
 
 ---
@@ -146,6 +146,6 @@ One change per survey. Stop when overnight SeedSweep mean VPT×duty stops moving
 
 ## Success criterion
 
-Mean best-half **VPT×duty** (and/or VPT, duty) improves vs current baseline on a
+Mean top-10% **VPT×duty** (and/or VPT, duty) improves vs current baseline on a
 matched Unseen survey / short SeedSweep; **or** a clear negative for each arm
 so the lever is closed. Do not over-index on single-orbit freeruns.

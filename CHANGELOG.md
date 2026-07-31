@@ -65,7 +65,7 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 - **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` / `HistoryDepthSweep`
   take reservoir `dim` first; RAII restore of `DIM` / `HISTORY_DEPTH` / drive.
 - **Lorenz Train / FreeRunSurvey / FreeRun pipeline:** train-only weight save;
-  multi-orbit Unseen freerun survey with best-half VPT / duty / VPT×duty / RMSE
+  multi-orbit Unseen freerun survey with top-10% VPT / duty / VPT×duty / RMSE
   and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
   load-only freerun with plottable CSV under `...\traces\` (see
   `plot_freerun_overlay.py`).
@@ -107,8 +107,9 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 ### Changed
 
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
-  free-run RMSE (best half of ICs per metric); GS lock-transition counters
-  dropped from campaign stats. Default `VPT_THRESHOLD=0.2`.
+  free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
+  GS lock-transition counters dropped from campaign stats. Default
+  `VPT_THRESHOLD=0.2`.
 - **Lorenz weight stems:** save/load use
   `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` so dim, history depth, and drive width
   do not collide; load must match train-time layout.

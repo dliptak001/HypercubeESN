@@ -134,26 +134,27 @@ IC/orbit), not in-sample train-window generative score.
 | `vpt_x_duty` | `VPT_lt × duty` — first-hold length scaled by time-in-lock |
 | `rmse` | Free-run RMSE over scored steps |
 
-### Aggregate freerun stats (best half of ICs)
+### Aggregate freerun stats (top 10% of ICs)
 
 Across freeruns with different initial conditions, the four primary metrics keep
-only the **best 50%** of values **per metric** (odd `n` keeps `ceil(n/2)`). The
-other half is **discarded on purpose**.
+only the **top 10%** of values **per metric** (`keep = max(1, ceil(n/10))`;
+e.g. 1000 freeruns → 100). The rest are **discarded on purpose**.
 
 | Direction | Metrics |
 |-----------|---------|
-| Higher is better (keep upper half) | VPT, duty, VPT×duty |
-| Lower is better (keep lower half) | free-run RMSE |
+| Higher is better (keep largest 10%) | VPT, duty, VPT×duty |
+| Lower is better (keep smallest 10%) | free-run RMSE |
 
 Rationale: some Lorenz ICs are hard for any autonomous model; mean-of-all is
 dominated by those weak orbits. Storefront and campaign numbers answer
-**how well the system can perform on the better half of starts**, not how poorly
-the worst half does. Filtering is **independent per metric**.
+**how well the system can perform on the better starts**, not how poorly the
+worst orbits do. With 1000 freeruns, top 10% is still a solid sample. Filtering
+is **independent per metric**.
 
 Survey roll-ups are **mean of trial-means**, where each trial mean already used
-that trial’s best-half freeruns. CSV metadata records
+that trial’s top-10% freeruns. CSV metadata records
 `freerun_metrics=VPT,duty,VPT*duty,RMSE` and
-`freerun_pool=best_half_per_metric`. Always state this when quoting aggregates.
+`freerun_pool=top_10pct_per_metric`. Always state this when quoting aggregates.
 
 ---
 
@@ -239,7 +240,7 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 `[tag] done wall time: …`.
 
 **`FreeRunSurvey`** — load-only middle step: free-run `num_runs` remixed orbits
-(remix from `orbit_seed`), aggregate best-half VPT / duty / VPT×duty / RMSE, print
+(remix from `orbit_seed`), aggregate top-10% VPT / duty / VPT×duty / RMSE, print
 **top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
 Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
 
