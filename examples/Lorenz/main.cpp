@@ -43,17 +43,18 @@ int main()
     // SeedSweep (Train+survey each seed, rank by mean VPT*duty).
     constexpr size_t kDim = 10;
     constexpr size_t kM = 2;
+    // 10221978990ull is a known BAD seed
     return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-                     /*esn_seeds=*/{10121978990ull, 10221978990ull, 10321978990ull,
+                     /*esn_seeds=*/{10121978990ull, 10321978990ull,
                                     10421978990ull, 10521978990ull, 10621978990ull, 10721978990ull, 10821978990ull, 10921978990ull},
-                     /*epochs=*/200,
+                     /*epochs=*/300,
                      /*freerun_runs=*/1000,
                      /*train_orbit=*/933312947715283458ull,
                      /*freerun_orbit_seed=*/729893498ull,
                      /*top_k=*/10,
                      /*do_train=*/true,
                      /*spectral_radius=*/0.999f,   // >0 sets config::SPECTRAL_RADIUS
-                     /*input_scaling=*/0.02f,     // >0 sets config::INPUT_SCALING (>0.02 sucks. 0.005 sucks2)
+                     /*input_scaling=*/0.015f,     // >0 sets config::INPUT_SCALING (>0.02 sucks. 0.005 sucks2)
                      /*drive_layout=*/DriveLayout::XyzXz, // or XyzXy / Quadratic8; nullopt keeps config
                      /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f}); // XyzXz [x,y,z,xz]; {} keeps config
 
