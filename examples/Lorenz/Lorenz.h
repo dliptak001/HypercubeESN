@@ -13,21 +13,10 @@
 //  CONFIGURATION — consolidation point for primary variables of interest
 // ============================================================================
 
-/// Reservoir input-drive layout (num_inputs must divide N = 2^DIM).
-/// Free-run rebuilds products from predicted (x,y,z) -- no denorm/renorm.
-enum class DriveLayout
-{
-    /// 4 channels: [x, y, z, x*z]  (ODE bilinear in y-dot). Baseline.
-    XyzXz = 0,
-    /// 8 channels: [x, y, z, x*y, x*z, x*x, y*y, z*z]
-    /// Both ODE bilinears + pure quadratic pad (drops y*z; full deg-2 is 9).
-    Quadratic8 = 1,
-    /// 4 channels: [x, y, z, x*y]  (ODE bilinear in z-dot). Sibling of XyzXz.
-    XyzXy = 2,
-};
-
-/// Max channels among DriveLayout variants (stack buffers / CSV).
-inline constexpr size_t kMaxDriveChannels = 8;
+/// Fixed reservoir input drive: always 4 channels [x, y, z, x*z]
+/// (ODE bilinear in y-dot). Free-run rebuilds x*z from predicted (x,y,z).
+/// Must divide N = 2^DIM (true for all legal DIM).
+inline constexpr size_t kNumDriveChannels = 4;
 
 namespace config
 {
@@ -43,29 +32,20 @@ namespace config
     // ---- Reservoir / model ----
     // Hypercube dim (N = 2^DIM). Not constexpr: campaigns pass DIM as an argument.
     // Reservoir requires 5 <= dim <= 16.
-    inline size_t DIM = 11;
-    constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
+    inline size_t DIM = 10;
+    constexpr uint64_t SEED = 665127;
     // Not constexpr: campaigns (SrAB, SeedSweep) reassign for matched A/B / sweeps.
-    inline float SPECTRAL_RADIUS = 0.95f;
+    inline float SPECTRAL_RADIUS = 0.999f;
     // Not constexpr: SeedSweep / scale grids reassign (restored on campaign exit).
-    inline float INPUT_SCALING = 0.02f;
+    inline float INPUT_SCALING = 0.015f;
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
-    // after feature build, train + free-run). Index order matches DriveLayout:
-    //   XyzXz:      [x, y, z, x*z]
-    //   XyzXy:      [x, y, z, x*y]
-    //   Quadratic8: [x, y, z, x*y, x*z, x*x, y*y, z*z]
-    // Unused trailing slots ignored. Default unity = global scale only.
-    // Reassignable for A/B; train and free-run/load must use the same gains.
-    // See TODO_drive_scale_sr.md §4 for a first z / xz grid.
-    inline float INPUT_SCALE_CH[kMaxDriveChannels] = {
-        1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    // after feature build). Index order: [x, y, z, x*z]. Locked soft z/xz.
+    // Train and free-run/load must use the same gains (edit here, rebuild).
+    inline constexpr float INPUT_SCALE_CH[kNumDriveChannels] = {1.f, 1.f, 0.9f, 0.7f};
     constexpr float LEAK_RATE = 1.0f;
     // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
     // Reservoir requires M in [1, 64].
-    inline size_t HISTORY_DEPTH = 22;   // 18 is optimal for DIM11.
-    // Input-drive feature map (see DriveLayout). Campaigns may reassign (A/B).
-    // Load/save readout must match the layout used at train time.
-    inline DriveLayout DRIVE_LAYOUT = DriveLayout::XyzXz;
+    inline size_t HISTORY_DEPTH = 2;
 
     // ---- Readout (HCNN), trained ONLINE (single-sample, multi-epoch) ----
     constexpr float LEARNING_RATE = 0.00004f;
@@ -143,7 +123,7 @@ struct FreeRunResult
 /// @brief Online free-run experiment on Lorenz-63.
 ///
 ///   LorenzDatastream (normalized float stream + forward Cursor)
-///       |  input port: DriveLayout (4-in xz or 8-in quadratic)
+///       |  input port: fixed 4-in [x, y, z, x*z]
 ///       |    real in train/warmup; prediction in free-run
 ///       v
 ///   ESN (fixed reservoir + online HCNN readout; external feedback off)
@@ -161,7 +141,9 @@ public:
     /// Load readout from @p stem (no .hcnw extension), or config::LOAD_WEIGHTS_STEM
     /// when @p stem is null/empty. Throws if stem empty / load fails.
     /// FreeRun with fixed_ic / fixed_orbit_seed / remix still works after load.
-    void LoadTrainedWeights(const char* stem = nullptr);
+    /// @p log_load  If true (default), print a stderr notice. Parallel campaigns
+    ///              that load once per job should pass false and log a single summary.
+    void LoadTrainedWeights(const char* stem = nullptr, bool log_load = true);
 
     /// Save readout to @p stem (no .hcnw extension). If null/empty, uses the
     /// default under MODEL_SAVE_DIR: lorenz_seed{S}_D{DIM}_M{M}_in{Nin}.
@@ -183,10 +165,6 @@ public:
     [[nodiscard]] std::string ReadoutArchSummary() const {
         return esn_.ReadoutArchSummary();
     }
-
-    static const char* DriveLayoutName(DriveLayout layout = config::DRIVE_LAYOUT);
-    /// Channel count for @p layout (4 or 8); must divide N.
-    static size_t NumDriveChannels(DriveLayout layout = config::DRIVE_LAYOUT);
 
     /// HCNN readout worker count used by MakeESNConfig. Must remain 1 so host
     /// campaigns (ParallelSeedSweep, SeedSurvey) can run many Lorenz instances
@@ -218,7 +196,7 @@ private:
     /// If config::SAVE_TRAINED_WEIGHTS, write default-stem readout under MODEL_SAVE_DIR.
     void SaveTrainedWeightsIfEnabled() const;
 
-    /// Fill drive[0..NumDriveChannels) from normalized (x,y,z).
+    /// Fill drive[0..kNumDriveChannels) = [x, y, z, x*z] with channel gains.
     static void FillDrive(float* drive, float x, float y, float z);
     static void ExtractDriveReal(float* drive, const NormalizedState& state);
     static void ExtractDrivePredicted(float* drive, const float* prediction);

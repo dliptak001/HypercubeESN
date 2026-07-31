@@ -6,8 +6,9 @@ layouts) did not move us the right way. Remaining cheap levers are **dynamics
 knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 
 **Date parked:** 2026-07-30  
-**Status:** (4) gains + `Campaign_DriveGainAB` ready. (3) `Campaign_SpectralRadiusAB`
-ready. (1) still config-only A/B.
+**Status:** (4) gains **locked** as `constexpr INPUT_SCALE_CH = {1,1,0.9,0.7}`;
+`Campaign_DriveGainAB` and campaign `drive_gains` overrides **removed**.
+(3) `Campaign_SpectralRadiusAB` ready. (1) still config-only A/B.
 
 **Out of scope (already known bad or not believed useful here):**
 
@@ -16,7 +17,7 @@ ready. (1) still config-only A/B.
 | `LEAK_RATE` < 1 | Always detrimental in this storefront |
 | Train-time drive noise | Always detrimental |
 | Scheduled sampling / “anti-overfit free-run mix” | Random multi-orbit ICs already mitigate open-loop overfit; not the failure mode we see |
-| Multi-layout drive enum (XyzXy / Quadratic8) | Parked for **collapse to XyzXz only** — see `TODO_8input_quadratic.md` |
+| Multi-layout drive enum (XyzXy / Quadratic8) | **Removed** — fixed 4-in `[x,y,z,xz]` only (`kNumDriveChannels`) |
 
 **Protocol for every arm:** one change at a time; fixed DIM/M/epochs/seed set;
 Unseen FreeRunSurvey (or short SeedSweep); report top-10% freerun means
@@ -27,13 +28,14 @@ Unseen FreeRunSurvey (or short SeedSweep); report top-10% freerun means
 ## Baseline (current)
 
 ```text
-DriveLayout::XyzXz   →  [x, y, z, x*z]
-INPUT_SCALING        = 0.04   (global, all channels)
-SPECTRAL_RADIUS      = 0.99
+drive (fixed)        →  [x, y, z, x*z]
+INPUT_SCALING        = 0.015  (global; check Lorenz.h)
+SPECTRAL_RADIUS      = 0.999
 LEAK_RATE            = 1.0    (leave alone)
+INPUT_SCALE_CH       = {1, 1, 0.9, 0.7}  (constexpr soft z/xz)
 ```
 
-No per-channel gains. Free-run rebuilds products from predicted `(x,y,z)`.
+Free-run rebuilds products from predicted `(x,y,z)`.
 
 ---
 
@@ -87,14 +89,12 @@ retuning SR.
 
 ---
 
-## 4. Per-channel input gains  (campaign ready — tuning open)
+## 4. Per-channel input gains  (LOCKED)
 
-**Status:** `INPUT_SCALE_CH` + `Campaign_DriveGainAB` landed. Default all `1.0`.
-
-**Problem:** one global `INPUT_SCALING` treats `x`, `y`, `z`, and `x*z` the same.
-Normalized stream is ~[-1,1] per channel, but product scale and channel roles
-still differ; a soft per-channel multiplier is the usual next step without
-adding ports.
+**Status:** **Locked.** `constexpr config::INPUT_SCALE_CH = {1.f, 1.f, 0.9f, 0.7f}`
+for `[x, y, z, x*z]`. Soft z/xz from the tuning grid below. `Campaign_DriveGainAB`
+and per-campaign `drive_gains` parameters **removed** — edit `Lorenz.h` and rebuild
+if you ever revisit.
 
 **Wiring:**
 
@@ -103,35 +103,17 @@ FillDrive → features → drive[i] *= INPUT_SCALE_CH[i]
 ReservoirStep then multiplies by global INPUT_SCALING (and fan-in)
 ```
 
-- `config::INPUT_SCALE_CH[kMaxDriveChannels]` — layout feature order
 - Train + free-run both go through `FillDrive`
 - Banners / campaign metadata print `drive_ch=[...]`
-- Weights stem still `in4` / `in8` only — **document gains in results**; train and
-  load-time gains must match or freerun is meaningless
+- Weights stem does not encode gains — train and load-time gains must match
 
-Suggested first grid (multipliers on top of locked global scale from (1)):
+Historical first grid (already folded into the lock):
 
-| Channel | Index (XyzXz) | First try |
-|---------|--------------:|-----------|
-| x, y | 0, 1 | 1.0 (reference) |
-| z | 2 | 0.7 … 1.2 |
-| x*z | 3 | 0.5 … 1.0 |
-
-**How:** matched A/B via campaign (lists size = `n_in` for current drive layout):
-
-```cpp
-return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
-                            /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
-                            /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
-                            /*num_threads=*/0, /*num_runs=*/50);
-```
-
-Or assign `config::INPUT_SCALE_CH[i]` for a single-arm run. Coarse 2D
-(z-gain × xz-gain) is enough; do not start a 4D grid. Pair further candidates
-as new B arms against the locked winner.
-
-**Tuning done when:** clear Unseen top-10% lift vs global-only baseline, or a
-documented negative so we stop chasing per-channel gains.
+| Channel | Index | Locked |
+|---------|------:|--------|
+| x, y | 0, 1 | 1.0 |
+| z | 2 | 0.9 |
+| x*z | 3 | 0.7 |
 
 ---
 

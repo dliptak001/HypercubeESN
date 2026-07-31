@@ -13,39 +13,17 @@
 #include <string>
 #include <vector>
 
-size_t Lorenz::NumDriveChannels(const DriveLayout layout)
-{
-    switch (layout)
-    {
-    case DriveLayout::XyzXz:      return 4;
-    case DriveLayout::XyzXy:      return 4;
-    case DriveLayout::Quadratic8: return 8;
-    }
-    return 4;
-}
-
-const char* Lorenz::DriveLayoutName(const DriveLayout layout)
-{
-    switch (layout)
-    {
-    case DriveLayout::XyzXz:      return "XyzXz";       // [x,y,z,xz]
-    case DriveLayout::XyzXy:      return "XyzXy";       // [x,y,z,xy]
-    case DriveLayout::Quadratic8: return "Quadratic8";  // [x,y,z,xy,xz,xx,yy,zz]
-    }
-    return "Unknown";
-}
-
 ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
 {
     ESNConfig cfg;
     cfg.reservoir.dim = config::DIM;
     cfg.reservoir.seed = seed;
 
-    const size_t n_in = NumDriveChannels(config::DRIVE_LAYOUT);
+    const size_t n_in = kNumDriveChannels;
     const size_t N = size_t{1} << config::DIM;
-    if (n_in == 0 || N % n_in != 0)
+    if (N % n_in != 0)
         throw std::invalid_argument(
-            "MakeESNConfig: num_inputs must be >= 1 and divide N = 2^DIM");
+            "MakeESNConfig: kNumDriveChannels must divide N = 2^DIM");
     cfg.reservoir.num_inputs = n_in;
     cfg.reservoir.num_external_feedback_channels = 0;
     cfg.reservoir.spectral_radius = config::SPECTRAL_RADIUS;
@@ -124,12 +102,11 @@ Lorenz::Lorenz(const uint64_t seed, uint64_t orbit_seed) : seed_(seed),
                     config::DIM, size_t{1} << config::DIM, static_cast<unsigned long long>(seed_),
                     config::SPECTRAL_RADIUS, config::INPUT_SCALING, config::LEAK_RATE,
                     config::HISTORY_DEPTH);
-        std::printf("[Lorenz config] ports:     input=%zu drive=%s  ext_feedback=0 (off)\n",
-                    esn_config_.reservoir.num_inputs, DriveLayoutName(config::DRIVE_LAYOUT));
+        std::printf("[Lorenz config] ports:     input=%zu drive=[x,y,z,xz]  ext_feedback=0 (off)\n",
+                    esn_config_.reservoir.num_inputs);
         {
-            const size_t n_in = esn_config_.reservoir.num_inputs;
             std::printf("[Lorenz config] drive_ch:  [");
-            for (size_t i = 0; i < n_in; ++i)
+            for (size_t i = 0; i < kNumDriveChannels; ++i)
                 std::printf("%s%.3f", i ? ", " : "", config::INPUT_SCALE_CH[i]);
             std::printf("]  (x global INPUT_SCALING)\n");
         }
@@ -199,32 +176,12 @@ void Lorenz::BuildFreeRunDatastream(const LorenzAttractor::State ic, const size_
 
 void Lorenz::FillDrive(float* drive, const float x, const float y, const float z)
 {
-    // Always write state channels first; products from same-step values (free-run safe).
+    // Fixed [x, y, z, x*z]; product from same-step values (free-run safe).
     drive[0] = x;
     drive[1] = y;
     drive[2] = z;
-    switch (config::DRIVE_LAYOUT)
-    {
-    case DriveLayout::XyzXz:
-        // [x, y, z, x*z]
-        drive[3] = x * z;
-        break;
-    case DriveLayout::XyzXy:
-        // [x, y, z, x*y]
-        drive[3] = x * y;
-        break;
-    case DriveLayout::Quadratic8:
-        // [x, y, z, x*y, x*z, x*x, y*y, z*z]
-        drive[3] = x * y;
-        drive[4] = x * z;
-        drive[5] = x * x;
-        drive[6] = y * y;
-        drive[7] = z * z;
-        break;
-    }
-    // Relative gains on top of reservoir input_scaling (global INPUT_SCALING).
-    const size_t n = NumDriveChannels(config::DRIVE_LAYOUT);
-    for (size_t i = 0; i < n; ++i)
+    drive[3] = x * z;
+    for (size_t i = 0; i < kNumDriveChannels; ++i)
         drive[i] *= config::INPUT_SCALE_CH[i];
 }
 
@@ -256,7 +213,7 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
 
 void Lorenz::Train()
 {
-    float drive[kMaxDriveChannels] = {};
+    float drive[kNumDriveChannels] = {};
     float targets[3] = {};
     float outputs[3] = {};
 
@@ -355,7 +312,7 @@ void Lorenz::SaveTrainedWeights(const char* stem) const
         path = (dir / ("lorenz_seed" + std::to_string(seed_) +
                        "_D" + std::to_string(config::DIM) +
                        "_M" + std::to_string(config::HISTORY_DEPTH) +
-                       "_in" + std::to_string(NumDriveChannels(config::DRIVE_LAYOUT)))).string();
+                       "_in" + std::to_string(kNumDriveChannels))).string();
     }
 
     // Stem only -- SaveReadoutHcnnModel appends .hcnw and .arch.json.
@@ -380,7 +337,7 @@ void Lorenz::SaveTrainedWeightsIfEnabled() const
     }
 }
 
-void Lorenz::LoadTrainedWeights(const char* stem)
+void Lorenz::LoadTrainedWeights(const char* stem, bool log_load)
 {
     const char* path = (stem && stem[0] != '\0') ? stem : config::LOAD_WEIGHTS_STEM;
     if (path == nullptr || path[0] == '\0')
@@ -389,20 +346,23 @@ void Lorenz::LoadTrainedWeights(const char* stem)
             "(pass a path or set config::LOAD_WEIGHTS_STEM without .hcnw)");
 
     esn_.LoadReadoutHcnnModel(path);
-    std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
-                         "seed=%llu\n",
-                 path, static_cast<unsigned long long>(seed_));
-    std::fflush(stderr);
+    if (log_load)
+    {
+        std::fprintf(stderr, "[Lorenz] loaded trained readout: %s.hcnw (+ .arch.json)  "
+                             "seed=%llu\n",
+                     path, static_cast<unsigned long long>(seed_));
+        std::fflush(stderr);
+    }
 }
 
 FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_steps,
                               uint64_t fixed_orbit_seed,
                               const LorenzAttractor::State* fixed_ic)
 {
-    float drive[kMaxDriveChannels] = {};
+    float drive[kNumDriveChannels] = {};
     float targets[3] = {};
     float outputs[3] = {};
-    const size_t n_drive = NumDriveChannels(config::DRIVE_LAYOUT);
+    const size_t n_drive = kNumDriveChannels;
 
     // Size the slim stream for the intended wash length before building.
     size_t W = (warmup_steps == 0) ? config::WARMUP_STEPS : warmup_steps;
@@ -436,13 +396,8 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
         csv.open(csv_path, std::ios::out | std::ios::trunc);
         if (csv)
         {
-            csv << "step,lt,err,locked,pred_x,pred_y,pred_z,true_x,true_y,true_z";
-            if (config::DRIVE_LAYOUT == DriveLayout::Quadratic8)
-                csv << ",drive_x,drive_y,drive_z,drive_xy,drive_xz,drive_xx,drive_yy,drive_zz\n";
-            else if (config::DRIVE_LAYOUT == DriveLayout::XyzXy)
-                csv << ",drive_x,drive_y,drive_z,drive_xy\n";
-            else
-                csv << ",drive_x,drive_y,drive_z,drive_xz\n";
+            csv << "step,lt,err,locked,pred_x,pred_y,pred_z,true_x,true_y,true_z"
+                   ",drive_x,drive_y,drive_z,drive_xz\n";
         }
         else if (verbose || config::ENABLE_PRINTF)
             std::fprintf(stderr, "[FreeRun] failed to open CSV path: %s\n", csv_path);

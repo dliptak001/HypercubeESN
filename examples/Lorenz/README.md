@@ -40,7 +40,7 @@ survey is re-run with the same free-run seating.
         ▼
  LorenzDatastream  — integrate once, normalize → float S[·] ≈ [-1,1]; is a Cursor
         │
-        │  input port: DriveLayout (4-in xz or 8-in quadratic)
+        │  input port: fixed 4-in [x, y, z, x·z]
         │    real in train/warmup; prediction in free-run
         ▼
  ESN  — fixed hypercube reservoir + online HCNN readout (3 outputs: x, y, z)
@@ -74,21 +74,17 @@ Default layout (`config::`): train window `[0, TRAINING_WINDOW_SIZE]`;
 
 ## 4. Drive and targets
 
-Switch with `config::DRIVE_LAYOUT` in `Lorenz.h` (`num_inputs` must divide `N = 2^DIM`).
-
-| `DriveLayout` | Channels | Features |
-|---------------|---------:|----------|
-| `XyzXz` (default) | 4 | `[x, y, z, x·z]` (ODE bilinear in y-dot) |
-| `XyzXy` | 4 | `[x, y, z, x·y]` (ODE bilinear in z-dot) |
-| `Quadratic8` | 8 | `[x, y, z, x·y, x·z, x², y², z²]` |
+Fixed drive (`kNumDriveChannels = 4` in `Lorenz.h`): **`[x, y, z, x·z]`**
+(ODE bilinear in y-dot). Must divide `N = 2^DIM` (always true for legal DIM).
 
 ```text
- targets (3):  (x, y, z)   ExtractTargets
+ drive (4):    (x, y, z, x*z)   FillDrive + INPUT_SCALE_CH[4]
+ targets (3):  (x, y, z)        ExtractTargets
 ```
 
-- Products use the same-step `(x,y,z)` (normalized). Free-run rebuilds from predictions.
-- Global `INPUT_SCALING` (reservoir) plus optional per-channel `INPUT_SCALE_CH[]`
-  (layout feature order; default all 1.0). Applied in `FillDrive` train + free-run.
+- Products use the same-step `(x,y,z)` (normalized). Free-run rebuilds `x*z` from predictions.
+- Global `INPUT_SCALING` (reservoir) plus locked per-channel `INPUT_SCALE_CH[]`
+  (`constexpr` soft z/xz: `{1, 1, 0.9, 0.7}`). Applied in `FillDrive` train + free-run.
 - Load/save readout must match the layout **and** channel gains used at train time.
 
 ---
@@ -163,7 +159,7 @@ that trial’s top-10% freeruns. CSV metadata records
 | Group | Controls |
 |-------|----------|
 | Diagnostics | `ENABLE_PRINTF` (verbose); `ENABLE_PROGRESS` (stderr heartbeats; off for quiet overnight) |
-| Reservoir | dim, seed, `SPECTRAL_RADIUS` (reassignable; SrAB), `INPUT_SCALING`, `INPUT_SCALE_CH[]`, leak, history depth |
+| Reservoir | dim, seed, `SPECTRAL_RADIUS` (reassignable; SrAB), `INPUT_SCALING`, `INPUT_SCALE_CH[]` (constexpr), leak, history depth |
 | Readout | online Adam schedule, epochs, slices, pooling |
 | Stream | train span + freerun runway for **Train**; free-run stores only wash + runway (burn-in discarded) |
 | Stage | `WARMUP_STEPS` (train and free-run) |
@@ -191,11 +187,6 @@ int main()
 {
     // return Campaign_SeedSurvey(/*dim=*/11, /*threads=*/0, /*runs=*/50);
     // return Campaign_Trace(/*dim=*/11, /*seed=*/21978990, /*max_freeruns=*/30);
-    // Drive-gain A/B (XyzXz [x,y,z,xz]): unity vs soft z/xz:
-    return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
-                                /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
-                                /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
-                                /*num_threads=*/0, /*num_runs=*/50);
     // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
     //                                  /*sr_a=*/0.95f, /*sr_b=*/0.99f,
     //                                  /*num_threads=*/0, /*num_runs=*/50);
@@ -231,11 +222,11 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 |--------|-----------|
 | `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
 | `surveys/` | `FreeRunSurvey`, `SeedSweep` leaderboards |
-| `campaigns/` | `Campaign_SeedSurvey`, M-sweep, DriveAB, SrAB, GainAB (`RESULTS_DIR`) |
+| `campaigns/` | `Campaign_SeedSurvey`, M-sweep, SrAB (`RESULTS_DIR`) |
 
 **Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
 `[train]` / `[freerun]` / `[freerun-survey]` / `[seed-sweep]` / `[trace]` /
-`[survey]` / `[SrAB]` / `[DriveAB]` / `[GainAB]`, freerun scores as
+`[survey]` / `[SrAB]`, freerun scores as
 `VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
 `[tag] done wall time: …`.
 
@@ -250,10 +241,9 @@ trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`.
 **`SeedSweep`** — loop ESN seeds: optional `Train` then `FreeRunSurvey`; rank by
 mean VPT×duty. Stems `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}`. Ranking
 CSV + `.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing overrides
-(restored on exit): `spectral_radius` / `input_scaling` (>0 set, 0 = keep config),
-`drive_layout` (`std::optional`; `nullopt` keeps config; e.g. `DriveLayout::XyzXy`),
-and `drive_gains` (non-empty list size = `n_in` sets `INPUT_SCALE_CH`; `{}` keeps
-config). Stems omit SR/IS/layout/drive_ch — banner records them.
+(restored on exit): `spectral_radius` / `input_scaling` (>0 set, 0 = keep config).
+Channel gains are fixed (`config::INPUT_SCALE_CH`). Stems omit SR/IS/drive_ch —
+banner records them.
 
 **`ParallelSeedSweep`** — overnight parallel seed search. Always trains in
 memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
@@ -270,15 +260,14 @@ overrides as SeedSweep.
 | Function | Role |
 |----------|------|
 | `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
-| `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no weight I/O; multi-metric ranking report |
+| `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
+| `ParallelOrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, epochs, ...)` | Train one seed once; parallel one-freerun-per-orbit ranking |
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
-| `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
 | `Campaign_SpectralRadiusAB(dim, M, sr_a, sr_b, threads, runs, ...)` | A/B spectral radius at fixed dim/M; matched seeds; train per arm |
-| `Campaign_DriveGainAB(dim, M, gains_a, gains_b, threads, runs, ...)` | A/B `INPUT_SCALE_CH` vectors at fixed dim/M; lists size = `n_in` |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit
-(along with M / drive / SR / drive_ch when a campaign reassigns them). Protocol,
+(along with M / SR when a campaign reassigns them). Protocol,
 epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign signatures are in
 `Campaigns.h`. Progress on **stderr**; reports on **stdout**.
 
@@ -295,20 +284,6 @@ Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
                           /*num_threads=*/0, /*num_runs=*/50);
 ```
 
-**`Campaign_DriveGainAB`** — two SeedSurvey arms with `config::INPUT_SCALE_CH`
-set from `gains_a` then `gains_b`. Each list must have exactly
-`NumDriveChannels(DRIVE_LAYOUT)` entries (layout feature order; XyzXz =
-`[x,y,z,xz]`). Gains must be finite and ≥ 0. Same load/save caveats as SrAB
-(stems omit drive_ch). Restores DIM, M, and channel gains on exit. Example:
-unity baseline vs soft z/xz (TODO §4):
-
-```cpp
-Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
-                     /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
-                     /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
-                     /*num_threads=*/0, /*num_runs=*/50);
-```
-
 **Results files** (under `RESULTS_DIR` = `C:\HypercubeESNRuns\results\campaigns\`,
 created if needed):
 
@@ -316,9 +291,7 @@ created if needed):
 |-----|--------|
 | Survey | `Survey_YYYYMMDD_HHMMSS_M{M}.csv` + `.txt` (metadata + one aggregate row) |
 | M-sweep | `Msweep_YYYYMMDD_HHMMSS.csv` + `.txt` (metadata + all M rows, deltas, code picks) |
-| Drive A/B | `DriveAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas) |
 | SR A/B | `SrAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both arms + deltas B−A + code picks) |
-| Gain A/B | `GainAB_YYYYMMDD_HHMMSS_D{dim}_M{M}.csv` + `.txt` (both gain vectors + deltas B−A) |
 
 CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp
 dim, N, M, epochs, θ, SR, drive_ch, seeds, etc.

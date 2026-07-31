@@ -1,4 +1,4 @@
-#include "Campaigns.h"
+﻿#include "Campaigns.h"
 #include "Lorenz.h"
 
 #include <algorithm>
@@ -44,7 +44,6 @@ struct ConfigRestore
     ConfigRestore& operator=(const ConfigRestore&) = delete;
 };
 using ConfigSizeRestore = ConfigRestore<size_t>;
-using ConfigDriveRestore = ConfigRestore<DriveLayout>;
 using ConfigFloatRestore = ConfigRestore<float>;
 
 // Reservoir requires 5 <= dim <= 16 (see Reservoir.cpp).
@@ -84,76 +83,23 @@ bool ValidateInputScaling(float is, const char* campaign)
     return false;
 }
 
-// Drive-channel gains (SeedSweep, FreeRun, FreeRunSurvey, Campaign_DriveGainAB).
-struct ConfigDriveGainsRestore
-{
-    float saved[kMaxDriveChannels]{};
-    ConfigDriveGainsRestore()
-    {
-        for (size_t i = 0; i < kMaxDriveChannels; ++i)
-            saved[i] = config::INPUT_SCALE_CH[i];
-    }
-    ~ConfigDriveGainsRestore()
-    {
-        for (size_t i = 0; i < kMaxDriveChannels; ++i)
-            config::INPUT_SCALE_CH[i] = saved[i];
-    }
-    ConfigDriveGainsRestore(const ConfigDriveGainsRestore&) = delete;
-    ConfigDriveGainsRestore& operator=(const ConfigDriveGainsRestore&) = delete;
-};
-
-bool ParseDriveGains(std::initializer_list<float> src, float* dst, size_t n_in,
-                     const char* campaign)
-{
-    if (src.size() != n_in)
-    {
-        std::fprintf(stderr,
-                     "[%s] refused: drive_gains has %zu entries; need exactly %zu "
-                     "(current drive layout channel count)\n",
-                     campaign, src.size(), n_in);
-        return false;
-    }
-    size_t i = 0;
-    for (float g : src)
-    {
-        if (!std::isfinite(g) || g < 0.0f)
-        {
-            std::fprintf(stderr,
-                         "[%s] refused: drive_gains[%zu]=%g (need finite and >= 0)\n",
-                         campaign, i, static_cast<double>(g));
-            return false;
-        }
-        dst[i++] = g;
-    }
-    for (; i < kMaxDriveChannels; ++i)
-        dst[i] = 1.0f;
-    return true;
-}
-
-void ApplyDriveGains(const float* gains)
-{
-    for (size_t i = 0; i < kMaxDriveChannels; ++i)
-        config::INPUT_SCALE_CH[i] = gains[i];
-}
-
-std::string FormatDriveGains(const float* gains, size_t n)
+// Format locked config::INPUT_SCALE_CH for banners / metadata.
+std::string FormatDriveGains()
 {
     std::ostringstream o;
     o << '[';
-    for (size_t i = 0; i < n; ++i)
+    for (size_t i = 0; i < kNumDriveChannels; ++i)
     {
         if (i)
             o << ',';
-        o << gains[i];
+        o << config::INPUT_SCALE_CH[i];
     }
     o << ']';
     return o.str();
 }
 
-// Optional SR / IS / layout / gains (SeedSweep, FreeRun, FreeRunSurvey).
-// >0 sets SR/IS; layout nullopt keeps config; empty gains keep config.
-// On success, *out_gains_restore is armed only if gains were applied (caller
-// must keep the optional/restore object alive for the campaign).
+// Optional SR / IS (SeedSweep, FreeRun, FreeRunSurvey, Parallel*).
+// >0 sets; 0 keeps current config.
 bool ValidateDynamicsOverrides(float spectral_radius, float input_scaling,
                                const char* campaign)
 {
@@ -332,11 +278,11 @@ void AppendCompactConfigLines(std::ostream& o)
       << "  lr=" << config::LEARNING_RATE << ".." << config::LEARNING_RATE_MIN
       << "  theta=" << config::VPT_THRESHOLD
       << "  load_w=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
-      << "  drive=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
-      << "  n_in=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT)
+      << "  drive=[x,y,z,xz]"
+      << "  n_in=" << kNumDriveChannels
       << "\n";
     {
-        const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+        const size_t n_in = kNumDriveChannels;
         o << "config: drive_ch=[";
         for (size_t i = 0; i < n_in; ++i)
         {
@@ -381,10 +327,9 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
       << "  freeruns_per_trial=" << num_runs << "\n"
       << "# load_weights=" << (config::LOAD_TRAINED_WEIGHTS ? "on" : "off")
       << "  save_weights=" << (config::SAVE_TRAINED_WEIGHTS ? "on" : "off") << "\n"
-      << "# drive_layout=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
-      << "  num_inputs=" << Lorenz::NumDriveChannels(config::DRIVE_LAYOUT) << "\n";
+      << "# drive=[x,y,z,xz]  num_inputs=" << kNumDriveChannels << "\n";
     {
-        const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+        const size_t n_in = kNumDriveChannels;
         o << "# drive_ch=[";
         for (size_t i = 0; i < n_in; ++i)
         {
@@ -392,7 +337,7 @@ void WriteMetadataBlock(std::ostream& o, const char* job, const std::string& tim
                 o << ',';
             o << config::INPUT_SCALE_CH[i];
         }
-        o << "] (x input_scaling; layout feature order)\n";
+        o << "] (x input_scaling; [x,y,z,xz])\n";
     }
     o << "# metrics=mean_of_trial_means (sample std across trials)\n"
       << "# score_vpt_x_duty=VPT_lt*duty\n"
@@ -938,8 +883,7 @@ int Campaign_SeedSurvey(size_t dim, size_t num_threads, int num_runs, uint64_t b
 
     SurveySummary sum;
     sum.history_depth = config::HISTORY_DEPTH;
-    sum.drive_layout = config::DRIVE_LAYOUT;
-    sum.num_inputs = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+    sum.num_inputs = kNumDriveChannels;
     sum.num_trials = num_threads;
     sum.num_runs = num_runs;
     sum.n_trials_ok = trial_vpt.size();
@@ -1201,9 +1145,7 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
 int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
             double ic_x, double ic_y, double ic_z,
             const char* weights_stem,
-            float spectral_radius, float input_scaling,
-            std::optional<DriveLayout> drive_layout,
-            std::initializer_list<float> drive_gains)
+            float spectral_radius, float input_scaling)
 {
     if (!ValidateDim(dim, "freerun"))
         return 2;
@@ -1225,9 +1167,6 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
 
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
-    ConfigDriveRestore drive_restore(
-        config::DRIVE_LAYOUT,
-        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
@@ -1235,14 +1174,7 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
 
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float gains_buf[kMaxDriveChannels]{};
-    const bool override_gains = drive_gains.size() > 0;
-    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "freerun"))
-        return 2;
-    ConfigDriveGainsRestore gains_restore;
-    if (override_gains)
-        ApplyDriveGains(gains_buf);
+    const size_t n_in = kNumDriveChannels;
 
     const fs::path trace_dir = TracesDir();
     if (!EnsureDir(trace_dir, "freerun"))
@@ -1269,12 +1201,9 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
                 config::INPUT_SCALING,
                 input_scaling > 0.0f ? " (override)" : " (config)");
     {
-        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
-        std::printf("[freerun] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
-                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
-                    drive_layout.has_value() ? " (override)" : " (config)",
-                    n_in, ch.c_str(),
-                    override_gains ? " (override)" : " (config)");
+        const std::string ch = FormatDriveGains();
+        std::printf("[freerun] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
+                    n_in, ch.c_str());
     }
     std::printf("[freerun] IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
     std::printf("[freerun] load stem: %s\n", stem);
@@ -1338,9 +1267,7 @@ int FreeRun(size_t dim, size_t history_depth, uint64_t esn_seed,
 int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                   int num_runs, uint64_t orbit_seed, const char* weights_stem,
                   int top_k, FreeRunSurveySummary* out,
-                  float spectral_radius, float input_scaling,
-                  std::optional<DriveLayout> drive_layout,
-                  std::initializer_list<float> drive_gains)
+                  float spectral_radius, float input_scaling)
 {
     if (out)
         *out = FreeRunSurveySummary{};
@@ -1373,9 +1300,6 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
 
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
-    ConfigDriveRestore drive_restore(
-        config::DRIVE_LAYOUT,
-        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
@@ -1383,14 +1307,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
 
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float gains_buf[kMaxDriveChannels]{};
-    const bool override_gains = drive_gains.size() > 0;
-    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "freerun-survey"))
-        return 2;
-    ConfigDriveGainsRestore gains_restore;
-    if (override_gains)
-        ApplyDriveGains(gains_buf);
+    const size_t n_in = kNumDriveChannels;
 
     const fs::path survey_dir = SurveysDir();
     if (!EnsureDir(survey_dir, "freerun-survey"))
@@ -1408,12 +1325,9 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
                 config::INPUT_SCALING,
                 input_scaling > 0.0f ? " (override)" : " (config)");
     {
-        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
-        std::printf("[freerun-survey] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
-                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
-                    drive_layout.has_value() ? " (override)" : " (config)",
-                    n_in, ch.c_str(),
-                    override_gains ? " (override)" : " (config)");
+        const std::string ch = FormatDriveGains();
+        std::printf("[freerun-survey] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
+                    n_in, ch.c_str());
     }
     std::printf("[freerun-survey] load stem: %s\n", stem);
     std::printf("[freerun-survey] freerun remix IC each run; "
@@ -1604,9 +1518,7 @@ int SeedSweep(size_t dim, size_t history_depth,
               size_t epochs, int freerun_runs,
               uint64_t train_orbit, uint64_t freerun_orbit_seed,
               int top_k, bool do_train,
-              float spectral_radius, float input_scaling,
-              std::optional<DriveLayout> drive_layout,
-              std::initializer_list<float> drive_gains)
+              float spectral_radius, float input_scaling)
 {
     if (!ValidateDim(dim, "seed-sweep"))
         return 2;
@@ -1633,13 +1545,9 @@ int SeedSweep(size_t dim, size_t history_depth,
         return 2;
 
     // RAII: campaigns below also restore; outer restore keeps caller knobs stable.
-    // Drive layout first so n_in / gains match the active layout.
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
     ConfigSizeRestore epochs_restore(config::EPOCHS, do_train ? epochs : config::EPOCHS);
-    ConfigDriveRestore drive_restore(
-        config::DRIVE_LAYOUT,
-        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
@@ -1647,14 +1555,7 @@ int SeedSweep(size_t dim, size_t history_depth,
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
 
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float gains_buf[kMaxDriveChannels]{};
-    const bool override_gains = drive_gains.size() > 0;
-    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "seed-sweep"))
-        return 2;
-    ConfigDriveGainsRestore gains_restore;
-    if (override_gains)
-        ApplyDriveGains(gains_buf);
+    const size_t n_in = kNumDriveChannels;
 
     const fs::path model_dir = config::MODEL_SAVE_DIR;
     const fs::path survey_dir = SurveysDir();
@@ -1686,19 +1587,15 @@ int SeedSweep(size_t dim, size_t history_depth,
                 static_cast<double>(config::INPUT_SCALING),
                 input_scaling > 0.0f ? " (override)" : " (config)");
     {
-        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
-        std::printf("[seed-sweep] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
-                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
-                    drive_layout.has_value() ? " (override)" : " (config)",
-                    n_in,
-                    ch.c_str(),
-                    override_gains ? " (override)" : " (config)");
+        const std::string ch = FormatDriveGains();
+        std::printf("[seed-sweep] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
+                    n_in, ch.c_str());
     }
     std::printf("[seed-sweep] train_orbit=%llu  freerun_orbit_seed=%llu\n",
                 static_cast<unsigned long long>(train_orbit),
                 static_cast<unsigned long long>(freerun_orbit_seed));
     std::printf("[seed-sweep] weight stems: %s/lorenz_seed{S}_D%zu_M%zu  "
-                "(stems omit SR/IS/layout/drive_ch -- document in ranking banner)\n",
+                "(stems omit SR/IS/drive_ch -- document in ranking banner)\n",
                 model_dir.string().c_str(), dim, history_depth);
     std::printf("[seed-sweep] seed ranking metric = mean VPT*duty (top-10%% freeruns)\n");
     std::printf("[seed-sweep] metrics=VPT,duty,VPT*duty,RMSE  CSV dir: %s\n",
@@ -1997,9 +1894,7 @@ ParSeedRow EvaluateParSeed(size_t index, uint64_t esn_seed, uint64_t base_orbit_
 int ParallelSeedSweep(size_t dim, size_t history_depth,
                       uint64_t base_esn_seed, size_t num_seeds, size_t num_threads,
                       size_t epochs, int freerun_runs, uint64_t base_orbit_seed,
-                      int top_k, float spectral_radius, float input_scaling,
-                      std::optional<DriveLayout> drive_layout,
-                      std::initializer_list<float> drive_gains)
+                      int top_k, float spectral_radius, float input_scaling)
 {
     if (!ValidateDim(dim, "par-seed-sweep"))
         return 2;
@@ -2068,9 +1963,6 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
     ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
-    ConfigDriveRestore drive_restore(
-        config::DRIVE_LAYOUT,
-        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
@@ -2078,14 +1970,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
         config::INPUT_SCALING,
         input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
 
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float gains_buf[kMaxDriveChannels]{};
-    const bool override_gains = drive_gains.size() > 0;
-    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "par-seed-sweep"))
-        return 2;
-    ConfigDriveGainsRestore gains_restore;
-    if (override_gains)
-        ApplyDriveGains(gains_buf);
+    const size_t n_in = kNumDriveChannels;
 
     const fs::path survey_dir = SurveysDir();
     if (!EnsureDir(survey_dir, "par-seed-sweep"))
@@ -2128,12 +2013,9 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
                 static_cast<double>(config::INPUT_SCALING),
                 input_scaling > 0.0f ? " (override)" : " (config)");
     {
-        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
-        std::printf("[par-seed-sweep] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
-                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
-                    drive_layout.has_value() ? " (override)" : " (config)",
-                    n_in, ch.c_str(),
-                    override_gains ? " (override)" : " (config)");
+        const std::string ch = FormatDriveGains();
+        std::printf("[par-seed-sweep] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
+                    n_in, ch.c_str());
     }
     std::printf("[par-seed-sweep] always train in memory (no weight save/load)\n");
     std::printf("[par-seed-sweep] freerun pool = top 10%% per metric; heartbeats on stderr\n");
@@ -2418,6 +2300,459 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
 }
 
 // ---------------------------------------------------------------------------
+// ParallelOrbitSweep (train once; parallel one-freerun-per-orbit ranking)
+// ---------------------------------------------------------------------------
+int ParallelOrbitSweep(size_t dim, size_t history_depth,
+                       uint64_t base_esn_seed, uint64_t base_orbit_seed,
+                       size_t num_orbits, size_t num_threads, size_t epochs,
+                       int top_k, float spectral_radius, float input_scaling)
+{
+    if (!ValidateDim(dim, "par-orbit-sweep"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "par-orbit-sweep"))
+        return 2;
+    if (num_orbits < 1)
+    {
+        std::fprintf(stderr, "[par-orbit-sweep] refused: num_orbits=%zu (need >= 1)\n",
+                     num_orbits);
+        return 2;
+    }
+    if (num_threads < 1)
+    {
+        std::fprintf(stderr, "[par-orbit-sweep] refused: num_threads=%zu (need >= 1)\n",
+                     num_threads);
+        return 2;
+    }
+    if (epochs < 1)
+    {
+        std::fprintf(stderr, "[par-orbit-sweep] refused: epochs=%zu (need >= 1)\n",
+                     epochs);
+        return 2;
+    }
+    if (top_k < 1)
+        top_k = 1;
+    if (!ValidateDynamicsOverrides(spectral_radius, input_scaling, "par-orbit-sweep"))
+        return 2;
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[par-orbit-sweep] refused: LOAD_TRAINED_WEIGHTS is on "
+                     "(this campaign always trains from scratch)\n");
+        return 2;
+    }
+    if (config::SAVE_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[par-orbit-sweep] refused: SAVE_TRAINED_WEIGHTS is on "
+                     "(campaign uses a temp stem only; turn config auto-save off)\n");
+        return 2;
+    }
+    static_assert(Lorenz::kReadoutNumThreads == 1,
+                  "ParallelOrbitSweep requires Lorenz::kReadoutNumThreads == 1");
+
+    const size_t hw = std::thread::hardware_concurrency()
+                          ? std::thread::hardware_concurrency()
+                          : 1;
+    if (num_threads > hw)
+    {
+        std::fprintf(stderr,
+                     "[par-orbit-sweep] num_threads=%zu > hardware_concurrency=%zu; "
+                     "capping to %zu\n",
+                     num_threads, hw, hw);
+        num_threads = hw;
+    }
+    if (num_threads > num_orbits)
+        num_threads = num_orbits;
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
+    ConfigFloatRestore sr_restore(
+        config::SPECTRAL_RADIUS,
+        spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
+    ConfigFloatRestore is_restore(
+        config::INPUT_SCALING,
+        input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
+
+    const size_t n_in = kNumDriveChannels;
+
+    const fs::path survey_dir = SurveysDir();
+    if (!EnsureDir(survey_dir, "par-orbit-sweep"))
+        return 2;
+
+    const std::string ts = TimestampNow();
+    const fs::path rank_csv = survey_dir /
+        ("par_orbit_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_orbits" + std::to_string(num_orbits) +
+         "_" + ts + ".csv");
+    const fs::path rank_txt = survey_dir /
+        ("par_orbit_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_orbits" + std::to_string(num_orbits) +
+         "_" + ts + ".txt");
+    // Temp stem so workers can Load after one train (deleted before return).
+    const fs::path temp_stem = survey_dir /
+        (".par_orbit_tmp_seed" + std::to_string(base_esn_seed) + "_" + ts);
+
+    const bool saved_printf = config::ENABLE_PRINTF;
+    const bool saved_progress = config::ENABLE_PROGRESS;
+    config::ENABLE_PRINTF = false;
+    config::ENABLE_PROGRESS = false;
+
+    ReportBanner("ParallelOrbitSweep");
+    std::printf("[par-orbit-sweep] DIM=%zu  M=%zu  num_orbits=%zu  num_threads=%zu  "
+                "epochs=%zu  top_k=%d\n",
+                dim, history_depth, num_orbits, num_threads, epochs, top_k);
+    std::printf("[par-orbit-sweep] base_esn_seed=%llu\n",
+                static_cast<unsigned long long>(base_esn_seed));
+    std::printf("[par-orbit-sweep] base_orbit_seed=%llu  (orbit_i = Mix64(base ^ FNV*(i+1)))\n",
+                static_cast<unsigned long long>(base_orbit_seed));
+    std::printf("[par-orbit-sweep] SR=%.4f%s  input_scaling=%.4f%s\n",
+                static_cast<double>(config::SPECTRAL_RADIUS),
+                spectral_radius > 0.0f ? " (override)" : " (config)",
+                static_cast<double>(config::INPUT_SCALING),
+                input_scaling > 0.0f ? " (override)" : " (config)");
+    {
+        const std::string ch = FormatDriveGains();
+        std::printf("[par-orbit-sweep] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
+                    n_in, ch.c_str());
+    }
+    std::printf("[par-orbit-sweep] train once, then one freerun per orbit (parallel)\n");
+    std::printf("[par-orbit-sweep] report: %s\n", rank_txt.string().c_str());
+    std::printf("[par-orbit-sweep] CSV:    %s\n", rank_csv.string().c_str());
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    // Always remove temp readout files (train fail, early return, or success).
+    const std::string stem_str = temp_stem.string();
+    struct TempStemGuard
+    {
+        std::string stem;
+        explicit TempStemGuard(std::string s) : stem(std::move(s)) {}
+        ~TempStemGuard()
+        {
+            std::error_code ec;
+            fs::remove(fs::path(stem + ".hcnw"), ec);
+            fs::remove(fs::path(stem + ".arch.json"), ec);
+        }
+        TempStemGuard(const TempStemGuard&) = delete;
+        TempStemGuard& operator=(const TempStemGuard&) = delete;
+    };
+    TempStemGuard temp_guard(stem_str);
+
+    // --- Train once ---
+    try
+    {
+        Lorenz trainer(base_esn_seed, base_orbit_seed);
+        trainer.Train();
+        trainer.SaveTrainedWeights(stem_str.c_str());
+    }
+    catch (const std::exception& e)
+    {
+        config::ENABLE_PRINTF = saved_printf;
+        config::ENABLE_PROGRESS = saved_progress;
+        std::fprintf(stderr, "[par-orbit-sweep] train/save failed: %s\n", e.what());
+        return 1; // temp_guard removes any partial stem
+    }
+
+    std::printf("[par-orbit-sweep] trained; freerunning %zu orbits (quiet per-job load)\n",
+                num_orbits);
+    std::fflush(stdout);
+
+    struct OrbitRow
+    {
+        size_t index = 0;
+        uint64_t orbit_seed = 0;
+        bool ok = false;
+        double vpt = 0;
+        double duty = 0;
+        double vpt_x_duty = 0;
+        double rmse = 0;
+        double ic_x = 0, ic_y = 0, ic_z = 0;
+    };
+    std::vector<OrbitRow> rows(num_orbits);
+    std::atomic<size_t> next_job{0};
+    std::atomic<size_t> done_count{0};
+    std::mutex stderr_mu;
+
+    {
+        std::vector<std::jthread> pool;
+        pool.reserve(num_threads);
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            pool.emplace_back([&]()
+            {
+                for (;;)
+                {
+                    const size_t i = next_job.fetch_add(1, std::memory_order_relaxed);
+                    if (i >= num_orbits)
+                        break;
+                    const uint64_t orbit = Mix64(
+                        base_orbit_seed ^
+                        (0x100000001B3ULL * (static_cast<uint64_t>(i) + 1ULL)));
+                    OrbitRow row;
+                    row.index = i;
+                    row.orbit_seed = orbit;
+                    try
+                    {
+                        Lorenz lorenz(base_esn_seed, base_orbit_seed);
+                        lorenz.LoadTrainedWeights(stem_str.c_str(), /*log_load=*/false);
+                        const FreeRunResult r =
+                            lorenz.FreeRun(false, nullptr, 0, orbit);
+                        if (r.valid)
+                        {
+                            row.ok = true;
+                            row.vpt = r.vpt_lt;
+                            row.duty = r.duty;
+                            row.vpt_x_duty = r.vpt_x_duty;
+                            row.rmse = r.rmse;
+                            const auto ic = Lorenz::IcFromOrbitSeed(orbit);
+                            row.ic_x = ic.x;
+                            row.ic_y = ic.y;
+                            row.ic_z = ic.z;
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        row.ok = false;
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-orbit-sweep] orbit idx=%zu seed=%llu FAILED: %s\n",
+                                     i, static_cast<unsigned long long>(orbit), e.what());
+                        std::fflush(stderr);
+                    }
+                    catch (...)
+                    {
+                        row.ok = false;
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-orbit-sweep] orbit idx=%zu seed=%llu FAILED: "
+                                     "unknown exception\n",
+                                     i, static_cast<unsigned long long>(orbit));
+                        std::fflush(stderr);
+                    }
+                    rows[i] = row;
+                    const size_t d = done_count.fetch_add(1, std::memory_order_relaxed) + 1;
+                    {
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-orbit-sweep] heartbeat %zu/%zu  "
+                                     "(idx=%zu orbit=%llu ok=%d)\n",
+                                     d, num_orbits, i,
+                                     static_cast<unsigned long long>(orbit),
+                                     row.ok ? 1 : 0);
+                        std::fflush(stderr);
+                    }
+                }
+            });
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(stderr_mu);
+        std::fprintf(stderr, "[par-orbit-sweep] all orbits finished (%zu/%zu)\n",
+                     done_count.load(std::memory_order_relaxed), num_orbits);
+        std::fflush(stderr);
+    }
+    std::fflush(stdout);
+
+    // Temp weights no longer needed; drop before ranking so files do not linger
+    // if report I/O is slow. Guard dtor also removes (idempotent).
+    {
+        std::error_code ec;
+        fs::remove(fs::path(stem_str + ".hcnw"), ec);
+        fs::remove(fs::path(stem_str + ".arch.json"), ec);
+    }
+
+    config::ENABLE_PRINTF = saved_printf;
+    config::ENABLE_PROGRESS = saved_progress;
+
+    auto make_order = [&](auto metric) {
+        std::vector<size_t> ord;
+        ord.reserve(rows.size());
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].ok)
+                ord.push_back(i);
+        std::sort(ord.begin(), ord.end(), [&](size_t a, size_t b) {
+            return metric(rows[a]) > metric(rows[b]);
+        });
+        return ord;
+    };
+    const auto by_vxd = make_order([](const OrbitRow& r) { return r.vpt_x_duty; });
+    const auto by_vpt = make_order([](const OrbitRow& r) { return r.vpt; });
+    const auto by_duty = make_order([](const OrbitRow& r) { return r.duty; });
+
+    auto rank_of = [](const std::vector<size_t>& ord, size_t idx) -> size_t {
+        for (size_t r = 0; r < ord.size(); ++r)
+            if (ord[r] == idx)
+                return r + 1;
+        return 0;
+    };
+
+    std::ostringstream report;
+    auto emit = [&](const char* s) {
+        report << s;
+        std::fputs(s, stdout);
+    };
+    auto emitf = [&](const char* fmt, auto... args) {
+        char buf[640];
+        std::snprintf(buf, sizeof buf, fmt, args...);
+        emit(buf);
+    };
+
+    emit("\n========================================================================\n");
+    emit("=== ParallelOrbitSweep final report (one freerun per orbit) ===\n");
+    emit("========================================================================\n");
+    emitf("DIM=%zu  M=%zu  esn_seed=%llu  num_orbits=%zu  threads=%zu  epochs=%zu\n",
+          dim, history_depth, static_cast<unsigned long long>(base_esn_seed),
+          num_orbits, num_threads, epochs);
+    emitf("base_orbit_seed=%llu\n", static_cast<unsigned long long>(base_orbit_seed));
+    emitf("ok=%zu / %zu\n\n", by_vxd.size(), num_orbits);
+
+    emit("--- All orbits (sorted by VPT*duty) ---\n");
+    emit("note: one freerun per orbit; VxD = VPT*duty for that run.\n");
+    emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
+          "rank", "idx", "orbit_seed", "VxD", "VPT", "duty", "RMSE",
+          "r_VxD", "r_VPT", "r_duty");
+    if (by_vxd.empty())
+    {
+        emit("(no successful freeruns)\n");
+    }
+    else
+    {
+        for (size_t r = 0; r < by_vxd.size(); ++r)
+        {
+            const size_t i = by_vxd[r];
+            const auto& s = rows[i];
+            emitf("%-4zu %6zu %20llu %10.3f %10.2f %10.3f %10.6f %6zu %6zu %6zu\n",
+                  r + 1, s.index,
+                  static_cast<unsigned long long>(s.orbit_seed),
+                  s.vpt_x_duty, s.vpt, s.duty, s.rmse,
+                  rank_of(by_vxd, i), rank_of(by_vpt, i), rank_of(by_duty, i));
+        }
+    }
+
+    auto emit_top = [&](const char* title, const std::vector<size_t>& ord) {
+        emitf("\n--- Top %d by %s ---\n", top_k, title);
+        if (ord.empty())
+        {
+            emit("(none)\n");
+            return;
+        }
+        const size_t n = std::min(static_cast<size_t>(top_k), ord.size());
+        emitf("%-4s %6s %20s %10s %10s %10s\n",
+              "rank", "idx", "orbit_seed", "VxD", "VPT", "duty");
+        for (size_t r = 0; r < n; ++r)
+        {
+            const auto& s = rows[ord[r]];
+            emitf("%-4zu %6zu %20llu %10.4f %10.4f %10.4f\n",
+                  r + 1, s.index,
+                  static_cast<unsigned long long>(s.orbit_seed),
+                  s.vpt_x_duty, s.vpt, s.duty);
+        }
+    };
+    emit_top("VPT*duty", by_vxd);
+    emit_top("VPT", by_vpt);
+    emit_top("duty", by_duty);
+
+    if (!by_vxd.empty())
+    {
+        const auto& best = rows[by_vxd[0]];
+        emitf("\nBest orbit_seed=%llu  VxD=%.4f  VPT=%.4f  duty=%.4f\n",
+              static_cast<unsigned long long>(best.orbit_seed),
+              best.vpt_x_duty, best.vpt, best.duty);
+        emitf("  IC=(%.6f, %.6f, %.6f)\n", best.ic_x, best.ic_y, best.ic_z);
+        emitf("  FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, /*stem after Train*/);\n",
+              dim, history_depth,
+              static_cast<unsigned long long>(base_esn_seed),
+              best.ic_x, best.ic_y, best.ic_z);
+    }
+
+    emit("\nCherry-pick: orbit_seed / IC above with this esn_seed (Train then FreeRun; "
+         "weights were not kept by this campaign).\n");
+    std::fflush(stdout);
+
+    {
+        const fs::path tmp = fs::path(rank_csv.string() + ".tmp");
+        bool wrote_ok = false;
+        {
+            std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
+            if (!csv)
+            {
+                std::fprintf(stderr, "[par-orbit-sweep] failed to open %s\n",
+                             tmp.string().c_str());
+            }
+            else
+            {
+                csv << "# ParallelOrbitSweep\n"
+                    << "# one freerun per orbit (VxD = VPT*duty that run)\n"
+                    << "# dim=" << dim << " history_depth=" << history_depth
+                    << " epochs=" << epochs << " num_orbits=" << num_orbits
+                    << " num_threads=" << num_threads << "\n"
+                    << "# base_esn_seed=" << base_esn_seed
+                    << " base_orbit_seed=" << base_orbit_seed << "\n"
+                    << "idx,orbit_seed,ok,vpt_x_duty,vpt,duty,rmse,"
+                       "ic_x,ic_y,ic_z,rank_vpt_x_duty,rank_vpt,rank_duty\n";
+                for (size_t i : by_vxd)
+                {
+                    const auto& s = rows[i];
+                    csv << s.index << ',' << s.orbit_seed << ",1,"
+                        << s.vpt_x_duty << ',' << s.vpt << ',' << s.duty << ','
+                        << s.rmse << ','
+                        << s.ic_x << ',' << s.ic_y << ',' << s.ic_z << ','
+                        << rank_of(by_vxd, i) << ','
+                        << rank_of(by_vpt, i) << ','
+                        << rank_of(by_duty, i) << '\n';
+                }
+                for (const auto& s : rows)
+                {
+                    if (s.ok)
+                        continue;
+                    csv << s.index << ',' << s.orbit_seed << ",0,,,,,,,,,,\n";
+                }
+                csv.flush();
+                wrote_ok = csv.good();
+            }
+        }
+        if (wrote_ok)
+        {
+            std::error_code ec;
+            fs::remove(rank_csv, ec);
+            fs::rename(tmp, rank_csv, ec);
+            if (ec)
+                std::fprintf(stderr,
+                             "[par-orbit-sweep] rename CSV failed: %s  (data at %s)\n",
+                             ec.message().c_str(), tmp.string().c_str());
+            else
+                ReportWrote("par-orbit-sweep", rank_csv);
+        }
+    }
+
+    {
+        std::ofstream txt(rank_txt, std::ios::out | std::ios::trunc);
+        if (!txt)
+        {
+            std::fprintf(stderr, "[par-orbit-sweep] failed to write %s\n",
+                         rank_txt.string().c_str());
+        }
+        else
+        {
+            txt << report.str();
+            txt.flush();
+            if (txt.good())
+                ReportWrote("par-orbit-sweep", rank_txt);
+        }
+    }
+
+    ReportDone("par-orbit-sweep",
+               std::chrono::duration<double>(clock::now() - t0).count());
+    return by_vxd.empty() ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Campaign_HistoryDepthSweep
 // ---------------------------------------------------------------------------
 int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history_depths,
@@ -2618,305 +2953,6 @@ int Campaign_HistoryDepthSweep(size_t dim, std::initializer_list<size_t> history
         WriteMsweepResultFiles(rows, base_seed, orbit_seed, num_threads, num_runs, elapsed,
                                i_best_vpt, i_best_duty, i_best_vxd);
     }
-
-    Beep(2500, 3000);
-    return first_err;
-}
-
-// Drive-layout A/B: CSV + TXT under RESULTS_DIR.
-void WriteDriveAbResultFiles(const SurveySummary& a, const SurveySummary& b,
-                             size_t dim, size_t history_depth,
-                             uint64_t base_seed, uint64_t orbit_seed,
-                             size_t num_threads, int num_runs,
-                             double total_wall_s)
-{
-    const fs::path dir = EnsureResultsDir();
-    if (!fs::exists(dir))
-        return;
-
-    const std::string ts = TimestampNow();
-    const fs::path csv_path = dir / ("DriveAB_" + ts + "_D" + std::to_string(dim) +
-                                     "_M" + std::to_string(history_depth) + ".csv");
-    const fs::path txt_path = dir / ("DriveAB_" + ts + "_D" + std::to_string(dim) +
-                                     "_M" + std::to_string(history_depth) + ".txt");
-
-    auto write_row = [](std::ostream& o, const SurveySummary& s) {
-        o << Lorenz::DriveLayoutName(s.drive_layout) << ','
-          << s.num_inputs << ','
-          << s.history_depth << ','
-          << s.mean_vpt << ',' << s.std_vpt << ','
-          << s.mean_rmse << ',' << s.std_rmse << ','
-          << s.mean_duty << ',' << s.std_duty << ','
-          << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
-          << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
-          << s.wall_seconds << ','
-          << (s.ok ? 1 : 0) << '\n';
-    };
-
-    {
-        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
-        if (!csv)
-        {
-            std::fprintf(stderr, "[results] failed to write %s\n", csv_path.string().c_str());
-            return;
-        }
-        WriteMetadataBlock(csv, "DriveAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, history_depth);
-        csv << "# dim=" << dim << "  fixed_M=" << history_depth
-            << "  total_wall_seconds=" << total_wall_s << "\n";
-        csv << "drive,num_inputs,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
-               "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
-               "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
-        if (a.ok) write_row(csv, a);
-        if (b.ok) write_row(csv, b);
-        if (a.ok && b.ok)
-        {
-            csv << "# deltas (Quadratic8 - XyzXz): dVPT=" << (b.mean_vpt - a.mean_vpt)
-                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
-                << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
-        }
-    }
-    {
-        std::ofstream txt(txt_path, std::ios::out | std::ios::trunc);
-        if (!txt)
-        {
-            std::fprintf(stderr, "[results] failed to write %s\n", txt_path.string().c_str());
-            return;
-        }
-        WriteMetadataBlock(txt, "DriveAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, history_depth);
-        txt << "\nDrive-layout A/B (fixed M; mean of trial-means)\n";
-        txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
-            << "  M=" << history_depth << "\n";
-        AppendCompactConfigLines(txt);
-        txt << "\narm,drive,n_in,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
-               "VxD_mn,VxD_sd,trials_ok,wall_s\n";
-        auto arm_line = [&](const char* tag, const SurveySummary& s) {
-            if (!s.ok)
-            {
-                txt << tag << ",(failed)\n";
-                return;
-            }
-            txt << tag << ','
-                << Lorenz::DriveLayoutName(s.drive_layout) << ','
-                << s.num_inputs << ','
-                << s.mean_vpt << ',' << s.std_vpt << ','
-                << s.mean_rmse << ',' << s.std_rmse << ','
-                << s.mean_duty << ',' << s.std_duty << ','
-                << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
-                << s.n_trials_ok << ',' << s.wall_seconds << '\n';
-        };
-        arm_line("A", a);
-        arm_line("B", b);
-        if (a.ok && b.ok)
-        {
-            txt << "\nDeltas (B - A) = Quadratic8 - XyzXz\n";
-            txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
-                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
-                << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
-            txt << "\nCode picks among successful arms:\n";
-            const SurveySummary& best = (b.mean_vpt >= a.mean_vpt) ? b : a;
-            txt << "  best mean VPT : " << Lorenz::DriveLayoutName(best.drive_layout)
-                << "  VPT=" << best.mean_vpt << " +/- " << best.std_vpt << "\n";
-            const SurveySummary& best_vxd =
-                (b.mean_vpt_x_duty >= a.mean_vpt_x_duty) ? b : a;
-            txt << "  best mean VPT*duty : " << Lorenz::DriveLayoutName(best_vxd.drive_layout)
-                << "  VPT*duty=" << best_vxd.mean_vpt_x_duty
-                << " +/- " << best_vxd.std_vpt_x_duty << "\n";
-            txt << "  total_wall_seconds=" << total_wall_s << "\n";
-        }
-    }
-
-    ReportWrote("results", csv_path);
-    ReportWrote("results", txt_path);
-}
-
-// ---------------------------------------------------------------------------
-// Campaign_DriveLayoutAB
-// ---------------------------------------------------------------------------
-int Campaign_DriveLayoutAB(size_t dim, size_t history_depth,
-                           size_t num_threads, int num_runs,
-                           uint64_t base_seed, uint64_t orbit_seed)
-{
-    if (!ValidateDim(dim, "DriveAB"))
-        return 2;
-    if (!ValidateHistoryDepth(history_depth, "DriveAB"))
-        return 2;
-
-    if (config::LOAD_TRAINED_WEIGHTS)
-    {
-        std::fprintf(stderr,
-                     "[DriveAB] refused: LOAD_TRAINED_WEIGHTS is on. "
-                     "A/B needs a fresh train per drive layout.\n");
-        return 2;
-    }
-
-    if (config::SAVE_TRAINED_WEIGHTS)
-    {
-        std::fprintf(stderr,
-                     "[DriveAB] NOTE: SAVE_TRAINED_WEIGHTS is on; stems include "
-                     "DIM/M/num_inputs so each arm keeps its own file.\n");
-        std::fflush(stderr);
-    }
-
-    ConfigSizeRestore dim_restore(config::DIM, dim);
-    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
-    ConfigDriveRestore drive_restore(config::DRIVE_LAYOUT, config::DRIVE_LAYOUT);
-
-    static const DriveLayout kArms[] = {
-        DriveLayout::XyzXz,
-        DriveLayout::Quadratic8,
-    };
-
-    std::printf("=== HypercubeESN: Lorenz / drive-layout A/B ===\n");
-    std::printf("[DriveAB] DIM=%zu (N=%zu)  M=%zu  arms:",
-                config::DIM, size_t{1} << config::DIM, history_depth);
-    for (DriveLayout L : kArms)
-        std::printf(" %s(n_in=%zu)", Lorenz::DriveLayoutName(L), Lorenz::NumDriveChannels(L));
-    std::printf("\n");
-    std::printf("[DriveAB] survey threads=%zu  runs=%d  (0 threads => HW)\n",
-                num_threads, num_runs);
-    std::printf("[DriveAB] matched seeds/protocol; train per arm (not load)\n");
-    std::fflush(stdout);
-
-    using clock = std::chrono::steady_clock;
-    const auto t0 = clock::now();
-
-    SurveySummary arm_a{};
-    SurveySummary arm_b{};
-    int first_err = 0;
-
-    for (size_t i = 0; i < 2; ++i)
-    {
-        const DriveLayout L = kArms[i];
-        config::DRIVE_LAYOUT = L;
-        std::printf("\n########## DriveAB arm %zu/2: %s  (n_in=%zu)  M=%zu ##########\n",
-                    i + 1, Lorenz::DriveLayoutName(L), Lorenz::NumDriveChannels(L),
-                    history_depth);
-        std::fflush(stdout);
-
-        SurveySummary sum;
-        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
-                                           /*completion_beep=*/false, &sum);
-        if (i == 0)
-            arm_a = sum;
-        else
-            arm_b = sum;
-        if (rc != 0 && first_err == 0)
-            first_err = rc;
-    }
-
-    std::fflush(stdout);
-
-    const double elapsed = std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-
-    {
-        std::ostringstream roll;
-        roll << "\n========================================================================\n"
-             << "=== Drive A/B roll-up (fixed M; mean of trial-means; code-computed) ===\n"
-             << "========================================================================\n";
-        AppendCompactConfigLines(roll);
-
-        char line[512];
-        std::snprintf(line, sizeof line,
-                      "DIM=%zu  N=%zu  M=%zu  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
-                      dim, size_t{1} << dim, history_depth,
-                      arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
-                      num_runs, config::VPT_THRESHOLD);
-        roll << line;
-
-        std::snprintf(line, sizeof line,
-                      "%-12s %5s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
-                      "drive", "n_in", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
-                      "duty_mn", "duty_sd", "VxD_mn", "VxD_sd", "trials_ok");
-        roll << line;
-        std::snprintf(line, sizeof line,
-                      "%-12s %5s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
-                      "------------", "-----", "--------", "--------", "----------", "--------",
-                      "--------", "--------", "--------", "--------", "----------");
-        roll << line;
-
-        auto row = [&](const SurveySummary& s) {
-            if (!s.ok)
-            {
-                std::snprintf(line, sizeof line, "%-12s  (failed)\n",
-                              Lorenz::DriveLayoutName(s.drive_layout));
-                roll << line;
-                return;
-            }
-            std::snprintf(line, sizeof line,
-                          "%-12s %5zu %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu\n",
-                          Lorenz::DriveLayoutName(s.drive_layout), s.num_inputs,
-                          s.mean_vpt, s.std_vpt,
-                          s.mean_rmse, s.std_rmse,
-                          s.mean_duty, s.std_duty,
-                          s.mean_vpt_x_duty, s.std_vpt_x_duty,
-                          s.n_trials_ok);
-            roll << line;
-        };
-        row(arm_a);
-        row(arm_b);
-
-        if (arm_a.ok && arm_b.ok)
-        {
-            roll << "\nDeltas (Quadratic8 - XyzXz):\n";
-            std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
-                          "", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
-            roll << line;
-            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.3f\n",
-                          "B - A",
-                          arm_b.mean_vpt - arm_a.mean_vpt,
-                          arm_b.mean_rmse - arm_a.mean_rmse,
-                          arm_b.mean_duty - arm_a.mean_duty,
-                          arm_b.mean_vpt_x_duty - arm_a.mean_vpt_x_duty);
-            roll << line;
-
-            roll << "\nCode picks among successful arms:\n";
-            const SurveySummary& best =
-                (arm_b.mean_vpt >= arm_a.mean_vpt) ? arm_b : arm_a;
-            std::snprintf(line, sizeof line,
-                          "  best mean VPT  : %s  VPT=%.3f +/- %.3f  (n_in=%zu)\n",
-                          Lorenz::DriveLayoutName(best.drive_layout),
-                          best.mean_vpt, best.std_vpt, best.num_inputs);
-            roll << line;
-            const SurveySummary& best_d =
-                (arm_b.mean_duty >= arm_a.mean_duty) ? arm_b : arm_a;
-            std::snprintf(line, sizeof line,
-                          "  best mean duty : %s  duty=%.3f +/- %.3f  (n_in=%zu)\n",
-                          Lorenz::DriveLayoutName(best_d.drive_layout),
-                          best_d.mean_duty, best_d.std_duty, best_d.num_inputs);
-            roll << line;
-            const SurveySummary& best_vxd =
-                (arm_b.mean_vpt_x_duty >= arm_a.mean_vpt_x_duty) ? arm_b : arm_a;
-            std::snprintf(line, sizeof line,
-                          "  best mean VPT*duty : %s  VPT*duty=%.3f +/- %.3f  (n_in=%zu)\n",
-                          Lorenz::DriveLayoutName(best_vxd.drive_layout),
-                          best_vxd.mean_vpt_x_duty, best_vxd.std_vpt_x_duty,
-                          best_vxd.num_inputs);
-            roll << line;
-        }
-        else if (!arm_a.ok && !arm_b.ok)
-        {
-            roll << "(no successful arms)\n";
-        }
-
-        std::snprintf(line, sizeof line,
-                      "\n=== Drive A/B wall time: %s (restoring DIM=%zu M=%zu drive=%s) ===\n",
-                      time_buf, dim_restore.saved, m_restore.saved,
-                      Lorenz::DriveLayoutName(drive_restore.saved));
-        roll << line;
-
-        const std::string block = roll.str();
-        std::fwrite(block.data(), 1, block.size(), stdout);
-        std::fflush(stdout);
-    }
-
-    WriteDriveAbResultFiles(arm_a, arm_b, dim, history_depth, base_seed, orbit_seed,
-                            num_threads, num_runs, elapsed);
 
     Beep(2500, 3000);
     return first_err;
@@ -3213,319 +3249,6 @@ int Campaign_SpectralRadiusAB(size_t dim, size_t history_depth,
 
     WriteSrAbResultFiles(arm_a, arm_b, sr_a, sr_b, dim, history_depth,
                          base_seed, orbit_seed, num_threads, num_runs, elapsed);
-
-    Beep(2500, 3000);
-    return first_err;
-}
-
-// ---------------------------------------------------------------------------
-// Campaign_DriveGainAB
-// ---------------------------------------------------------------------------
-void WriteGainAbResultFiles(const SurveySummary& a, const SurveySummary& b,
-                            const float* gains_a, const float* gains_b, size_t n_in,
-                            size_t dim, size_t history_depth,
-                            uint64_t base_seed, uint64_t orbit_seed,
-                            size_t num_threads, int num_runs,
-                            double total_wall_s)
-{
-    const fs::path dir = EnsureResultsDir();
-    if (!fs::exists(dir))
-        return;
-
-    const std::string ts = TimestampNow();
-    const fs::path csv_path = dir / ("GainAB_" + ts + "_D" + std::to_string(dim) +
-                                     "_M" + std::to_string(history_depth) + ".csv");
-    const fs::path txt_path = dir / ("GainAB_" + ts + "_D" + std::to_string(dim) +
-                                     "_M" + std::to_string(history_depth) + ".txt");
-
-    const std::string ga = FormatDriveGains(gains_a, n_in);
-    const std::string gb = FormatDriveGains(gains_b, n_in);
-
-    auto write_row = [&](std::ostream& o, const char* tag, const float* g,
-                         const SurveySummary& s) {
-        o << tag << ',' << FormatDriveGains(g, n_in) << ','
-          << s.history_depth << ','
-          << s.mean_vpt << ',' << s.std_vpt << ','
-          << s.mean_rmse << ',' << s.std_rmse << ','
-          << s.mean_duty << ',' << s.std_duty << ','
-          << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
-          << s.n_trials_ok << ',' << s.num_trials << ',' << s.num_runs << ','
-          << s.wall_seconds << ','
-          << (s.ok ? 1 : 0) << '\n';
-    };
-
-    {
-        std::ofstream csv(csv_path, std::ios::out | std::ios::trunc);
-        if (!csv)
-        {
-            std::fprintf(stderr, "[results] failed to write %s\n", csv_path.string().c_str());
-            return;
-        }
-        WriteMetadataBlock(csv, "GainAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, history_depth);
-        csv << "# dim=" << dim << "  fixed_M=" << history_depth
-            << "  gains_a=" << ga << "  gains_b=" << gb
-            << "  total_wall_seconds=" << total_wall_s << "\n";
-        csv << "arm,drive_ch,M,mean_vpt,std_vpt,mean_rmse,std_rmse,"
-               "mean_duty,std_duty,mean_vpt_x_duty,std_vpt_x_duty,"
-               "n_trials_ok,num_trials,num_runs,wall_seconds,ok\n";
-        if (a.ok) write_row(csv, "A", gains_a, a);
-        if (b.ok) write_row(csv, "B", gains_b, b);
-        if (a.ok && b.ok)
-        {
-            csv << "# deltas (B - A): dVPT=" << (b.mean_vpt - a.mean_vpt)
-                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
-                << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
-        }
-    }
-    {
-        std::ofstream txt(txt_path, std::ios::out | std::ios::trunc);
-        if (!txt)
-        {
-            std::fprintf(stderr, "[results] failed to write %s\n", txt_path.string().c_str());
-            return;
-        }
-        WriteMetadataBlock(txt, "GainAB", ts, base_seed, orbit_seed,
-                           num_threads, num_runs, history_depth);
-        txt << "\nDrive-gain A/B (fixed dim/M; mean of trial-means)\n";
-        txt << "DIM=" << dim << "  N=" << (size_t{1} << dim)
-            << "  M=" << history_depth
-            << "  drive=" << Lorenz::DriveLayoutName(config::DRIVE_LAYOUT)
-            << "  n_in=" << n_in << "\n";
-        txt << "gains_a=" << ga << "\ngains_b=" << gb << "\n";
-        AppendCompactConfigLines(txt);
-        txt << "\narm,drive_ch,VPT_mn,VPT_sd,RMSE_mn,RMSE_sd,duty_mn,duty_sd,"
-               "VxD_mn,VxD_sd,trials_ok,wall_s\n";
-        auto arm_line = [&](const char* tag, const float* g, const SurveySummary& s) {
-            if (!s.ok)
-            {
-                txt << tag << ',' << FormatDriveGains(g, n_in) << ",(failed)\n";
-                return;
-            }
-            txt << tag << ',' << FormatDriveGains(g, n_in) << ','
-                << s.mean_vpt << ',' << s.std_vpt << ','
-                << s.mean_rmse << ',' << s.std_rmse << ','
-                << s.mean_duty << ',' << s.std_duty << ','
-                << s.mean_vpt_x_duty << ',' << s.std_vpt_x_duty << ','
-                << s.n_trials_ok << ',' << s.wall_seconds << '\n';
-        };
-        arm_line("A", gains_a, a);
-        arm_line("B", gains_b, b);
-        if (a.ok && b.ok)
-        {
-            txt << "\nDeltas (B - A)\n";
-            txt << "dVPT=" << (b.mean_vpt - a.mean_vpt)
-                << "  dRMSE=" << (b.mean_rmse - a.mean_rmse)
-                << "  dDuty=" << (b.mean_duty - a.mean_duty)
-                << "  dVPT*duty=" << (b.mean_vpt_x_duty - a.mean_vpt_x_duty) << "\n";
-            txt << "\nCode picks among successful arms:\n";
-            const bool b_vpt = b.mean_vpt >= a.mean_vpt;
-            txt << "  best mean VPT : " << (b_vpt ? gb : ga)
-                << "  VPT=" << (b_vpt ? b.mean_vpt : a.mean_vpt)
-                << " +/- " << (b_vpt ? b.std_vpt : a.std_vpt) << "\n";
-            const bool b_vxd = b.mean_vpt_x_duty >= a.mean_vpt_x_duty;
-            txt << "  best mean VPT*duty : " << (b_vxd ? gb : ga)
-                << "  VPT*duty=" << (b_vxd ? b.mean_vpt_x_duty : a.mean_vpt_x_duty)
-                << " +/- " << (b_vxd ? b.std_vpt_x_duty : a.std_vpt_x_duty) << "\n";
-            txt << "  total_wall_seconds=" << total_wall_s << "\n";
-        }
-    }
-
-    ReportWrote("results", csv_path);
-    ReportWrote("results", txt_path);
-}
-
-int Campaign_DriveGainAB(size_t dim, size_t history_depth,
-                         std::initializer_list<float> gains_a,
-                         std::initializer_list<float> gains_b,
-                         size_t num_threads, int num_runs,
-                         uint64_t base_seed, uint64_t orbit_seed)
-{
-    if (!ValidateDim(dim, "GainAB"))
-        return 2;
-    if (!ValidateHistoryDepth(history_depth, "GainAB"))
-        return 2;
-
-    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
-    float ga[kMaxDriveChannels]{};
-    float gb[kMaxDriveChannels]{};
-    if (!ParseDriveGains(gains_a, ga, n_in, "GainAB") ||
-        !ParseDriveGains(gains_b, gb, n_in, "GainAB"))
-        return 2;
-
-    if (config::LOAD_TRAINED_WEIGHTS)
-    {
-        std::fprintf(stderr,
-                     "[GainAB] refused: LOAD_TRAINED_WEIGHTS is on. "
-                     "A/B needs a fresh train per drive-gain vector.\n");
-        return 2;
-    }
-
-    if (config::SAVE_TRAINED_WEIGHTS)
-    {
-        std::fprintf(stderr,
-                     "[GainAB] NOTE: SAVE_TRAINED_WEIGHTS is on; default stems do not "
-                     "include drive_ch -- arm B will overwrite arm A weights. Turn save "
-                     "off or use distinct stems for durable A/B models.\n");
-        std::fflush(stderr);
-    }
-
-    ConfigSizeRestore dim_restore(config::DIM, dim);
-    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
-    ConfigDriveGainsRestore gains_restore;
-
-    const std::string ga_s = FormatDriveGains(ga, n_in);
-    const std::string gb_s = FormatDriveGains(gb, n_in);
-
-    std::printf("=== HypercubeESN: Lorenz / drive-gain A/B ===\n");
-    std::printf("[GainAB] DIM=%zu (N=%zu)  M=%zu  drive=%s  n_in=%zu\n",
-                config::DIM, size_t{1} << config::DIM, history_depth,
-                Lorenz::DriveLayoutName(config::DRIVE_LAYOUT), n_in);
-    std::printf("[GainAB] gains_a=%s\n", ga_s.c_str());
-    std::printf("[GainAB] gains_b=%s\n", gb_s.c_str());
-    std::printf("[GainAB] survey threads=%zu  runs=%d  (0 threads => HW)\n",
-                num_threads, num_runs);
-    std::printf("[GainAB] matched seeds/protocol/SR; train per arm (not load)\n");
-    std::fflush(stdout);
-
-    using clock = std::chrono::steady_clock;
-    const auto t0 = clock::now();
-
-    const float* arms[2] = {ga, gb};
-    SurveySummary arm_a{};
-    SurveySummary arm_b{};
-    int first_err = 0;
-
-    for (size_t i = 0; i < 2; ++i)
-    {
-        ApplyDriveGains(arms[i]);
-        std::printf("\n########## GainAB arm %zu/2: drive_ch=%s  M=%zu ##########\n",
-                    i + 1, FormatDriveGains(arms[i], n_in).c_str(), history_depth);
-        std::fflush(stdout);
-
-        SurveySummary sum;
-        const int rc = Campaign_SeedSurvey(dim, num_threads, num_runs, base_seed, orbit_seed,
-                                           /*completion_beep=*/false, &sum);
-        if (i == 0)
-            arm_a = sum;
-        else
-            arm_b = sum;
-        if (rc != 0 && first_err == 0)
-            first_err = rc;
-    }
-
-    std::fflush(stdout);
-
-    const double elapsed = std::chrono::duration<double>(clock::now() - t0).count();
-    char time_buf[64];
-    FormatWallTime(time_buf, sizeof time_buf, elapsed);
-
-    {
-        std::ostringstream roll;
-        roll << "\n========================================================================\n"
-             << "=== Drive-gain A/B roll-up (fixed M; mean of trial-means) ===\n"
-             << "========================================================================\n";
-        roll << "config: gains_a=" << ga_s << "  gains_b=" << gb_s
-             << "  (INPUT_SCALE_CH restored on exit)\n";
-        AppendCompactConfigLines(roll);
-
-        char line[640];
-        std::snprintf(line, sizeof line,
-                      "DIM=%zu  N=%zu  M=%zu  trials/arm=%zu  freeruns/trial=%d  theta=%.2f\n",
-                      dim, size_t{1} << dim, history_depth,
-                      arm_a.num_trials ? arm_a.num_trials : arm_b.num_trials,
-                      num_runs, config::VPT_THRESHOLD);
-        roll << line;
-
-        std::snprintf(line, sizeof line,
-                      "%-4s %-28s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
-                      "arm", "drive_ch", "VPT_mn", "VPT_sd", "RMSE_mn", "RMSE_sd",
-                      "duty_mn", "duty_sd", "VxD_mn", "VxD_sd", "trials_ok");
-        roll << line;
-        std::snprintf(line, sizeof line,
-                      "%-4s %-28s %8s %8s %10s %8s %8s %8s %8s %8s %10s\n",
-                      "----", "----------------------------", "--------", "--------",
-                      "----------", "--------", "--------", "--------", "--------",
-                      "--------", "----------");
-        roll << line;
-
-        auto row = [&](const char* tag, const float* g, const SurveySummary& s) {
-            const std::string gs = FormatDriveGains(g, n_in);
-            if (!s.ok)
-            {
-                std::snprintf(line, sizeof line, "%-4s %-28s  (failed)\n",
-                              tag, gs.c_str());
-                roll << line;
-                return;
-            }
-            std::snprintf(line, sizeof line,
-                          "%-4s %-28s %8.3f %8.3f %10.6f %8.6f %8.3f %8.3f %8.3f %8.3f %10zu\n",
-                          tag, gs.c_str(),
-                          s.mean_vpt, s.std_vpt,
-                          s.mean_rmse, s.std_rmse,
-                          s.mean_duty, s.std_duty,
-                          s.mean_vpt_x_duty, s.std_vpt_x_duty,
-                          s.n_trials_ok);
-            roll << line;
-        };
-        row("A", ga, arm_a);
-        row("B", gb, arm_b);
-
-        if (arm_a.ok && arm_b.ok)
-        {
-            roll << "\nDeltas (B - A):\n";
-            std::snprintf(line, sizeof line, "%-12s %10s %12s %10s %12s\n",
-                          "", "dVPT", "dRMSE", "dDuty", "dVPT*duty");
-            roll << line;
-            std::snprintf(line, sizeof line, "%-12s %+10.3f %+12.6f %+10.3f %+12.3f\n",
-                          "B - A",
-                          arm_b.mean_vpt - arm_a.mean_vpt,
-                          arm_b.mean_rmse - arm_a.mean_rmse,
-                          arm_b.mean_duty - arm_a.mean_duty,
-                          arm_b.mean_vpt_x_duty - arm_a.mean_vpt_x_duty);
-            roll << line;
-
-            roll << "\nCode picks among successful arms:\n";
-            const bool b_vpt = arm_b.mean_vpt >= arm_a.mean_vpt;
-            std::snprintf(line, sizeof line,
-                          "  best mean VPT  : %s  VPT=%.3f +/- %.3f\n",
-                          (b_vpt ? gb_s : ga_s).c_str(),
-                          b_vpt ? arm_b.mean_vpt : arm_a.mean_vpt,
-                          b_vpt ? arm_b.std_vpt : arm_a.std_vpt);
-            roll << line;
-            const bool b_duty = arm_b.mean_duty >= arm_a.mean_duty;
-            std::snprintf(line, sizeof line,
-                          "  best mean duty : %s  duty=%.3f +/- %.3f\n",
-                          (b_duty ? gb_s : ga_s).c_str(),
-                          b_duty ? arm_b.mean_duty : arm_a.mean_duty,
-                          b_duty ? arm_b.std_duty : arm_a.std_duty);
-            roll << line;
-            const bool b_vxd = arm_b.mean_vpt_x_duty >= arm_a.mean_vpt_x_duty;
-            std::snprintf(line, sizeof line,
-                          "  best mean VPT*duty : %s  VPT*duty=%.3f +/- %.3f\n",
-                          (b_vxd ? gb_s : ga_s).c_str(),
-                          b_vxd ? arm_b.mean_vpt_x_duty : arm_a.mean_vpt_x_duty,
-                          b_vxd ? arm_b.std_vpt_x_duty : arm_a.std_vpt_x_duty);
-            roll << line;
-        }
-        else if (!arm_a.ok && !arm_b.ok)
-        {
-            roll << "(no successful arms)\n";
-        }
-
-        std::snprintf(line, sizeof line,
-                      "\n=== Gain A/B wall time: %s (restoring DIM=%zu M=%zu drive_ch) ===\n",
-                      time_buf, dim_restore.saved, m_restore.saved);
-        roll << line;
-
-        const std::string block = roll.str();
-        std::fwrite(block.data(), 1, block.size(), stdout);
-        std::fflush(stdout);
-    }
-
-    WriteGainAbResultFiles(arm_a, arm_b, ga, gb, n_in, dim, history_depth,
-                           base_seed, orbit_seed, num_threads, num_runs, elapsed);
 
     Beep(2500, 3000);
     return first_err;

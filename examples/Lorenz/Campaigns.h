@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <optional>
 
 // ---------------------------------------------------------------------------
 // Campaign entry points -- plain functions. Call them from main.cpp (copy/paste).
@@ -19,8 +18,7 @@ struct SurveySummary
 {
     bool ok = false;
     size_t history_depth = 0; ///< config::HISTORY_DEPTH at survey time
-    DriveLayout drive_layout = DriveLayout::XyzXz;
-    size_t num_inputs = 0;    ///< channels for drive_layout
+    size_t num_inputs = 0;    ///< drive channels (always kNumDriveChannels)
     size_t num_trials = 0;    ///< parallel ESN seeds
     int num_runs = 0;         ///< free-runs per trial
     size_t n_trials_ok = 0;   ///< trials with >=1 valid free-run
@@ -71,8 +69,8 @@ int Campaign_Trace(size_t dim,
 /// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
 /// Edge warmup then free-run past span on the IC stream.
 /// Writes one CSV under RUNS_DIR/traces/ (plottable with plot_freerun_overlay.py).
-/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING /
-/// DRIVE_LAYOUT / INPUT_SCALE_CH on exit.
+/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING on exit.
+/// Channel gains are fixed (`config::INPUT_SCALE_CH`).
 /// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
 /// @param history_depth  Reservoir delay-line M (1..64); must match model.
 /// @param esn_seed       Reservoir seed; must match the run that produced weights.
@@ -80,17 +78,13 @@ int Campaign_Trace(size_t dim,
 /// @param weights_stem   Optional override of config::LOAD_WEIGHTS_STEM.
 /// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
 /// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
-/// @param drive_layout    If set, set config::DRIVE_LAYOUT; nullopt keeps config.
-/// @param drive_gains     If non-empty, set config::INPUT_SCALE_CH (exact n_in entries).
 int FreeRun(size_t dim,
             size_t history_depth,
             uint64_t esn_seed,
             double ic_x, double ic_y, double ic_z,
             const char* weights_stem = nullptr,
             float spectral_radius = 0.f,
-            float input_scaling = 0.f,
-            std::optional<DriveLayout> drive_layout = std::nullopt,
-            std::initializer_list<float> drive_gains = {});
+            float input_scaling = 0.f);
 
 /// Aggregate from one @ref FreeRunSurvey (top-10% freerun pool means).
 struct FreeRunSurveySummary
@@ -111,13 +105,11 @@ struct FreeRunSurveySummary
 /// print aggregate stats (top-10% pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
 /// Writes a leaderboard CSV under RUNS_DIR/surveys/.
-/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING /
-/// DRIVE_LAYOUT / INPUT_SCALE_CH on exit.
+/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING on exit.
+/// Channel gains are fixed (`config::INPUT_SCALE_CH`).
 /// @param out  Optional; filled with top-10% means and top freerun IC.
 /// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
 /// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
-/// @param drive_layout    If set, set config::DRIVE_LAYOUT; nullopt keeps config.
-/// @param drive_gains     If non-empty, set config::INPUT_SCALE_CH (exact n_in entries).
 int FreeRunSurvey(size_t dim,
                   size_t history_depth,
                   uint64_t esn_seed,
@@ -127,9 +119,7 @@ int FreeRunSurvey(size_t dim,
                   int top_k = 10,
                   FreeRunSurveySummary* out = nullptr,
                   float spectral_radius = 0.f,
-                  float input_scaling = 0.f,
-                  std::optional<DriveLayout> drive_layout = std::nullopt,
-                  std::initializer_list<float> drive_gains = {});
+                  float input_scaling = 0.f);
 
 /// Train-only complement to @ref FreeRun: remixed orbits for @p epochs starting
 /// from @p target_orbit remix seed; save readout to @p weights_stem (or default
@@ -144,19 +134,13 @@ int Train(size_t dim,
 /// For each ESN seed: optional Train → FreeRunSurvey; rank seeds by mean VPT*duty
 /// (top-10% freerun pool). Weight stem per seed:
 ///   {MODEL_SAVE_DIR}/lorenz_seed{S}_D{dim}_M{M}
-/// Restores DIM / HISTORY_DEPTH / EPOCHS / SPECTRAL_RADIUS / INPUT_SCALING /
-/// INPUT_SCALE_CH on exit.
+/// Restores DIM / HISTORY_DEPTH / EPOCHS / SPECTRAL_RADIUS / INPUT_SCALING on exit.
+/// Channel gains are fixed (`config::INPUT_SCALE_CH`).
 /// @param do_train          If true, Train each seed first; if false, only survey existing stems.
 /// @param spectral_radius   If > 0, set config::SPECTRAL_RADIUS for the whole sweep.
 ///                          If <= 0 (default), keep the current config value.
 /// @param input_scaling     If > 0, set config::INPUT_SCALING for the whole sweep.
 ///                          If <= 0 (default), keep the current config value.
-/// @param drive_layout      If set, set config::DRIVE_LAYOUT for the sweep
-///                          (XyzXz / XyzXy / Quadratic8). nullopt (default) keeps config.
-/// @param drive_gains       If non-empty, set config::INPUT_SCALE_CH for the sweep.
-///                          Must have exactly NumDriveChannels(active layout) entries
-///                          (layout feature order; e.g. XyzXz/XyzXy = 4). Empty (default)
-///                          keeps current channel gains.
 int SeedSweep(size_t dim,
               size_t history_depth,
               std::initializer_list<uint64_t> esn_seeds,
@@ -167,9 +151,7 @@ int SeedSweep(size_t dim,
               int top_k = 10,
               bool do_train = true,
               float spectral_radius = 0.f,
-              float input_scaling = 0.f,
-              std::optional<DriveLayout> drive_layout = std::nullopt,
-              std::initializer_list<float> drive_gains = {});
+              float input_scaling = 0.f);
 
 /// Parallel train+freerun seed search (no weight save). Spawns @p num_threads
 /// workers over @p num_seeds ESN seeds derived from @p base_esn_seed via
@@ -194,9 +176,26 @@ int ParallelSeedSweep(size_t dim,
                       uint64_t base_orbit_seed = 9333312947715283458ull,
                       int top_k = 10,
                       float spectral_radius = 0.f,
-                      float input_scaling = 0.f,
-                      std::optional<DriveLayout> drive_layout = std::nullopt,
-                      std::initializer_list<float> drive_gains = {});
+                      float input_scaling = 0.f);
+
+/// Parallel orbit search for one ESN seed (train once, no lasting weight save).
+/// Trains @p base_esn_seed once (remix root @p base_orbit_seed), then freeruns
+/// @p num_orbits fixed orbits in parallel: orbit_i = Mix64(base_orbit ^ FNV*(i+1)).
+/// One freerun per orbit (raw metrics, no top-10% pool). Ranks orbit seeds by
+/// VPT / duty / VPT*duty (stdout + surveys CSV/TXT). Temporary readout stem only
+/// so workers can load the trained model; removed after the sweep.
+/// Same dynamics overrides / refuse LOAD+SAVE flags / HCNN threads=1 / thread
+/// cap as ParallelSeedSweep. @p num_threads capped to HW and @p num_orbits.
+int ParallelOrbitSweep(size_t dim,
+                       size_t history_depth,
+                       uint64_t base_esn_seed,
+                       uint64_t base_orbit_seed,
+                       size_t num_orbits,
+                       size_t num_threads,
+                       size_t epochs,
+                       int top_k = 10,
+                       float spectral_radius = 0.f,
+                       float input_scaling = 0.f);
 
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up
 /// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.
@@ -208,16 +207,6 @@ int Campaign_HistoryDepthSweep(size_t dim,
                                uint64_t base_seed = 21978990,
                                uint64_t orbit_seed = 72983498);
 
-/// A/B drive layouts at one fixed history depth M: XyzXz (4-in) then Quadratic8 (8-in).
-/// Matched dim/M/seeds; trains separately per arm. Code-computed roll-up.
-/// @param dim            Reservoir hypercube dim (N = 2^dim). Restored on exit.
-/// @param history_depth  Fixed M for both arms (1..64). Restored on exit.
-int Campaign_DriveLayoutAB(size_t dim,
-                           size_t history_depth,
-                           size_t num_threads = 0,
-                           int num_runs = 50,
-                           uint64_t base_seed = 21978990,
-                           uint64_t orbit_seed = 72983498);
 
 /// A/B spectral radius at fixed dim/M: arm A = @p sr_a then arm B = @p sr_b.
 /// Matched seeds/drive; trains separately per arm (SeedSurvey).
@@ -233,17 +222,3 @@ int Campaign_SpectralRadiusAB(size_t dim,
                               int num_runs = 50,
                               uint64_t base_seed = 21978990,
                               uint64_t orbit_seed = 72983498);
-
-/// A/B per-channel drive gains at fixed dim/M: arm A = @p gains_a then arm B = @p gains_b.
-/// Each list must have exactly @c NumDriveChannels(DRIVE_LAYOUT) entries (layout
-/// feature order; e.g. XyzXz = 4: [x,y,z,xz]). Values must be finite and >= 0.
-/// Matched seeds/SR; trains separately per arm (SeedSurvey).
-/// Restores DIM, M, and INPUT_SCALE_CH on exit. Writes GainAB_*.csv/txt under RESULTS_DIR.
-int Campaign_DriveGainAB(size_t dim,
-                         size_t history_depth,
-                         std::initializer_list<float> gains_a,
-                         std::initializer_list<float> gains_b,
-                         size_t num_threads = 0,
-                         int num_runs = 50,
-                         uint64_t base_seed = 21978990,
-                         uint64_t orbit_seed = 72983498);

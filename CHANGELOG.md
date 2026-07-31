@@ -58,10 +58,8 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `PredictFromState` kept).
 - **Lorenz harness:** Janus half-anchored free-run, `FORWARD_ONLY` ablation,
   GS operational metrics (`duty`, `n_relock`, `n_unlock`, `mean_locked_sojourn`).
-- **Lorenz drive layouts:** `DriveLayout::XyzXz` (4-in `[x,y,z,xz]`) and
-  `Quadratic8` (8-in state + bilinears + squares); `config::DRIVE_LAYOUT`.
-- **`Campaign_DriveLayoutAB`:** matched A/B at fixed M with code-computed
-  deltas and VPT/duty picks; `DriveAB_*` CSV/TXT under `RESULTS_DIR`.
+- **Lorenz drive (fixed):** 4-in `[x, y, z, x*z]` only (`kNumDriveChannels = 4`).
+  Multi-layout enum / `Campaign_DriveLayoutAB` removed (see Changed).
 - **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` / `HistoryDepthSweep`
   take reservoir `dim` first; RAII restore of `DIM` / `HISTORY_DEPTH` / drive.
 - **Lorenz Train / FreeRunSurvey / FreeRun pipeline:** train-only weight save;
@@ -75,42 +73,44 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   (`traces/` / `surveys/` / `campaigns/`), common report helpers (banner, freerun
   score line, wrote bytes, wall time), atomic CSV writes, default weight stem
   `lorenz_seed{S}_D{D}_M{M}`.
-- **Lorenz per-channel drive gains:** `config::INPUT_SCALE_CH[]` multipliers on
-  top of global `INPUT_SCALING` (applied in `FillDrive` after feature build;
-  default all 1.0). Constructor banner and campaign metadata print `drive_ch`;
-  train/load must match gains. A/B notes in `TODO_drive_scale_sr.md` (global
-  scale, SR, channel gains).
+- **Lorenz per-channel drive gains:** locked `constexpr config::INPUT_SCALE_CH[]`
+  = `{1, 1, 0.9, 0.7}` for `[x,y,z,xz]` on top of global `INPUT_SCALING`
+  (applied in `FillDrive`). Constructor banner and campaign metadata print
+  `drive_ch`; train/load must match gains. Edit `Lorenz.h` to change gains.
 - **`Campaign_SpectralRadiusAB`:** matched SeedSurvey A/B for two spectral
   radii at fixed dim/M; roll-up + `SrAB_*.csv/txt` under `RESULTS_DIR`.
   `config::SPECTRAL_RADIUS` is reassignable (restored on exit).
-- **`Campaign_DriveGainAB`:** matched SeedSurvey A/B for two `INPUT_SCALE_CH`
-  vectors at fixed dim/M (lists size = drive `n_in`); roll-up +
-  `GainAB_*.csv/txt` under `RESULTS_DIR`. Restores channel gains on exit.
 - **`SeedSweep` SR / input scaling:** optional trailing `spectral_radius` /
   `input_scaling` (>0 override `config::` for the sweep, restored on exit; 0 =
   keep config). `INPUT_SCALING` is reassignable. Console banners use ASCII only
   (no em-dash / times) for Windows OEM consoles; `MODEL_SAVE_DIR` single-backslash path.
-- **`SeedSweep` drive_gains:** optional `std::initializer_list<float>` sets
-  `INPUT_SCALE_CH` for the sweep (size = drive `n_in`; empty keeps config;
-  restored on exit). Shared gain helpers with `Campaign_DriveGainAB`.
 - **`FreeRun` / `FreeRunSurvey` dynamics overrides:** same optional trailing
-  `spectral_radius` / `input_scaling` / `drive_layout` / `drive_gains` as
-  `SeedSweep` (`>0` / non-empty / set override; `0` / empty / nullopt keep
-  config; RAII restore on exit). Shared `ValidateDynamicsOverrides` and
-  drive-gain helpers across SeedSweep, FreeRun, FreeRunSurvey, and GainAB.
+  `spectral_radius` / `input_scaling` as `SeedSweep` (`>0` set override; `0`
+  keep config; RAII restore on exit).
 - **`ParallelSeedSweep`:** host-parallel overnight seed search. Mix64-derived
   ESN seeds from a base; in-memory train (no weight I/O); freerun means use
   top-10% pool; mutexed stderr heartbeats; final multi-metric ranking (stdout
   + surveys CSV/TXT). Caps threads to `hardware_concurrency`; requires
   `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags.
-- **`DriveLayout::XyzXy`:** 4-in `[x,y,z,x*y]` (z-dot bilinear). Free-run CSV
-  `drive_xy`. `SeedSweep` optional `drive_layout` (`std::optional`; nullopt keeps
-  config); applied before gains so `n_in` matches.
+- **`ParallelOrbitSweep`:** train one ESN seed once; parallel one-freerun-per
+  Mix64 orbit; rank orbit seeds by VPT / duty / VPT×duty (stdout + surveys
+  CSV/TXT). Temp readout stem for worker load only (RAII delete); quiet
+  per-job loads. Same thread caps / dynamics overrides / HCNN=1 / refuse flags
+  as ParallelSeedSweep. `LoadTrainedWeights(..., log_load=false)` for quiet loads.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 
 ### Changed
 
+- **Lorenz drive collapsed to XyzXz only:** removed `DriveLayout` enum,
+  `kMaxDriveChannels`, `config::DRIVE_LAYOUT`, `drive_layout` campaign
+  overrides, `Campaign_DriveLayoutAB`, and XyzXy/Quadratic8 paths. Fixed
+  `kNumDriveChannels = 4` with `FillDrive` → `[x,y,z,x*z]`. Free-run CSV
+  always `drive_x..drive_xz`.
+- **Lorenz channel gains locked:** `INPUT_SCALE_CH` is `constexpr`
+  `{1,1,0.9,0.7}`. Removed `Campaign_DriveGainAB`, campaign `drive_gains`
+  parameters, and mutable gain apply/restore helpers. Banners still print
+  locked `drive_ch`.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default

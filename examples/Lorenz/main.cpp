@@ -5,6 +5,7 @@
 // Model knobs: examples/Lorenz/Lorenz.h  config::
 // Campaign helpers: examples/Lorenz/Campaigns.h
 // First campaign arg is always reservoir DIM (N = 2^DIM).
+// Drive gains: config::INPUT_SCALE_CH (constexpr; edit Lorenz.h).
 // ---------------------------------------------------------------------------
 int main()
 {
@@ -27,13 +28,6 @@ int main()
     //                       /*target_orbit=*/9333312947715283458ull);
 
 
-    // Per-channel drive gains A/B at fixed dim/M (XyzXz: [x,y,z,xz]).
-    // Arm A = unity baseline; arm B = soft z / xz from TODO_drive_scale_sr §4.
-    // return Campaign_DriveGainAB(/*dim=*/12, /*history_depth=*/12,
-    //                             /*gains_a=*/{1.f, 1.f, 1.f, 1.f},
-    //                             /*gains_b=*/{1.f, 1.f, 0.9f, 0.7f},
-    //                             /*num_threads=*/0, /*num_runs=*/50);
-
     // Spectral-radius A/B at fixed dim/M (SeedSurvey per arm; roll-up under campaigns/).
     // return Campaign_SpectralRadiusAB(/*dim=*/12, /*history_depth=*/12,
     //                                  /*sr_a=*/0.98f, /*sr_b=*/0.99f,
@@ -44,34 +38,41 @@ int main()
     constexpr size_t kDim = 10;
     constexpr size_t kM = 2;
 
-    // Parallel overnight seed search (train in memory, no weight save; heartbeats on stderr):
+    // Parallel overnight seed search (train per seed; heartbeats on stderr):
     // return ParallelSeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-    //                          /*base_esn_seed=*/10121978990ull,
-    //                          /*num_seeds=*/64,
+    //                          /*base_esn_seed=*/1002999015000000000ull,
+    //                          /*num_seeds=*/16,
     //                          /*num_threads=*/16,
     //                          /*epochs=*/300,
     //                          /*freerun_runs=*/1000,
-    //                          /*base_orbit_seed=*/9333312947715283458ull, // remix root (train+freerun)
+    //                          /*base_orbit_seed=*/9333312947715283458ull,
     //                          /*top_k=*/10,
     //                          /*spectral_radius=*/0.999f,
-    //                          /*input_scaling=*/0.015f,
-    //                          /*drive_layout=*/DriveLayout::XyzXz,
-    //                          /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f});
+    //                          /*input_scaling=*/0.015f);
+
+    // One ESN seed: train once, rank Mix64 orbits (one freerun each, parallel):
+    return ParallelOrbitSweep(/*dim=*/kDim, /*history_depth=*/kM,
+                              /*base_esn_seed=*/13265426551472630865ull, // top from seed sweep
+                              /*base_orbit_seed=*/9333312947715283458ull,
+                              /*num_orbits=*/1000,
+                              /*num_threads=*/16,
+                              /*epochs=*/300,
+                              /*top_k=*/10,
+                              /*spectral_radius=*/0.999f,
+                              /*input_scaling=*/0.015f);
 
     // 10221978990ull is a known BAD seed
-    return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-                     /*esn_seeds=*/{10121978990ull, 10321978990ull,
-                                    10421978990ull, 10521978990ull, 10621978990ull, 10721978990ull, 10821978990ull, 10921978990ull},
-                     /*epochs=*/300,
-                     /*freerun_runs=*/1000,
-                     /*train_orbit=*/933312947715283458ull,
-                     /*freerun_orbit_seed=*/729893498ull,
-                     /*top_k=*/10,
-                     /*do_train=*/true,
-                     /*spectral_radius=*/0.999f,   // >0 sets config::SPECTRAL_RADIUS
-                     /*input_scaling=*/0.015f,     // >0 sets config::INPUT_SCALING (>0.02 sucks. 0.005 sucks2)
-                     /*drive_layout=*/DriveLayout::XyzXz, // or XyzXy / Quadratic8; nullopt keeps config
-                     /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f}); // XyzXz [x,y,z,xz]; {} keeps config
+    // return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
+    //                  /*esn_seeds=*/{10121978990ull, 10321978990ull,
+    //                                 10421978990ull, 10521978990ull, 10621978990ull, 10721978990ull, 10821978990ull, 10921978990ull},
+    //                  /*epochs=*/300,
+    //                  /*freerun_runs=*/1000,
+    //                  /*train_orbit=*/933312947715283458ull,
+    //                  /*freerun_orbit_seed=*/729893498ull,
+    //                  /*top_k=*/10,
+    //                  /*do_train=*/true,
+    //                  /*spectral_radius=*/0.999f,
+    //                  /*input_scaling=*/0.015f);
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(/*dim=*/12, /*history_depth=*/32,
@@ -82,16 +83,12 @@ int main()
     //                      /*top_k=*/10,
     //                      /*out=*/nullptr,
     //                      /*spectral_radius=*/0.99f,
-    //                      /*input_scaling=*/0.015f,
-    //                      /*drive_layout=*/DriveLayout::XyzXz,
-    //                      /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f});
+    //                      /*input_scaling=*/0.015f);
 
-    // Plot one IC after ranking (same dynamics overrides as survey/train):
+    // Plot one IC after ranking:
     // return FreeRun(/*dim=*/12, /*history_depth=*/32, /*esn_seed=*/10121978990ull,
     //                /*ic_x=*/..., /*ic_y=*/..., /*ic_z=*/...,
     //                /*weights_stem=*/R"(C:\HypercubeESN\models\lorenz_seed10121978990_D12_M32)",
     //                /*spectral_radius=*/0.99f,
-    //                /*input_scaling=*/0.015f,
-    //                /*drive_layout=*/DriveLayout::XyzXz,
-    //                /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f});
+    //                /*input_scaling=*/0.015f);
 }
