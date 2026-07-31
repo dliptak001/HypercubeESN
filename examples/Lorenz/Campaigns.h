@@ -171,6 +171,33 @@ int SeedSweep(size_t dim,
               std::optional<DriveLayout> drive_layout = std::nullopt,
               std::initializer_list<float> drive_gains = {});
 
+/// Parallel train+freerun seed search (no weight save). Spawns @p num_threads
+/// workers over @p num_seeds ESN seeds derived from @p base_esn_seed via
+/// SplitMix64 (decorrelated; not base+i). Each worker: Train in memory →
+/// @p freerun_runs Unseen freeruns; aggregates use top-10% freerun pool per
+/// metric. Interim seed reports suppressed; stderr heartbeats only (mutexed).
+/// @p base_orbit_seed is the **shared remix root** for train and freerun
+/// (each phase advances its own orbit stream via mix64 — not a single orbit).
+/// Final report: full seed table + top_k highlights for VPT, duty, and
+/// VPT*duty (stdout and surveys/*.csv + *.txt). Dynamics overrides match
+/// SeedSweep (RAII restore). Always trains (no do_train / no load / no save).
+/// Refuses LOAD_TRAINED_WEIGHTS and SAVE_TRAINED_WEIGHTS. Requires
+/// Lorenz::kReadoutNumThreads == 1 (HCNN single-threaded per network).
+/// @p num_threads is capped to hardware_concurrency and to @p num_seeds.
+int ParallelSeedSweep(size_t dim,
+                      size_t history_depth,
+                      uint64_t base_esn_seed,
+                      size_t num_seeds,
+                      size_t num_threads,
+                      size_t epochs,
+                      int freerun_runs,
+                      uint64_t base_orbit_seed = 9333312947715283458ull,
+                      int top_k = 10,
+                      float spectral_radius = 0.f,
+                      float input_scaling = 0.f,
+                      std::optional<DriveLayout> drive_layout = std::nullopt,
+                      std::initializer_list<float> drive_gains = {});
+
 /// Sequential surveys for each M in @p history_depths, then a comparative roll-up
 /// table (mean-of-trial-means) computed from SurveySummary rows -- not estimated.
 /// @param dim  Reservoir hypercube dim (N = 2^dim), fixed for the whole sweep. Restored on exit.

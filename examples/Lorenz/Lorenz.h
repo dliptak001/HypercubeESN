@@ -188,6 +188,12 @@ public:
     /// Channel count for @p layout (4 or 8); must divide N.
     static size_t NumDriveChannels(DriveLayout layout = config::DRIVE_LAYOUT);
 
+    /// HCNN readout worker count used by MakeESNConfig. Must remain 1 so host
+    /// campaigns (ParallelSeedSweep, SeedSurvey) can run many Lorenz instances
+    /// without nested HCNN thread pools. Do not change to 0 (auto) or N>1
+    /// without revisiting those campaigns.
+    static constexpr size_t kReadoutNumThreads = 1;
+
     /// Map orbit seed → attractor IC (same map as freerun remix / train remix).
     /// Public so FreeRunSurvey can print ICs for FreeRun cherry-picks.
     static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);

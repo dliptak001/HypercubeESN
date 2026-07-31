@@ -2,6 +2,7 @@
 #include "Lorenz.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -1912,6 +1914,489 @@ int SeedSweep(size_t dim, size_t history_depth,
     ReportDone("seed-sweep",
                std::chrono::duration<double>(clock::now() - t0).count());
     return order.empty() ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// ParallelSeedSweep (train+freerun in memory; parallel ESN seeds; no weight I/O)
+// ---------------------------------------------------------------------------
+namespace
+{
+// SplitMix64 finalizer (same constants as Lorenz.cpp / Reservoir.cpp).
+inline uint64_t Mix64(uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+// Decorrelated ESN seed for index i in [0, num_seeds). Labeled substream of base.
+inline uint64_t ParallelEsnSeed(uint64_t base_esn_seed, size_t i)
+{
+    return Mix64(base_esn_seed ^ (0x100000001B3ULL * (static_cast<uint64_t>(i) + 1ULL)));
+}
+
+struct ParSeedRow
+{
+    size_t index = 0;
+    uint64_t esn_seed = 0;
+    bool ok = false;
+    double mean_vpt = 0;
+    double mean_duty = 0;
+    double mean_vpt_x_duty = 0;
+    double mean_rmse = 0;
+    size_t n_valid = 0;
+};
+
+// Train in memory + freerun survey; top-10% means. No save, no per-seed stdout.
+ParSeedRow EvaluateParSeed(size_t index, uint64_t esn_seed, uint64_t base_orbit_seed,
+                           int freerun_runs)
+{
+    ParSeedRow row;
+    row.index = index;
+    row.esn_seed = esn_seed;
+
+    // Train remixes from base_orbit_seed (RebuildDatastream advances its chain).
+    Lorenz lorenz(esn_seed, base_orbit_seed);
+    lorenz.Train();
+
+    std::vector<double> vpt_lts, rmses, duties, vpt_x_duties;
+    vpt_lts.reserve(static_cast<size_t>(freerun_runs));
+    rmses.reserve(static_cast<size_t>(freerun_runs));
+    duties.reserve(static_cast<size_t>(freerun_runs));
+    vpt_x_duties.reserve(static_cast<size_t>(freerun_runs));
+
+    // Freerun ICs: independent remix stream rooted at the same base_orbit_seed
+    // (not a continuation of the train chain; not a single fixed orbit).
+    for (int i = 0; i < freerun_runs; ++i)
+    {
+        const uint64_t freerun_os = Mix64(
+            base_orbit_seed ^ (0x100000001B3ULL * (static_cast<uint64_t>(i) + 1ULL)));
+        const FreeRunResult r = lorenz.FreeRun(false, nullptr, 0, freerun_os);
+        if (!r.valid)
+            continue;
+        vpt_lts.push_back(r.vpt_lt);
+        rmses.push_back(r.rmse);
+        duties.push_back(r.duty);
+        vpt_x_duties.push_back(r.vpt_x_duty);
+    }
+
+    row.n_valid = vpt_lts.size();
+    row.ok = row.n_valid > 0;
+    if (!row.ok)
+        return row;
+
+    row.mean_vpt = MeanOf(Top10HigherIsBetter(std::move(vpt_lts)));
+    row.mean_duty = MeanOf(Top10HigherIsBetter(std::move(duties)));
+    row.mean_vpt_x_duty = MeanOf(Top10HigherIsBetter(std::move(vpt_x_duties)));
+    row.mean_rmse = MeanOf(Top10LowerIsBetter(std::move(rmses)));
+    return row;
+}
+} // namespace
+
+int ParallelSeedSweep(size_t dim, size_t history_depth,
+                      uint64_t base_esn_seed, size_t num_seeds, size_t num_threads,
+                      size_t epochs, int freerun_runs, uint64_t base_orbit_seed,
+                      int top_k, float spectral_radius, float input_scaling,
+                      std::optional<DriveLayout> drive_layout,
+                      std::initializer_list<float> drive_gains)
+{
+    if (!ValidateDim(dim, "par-seed-sweep"))
+        return 2;
+    if (!ValidateHistoryDepth(history_depth, "par-seed-sweep"))
+        return 2;
+    if (num_seeds < 1)
+    {
+        std::fprintf(stderr, "[par-seed-sweep] refused: num_seeds=%zu (need >= 1)\n",
+                     num_seeds);
+        return 2;
+    }
+    if (num_threads < 1)
+    {
+        std::fprintf(stderr, "[par-seed-sweep] refused: num_threads=%zu (need >= 1)\n",
+                     num_threads);
+        return 2;
+    }
+    if (epochs < 1)
+    {
+        std::fprintf(stderr, "[par-seed-sweep] refused: epochs=%zu (need >= 1)\n",
+                     epochs);
+        return 2;
+    }
+    if (freerun_runs < 1)
+    {
+        std::fprintf(stderr, "[par-seed-sweep] refused: freerun_runs=%d (need >= 1)\n",
+                     freerun_runs);
+        return 2;
+    }
+    if (top_k < 1)
+        top_k = 1;
+    if (!ValidateDynamicsOverrides(spectral_radius, input_scaling, "par-seed-sweep"))
+        return 2;
+    if (config::LOAD_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[par-seed-sweep] refused: LOAD_TRAINED_WEIGHTS is on "
+                     "(this campaign always trains from scratch, no load)\n");
+        return 2;
+    }
+    if (config::SAVE_TRAINED_WEIGHTS)
+    {
+        std::fprintf(stderr,
+                     "[par-seed-sweep] refused: SAVE_TRAINED_WEIGHTS is on "
+                     "(parallel in-memory train must not auto-save weights)\n");
+        return 2;
+    }
+    // Host-parallelism requires HCNN single-threaded per Lorenz (no nested pools).
+    static_assert(Lorenz::kReadoutNumThreads == 1,
+                  "ParallelSeedSweep requires Lorenz::kReadoutNumThreads == 1");
+
+    const size_t hw = std::thread::hardware_concurrency()
+                          ? std::thread::hardware_concurrency()
+                          : 1;
+    if (num_threads > hw)
+    {
+        std::fprintf(stderr,
+                     "[par-seed-sweep] num_threads=%zu > hardware_concurrency=%zu; "
+                     "capping to %zu\n",
+                     num_threads, hw, hw);
+        num_threads = hw;
+    }
+    if (num_threads > num_seeds)
+        num_threads = num_seeds;
+
+    ConfigSizeRestore dim_restore(config::DIM, dim);
+    ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
+    ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
+    ConfigDriveRestore drive_restore(
+        config::DRIVE_LAYOUT,
+        drive_layout.has_value() ? *drive_layout : config::DRIVE_LAYOUT);
+    ConfigFloatRestore sr_restore(
+        config::SPECTRAL_RADIUS,
+        spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
+    ConfigFloatRestore is_restore(
+        config::INPUT_SCALING,
+        input_scaling > 0.0f ? input_scaling : config::INPUT_SCALING);
+
+    const size_t n_in = Lorenz::NumDriveChannels(config::DRIVE_LAYOUT);
+    float gains_buf[kMaxDriveChannels]{};
+    const bool override_gains = drive_gains.size() > 0;
+    if (override_gains && !ParseDriveGains(drive_gains, gains_buf, n_in, "par-seed-sweep"))
+        return 2;
+    ConfigDriveGainsRestore gains_restore;
+    if (override_gains)
+        ApplyDriveGains(gains_buf);
+
+    const fs::path survey_dir = SurveysDir();
+    if (!EnsureDir(survey_dir, "par-seed-sweep"))
+        return 2;
+
+    const std::string ts = TimestampNow();
+    const fs::path rank_csv = survey_dir /
+        ("par_seed_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_n" + std::to_string(freerun_runs) +
+         "_seeds" + std::to_string(num_seeds) +
+         "_" + ts + ".csv");
+    const fs::path rank_txt = survey_dir /
+        ("par_seed_sweep_D" + std::to_string(dim) +
+         "_M" + std::to_string(history_depth) +
+         "_n" + std::to_string(freerun_runs) +
+         "_seeds" + std::to_string(num_seeds) +
+         "_" + ts + ".txt");
+
+    // Quiet workers: no per-epoch / per-freerun spam; campaign heartbeats only.
+    const bool saved_printf = config::ENABLE_PRINTF;
+    const bool saved_progress = config::ENABLE_PROGRESS;
+    config::ENABLE_PRINTF = false;
+    config::ENABLE_PROGRESS = false;
+
+    ReportBanner("ParallelSeedSweep");
+    std::printf("[par-seed-sweep] DIM=%zu  M=%zu  num_seeds=%zu  num_threads=%zu  "
+                "epochs=%zu  freerun_runs=%d  top_k=%d\n",
+                dim, history_depth, num_seeds, num_threads, epochs, freerun_runs,
+                top_k);
+    std::printf("[par-seed-sweep] base_esn_seed=%llu  (ESN seeds = Mix64(base ^ "
+                "FNV* (i+1)); not base+i)\n",
+                static_cast<unsigned long long>(base_esn_seed));
+    std::printf("[par-seed-sweep] base_orbit_seed=%llu  (shared remix root for train "
+                "and freerun; each phase advances its own orbit stream)\n",
+                static_cast<unsigned long long>(base_orbit_seed));
+    std::printf("[par-seed-sweep] SR=%.4f%s  input_scaling=%.4f%s\n",
+                static_cast<double>(config::SPECTRAL_RADIUS),
+                spectral_radius > 0.0f ? " (override)" : " (config)",
+                static_cast<double>(config::INPUT_SCALING),
+                input_scaling > 0.0f ? " (override)" : " (config)");
+    {
+        const std::string ch = FormatDriveGains(config::INPUT_SCALE_CH, n_in);
+        std::printf("[par-seed-sweep] drive=%s%s  n_in=%zu  drive_ch=%s%s\n",
+                    Lorenz::DriveLayoutName(config::DRIVE_LAYOUT),
+                    drive_layout.has_value() ? " (override)" : " (config)",
+                    n_in, ch.c_str(),
+                    override_gains ? " (override)" : " (config)");
+    }
+    std::printf("[par-seed-sweep] always train in memory (no weight save/load)\n");
+    std::printf("[par-seed-sweep] freerun pool = top 10%% per metric; heartbeats on stderr\n");
+    std::printf("[par-seed-sweep] report: %s\n", rank_txt.string().c_str());
+    std::printf("[par-seed-sweep] CSV:    %s\n", rank_csv.string().c_str());
+    std::fflush(stdout);
+
+    using clock = std::chrono::steady_clock;
+    const auto t0 = clock::now();
+
+    std::vector<ParSeedRow> rows(num_seeds);
+    std::atomic<size_t> next_job{0};
+    std::atomic<size_t> done_count{0};
+    // Serialize multi-field stderr lines so heartbeats/failures do not interleave.
+    std::mutex stderr_mu;
+
+    {
+        std::vector<std::jthread> pool;
+        pool.reserve(num_threads);
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            pool.emplace_back([&]()
+            {
+                for (;;)
+                {
+                    const size_t i = next_job.fetch_add(1, std::memory_order_relaxed);
+                    if (i >= num_seeds)
+                        break;
+                    const uint64_t esn = ParallelEsnSeed(base_esn_seed, i);
+                    try
+                    {
+                        rows[i] = EvaluateParSeed(i, esn, base_orbit_seed, freerun_runs);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        rows[i].index = i;
+                        rows[i].esn_seed = esn;
+                        rows[i].ok = false;
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-seed-sweep] seed idx=%zu esn=%llu FAILED: %s\n",
+                                     i, static_cast<unsigned long long>(esn), e.what());
+                        std::fflush(stderr);
+                    }
+                    catch (...)
+                    {
+                        rows[i].index = i;
+                        rows[i].esn_seed = esn;
+                        rows[i].ok = false;
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-seed-sweep] seed idx=%zu esn=%llu FAILED: "
+                                     "unknown exception\n",
+                                     i, static_cast<unsigned long long>(esn));
+                        std::fflush(stderr);
+                    }
+                    const size_t d = done_count.fetch_add(1, std::memory_order_relaxed) + 1;
+                    {
+                        std::lock_guard<std::mutex> lock(stderr_mu);
+                        std::fprintf(stderr,
+                                     "[par-seed-sweep] heartbeat %zu/%zu  "
+                                     "(idx=%zu esn=%llu ok=%d)\n",
+                                     d, num_seeds, i,
+                                     static_cast<unsigned long long>(esn),
+                                     rows[i].ok ? 1 : 0);
+                        std::fflush(stderr);
+                    }
+                }
+            });
+        }
+    }
+
+    config::ENABLE_PRINTF = saved_printf;
+    config::ENABLE_PROGRESS = saved_progress;
+
+    // Orderings among successful seeds (higher-is-better).
+    auto make_order = [&](auto metric) {
+        std::vector<size_t> ord;
+        ord.reserve(rows.size());
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (rows[i].ok)
+                ord.push_back(i);
+        std::sort(ord.begin(), ord.end(), [&](size_t a, size_t b) {
+            return metric(rows[a]) > metric(rows[b]);
+        });
+        return ord;
+    };
+    const auto by_vxd = make_order([](const ParSeedRow& r) { return r.mean_vpt_x_duty; });
+    const auto by_vpt = make_order([](const ParSeedRow& r) { return r.mean_vpt; });
+    const auto by_duty = make_order([](const ParSeedRow& r) { return r.mean_duty; });
+
+    auto rank_of = [](const std::vector<size_t>& ord, size_t idx) -> size_t {
+        for (size_t r = 0; r < ord.size(); ++r)
+            if (ord[r] == idx)
+                return r + 1;
+        return 0;
+    };
+
+    std::ostringstream report;
+    auto emit = [&](const char* s) {
+        report << s;
+        std::fputs(s, stdout);
+    };
+    auto emitf = [&](const char* fmt, auto... args) {
+        char buf[512];
+        std::snprintf(buf, sizeof buf, fmt, args...);
+        emit(buf);
+    };
+
+    emit("\n========================================================================\n");
+    emit("=== ParallelSeedSweep final report (top-10% freerun means) ===\n");
+    emit("========================================================================\n");
+    emitf("DIM=%zu  M=%zu  num_seeds=%zu  threads=%zu  epochs=%zu  freerun_runs=%d\n",
+          dim, history_depth, num_seeds, num_threads, epochs, freerun_runs);
+    emitf("base_esn_seed=%llu  base_orbit_seed=%llu\n",
+          static_cast<unsigned long long>(base_esn_seed),
+          static_cast<unsigned long long>(base_orbit_seed));
+    emitf("ok=%zu / %zu\n\n", by_vxd.size(), num_seeds);
+
+    // Full table sorted by VPT*duty (primary).
+    emit("--- All seeds (sorted by mean VPT*duty) ---\n");
+    emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
+          "rank", "idx", "esn_seed", "VxD_mn", "VPT_mn", "duty_mn", "RMSE_mn",
+          "r_VxD", "r_VPT", "r_duty");
+    if (by_vxd.empty())
+    {
+        emit("(no successful seeds)\n");
+    }
+    else
+    {
+        for (size_t r = 0; r < by_vxd.size(); ++r)
+        {
+            const size_t i = by_vxd[r];
+            const auto& s = rows[i];
+            emitf("%-4zu %6zu %20llu %10.3f %10.2f %10.3f %10.6f %6zu %6zu %6zu\n",
+                  r + 1, s.index,
+                  static_cast<unsigned long long>(s.esn_seed),
+                  s.mean_vpt_x_duty, s.mean_vpt, s.mean_duty, s.mean_rmse,
+                  rank_of(by_vxd, i), rank_of(by_vpt, i), rank_of(by_duty, i));
+        }
+    }
+
+    auto emit_top = [&](const char* title, const std::vector<size_t>& ord,
+                        auto metric, const char* metric_label) {
+        emitf("\n--- Top %d by %s ---\n", top_k, title);
+        if (ord.empty())
+        {
+            emit("(none)\n");
+            return;
+        }
+        const size_t n = std::min(static_cast<size_t>(top_k), ord.size());
+        emitf("%-4s %6s %20s %12s %10s %10s %10s\n",
+              "rank", "idx", "esn_seed", metric_label, "VxD_mn", "VPT_mn", "duty_mn");
+        for (size_t r = 0; r < n; ++r)
+        {
+            const auto& s = rows[ord[r]];
+            emitf("%-4zu %6zu %20llu %12.4f %10.3f %10.2f %10.3f\n",
+                  r + 1, s.index,
+                  static_cast<unsigned long long>(s.esn_seed),
+                  metric(s), s.mean_vpt_x_duty, s.mean_vpt, s.mean_duty);
+        }
+    };
+    emit_top("mean VPT*duty", by_vxd,
+             [](const ParSeedRow& s) { return s.mean_vpt_x_duty; }, "VxD_mn");
+    emit_top("mean VPT", by_vpt,
+             [](const ParSeedRow& s) { return s.mean_vpt; }, "VPT_mn");
+    emit_top("mean duty", by_duty,
+             [](const ParSeedRow& s) { return s.mean_duty; }, "duty_mn");
+
+    // Failed seeds (if any).
+    size_t n_fail = 0;
+    for (const auto& s : rows)
+        if (!s.ok)
+            ++n_fail;
+    if (n_fail > 0)
+    {
+        emitf("\n--- Failed / empty freerun seeds (%zu) ---\n", n_fail);
+        for (const auto& s : rows)
+        {
+            if (s.ok)
+                continue;
+            emitf("  idx=%zu  esn_seed=%llu  n_valid=%zu\n",
+                  s.index, static_cast<unsigned long long>(s.esn_seed), s.n_valid);
+        }
+    }
+
+    emit("\nCherry-pick: use esn_seed from the tables above with Train / SeedSweep / "
+         "FreeRunSurvey (same dim/M/dynamics). Weights were not saved here.\n");
+    std::fflush(stdout);
+
+    // CSV: one row per seed with ranks on each metric.
+    {
+        const fs::path tmp = fs::path(rank_csv.string() + ".tmp");
+        std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
+        if (!csv)
+        {
+            std::fprintf(stderr, "[par-seed-sweep] failed to open %s\n",
+                         tmp.string().c_str());
+        }
+        else
+        {
+            csv << "# ParallelSeedSweep\n"
+                << "# freerun_pool=top_10pct_per_metric\n"
+                << "# dim=" << dim << " history_depth=" << history_depth
+                << " epochs=" << epochs << " freerun_runs=" << freerun_runs
+                << " num_seeds=" << num_seeds << " num_threads=" << num_threads << "\n"
+                << "# base_esn_seed=" << base_esn_seed
+                << " base_orbit_seed=" << base_orbit_seed << "\n"
+                << "idx,esn_seed,ok,mean_vpt_x_duty,mean_vpt,mean_duty,mean_rmse,"
+                   "n_valid,rank_vpt_x_duty,rank_vpt,rank_duty\n";
+            // Write successful seeds in VPT*duty order, then failures.
+            for (size_t i : by_vxd)
+            {
+                const auto& s = rows[i];
+                csv << s.index << ',' << s.esn_seed << ",1,"
+                    << s.mean_vpt_x_duty << ',' << s.mean_vpt << ','
+                    << s.mean_duty << ',' << s.mean_rmse << ','
+                    << s.n_valid << ','
+                    << rank_of(by_vxd, i) << ','
+                    << rank_of(by_vpt, i) << ','
+                    << rank_of(by_duty, i) << '\n';
+            }
+            for (const auto& s : rows)
+            {
+                if (s.ok)
+                    continue;
+                csv << s.index << ',' << s.esn_seed << ",0,,,,"
+                    << s.n_valid << ",,,\n";
+            }
+            csv.flush();
+            if (csv.good())
+            {
+                std::error_code ec;
+                fs::remove(rank_csv, ec);
+                fs::rename(tmp, rank_csv, ec);
+                if (ec)
+                    std::fprintf(stderr, "[par-seed-sweep] rename CSV failed: %s\n",
+                                 ec.message().c_str());
+                else
+                    ReportWrote("par-seed-sweep", rank_csv);
+            }
+        }
+    }
+
+    {
+        std::ofstream txt(rank_txt, std::ios::out | std::ios::trunc);
+        if (!txt)
+        {
+            std::fprintf(stderr, "[par-seed-sweep] failed to write %s\n",
+                         rank_txt.string().c_str());
+        }
+        else
+        {
+            txt << report.str();
+            txt.flush();
+            if (txt.good())
+                ReportWrote("par-seed-sweep", rank_txt);
+        }
+    }
+
+    ReportDone("par-seed-sweep",
+               std::chrono::duration<double>(clock::now() - t0).count());
+    return by_vxd.empty() ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------

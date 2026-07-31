@@ -40,9 +40,24 @@ int main()
     //                                  /*num_threads=*/0, /*num_runs=*/50);
 
     // Pipeline: Train → FreeRunSurvey → FreeRun, or multi-seed:
-    // SeedSweep (Train+survey each seed, rank by mean VPT*duty).
+    // SeedSweep (serial Train+survey each seed) or ParallelSeedSweep (overnight).
     constexpr size_t kDim = 10;
     constexpr size_t kM = 2;
+
+    // Parallel overnight seed search (train in memory, no weight save; heartbeats on stderr):
+    // return ParallelSeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
+    //                          /*base_esn_seed=*/10121978990ull,
+    //                          /*num_seeds=*/64,
+    //                          /*num_threads=*/16,
+    //                          /*epochs=*/300,
+    //                          /*freerun_runs=*/1000,
+    //                          /*base_orbit_seed=*/9333312947715283458ull, // remix root (train+freerun)
+    //                          /*top_k=*/10,
+    //                          /*spectral_radius=*/0.999f,
+    //                          /*input_scaling=*/0.015f,
+    //                          /*drive_layout=*/DriveLayout::XyzXz,
+    //                          /*drive_gains=*/{1.f, 1.f, 0.9f, 0.7f});
+
     // 10221978990ull is a known BAD seed
     return SeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
                      /*esn_seeds=*/{10121978990ull, 10321978990ull,

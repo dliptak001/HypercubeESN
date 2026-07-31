@@ -61,7 +61,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.readout.num_layers = config::NUM_LAYERS;
     cfg.readout.momentum = 0.9f;
     cfg.readout.conv_channels = config::CONV_CHANNELS;
-    cfg.readout.num_threads = 1;
+    cfg.readout.num_threads = kReadoutNumThreads;
     cfg.readout.task = ReadoutTask::Regression;
     cfg.readout.activation = config::READOUT_ACTIVATION;
     return cfg;

@@ -98,6 +98,11 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `SeedSweep` (`>0` / non-empty / set override; `0` / empty / nullopt keep
   config; RAII restore on exit). Shared `ValidateDynamicsOverrides` and
   drive-gain helpers across SeedSweep, FreeRun, FreeRunSurvey, and GainAB.
+- **`ParallelSeedSweep`:** host-parallel overnight seed search. Mix64-derived
+  ESN seeds from a base; in-memory train (no weight I/O); freerun means use
+  top-10% pool; mutexed stderr heartbeats; final multi-metric ranking (stdout
+  + surveys CSV/TXT). Caps threads to `hardware_concurrency`; requires
+  `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags.
 - **`DriveLayout::XyzXy`:** 4-in `[x,y,z,x*y]` (z-dot bilinear). Free-run CSV
   `drive_xy`. `SeedSweep` optional `drive_layout` (`std::optional`; nullopt keeps
   config); applied before gains so `n_in` matches.

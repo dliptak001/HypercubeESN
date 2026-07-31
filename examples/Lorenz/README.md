@@ -255,9 +255,22 @@ CSV + `.partial.csv` under `RUNS_DIR/surveys/`. Optional trailing overrides
 and `drive_gains` (non-empty list size = `n_in` sets `INPUT_SCALE_CH`; `{}` keeps
 config). Stems omit SR/IS/layout/drive_ch — banner records them.
 
+**`ParallelSeedSweep`** — overnight parallel seed search. Always trains in
+memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
+`LOAD_TRAINED_WEIGHTS`). Requires HCNN `Lorenz::kReadoutNumThreads == 1`
+(no nested pools). ESN seeds from `base_esn_seed` via SplitMix64 substreams
+(`Mix64(base ^ FNV*(i+1))`, not `base+i`). One `base_orbit_seed` is the shared
+**remix root** for train and freerun (independent remix streams).
+`num_threads` workers over `num_seeds` jobs; capped to `hardware_concurrency`
+and `num_seeds`. Header + mutexed stderr heartbeats only; final report on
+stdout and `RUNS_DIR/surveys/par_seed_sweep_*.csv|txt` with full table plus
+top_k by mean VPT, duty, and VPT×duty (top-10% freerun pool). Same dynamics
+overrides as SeedSweep.
+
 | Function | Role |
 |----------|------|
 | `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
+| `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no weight I/O; multi-metric ranking report |
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Campaign_HistoryDepthSweep(dim, {M...}, threads, runs, ...)` | Sequential surveys per M + **code-computed roll-up table** |
 | `Campaign_DriveLayoutAB(dim, M, threads, runs, ...)` | A/B **XyzXz** (4-in) vs **Quadratic8** (8-in) at fixed M |
