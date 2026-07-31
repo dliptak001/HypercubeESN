@@ -16,6 +16,7 @@ ready. (1) still config-only A/B.
 | `LEAK_RATE` < 1 | Always detrimental in this storefront |
 | Train-time drive noise | Always detrimental |
 | Scheduled sampling / “anti-overfit free-run mix” | Random multi-orbit ICs already mitigate open-loop overfit; not the failure mode we see |
+| Multi-layout drive enum (XyzXy / Quadratic8) | Parked for **collapse to XyzXz only** — see `TODO_8input_quadratic.md` |
 
 **Protocol for every arm:** one change at a time; fixed DIM/M/epochs/seed set;
 Unseen FreeRunSurvey (or short SeedSweep); report top-10% freerun means

@@ -2,9 +2,37 @@
 
 **Context:** `num_inputs` must divide \(N = 2^{\mathrm{dim}}\) → legal counts are powers of 2. Next step after 4 is 8.  
 **Date parked:** 2026-07-29  
-**Status:** switchable support + campaign. Use
-`Campaign_DriveLayoutAB(dim, M, threads, runs)` for matched 4-in vs 8-in at fixed M
-(or flip `config::DRIVE_LAYOUT` for single-arm runs).
+**Status:** switchable support + campaign exist. **Decision path:** collapse
+to baseline only (see next section) — multi-layout did not earn its keep.
+
+---
+
+## TODO — collapse DriveLayout to XyzXz only (remove the enum)
+
+**Date added:** 2026-07-31  
+**Goal:** hard-code 4-in `[x, y, z, x*z]` and **delete** the layout switch
+machinery. The entire `DriveLayout` enum goes away:
+
+```text
+enum class DriveLayout
+{
+    XyzXz = 0,      // 4-in [x, y, z, x*z]  — keep as the only drive
+    Quadratic8 = 1, // 8-in  — remove
+    XyzXy = 2,      // 4-in [x, y, z, x*y] — remove
+};
+```
+
+**Blast radius (when executing):**
+
+- `Lorenz.h` / `Lorenz.cpp`: `config::DRIVE_LAYOUT`, `FillDrive`,
+  `NumDriveChannels`, `DriveLayoutName`, CSV drive columns
+- Campaigns: `ConfigDriveRestore`, `drive_layout` overrides on SeedSweep /
+  FreeRun / FreeRunSurvey / ParallelSeedSweep; `Campaign_DriveLayoutAB`
+- Weight stems / arch that encode `n_in` (already `_in{Nin}` — stays 4)
+- README, this TODO, `TODO_drive_scale_sr.md`
+
+**Do not do while multi-layout A/B is still in active use.** Park until
+storefront is XyzXz-only in practice.
 
 ---
 
