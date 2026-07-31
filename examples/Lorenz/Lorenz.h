@@ -46,9 +46,9 @@ namespace config
     inline size_t DIM = 11;
     constexpr uint64_t SEED = 665127;//13649419;        //21978990 achieved 10.07 for oribit seed 9333312947715283458
     // Not constexpr: campaigns (SrAB, SeedSweep) reassign for matched A/B / sweeps.
-    inline float SPECTRAL_RADIUS = 0.99f;
+    inline float SPECTRAL_RADIUS = 0.95f;
     // Not constexpr: SeedSweep / scale grids reassign (restored on campaign exit).
-    inline float INPUT_SCALING = 0.04f;
+    inline float INPUT_SCALING = 0.02f;
     // Per-channel multipliers on top of global INPUT_SCALING (applied in FillDrive
     // after feature build, train + free-run). Index order matches DriveLayout:
     //   XyzXz:      [x, y, z, x*z]
@@ -62,7 +62,7 @@ namespace config
     constexpr float LEAK_RATE = 1.0f;
     // Delay-line depth M. Not constexpr: campaigns (e.g. M-sweep) may reassign.
     // Reservoir requires M in [1, 64].
-    inline size_t HISTORY_DEPTH = 18;   // 18 is optimal for DIM11.
+    inline size_t HISTORY_DEPTH = 22;   // 18 is optimal for DIM11.
     // Input-drive feature map (see DriveLayout). Campaigns may reassign (A/B).
     // Load/save readout must match the layout used at train time.
     inline DriveLayout DRIVE_LAYOUT = DriveLayout::XyzXz;
@@ -73,7 +73,7 @@ namespace config
     // Not constexpr: campaigns may reassign (surveys / heavy train).
     // Typical: 50–100 rapid A/B; 100–200 refine; 300–500 heavy train.
     inline size_t EPOCHS = 100;
-    constexpr size_t READOUT_SLICES = 2;
+    constexpr size_t READOUT_SLICES = 1;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;
     constexpr bool USE_POOLING = true;

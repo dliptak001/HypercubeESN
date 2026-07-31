@@ -71,17 +71,26 @@ int Campaign_Trace(size_t dim,
 /// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
 /// Edge warmup then free-run past span on the IC stream.
 /// Writes one CSV under RUNS_DIR/traces/ (plottable with plot_freerun_overlay.py).
-/// Restores DIM and HISTORY_DEPTH on exit.
+/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING /
+/// DRIVE_LAYOUT / INPUT_SCALE_CH on exit.
 /// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
 /// @param history_depth  Reservoir delay-line M (1..64); must match model.
 /// @param esn_seed       Reservoir seed; must match the run that produced weights.
 /// @param ic_x,ic_y,ic_z Attractor IC (same space as IcFromOrbitSeed).
 /// @param weights_stem   Optional override of config::LOAD_WEIGHTS_STEM.
+/// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
+/// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
+/// @param drive_layout    If set, set config::DRIVE_LAYOUT; nullopt keeps config.
+/// @param drive_gains     If non-empty, set config::INPUT_SCALE_CH (exact n_in entries).
 int FreeRun(size_t dim,
             size_t history_depth,
             uint64_t esn_seed,
             double ic_x, double ic_y, double ic_z,
-            const char* weights_stem = nullptr);
+            const char* weights_stem = nullptr,
+            float spectral_radius = 0.f,
+            float input_scaling = 0.f,
+            std::optional<DriveLayout> drive_layout = std::nullopt,
+            std::initializer_list<float> drive_gains = {});
 
 /// Aggregate from one @ref FreeRunSurvey (best-half freerun pool means).
 struct FreeRunSurveySummary
@@ -102,8 +111,13 @@ struct FreeRunSurveySummary
 /// print aggregate stats (best-half pool) and top orbits by VPT*duty with IC
 /// triples ready for @ref FreeRun. No train; no per-step CSV (use FreeRun to plot).
 /// Writes a leaderboard CSV under RUNS_DIR/surveys/.
-/// Restores DIM and HISTORY_DEPTH on exit.
+/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING /
+/// DRIVE_LAYOUT / INPUT_SCALE_CH on exit.
 /// @param out  Optional; filled with best-half means and top freerun IC.
+/// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
+/// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
+/// @param drive_layout    If set, set config::DRIVE_LAYOUT; nullopt keeps config.
+/// @param drive_gains     If non-empty, set config::INPUT_SCALE_CH (exact n_in entries).
 int FreeRunSurvey(size_t dim,
                   size_t history_depth,
                   uint64_t esn_seed,
@@ -111,7 +125,11 @@ int FreeRunSurvey(size_t dim,
                   uint64_t orbit_seed = 72983498,
                   const char* weights_stem = nullptr,
                   int top_k = 10,
-                  FreeRunSurveySummary* out = nullptr);
+                  FreeRunSurveySummary* out = nullptr,
+                  float spectral_radius = 0.f,
+                  float input_scaling = 0.f,
+                  std::optional<DriveLayout> drive_layout = std::nullopt,
+                  std::initializer_list<float> drive_gains = {});
 
 /// Train-only complement to @ref FreeRun: remixed orbits for @p epochs starting
 /// from @p target_orbit remix seed; save readout to @p weights_stem (or default
