@@ -256,7 +256,7 @@ FreeRun.
 |----------|------|
 | `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
 | `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
-| `ParallelOrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, epochs, ...)` | Train one seed once; parallel one-freerun-per-orbit ranking |
+| `ParallelOrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, epochs, ...)` | Train one seed once; parallel one-freerun-per-orbit ranking (CSV/TXT: top 100 + bottom 10 by VxD) |
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Train` / `FreeRunSurvey` / `FreeRun` | Serial train → survey orbits → plot one IC |
 

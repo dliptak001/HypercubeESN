@@ -160,10 +160,12 @@ int ParallelSeedSweep(size_t dim,
 /// Trains @p base_esn_seed once (remix root @p base_orbit_seed), then freeruns
 /// @p num_orbits fixed orbits in parallel: orbit_i = Mix64(base_orbit ^ FNV*(i+1)).
 /// One freerun per orbit (raw metrics, no top-10% pool). Ranks orbit seeds by
-/// VPT / duty / VPT*duty (stdout + surveys CSV/TXT). Temporary readout stem only
-/// so workers can load the trained model; removed after the sweep.
-/// Same dynamics overrides / refuse LOAD+SAVE flags / HCNN threads=1 / thread
-/// cap as ParallelSeedSweep. @p num_threads capped to HW and @p num_orbits.
+/// VPT / duty / VPT*duty. Survey CSV/TXT (and the matching stdout table) keep
+/// only the top 100 and bottom 10 by VPT*duty — not the full N-orbit table.
+/// Temporary readout stem only so workers can load the trained model; removed
+/// after the sweep. Same dynamics overrides / refuse LOAD+SAVE flags / HCNN
+/// threads=1 / thread cap as ParallelSeedSweep. @p num_threads capped to HW
+/// and @p num_orbits.
 int ParallelOrbitSweep(size_t dim,
                        size_t history_depth,
                        uint64_t base_esn_seed,

@@ -2038,8 +2038,7 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
     };
     std::vector<OrbitRow> rows(num_orbits);
     std::atomic<size_t> next_job{0};
-    std::atomic<size_t> done_count{0};
-    std::mutex stderr_mu;
+    std::mutex stderr_mu; // FAILED lines only (workers stay quiet on success)
 
     {
         std::vector<std::jthread> pool;
@@ -2098,28 +2097,13 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
                         std::fflush(stderr);
                     }
                     rows[i] = row;
-                    const size_t d = done_count.fetch_add(1, std::memory_order_relaxed) + 1;
-                    {
-                        std::lock_guard<std::mutex> lock(stderr_mu);
-                        std::fprintf(stderr,
-                                     "[par-orbit-sweep] heartbeat %zu/%zu  "
-                                     "(idx=%zu orbit=%llu ok=%d)\n",
-                                     d, num_orbits, i,
-                                     static_cast<unsigned long long>(orbit),
-                                     row.ok ? 1 : 0);
-                        std::fflush(stderr);
-                    }
                 }
             });
         }
     }
 
-    {
-        std::lock_guard<std::mutex> lock(stderr_mu);
-        std::fprintf(stderr, "[par-orbit-sweep] all orbits finished (%zu/%zu)\n",
-                     done_count.load(std::memory_order_relaxed), num_orbits);
-        std::fflush(stderr);
-    }
+    std::fprintf(stderr, "[par-orbit-sweep] all orbits finished (%zu)\n", num_orbits);
+    std::fflush(stderr);
     std::fflush(stdout);
 
     // Temp weights no longer needed; drop before ranking so files do not linger
@@ -2155,6 +2139,29 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
         return 0;
     };
 
+    // Large N (e.g. 10k orbits): keep only extremes for stdout + CSV/TXT.
+    // Ranking stays over all successful freeruns; files are not the full table.
+    constexpr size_t kFileKeepTop = 100;
+    constexpr size_t kFileKeepBottom = 10;
+    const size_t n_ok = by_vxd.size();
+    const size_t n_top = std::min(kFileKeepTop, n_ok);
+    const size_t bot_start =
+        (n_ok > kFileKeepBottom) ? (n_ok - kFileKeepBottom) : 0;
+    // Unique ranks in by_vxd order (top first, then bottom not already in top).
+    std::vector<size_t> file_ranks;
+    file_ranks.reserve(n_top + kFileKeepBottom);
+    for (size_t r = 0; r < n_top; ++r)
+        file_ranks.push_back(r);
+    for (size_t r = bot_start; r < n_ok; ++r)
+    {
+        if (r >= n_top)
+            file_ranks.push_back(r);
+    }
+    size_t n_fail = 0;
+    for (const auto& s : rows)
+        if (!s.ok)
+            ++n_fail;
+
     std::ostringstream report;
     auto emit = [&](const char* s) {
         report << s;
@@ -2166,6 +2173,15 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
         emit(buf);
     };
 
+    auto emit_orbit_row = [&](size_t rank1, size_t i) {
+        const auto& s = rows[i];
+        emitf("%-4zu %6zu %20llu %10.3f %10.2f %10.3f %10.6f %6zu %6zu %6zu\n",
+              rank1, s.index,
+              static_cast<unsigned long long>(s.orbit_seed),
+              s.vpt_x_duty, s.vpt, s.duty, s.rmse,
+              rank_of(by_vxd, i), rank_of(by_vpt, i), rank_of(by_duty, i));
+    };
+
     emit("\n========================================================================\n");
     emit("=== ParallelOrbitSweep final report (one freerun per orbit) ===\n");
     emit("========================================================================\n");
@@ -2173,9 +2189,10 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
           dim, history_depth, static_cast<unsigned long long>(base_esn_seed),
           num_orbits, num_threads, epochs);
     emitf("base_orbit_seed=%llu\n", static_cast<unsigned long long>(base_orbit_seed));
-    emitf("ok=%zu / %zu\n\n", by_vxd.size(), num_orbits);
+    emitf("ok=%zu / %zu  failed=%zu\n", n_ok, num_orbits, n_fail);
+    emitf("file/stdout keep: top %zu + bottom %zu by VPT*duty (not full table)\n\n",
+          kFileKeepTop, kFileKeepBottom);
 
-    emit("--- All orbits (sorted by VPT*duty) ---\n");
     emit("note: one freerun per orbit; VxD = VPT*duty for that run.\n");
     emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
           "rank", "idx", "orbit_seed", "VxD", "VPT", "duty", "RMSE",
@@ -2186,15 +2203,18 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
     }
     else
     {
-        for (size_t r = 0; r < by_vxd.size(); ++r)
+        emitf("\n--- Top %zu by VPT*duty ---\n", n_top);
+        for (size_t r = 0; r < n_top; ++r)
+            emit_orbit_row(r + 1, by_vxd[r]);
+
+        // Bottom block when the full table is larger than the top keep set.
+        if (n_ok > n_top)
         {
-            const size_t i = by_vxd[r];
-            const auto& s = rows[i];
-            emitf("%-4zu %6zu %20llu %10.3f %10.2f %10.3f %10.6f %6zu %6zu %6zu\n",
-                  r + 1, s.index,
-                  static_cast<unsigned long long>(s.orbit_seed),
-                  s.vpt_x_duty, s.vpt, s.duty, s.rmse,
-                  rank_of(by_vxd, i), rank_of(by_vpt, i), rank_of(by_duty, i));
+            emitf("\n--- Bottom %zu by VPT*duty (worst%s) ---\n",
+                  n_ok - bot_start,
+                  (bot_start < n_top) ? "; overlaps top" : "");
+            for (size_t r = bot_start; r < n_ok; ++r)
+                emit_orbit_row(r + 1, by_vxd[r]);
         }
     }
 
@@ -2252,15 +2272,20 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
             {
                 csv << "# ParallelOrbitSweep\n"
                     << "# one freerun per orbit (VxD = VPT*duty that run)\n"
+                    << "# kept: top " << kFileKeepTop << " + bottom "
+                    << kFileKeepBottom << " by VPT*duty (unique ranks; not full table)\n"
                     << "# dim=" << dim << " history_depth=" << history_depth
                     << " epochs=" << epochs << " num_orbits=" << num_orbits
                     << " num_threads=" << num_threads << "\n"
                     << "# base_esn_seed=" << base_esn_seed
                     << " base_orbit_seed=" << base_orbit_seed << "\n"
+                    << "# ok=" << n_ok << " failed=" << n_fail
+                    << " rows_written=" << file_ranks.size() << "\n"
                     << "idx,orbit_seed,ok,vpt_x_duty,vpt,duty,rmse,"
                        "ic_x,ic_y,ic_z,rank_vpt_x_duty,rank_vpt,rank_duty\n";
-                for (size_t i : by_vxd)
+                for (size_t r : file_ranks)
                 {
+                    const size_t i = by_vxd[r];
                     const auto& s = rows[i];
                     csv << s.index << ',' << s.orbit_seed << ",1,"
                         << s.vpt_x_duty << ',' << s.vpt << ',' << s.duty << ','
@@ -2269,12 +2294,6 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
                         << rank_of(by_vxd, i) << ','
                         << rank_of(by_vpt, i) << ','
                         << rank_of(by_duty, i) << '\n';
-                }
-                for (const auto& s : rows)
-                {
-                    if (s.ok)
-                        continue;
-                    csv << s.index << ',' << s.orbit_seed << ",0,,,,,,,,,,\n";
                 }
                 csv.flush();
                 wrote_ok = csv.good();

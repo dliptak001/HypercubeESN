@@ -86,10 +86,13 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags. Same
   optional SR/IS overrides as FreeRun*.
 - **`ParallelOrbitSweep`:** train one ESN seed once; parallel one-freerun-per
-  Mix64 orbit; rank orbit seeds by VPT / duty / VPT×duty (stdout + surveys
-  CSV/TXT). Temp readout stem for worker load only (RAII delete); quiet
-  per-job loads. Same thread caps / dynamics overrides / HCNN=1 / refuse flags
-  as ParallelSeedSweep. `LoadTrainedWeights(..., log_load=false)` for quiet loads.
+  Mix64 orbit; rank orbit seeds by VPT / duty / VPT×duty. Survey CSV/TXT and
+  the matching stdout table keep **top 100 + bottom 10** by VPT×duty (not the
+  full N-orbit table; for large `num_orbits`). Workers are quiet on success
+  (no per-orbit heartbeats; FAILED lines still mutexed). Temp readout stem for
+  worker load only (RAII delete); quiet per-job loads. Same thread caps /
+  dynamics overrides / HCNN=1 / refuse flags as ParallelSeedSweep.
+  `LoadTrainedWeights(..., log_load=false)` for quiet loads.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 
