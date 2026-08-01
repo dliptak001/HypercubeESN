@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 int main()
 {
-    // Pipeline: SeedSweep() → Train (save) → OrbitSweep (load) → FreeRun (plot).
+    // Manual Pipeline: SeedSweep() → Train (save weights) → OrbitSweep (load weights) → FreeRun (load weights, plot).
     constexpr size_t kDim = 10;
     constexpr size_t kM = 2;
     constexpr float kSpectralRadius = 0.999f;
@@ -48,7 +48,6 @@ int main()
     /////////////////////////////////////////////////////////////////////////
     // Stage 3
     /////////////////////////////////////////////////////////////////////////
-    // Load weights; rank Mix64 orbits (one freerun each, parallel):
     return OrbitSweep(/*dim=*/kDim,
                               /*history_depth=*/kM,
                               /*base_esn_seed=*/kEsn,
@@ -64,7 +63,7 @@ int main()
     /////////////////////////////////////////////////////////////////////////
     // Stage 4
     /////////////////////////////////////////////////////////////////////////
-    // Plot one IC (load-only). Example: OrbitSweep #1 by VxD.
+    // Plot one Initial Condition. Example: OrbitSweep #1 by VxD.
     return FreeRun(/*dim=*/kDim,
                            /*history_depth=*/kM,
                            /*esn_seed=*/kEsn,

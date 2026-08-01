@@ -10,7 +10,7 @@ You sit at 0.04. Free-run is usually more sensitive to this than to almost anyth
 │ 0.05, 0.06, 0.08 │ stronger drive → better use of reservoir (if you aren't already saturating) │
 └──────────────────┴─────────────────────────────────────────────────────────────────────────────┘
 
-Test: one seed (or 3), fixed DIM/M/epochs, change only INPUT_SCALING, FreeRunSurvey Unseen.
+Test: one seed (or 3), fixed DIM/M/epochs, change only INPUT_SCALING, OrbitSweep Unseen.
 If one side wins by a clear margin on mean VPT×duty, lock it and re-run SeedSweep.
 
 

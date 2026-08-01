@@ -92,9 +92,9 @@ namespace config
         R"(C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4)";
 
     // Campaign artifacts (CWD-independent). Layout:
-    //   RUNS_DIR/traces/     FreeRun + Campaign_Trace freerun CSVs
-    //   RUNS_DIR/surveys/    FreeRunSurvey + Parallel* leaderboards
-    //   RUNS_DIR/campaigns/  SeedSurvey roll-ups (RESULTS_DIR)
+    //   RUNS_DIR/traces/   FreeRun plottable CSVs
+    //   RUNS_DIR/surveys/  SeedSweep + OrbitSweep leaderboards
+    //   RESULTS_DIR        legacy path alias under RUNS_DIR (unused by keepers)
     constexpr const char* RUNS_DIR = R"(C:\HypercubeESNRuns\results)";
     constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";
 
@@ -167,13 +167,13 @@ public:
     }
 
     /// HCNN readout worker count used by MakeESNConfig. Must remain 1 so host
-    /// campaigns (SeedSweep, SeedSurvey) can run many Lorenz instances
+    /// campaigns (SeedSweep, OrbitSweep) can run many Lorenz instances
     /// without nested HCNN thread pools. Do not change to 0 (auto) or N>1
     /// without revisiting those campaigns.
     static constexpr size_t kReadoutNumThreads = 1;
 
     /// Map orbit seed → attractor IC (same map as freerun remix / train remix).
-    /// Public so FreeRunSurvey can print ICs for FreeRun cherry-picks.
+    /// Public so OrbitSweep can print ICs for FreeRun cherry-picks.
     static LorenzAttractor::State IcFromOrbitSeed(uint64_t orbit_seed);
 
 private:

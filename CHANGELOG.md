@@ -112,9 +112,12 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   parameters, and mutable gain apply/restore helpers. Banners still print
   locked `drive_ch`.
 - **Lorenz campaign cull:** removed `Campaign_HistoryDepthSweep` (M-sweep),
-  `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers), and
-  serial seed-list sweep (superseded by parallel `SeedSweep`). SR still
-  overridable via SeedSweep / OrbitSweep / FreeRun* args or `config::`.
+  `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers),
+  serial seed-list sweep, **`Campaign_SeedSurvey`**, **`Campaign_Trace`**, and
+  **`FreeRunSurvey`** (superseded by `SeedSweep` / `FreeRun` / `OrbitSweep`).
+  Keeper pipeline only: `SeedSweep` → `Train` → `OrbitSweep` → `FreeRun`
+  (+ `DefaultWeightStem`). SR still overridable via SeedSweep / OrbitSweep /
+  FreeRun args or `config::`.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default

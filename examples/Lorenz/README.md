@@ -182,98 +182,58 @@ Release preferred. MinGW on `PATH` when running the exe. **No CLI knobs** —
 edit `main.cpp` to call a campaign, rebuild, run `Lorenz.exe`.
 
 ```cpp
-// examples/Lorenz/main.cpp
-int main()
-{
-    // return Campaign_SeedSurvey(/*dim=*/11, /*threads=*/0, /*runs=*/50);
-    // return Campaign_Trace(/*dim=*/11, /*seed=*/21978990, /*max_freeruns=*/30);
-    // Load weights + freerun one attractor IC (CSV under HypercubeESNRuns):
-    // return FreeRun(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
-    //                /*ic_x=*/0.43, /*ic_y=*/0.30, /*ic_z=*/0.64);
-    // optional stem: ..., R"(C:\HypercubeESN\models\lorenz_seed..._D12_M18_in4)");
-}
+// examples/Lorenz/main.cpp — edit stages, rebuild, run Lorenz.exe
+// Pipeline: SeedSweep → Train → OrbitSweep → FreeRun
 ```
 
-### `Train` / `FreeRunSurvey` / `FreeRun` (campaign pipeline)
+### Campaign pipeline (keepers only)
 
 ```text
-Train  →  FreeRunSurvey  →  FreeRun
- weights     rank orbits       plot one IC
-
-SeedSweep: multi-seed overnight search (train in memory; rank seeds)
-```
-
-**`Train`** — train-only (no freerun): remixed orbits for `epochs` from remix base
-`target_orbit`, then save readout to `weights_stem` (or default under
-`MODEL_SAVE_DIR`). Distinct from member `Lorenz::Train`.
-
-```cpp
-Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
-      /*target_orbit=*/9333312947715283458ull, /*epochs=*/400,
-      /*weights_stem=*/R"(C:\HypercubeESN\models\lorenz_seed221978990_D12_M18_in4)");
+SeedSweep  →  Train  →  OrbitSweep  →  FreeRun
+ multi-seed    save      rank orbits     plot one IC
+ search        weights   (load-only)     (load-only)
 ```
 
 **Artifact tree** (`config::RUNS_DIR` = `C:\HypercubeESNRuns\results`):
 
 | Subdir | Campaigns |
 |--------|-----------|
-| `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
-| `surveys/` | `FreeRunSurvey`, `SeedSweep`, `OrbitSweep` leaderboards |
-| `campaigns/` | `Campaign_SeedSurvey` roll-ups (`RESULTS_DIR`) |
+| `traces/` | `FreeRun` plottable CSVs |
+| `surveys/` | `SeedSweep`, `OrbitSweep` leaderboards |
 
 **Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
-`[train]` / `[freerun]` / `[freerun-survey]` / `[trace]` /
-`[survey]` / `[par-seed-sweep]` / `[par-orbit-sweep]`, freerun scores as
-`VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
+`[train]` / `[freerun]` / `[par-seed-sweep]` / `[par-orbit-sweep]`, freerun
+scores as `VPT / duty / VPT*duty / RMSE`, and `[tag] wrote path (bytes)` +
 `[tag] done wall time: …`.
-
-**`FreeRunSurvey`** — load-only middle step: free-run `num_runs` remixed orbits
-(remix from `orbit_seed`), aggregate top-10% VPT / duty / VPT×duty / RMSE, print
-**top_k** by VPT×duty with IC triples and a ready-to-paste `FreeRun(...)` line.
-Leaderboard: `RUNS_DIR/surveys/survey_seed{S}_D{D}_M{M}_n{N}.csv`.
-Optional trailing overrides (restored on exit): `spectral_radius` /
-`input_scaling` (>0 set, 0 = keep config). Channel gains are fixed
-(`config::INPUT_SCALE_CH`).
-
-**`FreeRun`** — load-only (no train): free-run **one** attractor IC for a plottable
-trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`. Same optional
-SR/IS overrides as FreeRunSurvey.
 
 **`SeedSweep`** — overnight parallel seed search. Always trains in
 memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
-`LOAD_TRAINED_WEIGHTS`). Requires HCNN `Lorenz::kReadoutNumThreads == 1`
-(no nested pools). ESN seeds from `base_esn_seed` via SplitMix64 substreams
-(`Mix64(base ^ FNV*(i+1))`, not `base+i`). One `base_orbit_seed` is the shared
-**remix root** for train and freerun (independent remix streams).
-`num_threads` workers over `num_seeds` jobs; capped to `hardware_concurrency`
-and `num_seeds`. Header + mutexed stderr heartbeats only; final report on
-stdout and `RUNS_DIR/surveys/par_seed_sweep_*.csv|txt` with full table plus
-top_k by mean VPT, duty, and VPT×duty (top-10% freerun pool). Optional SR/IS
-overrides as FreeRunSurvey. Cherry-pick winners with Train / FreeRunSurvey /
-FreeRun.
+`LOAD_TRAINED_WEIGHTS`). Requires HCNN `Lorenz::kReadoutNumThreads == 1`.
+ESN seeds from `base_esn_seed` via SplitMix64. Top-10% freerun pool means;
+report under `RUNS_DIR/surveys/par_seed_sweep_*.csv|txt`. Cherry-pick with
+Train / OrbitSweep / FreeRun.
+
+**`Train`** — train-only: remixed orbits for `epochs`, save to `weights_stem`
+or `DefaultWeightStem(esn, dim, M)`.
+
+**`OrbitSweep`** — load-only; parallel one freerun per Mix64 orbit; TXT report
+(top 100 + bottom 10 by VxD; top-k includes IC xyz). Requires existing weights.
+
+**`FreeRun`** — load-only; one attractor IC; plottable CSV under
+`RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`. Optional SR/IS after `esn_seed`.
 
 | Function | Role |
 |----------|------|
-| `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
-| `SeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
-| `OrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, weights_path, ...)` | Load-only; parallel one-freerun-per-orbit ranking (TXT: top 100 + bottom 10 by VxD; top-k includes IC xyz) |
-| `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
-| `Train` / `FreeRunSurvey` / `FreeRun` | Serial train → survey orbits → plot one IC |
+| `SeedSweep(...)` | Parallel multi-seed train+freerun search |
+| `Train(...)` | Fit one seed; save weights |
+| `OrbitSweep(...)` | Load weights; rank orbits (TXT) |
+| `FreeRun(...)` | Load weights; plot one IC |
+| `DefaultWeightStem(esn, dim, M)` | Shared weight path under `MODEL_SAVE_DIR` |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit
-(along with M / SR when a campaign reassigns them). Protocol,
-epochs, load/save, etc. live in `Lorenz.h` `config::`. Campaign signatures are in
-`Campaigns.h`. Progress on **stderr**; reports on **stdout**.
-
-**Results files** (under `RESULTS_DIR` = `C:\HypercubeESNRuns\results\campaigns\`,
-created if needed):
-
-| Job | Files |
-|-----|--------|
-| Survey | `Survey_YYYYMMDD_HHMMSS_M{M}.csv` + `.txt` (metadata + one aggregate row) |
-
-CSV metrics are mean-of-trial-means (code-computed). Metadata comments stamp
-dim, N, M, epochs, θ, SR, drive_ch, seeds, etc.
+(along with M / SR when a campaign reassigns them). Protocol and knobs live in
+`Lorenz.h` `config::`. Signatures in `Campaigns.h`. Progress on **stderr**;
+reports on **stdout**.
 
 ---
 
