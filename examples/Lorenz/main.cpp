@@ -28,27 +28,27 @@ int main()
     constexpr size_t kM = 2;
 
     // Parallel overnight seed search (train per seed; heartbeats on stderr):
-    // return ParallelSeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
-    //                          /*base_esn_seed=*/1002999015000000000ull,
-    //                          /*num_seeds=*/16,
-    //                          /*num_threads=*/16,
-    //                          /*epochs=*/300,
-    //                          /*freerun_runs=*/1000,
-    //                          /*base_orbit_seed=*/9333312947715283458ull,
-    //                          /*top_k=*/10,
-    //                          /*spectral_radius=*/0.999f,
-    //                          /*input_scaling=*/0.015f);
+    return ParallelSeedSweep(/*dim=*/kDim, /*history_depth=*/kM,
+                             /*base_esn_seed=*/1002999015000000000ull,
+                             /*num_seeds=*/16*50,
+                             /*num_threads=*/16,
+                             /*epochs=*/300,
+                             /*freerun_runs=*/1000,
+                             /*base_orbit_seed=*/9333312947715283458ull,
+                             /*top_k=*/10,
+                             /*spectral_radius=*/0.999f,
+                             /*input_scaling=*/0.015f);
 
     // One ESN seed: train once, rank Mix64 orbits (one freerun each, parallel):
-    return ParallelOrbitSweep(/*dim=*/kDim, /*history_depth=*/kM,
-                              /*base_esn_seed=*/13265426551472630865ull, // top from seed sweep
-                              /*base_orbit_seed=*/9333312947715283458ull,
-                              /*num_orbits=*/1000,
-                              /*num_threads=*/16,
-                              /*epochs=*/300,
-                              /*top_k=*/10,
-                              /*spectral_radius=*/0.999f,
-                              /*input_scaling=*/0.015f);
+    // return ParallelOrbitSweep(/*dim=*/kDim, /*history_depth=*/kM,
+    //                           /*base_esn_seed=*/13265426551472630865ull, // top from seed sweep
+    //                           /*base_orbit_seed=*/9333312947715283458ull,
+    //                           /*num_orbits=*/1000,
+    //                           /*num_threads=*/16,
+    //                           /*epochs=*/300,
+    //                           /*top_k=*/10,
+    //                           /*spectral_radius=*/0.999f,
+    //                           /*input_scaling=*/0.015f);
 
     // Single-seed survey only (weights already on disk):
     // return FreeRunSurvey(/*dim=*/12, /*history_depth=*/32,

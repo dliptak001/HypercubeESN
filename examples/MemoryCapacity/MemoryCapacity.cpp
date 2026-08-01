@@ -664,7 +664,7 @@ int main(int argc, char* argv[])
     base.num_inputs = 1;
     base.spectral_radius = 0.99f; // grid axes below override sr / leak / M
     base.leak_rate = 1.0f;
-    base.input_scaling = 0.1;//0.06f; // weak-drive / memory-margin (tanh)
+    base.input_scaling = 0.02;//0.06f; // weak-drive / memory-margin (tanh)
     base.history_depth = 8;
 
     MemoryCapacityMeter meter(DIM, mccfg);
@@ -685,8 +685,9 @@ int main(int argc, char* argv[])
     RunGridSweep(meter, base,
                  {0.99f},
                  {1.00f},
-                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                  17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
+                 {16});
+                 // {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                 //  17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
 
     return 0;
 }
