@@ -71,7 +71,7 @@ int main()
                    /*esn_seed=*/kEsn,
                    /*spectral_radius=*/kSpectralRadius,
                    /*input_scaling=*/kInputScaling,
-                   /*orbit_seed=*/12243302454775363823ull,
+                   /*orbit_seed=*/10149498604878005093,
                    /*weights_stem=*/kWeightsPath,
-                   /*freerun_steps=*/0);
+                   /*freerun_steps=*/2000);
 }
