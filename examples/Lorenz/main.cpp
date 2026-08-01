@@ -54,7 +54,7 @@ int main()
                               /*spectral_radius=*/kSpectralRadius,
                               /*input_scaling=*/kInputScaling,
                               /*base_orbit_seed=*/kBaseOrbitSeed,
-                              /*num_orbits=*/100000,
+                              /*num_orbits=*/200000,
                               /*num_threads=*/16,
                               /*weights_stem=*/kWeightsPath,
                               /*top_k=*/10);
@@ -64,11 +64,11 @@ int main()
     // Stage 4
     /////////////////////////////////////////////////////////////////////////
     // Plot one Initial Condition. Example: OrbitSweep #1 by VxD.
-    return FreeRun(/*dim=*/kDim,
-                           /*history_depth=*/kM,
-                           /*esn_seed=*/kEsn,
-                           /*spectral_radius=*/kSpectralRadius,
-                           /*input_scaling=*/kInputScaling,
-                           /*ic_x=*/0.624263, /*ic_y=*/-0.868602, /*ic_z=*/0.587179,
-                           /*weights_stem=*/kWeightsPath);
+    // return FreeRun(/*dim=*/kDim,
+    //                        /*history_depth=*/kM,
+    //                        /*esn_seed=*/kEsn,
+    //                        /*spectral_radius=*/kSpectralRadius,
+    //                        /*input_scaling=*/kInputScaling,
+    //                        /*ic_x=*/0.624263, /*ic_y=*/-0.868602, /*ic_z=*/0.587179,
+    //                        /*weights_stem=*/kWeightsPath);
 }

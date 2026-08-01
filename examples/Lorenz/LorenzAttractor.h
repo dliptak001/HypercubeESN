@@ -20,7 +20,8 @@ public:
     struct State
     {
         double x = 1.0, y = 1.0, z = 1.0;
-        void print() const { std::printf("%g,%g,%g:   ", x, y, z); }
+        /// Fixed-width IC prefix for train epoch lines (columns stay aligned).
+        void print() const { std::printf("%9.6f,%9.6f,%9.6f | ", x, y, z); }
     };
 
     double sigma = 10.0;
