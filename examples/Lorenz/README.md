@@ -219,15 +219,20 @@ or `DefaultWeightStem(esn, dim, M)`.
 **`OrbitSweep`** — load-only; parallel one freerun per Mix64 orbit; TXT report
 (top 100 + bottom 10 by VxD; top-k includes IC xyz). Requires existing weights.
 
-**`FreeRun`** — load-only; one attractor IC; plottable CSV under
-`RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`. Optional SR/IS after `esn_seed`.
+**`FreeRun`** — load-only; one **orbit_seed** from OrbitSweep (same path as the
+survey). CSV: `RUNS_DIR/traces/seed{esn}_orbit{orbit}.csv`. Pass the integer
+`orbit_seed`, not rounded IC floats — freerun streams discard ~train-window RK4
+steps, so 6-digit ICs diverge chaotically from the ranked trajectory. Optional
+SR/IS after `esn_seed`. Optional **`freerun_steps`** (default 0 →
+`config::FREE_RUN_WINDOW_SIZE` = 2000) extends the generative runway for long
+plots; OrbitSweep ranking still uses the default window.
 
 | Function | Role |
 |----------|------|
 | `SeedSweep(...)` | Parallel multi-seed train+freerun search |
 | `Train(...)` | Fit one seed; save weights |
 | `OrbitSweep(...)` | Load weights; rank orbits (TXT) |
-| `FreeRun(...)` | Load weights; plot one IC |
+| `FreeRun(..., orbit_seed, weights, freerun_steps=0)` | Load weights; free-run one survey orbit |
 | `DefaultWeightStem(esn, dim, M)` | Shared weight path under `MODEL_SAVE_DIR` |
 
 First arg is always reservoir **DIM** (`N = 2^DIM`, range 5–16); restored on exit

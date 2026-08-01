@@ -37,38 +37,41 @@ int main()
     constexpr uint64_t kEsn = 4112530987988204306ull; // one of the top ranked seeds from SeedSweep
     const std::string weights = DefaultWeightStem(kEsn, kDim, kM);
     const char* const kWeightsPath = weights.c_str();
-    if (const int tr = Train(/*dim=*/kDim,
-                                     /*history_depth=*/kM,
-                                     /*esn_seed=*/kEsn,
-                                     /*target_orbit=*/kBaseOrbitSeed,
-                                     /*epochs=*/300,
-                                     /*weights_stem=*/kWeightsPath))
-        return tr;
+    // if (const int tr = Train(/*dim=*/kDim,
+    //                                  /*history_depth=*/kM,
+    //                                  /*esn_seed=*/kEsn,
+    //                                  /*target_orbit=*/kBaseOrbitSeed,
+    //                                  /*epochs=*/500,
+    //                                  /*weights_stem=*/kWeightsPath))
+    //     return tr;
 
     /////////////////////////////////////////////////////////////////////////
     // Stage 3
     /////////////////////////////////////////////////////////////////////////
-    return OrbitSweep(/*dim=*/kDim,
-                              /*history_depth=*/kM,
-                              /*base_esn_seed=*/kEsn,
-                              /*spectral_radius=*/kSpectralRadius,
-                              /*input_scaling=*/kInputScaling,
-                              /*base_orbit_seed=*/kBaseOrbitSeed,
-                              /*num_orbits=*/200000,
-                              /*num_threads=*/16,
-                              /*weights_stem=*/kWeightsPath,
-                              /*top_k=*/10);
+    // return OrbitSweep(/*dim=*/kDim,
+    //                           /*history_depth=*/kM,
+    //                           /*base_esn_seed=*/kEsn,
+    //                           /*spectral_radius=*/kSpectralRadius,
+    //                           /*input_scaling=*/kInputScaling,
+    //                           /*base_orbit_seed=*/kBaseOrbitSeed,
+    //                           /*num_orbits=*/200000,
+    //                           /*num_threads=*/16,
+    //                           /*weights_stem=*/kWeightsPath,
+    //                           /*top_k=*/10);
 
 
     /////////////////////////////////////////////////////////////////////////
     // Stage 4
     /////////////////////////////////////////////////////////////////////////
-    // Plot one Initial Condition. Example: OrbitSweep #1 by VxD.
-    // return FreeRun(/*dim=*/kDim,
-    //                        /*history_depth=*/kM,
-    //                        /*esn_seed=*/kEsn,
-    //                        /*spectral_radius=*/kSpectralRadius,
-    //                        /*input_scaling=*/kInputScaling,
-    //                        /*ic_x=*/0.624263, /*ic_y=*/-0.868602, /*ic_z=*/0.587179,
-    //                        /*weights_stem=*/kWeightsPath);
+    // Free-run one OrbitSweep winner by orbit_seed (full double IC; not float paste).
+    // freerun_steps: 0 = config::FREE_RUN_WINDOW_SIZE (2000); larger for long plots.
+    // Example: top by VxD from par_orbit_sweep ...170727 (idx 188138).
+    return FreeRun(/*dim=*/kDim,
+                   /*history_depth=*/kM,
+                   /*esn_seed=*/kEsn,
+                   /*spectral_radius=*/kSpectralRadius,
+                   /*input_scaling=*/kInputScaling,
+                   /*orbit_seed=*/12243302454775363823ull,
+                   /*weights_stem=*/kWeightsPath,
+                   /*freerun_steps=*/0);
 }

@@ -158,10 +158,12 @@ public:
     /// @p fixed_orbit_seed). Same IC space as IcFromOrbitSeed.
     /// Otherwise remixed new orbit (multi-IC challenge).
     /// When @p verbose and ENABLE_PRINTF, prints every generative step (pred + true xyz).
+    /// @p freerun_steps 0 → config::FREE_RUN_WINDOW_SIZE (generative runway length).
     FreeRunResult FreeRun(bool verbose, const char* csv_path = nullptr,
                           size_t warmup_steps = 0,
                           uint64_t fixed_orbit_seed = 0,
-                          const LorenzAttractor::State* fixed_ic = nullptr);
+                          const LorenzAttractor::State* fixed_ic = nullptr,
+                          size_t freerun_steps = 0);
 
     [[nodiscard]] std::string ReadoutArchSummary() const {
         return esn_.ReadoutArchSummary();
@@ -192,7 +194,8 @@ private:
     void BuildDatastreamFromIC(LorenzAttractor::State ic, bool verbose);
 
     /// Free-run only: slim stream (wash + runway) with burn-in discard for phase.
-    void BuildFreeRunDatastream(LorenzAttractor::State ic, size_t warmup_steps);
+    void BuildFreeRunDatastream(LorenzAttractor::State ic, size_t warmup_steps,
+                                size_t freerun_steps);
 
     /// If config::SAVE_TRAINED_WEIGHTS, write default-stem readout under MODEL_SAVE_DIR.
     void SaveTrainedWeightsIfEnabled() const;
@@ -206,8 +209,10 @@ private:
     static ESNConfig MakeESNConfig(uint64_t seed);
     /// Full train window + free-run runway (Train).
     static LorenzDatastreamConfig MakeDatastreamConfig(LorenzAttractor::State orbit);
-    /// Compact free-run stream sized for @p warmup_steps + FREE_RUN_WINDOW_SIZE.
+    /// Compact free-run stream: wash of @p warmup_steps + generative @p freerun_steps.
+    /// @p freerun_steps 0 → config::FREE_RUN_WINDOW_SIZE.
     static LorenzDatastreamConfig MakeFreeRunDatastreamConfig(LorenzAttractor::State orbit,
-                                                             size_t warmup_steps);
+                                                             size_t warmup_steps,
+                                                             size_t freerun_steps = 0);
     static float LrProfile(float lr_max, float lr_min, size_t epochs, size_t current_epoch);
 };

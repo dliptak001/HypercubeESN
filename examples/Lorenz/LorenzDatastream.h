@@ -30,6 +30,11 @@ struct LorenzDatastreamConfig
     /// Free-run uses this to land at the same orbit phase as a full train-length wash edge
     /// while only allocating wash + free-run runway.
     size_t discard_steps = 0;
+    /// If > 0, min/max for normalization use only the first this many samples
+    /// (capped to raw size). 0 = use entire stored stream. Free-run longer
+    /// runways set this to the survey default (span + FREE_RUN_WINDOW) so
+    /// freerun_steps does not change scale / early VPT.
+    size_t normalize_count = 0;
     LorenzAttractor::State initial_lorenz_state = {0.5, 0.5, 0.5};
     float lorenz_dt = 0.02f;
 };
@@ -37,7 +42,7 @@ struct LorenzDatastreamConfig
 /// One Lorenz-63 orbit, normalized to float [-1, 1], walked by a forward @ref Cursor.
 ///
 /// Construction: optional discard integrate → store integrate (double) → normalize
-/// (shared scale over stored samples only) → float stream.
+/// (shared scale; optional fixed prefix for min/max) → float stream.
 /// This class **is** a Cursor: Reset / OOB / Index / Span come from the base.
 /// States / Step map the cursor into the stream buffer.
 ///
@@ -72,5 +77,6 @@ private:
                                                      const LorenzAttractor::State& seed,
                                                      float dt);
 
-    void Normalize(const std::vector<LorenzAttractor::State>& raw);
+    /// @p normalize_count 0 → use all of @p raw; else first min(count, raw.size()).
+    void Normalize(const std::vector<LorenzAttractor::State>& raw, size_t normalize_count);
 };

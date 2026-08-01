@@ -80,21 +80,26 @@ int OrbitSweep(size_t dim,
                const char* weights_stem = nullptr,
                int top_k = 10);
 
-/// Load readout weights + one free-run on an explicit attractor IC
-/// (not an orbit seed). Does **not** train. Weights stem: @p weights_stem if
-/// non-null/non-empty, else config::LOAD_WEIGHTS_STEM (path without .hcnw).
-/// Edge warmup then free-run past span on the IC stream.
-/// Writes one CSV under RUNS_DIR/traces/ (plot with plot_freerun_overlay.py).
-/// Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS / INPUT_SCALING on exit.
-/// Channel gains are fixed (`config::INPUT_SCALE_CH`).
+/// Load readout weights + one free-run for @p orbit_seed (same key OrbitSweep
+/// ranks). Does **not** train. Rebuilds IC via IcFromOrbitSeed(orbit_seed) at
+/// full double precision — do **not** paste printed IC floats (chaotic discard
+/// over ~TW steps makes 6-digit ICs diverge from the survey path).
+/// Weights stem: @p weights_stem if non-null/non-empty, else
+/// config::LOAD_WEIGHTS_STEM. Writes CSV under RUNS_DIR/traces/ (plot with
+/// plot_freerun_overlay.py). Restores DIM / HISTORY_DEPTH / SPECTRAL_RADIUS /
+/// INPUT_SCALING on exit. Channel gains fixed (`config::INPUT_SCALE_CH`).
 /// Distinct from member @c Lorenz::FreeRun (this is the campaign wrapper).
 /// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
 /// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
-/// @param ic_x,ic_y,ic_z Attractor IC (same space as IcFromOrbitSeed).
+/// @param orbit_seed      Mix64 orbit key from OrbitSweep (not a rounded IC).
+/// @param freerun_steps   Generative runway length; 0 → config::FREE_RUN_WINDOW_SIZE
+///                        (default 2000). Use larger values for long plots; OrbitSweep
+///                        ranking still uses the default window.
 int FreeRun(size_t dim,
             size_t history_depth,
             uint64_t esn_seed,
             float spectral_radius,
             float input_scaling,
-            double ic_x, double ic_y, double ic_z,
-            const char* weights_stem = nullptr);
+            uint64_t orbit_seed,
+            const char* weights_stem = nullptr,
+            size_t freerun_steps = 0);

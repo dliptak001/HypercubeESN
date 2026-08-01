@@ -60,8 +60,11 @@ def plot_one(path: Path, out_dir: Path | None, theta: float) -> None:
         f"VPT×duty={vpt_x_duty:.3f}  (θ={theta})"
     )
 
+    # Lines only (no markers). Error is raw sample-wise RMS — no smoothing.
+    line_kw = dict(linestyle="-", marker="None", markevery=None)
+
     ax = axes[0]
-    ax.plot(lt, err, color="C0", lw=1.0, label="channel-RMS err")
+    ax.plot(lt, err, color="C0", lw=1.0, label="channel-RMS err (raw)", **line_kw)
     ax.axhline(theta, color="C3", ls="--", lw=1.2, label=f"θ={theta}")
     ax.fill_between(lt, 0, theta, where=locked > 0.5, color="C2", alpha=0.15, label="locked")
     ax.set_ylabel("err")
@@ -71,8 +74,8 @@ def plot_one(path: Path, out_dir: Path | None, theta: float) -> None:
 
     for i, c in enumerate("xyz"):
         ax = axes[i + 1]
-        ax.plot(lt, true[c], color="k", lw=1.1, label=f"true {c}")
-        ax.plot(lt, pred[c], color="C1", lw=1.0, alpha=0.9, label=f"pred {c}")
+        ax.plot(lt, true[c], color="k", lw=1.1, label=f"true {c}", **line_kw)
+        ax.plot(lt, pred[c], color="C1", lw=1.0, alpha=0.9, label=f"pred {c}", **line_kw)
         ax.set_ylabel(f"{c} (norm)")
         ax.legend(loc="upper right", fontsize=8)
         ax.grid(True, alpha=0.3)

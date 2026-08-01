@@ -57,12 +57,16 @@ LorenzDatastreamConfig Lorenz::MakeDatastreamConfig(LorenzAttractor::State orbit
 }
 
 LorenzDatastreamConfig Lorenz::MakeFreeRunDatastreamConfig(LorenzAttractor::State orbit,
-                                                           size_t warmup_steps)
+                                                           size_t warmup_steps,
+                                                           size_t freerun_steps)
 {
     // Resolve W first so storage matches seating (edge wash of W, then FR steps).
     size_t W = (warmup_steps == 0) ? config::WARMUP_STEPS : warmup_steps;
     if (W < 1)
         W = 1;
+    size_t FR = (freerun_steps == 0) ? config::FREE_RUN_WINDOW_SIZE : freerun_steps;
+    if (FR < 1)
+        FR = 1;
 
     // Local train edge: wash_start = span - W + 1. Prefer span = W-1 => wash at 0.
     // Cursor requires span > 0, so W==1 forces span=1 (wash_start=1).
@@ -74,7 +78,7 @@ LorenzDatastreamConfig Lorenz::MakeFreeRunDatastreamConfig(LorenzAttractor::Stat
     cfg.span = span;
     // After wash, index = span+1; freerun needs span+1 .. span+FR inclusive end span+FR.
     // stream_length+1 samples => indices 0..stream_length; set stream_length = span+FR.
-    cfg.stream_length = static_cast<size_t>(span) + config::FREE_RUN_WINDOW_SIZE;
+    cfg.stream_length = static_cast<size_t>(span) + FR;
 
     // Burn-in without storage so local wash lands at the same absolute orbit phase
     // as the old full-stream edge: local_wash + discard == TRAINING_WINDOW - W + 1
@@ -84,6 +88,12 @@ LorenzDatastreamConfig Lorenz::MakeFreeRunDatastreamConfig(LorenzAttractor::Stat
             static_cast<size_t>(config::TRAINING_WINDOW_SIZE) - static_cast<size_t>(span);
     else
         cfg.discard_steps = 0;
+
+    // Lock min/max scale to the survey default runway (span + FREE_RUN_WINDOW_SIZE)
+    // so freerun_steps > default only extends the tail — wash + early VPT stay
+    // bit-identical to OrbitSweep / FR=config::FREE_RUN_WINDOW_SIZE.
+    cfg.normalize_count =
+        static_cast<size_t>(span) + config::FREE_RUN_WINDOW_SIZE + 1;
 
     cfg.initial_lorenz_state = orbit;
     cfg.lorenz_dt = static_cast<float>(config::DT);
@@ -168,10 +178,11 @@ void Lorenz::RebuildDatastream(const bool verbose)
     BuildDatastreamFromSeed(orbit_seed_, verbose);
 }
 
-void Lorenz::BuildFreeRunDatastream(const LorenzAttractor::State ic, const size_t warmup_steps)
+void Lorenz::BuildFreeRunDatastream(const LorenzAttractor::State ic, const size_t warmup_steps,
+                                    const size_t freerun_steps)
 {
     data_stream_ = std::make_unique<LorenzDatastream>(
-        MakeFreeRunDatastreamConfig(ic, warmup_steps));
+        MakeFreeRunDatastreamConfig(ic, warmup_steps, freerun_steps));
 }
 
 void Lorenz::FillDrive(float* drive, const float x, const float y, const float z)
@@ -359,17 +370,21 @@ void Lorenz::LoadTrainedWeights(const char* stem, bool log_load)
 
 FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_steps,
                               uint64_t fixed_orbit_seed,
-                              const LorenzAttractor::State* fixed_ic)
+                              const LorenzAttractor::State* fixed_ic,
+                              size_t freerun_steps)
 {
     float drive[kNumDriveChannels] = {};
     float targets[3] = {};
     float outputs[3] = {};
     const size_t n_drive = kNumDriveChannels;
 
-    // Size the slim stream for the intended wash length before building.
+    // Size the slim stream for the intended wash + generative runway.
     size_t W = (warmup_steps == 0) ? config::WARMUP_STEPS : warmup_steps;
     if (W < 1)
         W = 1;
+    size_t FR = (freerun_steps == 0) ? config::FREE_RUN_WINDOW_SIZE : freerun_steps;
+    if (FR < 1)
+        FR = 1;
 
     uint64_t freerun_orbit_seed = 0;
     LorenzAttractor::State freerun_ic{};
@@ -390,7 +405,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
         freerun_orbit_seed = orbit_seed_;
         freerun_ic = IcFromOrbitSeed(orbit_seed_);
     }
-    BuildFreeRunDatastream(freerun_ic, W);
+    BuildFreeRunDatastream(freerun_ic, W, FR);
 
     std::ofstream csv;
     if (csv_path && csv_path[0])
@@ -432,7 +447,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
     size_t vpt_steps = 0;
     size_t locked_steps = 0;
 
-    for (size_t j = 0; j < config::FREE_RUN_WINDOW_SIZE; j++)
+    for (size_t j = 0; j < FR; j++)
     {
         const int32_t t = data_stream_->Index();
         if (t < 0 || static_cast<size_t>(t) >= S.size())
@@ -492,7 +507,7 @@ FreeRunResult Lorenz::FreeRun(bool verbose, const char* csv_path, size_t warmup_
         if (vpt_steps == 0 && step_err > config::VPT_THRESHOLD)
             vpt_steps = steps;
 
-        if (steps == config::FREE_RUN_WINDOW_SIZE)
+        if (steps == FR)
             break;
         st = data_stream_->Step();
     }

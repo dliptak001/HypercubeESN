@@ -337,9 +337,11 @@ int Train(size_t dim, size_t history_depth, uint64_t esn_seed,
 }
 
 // ---------------------------------------------------------------------------
-// FreeRun (campaign: load weights + freerun one attractor IC)
+// FreeRun (campaign: load weights + freerun one OrbitSweep orbit_seed)
 // ---------------------------------------------------------------------------
-// Load readout from file; free-run once on an explicit attractor IC (no train).
+// Same path as OrbitSweep: IcFromOrbitSeed(orbit_seed) at full double precision.
+// Do not pass rounded IC floats — free-run stream discards ~TW RK4 steps first,
+// so 6-digit ICs diverge chaotically from the survey trajectory.
 // CSV under RUNS_DIR/traces/. Distinct from Lorenz::FreeRun (member).
 // Plotting is external (plot_freerun_overlay.py).
 int FreeRun(size_t dim,
@@ -347,13 +349,29 @@ int FreeRun(size_t dim,
             uint64_t esn_seed,
             float spectral_radius,
             float input_scaling,
-            double ic_x, double ic_y, double ic_z,
-            const char* weights_stem)
+            uint64_t orbit_seed,
+            const char* weights_stem,
+            size_t freerun_steps)
 {
     if (!ValidateDim(dim, "freerun"))
         return 2;
     if (!ValidateHistoryDepth(history_depth, "freerun"))
         return 2;
+    if (orbit_seed == 0)
+    {
+        std::fprintf(stderr,
+                     "[freerun] refused: orbit_seed=0 "
+                     "(pass the orbit_seed from OrbitSweep, not a rounded IC)\n");
+        return 2;
+    }
+    if (freerun_steps == 0)
+        freerun_steps = config::FREE_RUN_WINDOW_SIZE;
+    if (freerun_steps < 1)
+    {
+        std::fprintf(stderr, "[freerun] refused: freerun_steps=%zu (need >= 1)\n",
+                     freerun_steps);
+        return 2;
+    }
     if (!ValidateDynamicsOverrides(spectral_radius, input_scaling, "freerun"))
         return 2;
 
@@ -383,16 +401,11 @@ int FreeRun(size_t dim,
     if (!EnsureDir(trace_dir, "freerun"))
         return 2;
 
-    const LorenzAttractor::State ic{ic_x, ic_y, ic_z};
-
-    char ic_tag[96];
-    std::snprintf(ic_tag, sizeof ic_tag, "ic%.6f_%.6f_%.6f", ic_x, ic_y, ic_z);
-    for (char* p = ic_tag; *p; ++p)
-        if (*p == '.')
-            *p = 'p';
+    const LorenzAttractor::State ic = Lorenz::IcFromOrbitSeed(orbit_seed);
 
     const fs::path out_path = trace_dir /
-        ("seed" + std::to_string(esn_seed) + "_" + ic_tag + ".csv");
+        ("seed" + std::to_string(esn_seed) +
+         "_orbit" + std::to_string(orbit_seed) + ".csv");
 
     ReportBanner("FreeRun (load-only)");
     std::printf("[freerun] DIM=%zu (N=%zu)  M=%zu  esn_seed=%llu\n",
@@ -408,7 +421,14 @@ int FreeRun(size_t dim,
         std::printf("[freerun] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
                     n_in, ch.c_str());
     }
-    std::printf("[freerun] IC=(%.6f, %.6f, %.6f)\n", ic_x, ic_y, ic_z);
+    std::printf("[freerun] orbit_seed=%llu  (IcFromOrbitSeed; same as OrbitSweep)\n",
+                static_cast<unsigned long long>(orbit_seed));
+    std::printf("[freerun] IC=(%.6f, %.6f, %.6f)  (display only; full double used)\n",
+                ic.x, ic.y, ic.z);
+    std::printf("[freerun] freerun_steps=%zu  (%.2f lt @ dt=%.3f lambda=%.4f)\n",
+                freerun_steps,
+                freerun_steps * config::LYAPUNOV_EXPONENT * config::DT,
+                config::DT, config::LYAPUNOV_EXPONENT);
     std::printf("[freerun] load stem: %s\n", stem);
     std::printf("[freerun] CSV dir: %s\n", trace_dir.string().c_str());
     std::fflush(stdout);
@@ -430,11 +450,13 @@ int FreeRun(size_t dim,
         return 1;
     }
 
-    std::printf("[freerun] free-run fixed IC (no train)\n");
+    std::printf("[freerun] free-run fixed orbit_seed (no train)\n");
     std::fflush(stdout);
 
+    // fixed_orbit_seed path — same seating as OrbitSweep; runway length optional.
     FreeRunResult r = lorenz.FreeRun(/*verbose=*/true, out_path.string().c_str(),
-                                                 0, /*fixed_orbit_seed=*/0, &ic);
+                                     /*warmup_steps=*/0, orbit_seed,
+                                     /*fixed_ic=*/nullptr, freerun_steps);
     if (!r.valid)
     {
         std::printf("[freerun] free-run invalid\n");
@@ -1242,9 +1264,11 @@ int OrbitSweep(size_t dim,
           kFileKeepTop, kFileKeepBottom);
 
     emit("note: one freerun per orbit; VxD = VPT*duty for that run.\n");
-    emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
-          "rank", "idx", "orbit_seed", "VxD", "VPT", "duty", "RMSE",
-          "r_VxD", "r_VPT", "r_duty");
+    auto emit_orbit_header = [&]() {
+        emitf("%-4s %6s %20s %10s %10s %10s %10s %6s %6s %6s\n",
+              "rank", "idx", "orbit_seed", "VxD", "VPT", "duty", "RMSE",
+              "r_VxD", "r_VPT", "r_duty");
+    };
     if (by_vxd.empty())
     {
         emit("(no successful freeruns)\n");
@@ -1252,6 +1276,7 @@ int OrbitSweep(size_t dim,
     else
     {
         emitf("\n--- Top %zu by VPT*duty ---\n", n_top);
+        emit_orbit_header();
         for (size_t r = 0; r < n_top; ++r)
             emit_orbit_row(r + 1, by_vxd[r]);
 
@@ -1261,6 +1286,7 @@ int OrbitSweep(size_t dim,
             emitf("\n--- Bottom %zu by VPT*duty (worst%s) ---\n",
                   n_ok - bot_start,
                   (bot_start < n_top) ? "; overlaps top" : "");
+            emit_orbit_header();
             for (size_t r = bot_start; r < n_ok; ++r)
                 emit_orbit_row(r + 1, by_vxd[r]);
         }
@@ -1298,15 +1324,17 @@ int OrbitSweep(size_t dim,
         emitf("\nBest orbit_seed=%llu  VxD=%.4f  VPT=%.4f  duty=%.4f\n",
               static_cast<unsigned long long>(best.orbit_seed),
               best.vpt_x_duty, best.vpt, best.duty);
-        emitf("  IC=(%.6f, %.6f, %.6f)\n", best.ic_x, best.ic_y, best.ic_z);
-        emitf("  FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, \"%s\");\n",
+        emitf("  IC=(%.6f, %.6f, %.6f)  (display only)\n",
+              best.ic_x, best.ic_y, best.ic_z);
+        emitf("  FreeRun(%zu, %zu, %llu, /*SR*/0.f, /*IS*/0.f, %llu, \"%s\");\n",
               dim, history_depth,
               static_cast<unsigned long long>(base_esn_seed),
-              best.ic_x, best.ic_y, best.ic_z, stem_str.c_str());
+              static_cast<unsigned long long>(best.orbit_seed),
+              stem_str.c_str());
     }
 
-    emit("\nCherry-pick: FreeRun with IC above, same esn_seed and weights path "
-        "(already trained; no retrain needed).\n");
+    emit("\nCherry-pick: FreeRun with orbit_seed above (not rounded IC floats), "
+         "same esn_seed and weights path.\n");
     std::fflush(stdout);
 
     {

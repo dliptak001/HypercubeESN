@@ -18,7 +18,8 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
         throw std::out_of_range("LorenzDatastream: span exceeds stream_length");
 
     Normalize(Build(cfg.stream_length, cfg.discard_steps, cfg.initial_lorenz_state,
-                    cfg.lorenz_dt));
+                    cfg.lorenz_dt),
+              cfg.normalize_count);
 
     if (print_header)
     {
@@ -87,14 +88,24 @@ std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_
     return raw;
 }
 
-void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw)
+void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw,
+                                 const size_t normalize_count)
 {
     // Per-channel midpoint; one shared scale (relative amplitudes preserved).
+    // Min/max may use only a fixed prefix so extending freerun_steps does not
+    // re-scale the wash + early runway (would change VPT vs survey default).
+    if (raw.empty())
+        return;
+    size_t n_stat = raw.size();
+    if (normalize_count > 0 && normalize_count < n_stat)
+        n_stat = normalize_count;
+
     double x_min = raw.front().x, x_max = x_min;
     double y_min = raw.front().y, y_max = y_min;
     double z_min = raw.front().z, z_max = z_min;
-    for (const auto& s : raw)
+    for (size_t i = 0; i < n_stat; ++i)
     {
+        const auto& s = raw[i];
         x_min = std::min(x_min, s.x);
         x_max = std::max(x_max, s.x);
         y_min = std::min(y_min, s.y);
