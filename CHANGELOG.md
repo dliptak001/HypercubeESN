@@ -64,13 +64,14 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   first; RAII restore of `DIM` / `HISTORY_DEPTH`.
 - **Lorenz Train / FreeRunSurvey / FreeRun pipeline:** train-only weight save;
   multi-orbit Unseen freerun survey with top-10% VPT / duty / VPT×duty / RMSE
-  and IC leaderboard CSV under `C:\HypercubeESNRuns\results\surveys\`; single-IC
+  and IC leaderboard CSV under `C:\HypercubeESN\results\surveys\`; single-IC
   load-only freerun with plottable CSV under `...\traces\` (see
   `plot_freerun_overlay.py`).
-- **Lorenz campaign I/O consistency:** shared `RUNS_DIR` tree
-  (`traces/` / `surveys/` / `campaigns/`), common report helpers (banner, freerun
-  score line, wrote bytes, wall time), atomic CSV writes, default weight stem
-  `lorenz_seed{S}_D{D}_M{M}`.
+- **Lorenz campaign I/O consistency:** shared `RUNS_DIR` tree under
+  `C:\HypercubeESN\results` (`traces/` / `surveys/` / `campaigns/`; formerly
+  `C:\HypercubeESNRuns\...`), common report helpers (banner, freerun score line,
+  wrote bytes, wall time), atomic CSV writes, default weight stem
+  `lorenz_seed{S}_D{D}_M{M}` under `MODEL_SAVE_DIR` (`C:\HypercubeESN\models`).
 - **Lorenz per-channel drive gains:** locked `constexpr config::INPUT_SCALE_CH[]`
   = `{1, 1, 0.9, 0.7}` for `[x,y,z,xz]` on top of global `INPUT_SCALING`
   (applied in `FillDrive`). Constructor banner and campaign metadata print

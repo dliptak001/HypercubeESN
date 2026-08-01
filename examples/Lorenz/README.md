@@ -194,7 +194,7 @@ SeedSweep  →  Train  →  OrbitSweep  →  FreeRun
  search        weights   (load-only)     (load-only)
 ```
 
-**Artifact tree** (`config::RUNS_DIR` = `C:\HypercubeESNRuns\results`):
+**Artifact tree** (`config::RUNS_DIR` = `C:\HypercubeESN\results`; models under `C:\HypercubeESN\models`):
 
 | Subdir | Campaigns |
 |--------|-----------|

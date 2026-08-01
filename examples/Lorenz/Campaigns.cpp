@@ -140,7 +140,7 @@ namespace
     }
 
     // ---- Shared paths --------------------------------------------------------
-    // C:\HypercubeESNRuns\results\{traces|surveys}
+    // C:\HypercubeESN\results\{traces|surveys}
 
     fs::path RunsRoot() { return config::RUNS_DIR; }
     fs::path TracesDir() { return RunsRoot() / "traces"; }

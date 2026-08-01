@@ -91,12 +91,13 @@ namespace config
     constexpr const char* LOAD_WEIGHTS_STEM =
         R"(C:\HypercubeESN\models\lorenz_seed21978990_D11_M24_in4)";
 
-    // Campaign artifacts (CWD-independent). Layout:
+    // Campaign artifacts (CWD-independent), all under C:\HypercubeESN. Layout:
     //   RUNS_DIR/traces/   FreeRun plottable CSVs
     //   RUNS_DIR/surveys/  SeedSweep + OrbitSweep leaderboards
     //   RESULTS_DIR        legacy path alias under RUNS_DIR (unused by keepers)
-    constexpr const char* RUNS_DIR = R"(C:\HypercubeESNRuns\results)";
-    constexpr const char* RESULTS_DIR = R"(C:\HypercubeESNRuns\results\campaigns)";
+    //   MODEL_SAVE_DIR     trained readout weights (sibling of results/)
+    constexpr const char* RUNS_DIR = R"(C:\HypercubeESN\results)";
+    constexpr const char* RESULTS_DIR = R"(C:\HypercubeESN\results\campaigns)";
 
     // ---- Free-run scoring ----
     constexpr float VPT_THRESHOLD = 0.25f;
