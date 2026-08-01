@@ -167,7 +167,7 @@ public:
     }
 
     /// HCNN readout worker count used by MakeESNConfig. Must remain 1 so host
-    /// campaigns (ParallelSeedSweep, SeedSurvey) can run many Lorenz instances
+    /// campaigns (SeedSweep, SeedSurvey) can run many Lorenz instances
     /// without nested HCNN thread pools. Do not change to 0 (auto) or N>1
     /// without revisiting those campaigns.
     static constexpr size_t kReadoutNumThreads = 1;

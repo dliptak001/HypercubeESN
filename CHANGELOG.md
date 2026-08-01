@@ -79,20 +79,20 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   `spectral_radius` / `input_scaling` (`>0` set override; `0` keep config; RAII
   restore on exit). Console banners use ASCII only (no em-dash / times) for
   Windows OEM consoles; `MODEL_SAVE_DIR` single-backslash path.
-- **`ParallelSeedSweep`:** host-parallel overnight seed search. Mix64-derived
+- **`SeedSweep`:** host-parallel overnight seed search. Mix64-derived
   ESN seeds from a base; in-memory train (no weight I/O); freerun means use
   top-10% pool; mutexed stderr heartbeats; final multi-metric ranking (stdout
   + surveys CSV/TXT). Caps threads to `hardware_concurrency`; requires
   `Lorenz::kReadoutNumThreads == 1`; refuses LOAD/SAVE weight flags. Same
   optional SR/IS overrides as FreeRun*.
-- **`ParallelOrbitSweep`:** train one ESN seed once; parallel one-freerun-per
-  Mix64 orbit; rank orbit seeds by VPT / duty / VPT×duty. Survey CSV/TXT and
-  the matching stdout table keep **top 100 + bottom 10** by VPT×duty (not the
-  full N-orbit table; for large `num_orbits`). Workers are quiet on success
-  (no per-orbit heartbeats; FAILED lines still mutexed). Temp readout stem for
-  worker load only (RAII delete); quiet per-job loads. Same thread caps /
-  dynamics overrides / HCNN=1 / refuse flags as ParallelSeedSweep.
-  `LoadTrainedWeights(..., log_load=false)` for quiet loads.
+- **`OrbitSweep`:** **load-only** orbit ranking (no train). Pipeline:
+  `Train` → `OrbitSweep(weights_path)` → `FreeRun`. Parallel one-freerun-per
+  Mix64 orbit; rank by VPT / duty / VPT×duty. Survey **TXT only** (no CSV);
+  stdout + file keep **top 100 + bottom 10** by VPT×duty. Top-k sections
+  include attractor IC `(x,y,z)`. Requires existing `.hcnw` (or refuses).
+  Workers quiet on success; FAILED lines mutexed. Thread caps / SR-IS
+  overrides / HCNN=1 as FreeRun. Quiet per-job
+  `LoadTrainedWeights(..., log_load=false)`.
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 
@@ -109,8 +109,8 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   locked `drive_ch`.
 - **Lorenz campaign cull:** removed `Campaign_HistoryDepthSweep` (M-sweep),
   `Campaign_SpectralRadiusAB` (and their Msweep/SrAB result writers), and
-  serial `SeedSweep` (superseded by `ParallelSeedSweep`). SR still overridable
-  via Parallel* / FreeRun* args or `config::`.
+  serial seed-list sweep (superseded by parallel `SeedSweep`). SR still
+  overridable via SeedSweep / OrbitSweep / FreeRun* args or `config::`.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default

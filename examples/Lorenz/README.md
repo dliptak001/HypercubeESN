@@ -200,7 +200,7 @@ int main()
 Train  →  FreeRunSurvey  →  FreeRun
  weights     rank orbits       plot one IC
 
-ParallelSeedSweep: multi-seed overnight search (train in memory; rank seeds)
+SeedSweep: multi-seed overnight search (train in memory; rank seeds)
 ```
 
 **`Train`** — train-only (no freerun): remixed orbits for `epochs` from remix base
@@ -218,7 +218,7 @@ Train(/*dim=*/12, /*history_depth=*/18, /*esn_seed=*/221978990,
 | Subdir | Campaigns |
 |--------|-----------|
 | `traces/` | `FreeRun`, `Campaign_Trace` freerun CSVs |
-| `surveys/` | `FreeRunSurvey`, `ParallelSeedSweep`, `ParallelOrbitSweep` leaderboards |
+| `surveys/` | `FreeRunSurvey`, `SeedSweep`, `OrbitSweep` leaderboards |
 | `campaigns/` | `Campaign_SeedSurvey` roll-ups (`RESULTS_DIR`) |
 
 **Shared reporting:** banners `=== HypercubeESN: Lorenz / Name ===`, tags
@@ -239,7 +239,7 @@ Optional trailing overrides (restored on exit): `spectral_radius` /
 trace. Writes: `RUNS_DIR/traces/seed{esn}_ic{x}_{y}_{z}.csv`. Same optional
 SR/IS overrides as FreeRunSurvey.
 
-**`ParallelSeedSweep`** — overnight parallel seed search. Always trains in
+**`SeedSweep`** — overnight parallel seed search. Always trains in
 memory (**no weight save/load**; refuses `SAVE_TRAINED_WEIGHTS` /
 `LOAD_TRAINED_WEIGHTS`). Requires HCNN `Lorenz::kReadoutNumThreads == 1`
 (no nested pools). ESN seeds from `base_esn_seed` via SplitMix64 substreams
@@ -255,8 +255,8 @@ FreeRun.
 | Function | Role |
 |----------|------|
 | `Campaign_SeedSurvey(dim, threads, runs, ...)` | Multi-seed train + free-run report (`threads=0` => HW concurrency) |
-| `ParallelSeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
-| `ParallelOrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, epochs, ...)` | Train one seed once; parallel one-freerun-per-orbit ranking (CSV/TXT: top 100 + bottom 10 by VxD) |
+| `SeedSweep(dim, M, base_esn, num_seeds, threads, epochs, freeruns, ...)` | Parallel train+freerun seed search; no lasting weight I/O; multi-metric ranking report |
+| `OrbitSweep(dim, M, esn, base_orbit, num_orbits, threads, weights_path, ...)` | Load-only; parallel one-freerun-per-orbit ranking (TXT: top 100 + bottom 10 by VxD; top-k includes IC xyz) |
 | `Campaign_Trace(dim, esn_seed, max_freeruns, target_orbit, ...)` | One seed + CSV under `{RESULTS_DIR}/traces/` (absolute; CWD-safe). `target_orbit≠0` = fixed orbit, every step printed + CSV; plot with `plot_freerun_overlay.py` |
 | `Train` / `FreeRunSurvey` / `FreeRun` | Serial train → survey orbits → plot one IC |
 

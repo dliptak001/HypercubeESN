@@ -21,7 +21,7 @@ knobs** on the existing 4-in `[x, y, z, x*z]` stack — not new ports or layers.
 | Multi-layout drive enum (XyzXy / Quadratic8) | **Removed** — fixed 4-in `[x,y,z,xz]` only (`kNumDriveChannels`) |
 
 **Protocol for every arm:** one change at a time; fixed DIM/M/epochs/seed set;
-Unseen FreeRunSurvey (or short ParallelSeedSweep); report top-10% freerun means
+Unseen FreeRunSurvey (or short SeedSweep); report top-10% freerun means
 (VPT, duty, VPT×duty, RMSE). Prefer matched seeds/orbits across arms.
 
 ---
@@ -52,7 +52,7 @@ that does not change architecture.
 | 0.05, 0.06, 0.08 | stronger drive (watch saturation / worse duty) |
 
 **How:** flip `config::INPUT_SCALING`, or pass `input_scaling` into
-`ParallelSeedSweep` / FreeRun* (>0 overrides for that run; 0 keeps config).
+`SeedSweep` / FreeRun* (>0 overrides for that run; 0 keeps config).
 Keep SR and layout fixed for a pure scale A/B.
 
 **Done when:** best scale is locked (or baseline confirmed) on survey-scale
@@ -116,12 +116,12 @@ Historical first grid (already folded into the lock):
 2. Best scale → **SR** {0.95, 0.97, 0.98, 0.99}  
 3. Best of those → **per-channel gains** (z, xz only first)
 
-One change per survey. Stop when overnight ParallelSeedSweep mean VPT×duty stops moving.
+One change per survey. Stop when overnight SeedSweep mean VPT×duty stops moving.
 
 ---
 
 ## Success criterion
 
 Mean top-10% **VPT×duty** (and/or VPT, duty) improves vs current baseline on a
-matched Unseen survey / short ParallelSeedSweep; **or** a clear negative for each arm
+matched Unseen survey / short SeedSweep; **or** a clear negative for each arm
 so the lever is closed. Do not over-index on single-orbit freeruns.

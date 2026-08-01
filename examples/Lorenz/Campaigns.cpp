@@ -1377,7 +1377,7 @@ int FreeRunSurvey(size_t dim, size_t history_depth, uint64_t esn_seed,
 }
 
 // ---------------------------------------------------------------------------
-// ParallelSeedSweep (train+freerun in memory; parallel ESN seeds; no weight I/O)
+// SeedSweep (train+freerun in memory; parallel ESN seeds; no weight I/O)
 // ---------------------------------------------------------------------------
 namespace
 {
@@ -1454,7 +1454,7 @@ ParSeedRow EvaluateParSeed(size_t index, uint64_t esn_seed, uint64_t base_orbit_
 }
 } // namespace
 
-int ParallelSeedSweep(size_t dim, size_t history_depth,
+int SeedSweep(size_t dim, size_t history_depth,
                       uint64_t base_esn_seed, size_t num_seeds, size_t num_threads,
                       size_t epochs, int freerun_runs, uint64_t base_orbit_seed,
                       int top_k, float spectral_radius, float input_scaling)
@@ -1507,7 +1507,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
     }
     // Host-parallelism requires HCNN single-threaded per Lorenz (no nested pools).
     static_assert(Lorenz::kReadoutNumThreads == 1,
-                  "ParallelSeedSweep requires Lorenz::kReadoutNumThreads == 1");
+                  "SeedSweep requires Lorenz::kReadoutNumThreads == 1");
 
     const size_t hw = std::thread::hardware_concurrency()
                           ? std::thread::hardware_concurrency()
@@ -1559,7 +1559,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
     config::ENABLE_PRINTF = false;
     config::ENABLE_PROGRESS = false;
 
-    ReportBanner("ParallelSeedSweep");
+    ReportBanner("SeedSweep");
     std::printf("[par-seed-sweep] DIM=%zu  M=%zu  num_seeds=%zu  num_threads=%zu  "
                 "epochs=%zu  freerun_runs=%d  top_k=%d\n",
                 dim, history_depth, num_seeds, num_threads, epochs, freerun_runs,
@@ -1697,7 +1697,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
     };
 
     emit("\n========================================================================\n");
-    emit("=== ParallelSeedSweep final report (top-10% freerun means) ===\n");
+    emit("=== SeedSweep final report (top-10% freerun means) ===\n");
     emit("========================================================================\n");
     emitf("DIM=%zu  M=%zu  num_seeds=%zu  threads=%zu  epochs=%zu  freerun_runs=%d\n",
           dim, history_depth, num_seeds, num_threads, epochs, freerun_runs);
@@ -1790,7 +1790,7 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
             }
             else
             {
-                csv << "# ParallelSeedSweep\n"
+                csv << "# SeedSweep\n"
                     << "# freerun_pool=top_10pct_per_metric\n"
                     << "# dim=" << dim << " history_depth=" << history_depth
                     << " epochs=" << epochs << " freerun_runs=" << freerun_runs
@@ -1863,12 +1863,12 @@ int ParallelSeedSweep(size_t dim, size_t history_depth,
 }
 
 // ---------------------------------------------------------------------------
-// ParallelOrbitSweep (train once; parallel one-freerun-per-orbit ranking)
+// OrbitSweep (load-only; parallel one-freerun-per-orbit ranking)
 // ---------------------------------------------------------------------------
-int ParallelOrbitSweep(size_t dim, size_t history_depth,
-                       uint64_t base_esn_seed, uint64_t base_orbit_seed,
-                       size_t num_orbits, size_t num_threads, size_t epochs,
-                       int top_k, float spectral_radius, float input_scaling)
+int OrbitSweep(size_t dim, size_t history_depth,
+               uint64_t base_esn_seed, uint64_t base_orbit_seed,
+               size_t num_orbits, size_t num_threads, const char* weights_stem,
+               int top_k, float spectral_radius, float input_scaling)
 {
     if (!ValidateDim(dim, "par-orbit-sweep"))
         return 2;
@@ -1886,32 +1886,36 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
                      num_threads);
         return 2;
     }
-    if (epochs < 1)
-    {
-        std::fprintf(stderr, "[par-orbit-sweep] refused: epochs=%zu (need >= 1)\n",
-                     epochs);
-        return 2;
-    }
     if (top_k < 1)
         top_k = 1;
     if (!ValidateDynamicsOverrides(spectral_radius, input_scaling, "par-orbit-sweep"))
         return 2;
-    if (config::LOAD_TRAINED_WEIGHTS)
+
+    const char* stem_arg = (weights_stem && weights_stem[0] != '\0')
+                               ? weights_stem
+                               : config::LOAD_WEIGHTS_STEM;
+    if (stem_arg == nullptr || stem_arg[0] == '\0')
     {
         std::fprintf(stderr,
-                     "[par-orbit-sweep] refused: LOAD_TRAINED_WEIGHTS is on "
-                     "(this campaign always trains from scratch)\n");
+                     "[par-orbit-sweep] refused: no weights path "
+                     "(pass weights_stem or set config::LOAD_WEIGHTS_STEM; "
+                     "run Train first)\n");
         return 2;
     }
-    if (config::SAVE_TRAINED_WEIGHTS)
+    const std::string stem_str(stem_arg);
     {
-        std::fprintf(stderr,
-                     "[par-orbit-sweep] refused: SAVE_TRAINED_WEIGHTS is on "
-                     "(campaign uses a temp stem only; turn config auto-save off)\n");
-        return 2;
+        std::error_code ec;
+        if (!fs::exists(fs::path(stem_str + ".hcnw"), ec) || ec)
+        {
+            std::fprintf(stderr,
+                         "[par-orbit-sweep] refused: missing %s.hcnw  (Train first)\n",
+                         stem_str.c_str());
+            return 2;
+        }
     }
+
     static_assert(Lorenz::kReadoutNumThreads == 1,
-                  "ParallelOrbitSweep requires Lorenz::kReadoutNumThreads == 1");
+                  "OrbitSweep requires Lorenz::kReadoutNumThreads == 1");
 
     const size_t hw = std::thread::hardware_concurrency()
                           ? std::thread::hardware_concurrency()
@@ -1929,7 +1933,6 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
 
     ConfigSizeRestore dim_restore(config::DIM, dim);
     ConfigSizeRestore m_restore(config::HISTORY_DEPTH, history_depth);
-    ConfigSizeRestore epochs_restore(config::EPOCHS, epochs);
     ConfigFloatRestore sr_restore(
         config::SPECTRAL_RADIUS,
         spectral_radius > 0.0f ? spectral_radius : config::SPECTRAL_RADIUS);
@@ -1944,29 +1947,21 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
         return 2;
 
     const std::string ts = TimestampNow();
-    const fs::path rank_csv = survey_dir /
-        ("par_orbit_sweep_D" + std::to_string(dim) +
-         "_M" + std::to_string(history_depth) +
-         "_orbits" + std::to_string(num_orbits) +
-         "_" + ts + ".csv");
     const fs::path rank_txt = survey_dir /
         ("par_orbit_sweep_D" + std::to_string(dim) +
          "_M" + std::to_string(history_depth) +
          "_orbits" + std::to_string(num_orbits) +
          "_" + ts + ".txt");
-    // Temp stem so workers can Load after one train (deleted before return).
-    const fs::path temp_stem = survey_dir /
-        (".par_orbit_tmp_seed" + std::to_string(base_esn_seed) + "_" + ts);
 
     const bool saved_printf = config::ENABLE_PRINTF;
     const bool saved_progress = config::ENABLE_PROGRESS;
     config::ENABLE_PRINTF = false;
     config::ENABLE_PROGRESS = false;
 
-    ReportBanner("ParallelOrbitSweep");
+    ReportBanner("OrbitSweep (load-only)");
     std::printf("[par-orbit-sweep] DIM=%zu  M=%zu  num_orbits=%zu  num_threads=%zu  "
-                "epochs=%zu  top_k=%d\n",
-                dim, history_depth, num_orbits, num_threads, epochs, top_k);
+                "top_k=%d\n",
+                dim, history_depth, num_orbits, num_threads, top_k);
     std::printf("[par-orbit-sweep] base_esn_seed=%llu\n",
                 static_cast<unsigned long long>(base_esn_seed));
     std::printf("[par-orbit-sweep] base_orbit_seed=%llu  (orbit_i = Mix64(base ^ FNV*(i+1)))\n",
@@ -1981,49 +1976,14 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
         std::printf("[par-orbit-sweep] drive=[x,y,z,xz]  n_in=%zu  drive_ch=%s\n",
                     n_in, ch.c_str());
     }
-    std::printf("[par-orbit-sweep] train once, then one freerun per orbit (parallel)\n");
+    std::printf("[par-orbit-sweep] load: %s  (.hcnw + .arch.json)\n", stem_str.c_str());
+    std::printf("[par-orbit-sweep] freerun %zu orbits in parallel (quiet per-job load)\n",
+                num_orbits);
     std::printf("[par-orbit-sweep] report: %s\n", rank_txt.string().c_str());
-    std::printf("[par-orbit-sweep] CSV:    %s\n", rank_csv.string().c_str());
     std::fflush(stdout);
 
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
-
-    // Always remove temp readout files (train fail, early return, or success).
-    const std::string stem_str = temp_stem.string();
-    struct TempStemGuard
-    {
-        std::string stem;
-        explicit TempStemGuard(std::string s) : stem(std::move(s)) {}
-        ~TempStemGuard()
-        {
-            std::error_code ec;
-            fs::remove(fs::path(stem + ".hcnw"), ec);
-            fs::remove(fs::path(stem + ".arch.json"), ec);
-        }
-        TempStemGuard(const TempStemGuard&) = delete;
-        TempStemGuard& operator=(const TempStemGuard&) = delete;
-    };
-    TempStemGuard temp_guard(stem_str);
-
-    // --- Train once ---
-    try
-    {
-        Lorenz trainer(base_esn_seed, base_orbit_seed);
-        trainer.Train();
-        trainer.SaveTrainedWeights(stem_str.c_str());
-    }
-    catch (const std::exception& e)
-    {
-        config::ENABLE_PRINTF = saved_printf;
-        config::ENABLE_PROGRESS = saved_progress;
-        std::fprintf(stderr, "[par-orbit-sweep] train/save failed: %s\n", e.what());
-        return 1; // temp_guard removes any partial stem
-    }
-
-    std::printf("[par-orbit-sweep] trained; freerunning %zu orbits (quiet per-job load)\n",
-                num_orbits);
-    std::fflush(stdout);
 
     struct OrbitRow
     {
@@ -2106,14 +2066,6 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
     std::fflush(stderr);
     std::fflush(stdout);
 
-    // Temp weights no longer needed; drop before ranking so files do not linger
-    // if report I/O is slow. Guard dtor also removes (idempotent).
-    {
-        std::error_code ec;
-        fs::remove(fs::path(stem_str + ".hcnw"), ec);
-        fs::remove(fs::path(stem_str + ".arch.json"), ec);
-    }
-
     config::ENABLE_PRINTF = saved_printf;
     config::ENABLE_PROGRESS = saved_progress;
 
@@ -2139,24 +2091,14 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
         return 0;
     };
 
-    // Large N (e.g. 10k orbits): keep only extremes for stdout + CSV/TXT.
-    // Ranking stays over all successful freeruns; files are not the full table.
+    // Large N (e.g. 10k orbits): keep only extremes for stdout + TXT report.
+    // Ranking stays over all successful freeruns; the file is not the full table.
     constexpr size_t kFileKeepTop = 100;
     constexpr size_t kFileKeepBottom = 10;
     const size_t n_ok = by_vxd.size();
     const size_t n_top = std::min(kFileKeepTop, n_ok);
     const size_t bot_start =
         (n_ok > kFileKeepBottom) ? (n_ok - kFileKeepBottom) : 0;
-    // Unique ranks in by_vxd order (top first, then bottom not already in top).
-    std::vector<size_t> file_ranks;
-    file_ranks.reserve(n_top + kFileKeepBottom);
-    for (size_t r = 0; r < n_top; ++r)
-        file_ranks.push_back(r);
-    for (size_t r = bot_start; r < n_ok; ++r)
-    {
-        if (r >= n_top)
-            file_ranks.push_back(r);
-    }
     size_t n_fail = 0;
     for (const auto& s : rows)
         if (!s.ok)
@@ -2183,12 +2125,13 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
     };
 
     emit("\n========================================================================\n");
-    emit("=== ParallelOrbitSweep final report (one freerun per orbit) ===\n");
+    emit("=== OrbitSweep final report (load-only; one freerun per orbit) ===\n");
     emit("========================================================================\n");
-    emitf("DIM=%zu  M=%zu  esn_seed=%llu  num_orbits=%zu  threads=%zu  epochs=%zu\n",
+    emitf("DIM=%zu  M=%zu  esn_seed=%llu  num_orbits=%zu  threads=%zu\n",
           dim, history_depth, static_cast<unsigned long long>(base_esn_seed),
-          num_orbits, num_threads, epochs);
+          num_orbits, num_threads);
     emitf("base_orbit_seed=%llu\n", static_cast<unsigned long long>(base_orbit_seed));
+    emitf("weights=%s\n", stem_str.c_str());
     emitf("ok=%zu / %zu  failed=%zu\n", n_ok, num_orbits, n_fail);
     emitf("file/stdout keep: top %zu + bottom %zu by VPT*duty (not full table)\n\n",
           kFileKeepTop, kFileKeepBottom);
@@ -2226,15 +2169,17 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
             return;
         }
         const size_t n = std::min(static_cast<size_t>(top_k), ord.size());
-        emitf("%-4s %6s %20s %10s %10s %10s\n",
-              "rank", "idx", "orbit_seed", "VxD", "VPT", "duty");
+        emitf("%-4s %6s %20s %10s %10s %10s %10s %10s %10s\n",
+              "rank", "idx", "orbit_seed", "VxD", "VPT", "duty",
+              "ic_x", "ic_y", "ic_z");
         for (size_t r = 0; r < n; ++r)
         {
             const auto& s = rows[ord[r]];
-            emitf("%-4zu %6zu %20llu %10.4f %10.4f %10.4f\n",
+            emitf("%-4zu %6zu %20llu %10.4f %10.4f %10.4f %10.6f %10.6f %10.6f\n",
                   r + 1, s.index,
                   static_cast<unsigned long long>(s.orbit_seed),
-                  s.vpt_x_duty, s.vpt, s.duty);
+                  s.vpt_x_duty, s.vpt, s.duty,
+                  s.ic_x, s.ic_y, s.ic_z);
         }
     };
     emit_top("VPT*duty", by_vxd);
@@ -2248,70 +2193,15 @@ int ParallelOrbitSweep(size_t dim, size_t history_depth,
               static_cast<unsigned long long>(best.orbit_seed),
               best.vpt_x_duty, best.vpt, best.duty);
         emitf("  IC=(%.6f, %.6f, %.6f)\n", best.ic_x, best.ic_y, best.ic_z);
-        emitf("  FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, /*stem after Train*/);\n",
+        emitf("  FreeRun(%zu, %zu, %llu, %.6f, %.6f, %.6f, \"%s\");\n",
               dim, history_depth,
               static_cast<unsigned long long>(base_esn_seed),
-              best.ic_x, best.ic_y, best.ic_z);
+              best.ic_x, best.ic_y, best.ic_z, stem_str.c_str());
     }
 
-    emit("\nCherry-pick: orbit_seed / IC above with this esn_seed (Train then FreeRun; "
-         "weights were not kept by this campaign).\n");
+    emit("\nCherry-pick: FreeRun with IC above, same esn_seed and weights path "
+         "(already trained; no retrain needed).\n");
     std::fflush(stdout);
-
-    {
-        const fs::path tmp = fs::path(rank_csv.string() + ".tmp");
-        bool wrote_ok = false;
-        {
-            std::ofstream csv(tmp, std::ios::out | std::ios::trunc);
-            if (!csv)
-            {
-                std::fprintf(stderr, "[par-orbit-sweep] failed to open %s\n",
-                             tmp.string().c_str());
-            }
-            else
-            {
-                csv << "# ParallelOrbitSweep\n"
-                    << "# one freerun per orbit (VxD = VPT*duty that run)\n"
-                    << "# kept: top " << kFileKeepTop << " + bottom "
-                    << kFileKeepBottom << " by VPT*duty (unique ranks; not full table)\n"
-                    << "# dim=" << dim << " history_depth=" << history_depth
-                    << " epochs=" << epochs << " num_orbits=" << num_orbits
-                    << " num_threads=" << num_threads << "\n"
-                    << "# base_esn_seed=" << base_esn_seed
-                    << " base_orbit_seed=" << base_orbit_seed << "\n"
-                    << "# ok=" << n_ok << " failed=" << n_fail
-                    << " rows_written=" << file_ranks.size() << "\n"
-                    << "idx,orbit_seed,ok,vpt_x_duty,vpt,duty,rmse,"
-                       "ic_x,ic_y,ic_z,rank_vpt_x_duty,rank_vpt,rank_duty\n";
-                for (size_t r : file_ranks)
-                {
-                    const size_t i = by_vxd[r];
-                    const auto& s = rows[i];
-                    csv << s.index << ',' << s.orbit_seed << ",1,"
-                        << s.vpt_x_duty << ',' << s.vpt << ',' << s.duty << ','
-                        << s.rmse << ','
-                        << s.ic_x << ',' << s.ic_y << ',' << s.ic_z << ','
-                        << rank_of(by_vxd, i) << ','
-                        << rank_of(by_vpt, i) << ','
-                        << rank_of(by_duty, i) << '\n';
-                }
-                csv.flush();
-                wrote_ok = csv.good();
-            }
-        }
-        if (wrote_ok)
-        {
-            std::error_code ec;
-            fs::remove(rank_csv, ec);
-            fs::rename(tmp, rank_csv, ec);
-            if (ec)
-                std::fprintf(stderr,
-                             "[par-orbit-sweep] rename CSV failed: %s  (data at %s)\n",
-                             ec.message().c_str(), tmp.string().c_str());
-            else
-                ReportWrote("par-orbit-sweep", rank_csv);
-        }
-    }
 
     {
         std::ofstream txt(rank_txt, std::ios::out | std::ios::trunc);

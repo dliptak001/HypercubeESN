@@ -144,7 +144,7 @@ int Train(size_t dim,
 /// LOAD_TRAINED_WEIGHTS and SAVE_TRAINED_WEIGHTS. Requires
 /// Lorenz::kReadoutNumThreads == 1 (HCNN single-threaded per network).
 /// @p num_threads is capped to hardware_concurrency and to @p num_seeds.
-int ParallelSeedSweep(size_t dim,
+int SeedSweep(size_t dim,
                       size_t history_depth,
                       uint64_t base_esn_seed,
                       size_t num_seeds,
@@ -156,23 +156,22 @@ int ParallelSeedSweep(size_t dim,
                       float spectral_radius = 0.f,
                       float input_scaling = 0.f);
 
-/// Parallel orbit search for one ESN seed (train once, no lasting weight save).
-/// Trains @p base_esn_seed once (remix root @p base_orbit_seed), then freeruns
-/// @p num_orbits fixed orbits in parallel: orbit_i = Mix64(base_orbit ^ FNV*(i+1)).
-/// One freerun per orbit (raw metrics, no top-10% pool). Ranks orbit seeds by
-/// VPT / duty / VPT*duty. Survey CSV/TXT (and the matching stdout table) keep
-/// only the top 100 and bottom 10 by VPT*duty — not the full N-orbit table.
-/// Temporary readout stem only so workers can load the trained model; removed
-/// after the sweep. Same dynamics overrides / refuse LOAD+SAVE flags / HCNN
-/// threads=1 / thread cap as ParallelSeedSweep. @p num_threads capped to HW
-/// and @p num_orbits.
-int ParallelOrbitSweep(size_t dim,
-                       size_t history_depth,
-                       uint64_t base_esn_seed,
-                       uint64_t base_orbit_seed,
-                       size_t num_orbits,
-                       size_t num_threads,
-                       size_t epochs,
-                       int top_k = 10,
-                       float spectral_radius = 0.f,
-                       float input_scaling = 0.f);
+/// Parallel orbit ranking for one ESN seed (**load-only**; no train).
+/// Loads readout from @p weights_stem (or config::LOAD_WEIGHTS_STEM if null/empty),
+/// then freeruns @p num_orbits fixed orbits in parallel:
+/// orbit_i = Mix64(base_orbit ^ FNV*(i+1)). One freerun per orbit (raw metrics,
+/// no top-10% pool). Ranks by VPT / duty / VPT*duty. Survey TXT only (no CSV);
+/// stdout + file keep top 100 and bottom 10 by VPT*duty. Top-k sections include
+/// attractor IC (x,y,z) for FreeRun. Pipeline: Train → OrbitSweep → FreeRun
+/// (same weights path). Requires HCNN threads=1; @p num_threads capped to HW
+/// and @p num_orbits. Optional SR/IS overrides as FreeRun.
+int OrbitSweep(size_t dim,
+               size_t history_depth,
+               uint64_t base_esn_seed,
+               uint64_t base_orbit_seed,
+               size_t num_orbits,
+               size_t num_threads,
+               const char* weights_stem = nullptr,
+               int top_k = 10,
+               float spectral_radius = 0.f,
+               float input_scaling = 0.f);
