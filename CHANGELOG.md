@@ -93,6 +93,10 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   Workers quiet on success; FAILED lines mutexed. Thread caps / SR-IS
   overrides / HCNN=1 as FreeRun. Quiet per-job
   `LoadTrainedWeights(..., log_load=false)`.
+- **`DefaultWeightStem(esn, dim, M)`:** public helper —
+  `{MODEL_SAVE_DIR}/lorenz_seed{S}_D{D}_M{M}` for Train / OrbitSweep / FreeRun.
+- **`FreeRun` / `OrbitSweep` arg order:** `spectral_radius` and `input_scaling`
+  sit immediately after `esn_seed` (then IC / orbit args / weights).
 - **House style in docs:** hypercube dimension **dim**; powers as
   `2<sup>dim</sup>` in prose.
 

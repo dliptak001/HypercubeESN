@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // Campaign entry points -- plain functions. Call them from main.cpp (copy/paste).
@@ -73,17 +74,17 @@ int Campaign_Trace(size_t dim,
 /// @param dim            Reservoir hypercube dim (N = 2^dim); must match model.
 /// @param history_depth  Reservoir delay-line M (1..64); must match model.
 /// @param esn_seed       Reservoir seed; must match the run that produced weights.
-/// @param ic_x,ic_y,ic_z Attractor IC (same space as IcFromOrbitSeed).
-/// @param weights_stem   Optional override of config::LOAD_WEIGHTS_STEM.
 /// @param spectral_radius If > 0, set config::SPECTRAL_RADIUS; <= 0 keeps config.
 /// @param input_scaling   If > 0, set config::INPUT_SCALING; <= 0 keeps config.
+/// @param ic_x,ic_y,ic_z Attractor IC (same space as IcFromOrbitSeed).
+/// @param weights_stem   Optional override of config::LOAD_WEIGHTS_STEM.
 int FreeRun(size_t dim,
             size_t history_depth,
             uint64_t esn_seed,
+            float spectral_radius,
+            float input_scaling,
             double ic_x, double ic_y, double ic_z,
-            const char* weights_stem = nullptr,
-            float spectral_radius = 0.f,
-            float input_scaling = 0.f);
+            const char* weights_stem = nullptr);
 
 /// Aggregate from one @ref FreeRunSurvey (top-10% freerun pool means).
 struct FreeRunSurveySummary
@@ -119,6 +120,14 @@ int FreeRunSurvey(size_t dim,
                   FreeRunSurveySummary* out = nullptr,
                   float spectral_radius = 0.f,
                   float input_scaling = 0.f);
+
+/// Default readout path (no extension) under config::MODEL_SAVE_DIR:
+///   {MODEL_SAVE_DIR}/lorenz_seed{esn}_D{dim}_M{M}
+/// Train / OrbitSweep / FreeRun share this when @p weights_stem is null/empty.
+/// On disk: path + ".hcnw" and path + ".arch.json".
+[[nodiscard]] std::string DefaultWeightStem(uint64_t esn_seed,
+                                            size_t dim,
+                                            size_t history_depth);
 
 /// Train-only complement to @ref FreeRun: remixed orbits for @p epochs starting
 /// from @p target_orbit remix seed; save readout to @p weights_stem (or default
@@ -168,10 +177,10 @@ int SeedSweep(size_t dim,
 int OrbitSweep(size_t dim,
                size_t history_depth,
                uint64_t base_esn_seed,
+               float spectral_radius,
+               float input_scaling,
                uint64_t base_orbit_seed,
                size_t num_orbits,
                size_t num_threads,
                const char* weights_stem = nullptr,
-               int top_k = 10,
-               float spectral_radius = 0.f,
-               float input_scaling = 0.f);
+               int top_k = 10);
