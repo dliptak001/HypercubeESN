@@ -206,9 +206,10 @@ float Lorenz::LrProfile(const float lr_max, const float lr_min, const size_t epo
 {
     if (epochs <= 1)
         return lr_max;
+    // Full-horizon cosine: lr hits lr_min only on the last epoch (no long
+    // floor tail). Progress in [0, 1] over epochs-1 steps.
     const float progress = static_cast<float>(current_epoch) / static_cast<float>(epochs - 1);
-    constexpr float anneal_fraction = 0.75f;
-    return CosineLR(progress / anneal_fraction, lr_max, lr_min);
+    return CosineLR(progress, lr_max, lr_min);
 }
 
 void Lorenz::Train()
