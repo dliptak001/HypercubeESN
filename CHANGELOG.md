@@ -128,6 +128,10 @@ pending** after Lorenz half-anchored free-run storefront is filled.
   do not collide; load must match train-time layout.
 - **Lorenz report knobs:** reassignable `EPOCHS` / `HISTORY_DEPTH` for
   Train/FreeRun campaigns; TANH+pooling house defaults remain in `config::`.
+- **Lorenz EP100 freerun cherry-pick:** `main` FreeRun defaults to orbit
+  `15078998699486663941` after EP100 train (best of 100/300/500/1000-epoch
+  OrbitSweep A/B on seed `411253…`); Train comment epochs=100. Survey TXT +
+  freerun traces under `examples/Lorenz/surveys/` for EP100 top orbits.
 - **HypercubeCNN kernel geometry** — see **Highlights** (dim → dim+1 with self
   tap). Retrain readouts that were frozen against older neighbor-only HCNN
   weights; blobs are not layout-compatible in spirit even when loaders succeed.
