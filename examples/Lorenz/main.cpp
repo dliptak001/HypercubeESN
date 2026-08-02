@@ -41,7 +41,7 @@ int main()
     //                                  /*history_depth=*/kM,
     //                                  /*esn_seed=*/kEsn,
     //                                  /*target_orbit=*/kBaseOrbitSeed,
-    //                                  /*epochs=*/500,
+    //                                  /*epochs=*/100,
     //                                  /*weights_stem=*/kWeightsPath))
     //     return tr;
 
@@ -71,7 +71,7 @@ int main()
                    /*esn_seed=*/kEsn,
                    /*spectral_radius=*/kSpectralRadius,
                    /*input_scaling=*/kInputScaling,
-                   /*orbit_seed=*/10149498604878005093,
+                   /*orbit_seed=*/15078998699486663941,
                    /*weights_stem=*/kWeightsPath,
                    /*freerun_steps=*/2000);
 }
