@@ -84,12 +84,14 @@ meter (warmup 4000 / collect 25000 / Kmax 4000).
 
 ## How to run
 
-1. Edit `MemoryCapacity.cpp` `main()`:
-   - **Meter:** `mccfg.k_max`, `t_warmup` (≥ k_max), `t_collect` (> k_max).
-   - **Base op-point:** `dim`, `seed`, `input_scaling`.
-   - **Mode:** uncomment exactly one of `RunDetailed` / `RunGridSweep` /
-     `RunSeedSurvey` / `RunDepthProbe`.
-   - **Grid axes:** `sr`, `leak`, `history_depth` vectors (`M` any in **[1, 64]**).
+1. Edit the **`campaign`** block at the top of `MemoryCapacity.cpp`:
+   - **`kMode`** — `Detailed` | `GridSweep` | `SeedSurvey` | `DepthProbe`.
+   - **Meter** — `MakeMeterConfig()` (`k_max`, `t_warmup` ≥ k_max, `t_collect` > k_max).
+   - **Base op-point** — `MakeBaseReservoirConfig()` (`dim`, `seed`, `input_scaling`, …).
+   - **Sweep axes** — only the section for the active mode matters:
+     - Grid: `GridSpectralRadii` / `GridLeakRates` / `GridHistoryDepths` (M in **[1, 64]**).
+     - Seed survey: `kSeedSurveyStart` … `kSeedSurveyEnd`.
+     - Depth probe: `kDepthProbeSr` / `Leak` / `Kmax` / `DepthProbeDepths()`.
 2. Build Release (CLion owns `cmake-build-release`; do not reconfigure generators).
 3. Run:
 

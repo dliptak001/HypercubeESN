@@ -1,17 +1,9 @@
 /// @file MemoryCapacity.cpp
 /// @brief Driver for the memory-capacity (MC) diagnostic. See MemoryCapacity.md.
 ///
-/// This is a thin orchestration + reporting layer over MemoryCapacityMeter (the
-/// engine, in MemoryCapacity.h). The engine measures MC at one operating point
-/// given a ReservoirConfig; this file builds the operating points for each run
-/// mode, fans them out via RunSweep, and formats the tables. Edit main() to pick
-/// a mode and its parameters.
-///
-/// Run modes:
-///   RunDetailed   — one operating point, summary + sparse per-lag r²(k).
-///   RunGridSweep  — sr × leak × history_depth grid; ordered table + pivots.
-///   RunSeedSurvey — fixed op-point, sweep reservoir seed; realization variance.
-///   RunDepthProbe — per-lag r²(k) curves for several depths, side-by-side.
+/// Thin orchestration + reporting over MemoryCapacityMeter (engine in
+/// MemoryCapacity.h). Edit the campaign block at the top of this file: meter,
+/// base op-point, run mode, and sweep axes. Modes build cells and format tables.
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +15,115 @@
 #include <vector>
 
 #include "MemoryCapacity.h"
+
+// =============================================================================
+// Campaign configuration — primary knobs (edit here)
+// =============================================================================
+//
+// Layout:
+//   1. Run mode          — which of the four modes runs (exactly one)
+//   2. Meter (MCConfig)  — drive / split / ridge / lag window
+//   3. Base reservoir    — fixed fields; modes may override axes
+//   4. Sweep axes        — per-mode vectors / ranges (only the active mode uses them)
+//
+// Library defaults for MCConfig live in MemoryCapacity.h (2000/15000/2000).
+// Reference multi-DIM tables in MemoryCapacity.md used an extended meter and
+// seed 47397376, is=0.06 — this block is the local campaign and need not match.
+
+namespace campaign {
+
+// --- 1. Run mode -------------------------------------------------------------
+
+enum class Mode
+{
+    Detailed,    ///< One op-point: summary + sparse per-lag r^2(k)
+    GridSweep,   ///< sr x leak x history_depth grid
+    SeedSurvey,  ///< Fixed op-point; inclusive seed range
+    DepthProbe,  ///< Per-lag r^2(k) curves for several depths, side-by-side
+};
+
+/// Active mode for this build. Change this (and the matching sweep section).
+constexpr Mode kMode = Mode::GridSweep;
+
+// --- 2. Meter (experiment / MCConfig) ----------------------------------------
+
+inline mc::MCConfig MakeMeterConfig()
+{
+    mc::MCConfig cfg;
+    cfg.k_max     = 4000;   // raise until open-tail * disappears on deep cells
+    cfg.t_warmup  = 4000;   // must be >= k_max
+    cfg.t_collect = 25000;  // must be > k_max
+    // Other fields use MCConfig defaults: train_frac, ridge_lambda, input_seed, …
+    return cfg;
+}
+
+// --- 3. Base reservoir op-point ----------------------------------------------
+//
+// Grid / depth-probe modes override sr, leak, and/or history_depth from the
+// sweep axes below. Seed survey overrides seed only.
+
+inline ReservoirConfig MakeBaseReservoirConfig()
+{
+    ReservoirConfig cfg;
+    cfg.dim             = 12;              // N = 4096
+    cfg.seed            = 7221978990ull;   // alt reference: 47397376
+    cfg.num_inputs      = 1;
+    cfg.spectral_radius = 0.99f;
+    cfg.leak_rate       = 1.0f;
+    cfg.input_scaling   = 0.02f;           // weak-drive / memory-margin (tanh)
+    cfg.history_depth   = 8;               // used by Detailed; grid axes set M
+    return cfg;
+}
+
+// --- 4. Sweep axes (per mode) ------------------------------------------------
+//
+// Only the axes for kMode matter. Edit the active mode's section; leave others
+// as templates for when you switch kMode.
+
+// Mode::GridSweep — any M in [1, 64]. Pivot auto-shape:
+//   leak singleton -> M x sr table; sr singleton -> M x leak; else per-M grids.
+// Reference multi-DIM tables: sr={0.9,0.95,1.0}, leak={1.0},
+//   M={1,2,4,8,16,32,40,48,56,64}.
+inline std::vector<float> GridSpectralRadii()
+{
+    return {0.99f};
+}
+inline std::vector<float> GridLeakRates()
+{
+    return {1.00f};
+}
+inline std::vector<std::size_t> GridHistoryDepths()
+{
+    return {16};
+    // Full ladder example:
+    // return {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    //         17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+}
+
+// Mode::SeedSurvey — inclusive [seed_start, seed_end] (each integer is one trial).
+inline constexpr std::uint64_t kSeedSurveyStart = 73890;
+inline constexpr std::uint64_t kSeedSurveyEnd   = 73890 + 10;
+
+// Mode::DepthProbe — fixed sr/leak; several depths; full curves to kmax_probe.
+inline constexpr float kDepthProbeSr   = 0.95f;
+inline constexpr float kDepthProbeLeak = 1.00f;
+inline constexpr std::size_t kDepthProbeKmax = 80;
+inline std::vector<std::size_t> DepthProbeDepths()
+{
+    return {1, 2, 4};
+}
+
+// Optional: parallel sweep worker policy (RAM-capped). Defaults are fine.
+inline mc::SweepOptions MakeSweepOptions()
+{
+    return {};
+}
+
+} // namespace campaign
+
+// =============================================================================
+// Reporting + run modes
+// =============================================================================
 
 namespace
 {
@@ -68,7 +169,7 @@ namespace
             << "  hist=" << base.history_depth
             << "  seed=" << base.seed << "\n";
         // ASCII-only metrics glossary: Windows consoles often mis-decode UTF-8
-        // (CP1252/OEM), turning Σ/²/× into garbage in CLion and cmd.
+        // (CP1252/OEM), turning Sigma/r2 into garbage in CLion and cmd.
         std::cout << "Metrics : TotalMC = sum r^2(k)  |  MC/F = util. of F features"
             << "  |  k>.5/.1/.01 = last lag above threshold"
             << "  |  realSR = post-rescale SR\n";
@@ -157,9 +258,9 @@ namespace
     }
 
     // ---------------------------------------------------------------------------
-    // Mode 1: one operating point, summary + sparse per-lag r²(k).
+    // Mode 1: one operating point, summary + sparse per-lag r^2(k).
     // ---------------------------------------------------------------------------
-    [[maybe_unused]] void RunDetailed(const MemoryCapacityMeter& meter, const ReservoirConfig& rcfg)
+    void RunDetailed(const MemoryCapacityMeter& meter, const ReservoirConfig& rcfg)
     {
         const MCConfig& mc = meter.Config();
         const std::size_t F = meter.Features();
@@ -209,13 +310,13 @@ namespace
     }
 
     // ---------------------------------------------------------------------------
-    // Mode 2: sr × leak × history_depth grid.
+    // Mode 2: sr x leak x history_depth grid.
     // ---------------------------------------------------------------------------
-    [[maybe_unused]] void RunGridSweep(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                                       const std::vector<float>& spectral_radii,
-                                       const std::vector<float>& leak_rates,
-                                       const std::vector<std::size_t>& history_depths,
-                                       const SweepOptions& sweep_opts = {})
+    void RunGridSweep(const MemoryCapacityMeter& meter, ReservoirConfig base,
+                      const std::vector<float>& spectral_radii,
+                      const std::vector<float>& leak_rates,
+                      const std::vector<std::size_t>& history_depths,
+                      const SweepOptions& sweep_opts = {})
     {
         const std::size_t F = meter.Features();
         const std::size_t nsr = spectral_radii.size();
@@ -304,7 +405,7 @@ namespace
 
         if (nleak == 1 && nsr >= 1 && nhist >= 1)
         {
-            // Default campaign shape: depth × sr (matches MemoryCapacity.md)
+            // Default campaign shape: depth x sr (matches MemoryCapacity.md)
             std::cout << "\n=== TotalMC grid (M x sr, leak=" << leak_rates[0]
                 << ", is=" << base.input_scaling << ") ===\n";
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << "M\\sr";
@@ -335,7 +436,7 @@ namespace
         }
         else
         {
-            // Full 3-axis: one sr × leak grid per depth
+            // Full 3-axis: one sr x leak grid per depth
             for (std::size_t k = 0; k < nhist; ++k)
             {
                 std::cout << "\n=== TotalMC grid (M=" << history_depths[k]
@@ -361,9 +462,9 @@ namespace
     // ---------------------------------------------------------------------------
     // Mode 3: fixed op-point, sweep the reservoir seed over [seed_start, seed_end].
     // ---------------------------------------------------------------------------
-    [[maybe_unused]] void RunSeedSurvey(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                                        std::uint64_t seed_start, std::uint64_t seed_end,
-                                        const SweepOptions& sweep_opts = {})
+    void RunSeedSurvey(const MemoryCapacityMeter& meter, ReservoirConfig base,
+                       std::uint64_t seed_start, std::uint64_t seed_end,
+                       const SweepOptions& sweep_opts = {})
     {
         const std::size_t F = meter.Features();
 
@@ -462,7 +563,7 @@ namespace
             << std::defaultfloat << std::flush;
 
         // ---- Followup: SR-band filtered chart + top-5 ranking ----
-        constexpr double kSrBandFrac = 0.0005; // ±0.05% of target sr
+        constexpr double kSrBandFrac = 0.0005; // +/- 0.05% of target sr
         const double target_sr = static_cast<double>(base.spectral_radius);
         const double sr_tol = kSrBandFrac * target_sr;
 
@@ -562,11 +663,11 @@ namespace
     }
 
     // ---------------------------------------------------------------------------
-    // Mode 4: per-lag r²(k) curves for several depths, side-by-side.
+    // Mode 4: per-lag r^2(k) curves for several depths, side-by-side.
     // ---------------------------------------------------------------------------
-    [[maybe_unused]] void RunDepthProbe(const MemoryCapacityMeter& meter, ReservoirConfig base,
-                                        float sr, float leak, const std::vector<std::size_t>& depths,
-                                        std::size_t kmax_probe)
+    void RunDepthProbe(const MemoryCapacityMeter& meter, ReservoirConfig base,
+                       float sr, float leak, const std::vector<std::size_t>& depths,
+                       std::size_t kmax_probe)
     {
         const MCConfig& mc = meter.Config();
         const std::size_t F = meter.Features();
@@ -639,55 +740,45 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
 
-    // ---- Experiment (MCConfig): drive / split / ridge / lag window ----
-    // Library defaults in MemoryCapacity.h are 2000 / 15000 / 2000. The reference
-    // lookup tables in MemoryCapacity.md used the extended meter below so open
-    // tails clear. Edit freely; banner prints live knobs.
-    MCConfig mccfg;
-    mccfg.k_max     = 4000;  // raise until open-tail * disappears on deep cells
-    mccfg.t_warmup  = 4000;  // must be >= k_max
-    mccfg.t_collect = 25000; // must be > k_max
+    using namespace campaign;
 
-    // ---- Base reservoir op-point (seed, is fixed across a grid cell) ----
-    // Reference multi-DIM tables used seed 47397376, is=0.06.
-    // main() knobs below are the local campaign; they need not match the tables.
-    constexpr std::size_t DIM = 12;
+    const MCConfig mccfg = MakeMeterConfig();
+    const ReservoirConfig base = MakeBaseReservoirConfig();
+    const SweepOptions sweep_opts = MakeSweepOptions();
 
-    ReservoirConfig base;
-    base.dim = DIM;
-    base.seed = 7221978990ull;//73896 * 2; // alt reference seed: 47397376
-    base.num_inputs = 1;
-    base.spectral_radius = 0.99f; // grid axes below override sr / leak / M
-    base.leak_rate = 1.0f;
-    base.input_scaling = 0.02;//0.06f; // weak-drive / memory-margin (tanh)
-    base.history_depth = 8;
+    MemoryCapacityMeter meter(base.dim, mccfg);
 
-    MemoryCapacityMeter meter(DIM, mccfg);
+    switch (kMode)
+    {
+    case Mode::Detailed:
+        RunDetailed(meter, base);
+        break;
 
-    // --- Mode 1: one op-point, full curve + sparse lag dump ---
-    // RunDetailed(meter, base);
+    case Mode::GridSweep:
+        RunGridSweep(meter, base,
+                     GridSpectralRadii(),
+                     GridLeakRates(),
+                     GridHistoryDepths(),
+                     sweep_opts);
+        break;
 
-    // --- Mode 4: per-lag r2(k) shape across depths ---
-    // RunDepthProbe(meter, base, 0.95f, 1.00f, {1, 2, 4}, 80);
+    case Mode::SeedSurvey:
+        RunSeedSurvey(meter, base, kSeedSurveyStart, kSeedSurveyEnd, sweep_opts);
+        break;
 
-    // --- Mode 3: fixed op-point, inclusive seed range ---
-    // RunSeedSurvey(meter, base, 73890, 73890 + 10);
-
-    // --- Mode 2: sr x leak x history_depth (any M in [1, 64]) ---
-    // Pivot auto-shape: leak singleton -> M x sr; sr singleton -> M x leak;
-    // else one sr x leak grid per M. Reference multi-DIM tables used
-    // sr={0.9,0.95,1.0}, leak={1.0}, M={1,2,4,8,16,32,40,48,56,64}.
-    RunGridSweep(meter, base,
-                 {0.99f},
-                 {1.00f},
-                 {16});
-                 // {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                 //  17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
+    case Mode::DepthProbe:
+        RunDepthProbe(meter, base,
+                      kDepthProbeSr, kDepthProbeLeak,
+                      DepthProbeDepths(), kDepthProbeKmax);
+        break;
+    }
 
     return 0;
 }
