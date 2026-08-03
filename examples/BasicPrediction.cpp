@@ -19,7 +19,7 @@ static ESNConfig MakeESNConfig()
 
     // Reservoir (fixed dynamics)
     cfg.reservoir.dim             = 8;
-    cfg.reservoir.seed            = 4112530987988204306ull;
+    cfg.reservoir.seed            = 7934791766227647176;
     cfg.reservoir.history_depth   = 4;
     cfg.reservoir.spectral_radius = 0.9f;
     cfg.reservoir.input_scaling   = 0.1f;

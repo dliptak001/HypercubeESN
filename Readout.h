@@ -98,7 +98,7 @@ struct ReadoutConfig
     float lr_min_frac = 0.01f; ///< Floor = lr_max * lr_min_frac.
     int lr_decay_epochs = 0; ///< Cosine decay horizon. 0 = use `epochs`.
     float weight_decay = 0.0f;
-    float momentum = 0.0f; ///< SGD momentum (heavy-ball). 0 = plain SGD. Ignored by Adam.
+    float momentum = 0.9f; ///< SGD momentum (heavy-ball). 0 = plain SGD. Ignored by Adam.
     unsigned seed = 42; ///< CNN weight initialization seed.
     ReadoutActivation activation = ReadoutActivation::TANH; ///< Per-Conv-layer activation.
 

@@ -110,3 +110,55 @@ HCNN live weight_count: 16593
 Reconstruction quality should track memory depth, saturating once
 M >= the NARMA order (the delay line can then hold the full lag history).
 PS C:\Users\david\Desktop\Deity\NARMA>
+
+******************************************
+
+C:\CLion\HypercubeESN\cmake-build-release\NARMA.exe
+=== HypercubeESN: NARMA-30  [literature (3 seeds)] ===
+
+Task: open-loop system identification ΓÇö reproduce y(t) from u(t).
+Fixed op-point; 3 reservoir seed(s); series held fixed (data_seed).
+Stats: mean / sample-std / min / max over all 3 seeds (no best-k selection).
+
+Variant: tanh-wrapped (fixed coeffs -- honest order-scaling)
+Stream:  warmup=300  collect=32000  train=25600  test=6400  data_seed=1939
+Coeffs:  alpha=0.3  beta=0.05  gamma=1.5  delta=0.1  u in [0, 0.5]
+Train:   600 epochs  batch=128  lr_max=0.0015  (cosine, floor=7.5e-06)
+Op-point: M=32  sr=0.99  leak=1  input_scaling=0.03  bias_scaling=0.02  readout_slices=2  readout.seed=3423555
+Survey:  3 res seed(s)  restore_best_epoch=true (holdout_frac=0)
+Seeds:  4112530987988204306 8982357012682103037 15208094364242385359
+
+Reservoir: DIM=10  N=1024  M=32  weights(fixed)=337920  [=N*DIM*(M+drives)=1024*10*(32+1)]
+HCNN input: readout_slices=2  B=2 blocks x N=1024  -> start_DIM=11  N_hcnn=2048
+  (start_DIM = reservoir_DIM + log2(B) = 10 + 1; M does not change HCNN size)
+
+HCNN Architecture: Conv(1->16, TANH, bias)  hcnn_DIM=11  N=2048
+                   -> Pool(MAX)  hcnn_DIM 11->10  N 2048->1024
+                   -> FLATTEN
+                   -> Linear(16384 -> 1)
+HCNN parameters (trained): 16593 (208 conv1 + 16385 readout)
+
+HCNN live weight_count: 16593
+
+
+  === res_seed 4112530987988204306  (1/3) ===
+    NRMSE=0.0551  R2=0.9970  (657.1s)
+
+  === res_seed 8982357012682103037  (2/3) ===
+    NRMSE=0.0504  R2=0.9975  (709.3s)
+
+  === res_seed 15208094364242385359  (3/3) ===
+    NRMSE=0.0475  R2=0.9977  (707.5s)
+
+=== NARMA-30 summary  (DIM=10, N=1024, M=32, 3 seed(s), train mean 0.9490) ===
+  All 3 seeds (mean/std/min/max ΓÇö literature band):
+    mean= 0.0510  std= 0.0038  min= 0.0475  max= 0.0551
+
+  Per-seed NRMSE:
+    seed 4112530987988204306  NRMSE=0.0551
+    seed 8982357012682103037  NRMSE=0.0504
+    seed 15208094364242385359  NRMSE=0.0475
+
+Open-loop test NRMSE on the held-out 6400 steps (train 25600). Same series for every seed; only reservoir.seed varies.
+
+Process finished with exit code 0

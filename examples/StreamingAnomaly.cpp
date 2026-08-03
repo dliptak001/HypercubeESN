@@ -23,7 +23,7 @@ static ESNConfig MakeESNConfig()
 
     // Reservoir (fixed dynamics)
     cfg.reservoir.dim             = 7;
-    cfg.reservoir.seed            = 4112530987988204306ull;
+    cfg.reservoir.seed            = 7934791766227647176;
     cfg.reservoir.history_depth   = 16;
     cfg.reservoir.spectral_radius = 0.985f;
     cfg.reservoir.input_scaling   = 0.1f;
@@ -33,12 +33,12 @@ static ESNConfig MakeESNConfig()
 
     // Readout (trainable HCNN)
     cfg.readout.task          = ReadoutTask::Regression;
-    cfg.readout.epochs        = 1000;
+    cfg.readout.epochs        = 500;
     cfg.readout.batch_size    = 64;
     cfg.readout.momentum      = 0.9f;
     cfg.readout.activation    = ReadoutActivation::TANH;  // TANH / RELU / LEAKY_RELU / NONE
     cfg.readout.num_layers    = 1;
-    cfg.readout.conv_channels = 4;
+    cfg.readout.conv_channels = 8;
     cfg.readout.use_pooling   = true;
 
     return cfg;

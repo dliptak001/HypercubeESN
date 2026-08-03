@@ -15,6 +15,7 @@ int main()
     constexpr float kSpectralRadius = 0.999f;
     constexpr float kInputScaling = 0.015f;
     constexpr uint64_t kBaseOrbitSeed = 9333312947715283458ull;
+    constexpr int numThreads = 16;
 
     /////////////////////////////////////////////////////////////////////////
     // Stage 1
@@ -22,9 +23,9 @@ int main()
     // return SeedSweep(/*dim=*/kDim,
     //                  /*history_depth=*/kM,
     //                  /*base_esn_seed=*/1002999015000000000ull,
-    //                  /*num_seeds=*/16 * 50,
-    //                  /*num_threads=*/16,
-    //                  /*epochs=*/300,
+    //                  /*num_seeds=*/numThreads * 50,
+    //                  /*num_threads=*/numThreads,
+    //                  /*epochs=*/100,
     //                  /*freerun_runs=*/1000,
     //                  /*base_orbit_seed=*/kBaseOrbitSeed,
     //                  /*top_k=*/10,
@@ -34,30 +35,30 @@ int main()
     /////////////////////////////////////////////////////////////////////////
     // Stage 2
     /////////////////////////////////////////////////////////////////////////
-    constexpr uint64_t kEsn = 4112530987988204306ull; // one of the top ranked seeds from SeedSweep
+    constexpr uint64_t kEsn = 7934791766227647176ull; // one of the top ranked seeds from SeedSweep
     const std::string weights = DefaultWeightStem(kEsn, kDim, kM);
     const char* const kWeightsPath = weights.c_str();
-    // if (const int tr = Train(/*dim=*/kDim,
-    //                                  /*history_depth=*/kM,
-    //                                  /*esn_seed=*/kEsn,
-    //                                  /*target_orbit=*/kBaseOrbitSeed,
-    //                                  /*epochs=*/100,
-    //                                  /*weights_stem=*/kWeightsPath))
-    //     return tr;
+    if (const int tr = Train(/*dim=*/kDim,
+                                     /*history_depth=*/kM,
+                                     /*esn_seed=*/kEsn,
+                                     /*target_orbit=*/kBaseOrbitSeed,
+                                     /*epochs=*/100,
+                                     /*weights_stem=*/kWeightsPath))
+        return tr;
 
     /////////////////////////////////////////////////////////////////////////
     // Stage 3
     /////////////////////////////////////////////////////////////////////////
-    // return OrbitSweep(/*dim=*/kDim,
-    //                           /*history_depth=*/kM,
-    //                           /*base_esn_seed=*/kEsn,
-    //                           /*spectral_radius=*/kSpectralRadius,
-    //                           /*input_scaling=*/kInputScaling,
-    //                           /*base_orbit_seed=*/kBaseOrbitSeed,
-    //                           /*num_orbits=*/200000,
-    //                           /*num_threads=*/16,
-    //                           /*weights_stem=*/kWeightsPath,
-    //                           /*top_k=*/10);
+    return OrbitSweep(/*dim=*/kDim,
+                              /*history_depth=*/kM,
+                              /*base_esn_seed=*/kEsn,
+                              /*spectral_radius=*/kSpectralRadius,
+                              /*input_scaling=*/kInputScaling,
+                              /*base_orbit_seed=*/kBaseOrbitSeed,
+                              /*num_orbits=*/200000,
+                              /*num_threads=*/numThreads,
+                              /*weights_stem=*/kWeightsPath,
+                              /*top_k=*/10);
 
 
     /////////////////////////////////////////////////////////////////////////
@@ -71,7 +72,7 @@ int main()
                    /*esn_seed=*/kEsn,
                    /*spectral_radius=*/kSpectralRadius,
                    /*input_scaling=*/kInputScaling,
-                   /*orbit_seed=*/15078998699486663941,
+                   /*orbit_seed=*/11526500681396796181ull,
                    /*weights_stem=*/kWeightsPath,
                    /*freerun_steps=*/2000);
 }

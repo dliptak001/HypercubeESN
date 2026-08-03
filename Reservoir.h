@@ -21,11 +21,11 @@ struct ReservoirConfig
 
     /// Master RNG seed. Named substreams (recurrent / input / external-feedback /
     /// bias / SR probe) are derived via SplitMix64 — see Reservoir.cpp.
-    uint64_t seed = 73895;
+    uint64_t seed = 7934791766227647176;
 
     /// Target spectral radius for the **recurrent** weight block only (> 0).
     /// Drive-port weights (input, external feedback) are outside this rescale.
-    float spectral_radius = 0.99f;
+    float spectral_radius = 0.999f;
 
     /// Leaky-integrator mix: 1 = full replacement each step; in (0, 1) blends with
     /// previous output. Valid range **(0, 1]**.
@@ -33,7 +33,7 @@ struct ReservoirConfig
 
     /// Input drive strength. Input weights are drawn U(-1,1) then scaled by
     /// @c input_scaling / √dim (fan-in normalization). Retune per task/DIM.
-    float input_scaling = 0.5f;
+    float input_scaling = 0.02f;
 
     /// Number of input channels (≥ 1). Must **divide N** evenly so each channel
     /// owns a contiguous vertex block of size N/num_inputs.
@@ -59,7 +59,7 @@ struct ReservoirConfig
 
     /// Per-neuron bias: U(-1,1) × bias_scaling, added **after** tanh. **0**
     /// disables bias. Default is a small nonzero scale (not “off”).
-    float bias_scaling = 0.02f;
+    float bias_scaling = 0.003f;
 };
 
 /// @brief Fixed (never-trained) recurrent core of an @ref ESN: N = 2^dim neurons

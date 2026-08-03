@@ -65,12 +65,12 @@ inline mc::MCConfig MakeMeterConfig()
 inline ReservoirConfig MakeBaseReservoirConfig()
 {
     ReservoirConfig cfg;
-    cfg.dim             = 12;              // N = 4096
-    cfg.seed            = 7221978990ull;   // alt reference: 47397376
+    cfg.dim             = 10;              // N = 4096
+    cfg.seed            = 7934791766227647176ull;
     cfg.num_inputs      = 1;
-    cfg.spectral_radius = 0.99f;
+    cfg.spectral_radius = 0.999f;
     cfg.leak_rate       = 1.0f;
-    cfg.input_scaling   = 0.02f;           // weak-drive / memory-margin (tanh)
+    cfg.input_scaling   = 0.015f;           // weak-drive / memory-margin (tanh)
     cfg.history_depth   = 8;               // used by Detailed; grid axes set M
     return cfg;
 }
@@ -86,7 +86,7 @@ inline ReservoirConfig MakeBaseReservoirConfig()
 //   M={1,2,4,8,16,32,40,48,56,64}.
 inline std::vector<float> GridSpectralRadii()
 {
-    return {0.99f};
+    return {0.999f};
 }
 inline std::vector<float> GridLeakRates()
 {
@@ -94,10 +94,10 @@ inline std::vector<float> GridLeakRates()
 }
 inline std::vector<std::size_t> GridHistoryDepths()
 {
-    return {16};
+    //return {16};
     // Full ladder example:
-    // return {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    //         17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+    return {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+             17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
 }
 
 // Mode::SeedSurvey — inclusive [seed_start, seed_end] (each integer is one trial).
