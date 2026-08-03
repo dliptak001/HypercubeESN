@@ -86,20 +86,19 @@ series knobs, reservoir seed list) — keep in lockstep with this table.
 | Series | warmup 300 · collect **32000** (train 25600 / test 6400) |
 | Training | 600 epochs, batch 128, lr 0.0015 cosine (floor 7.5e-06) |
 | Best-epoch | `restore_best_epoch = true`, **holdout_frac = 0** — restores min **train** MSE epoch (not a validation split). Test NRMSE is still a clean held-out metric. |
-| Reservoir seeds | **Same 20** for every order (see tables below); formula `(73896+k)×(k+2)`, k = 0…19 |
+| Reservoir seeds (live harness) | Explicit list `campaign::kReservoirSeeds` in `NARMA.cpp`: **1** entry = spot run; **3** entries = literature band (mean/std/min/max over all three). No best-k selection. |
 
-Metric: **test NRMSE** = RMSE / std(target) on the held-out 6400 steps. The
-campaign **features best-5 of 20** (mean/std/range of the five lowest-NRMSE
-seeds). All 20 trials are logged and tabulated below for transparency. R² and
-wall times are in the raw logs.
-
-Campaign `.txt` logs may still show older “M sweep” banner wording; numbers match
-this op-point. Current `NARMA.exe` prints a multi-seed / fixed-M banner.
+Metric: **test NRMSE** = RMSE / std(target) on the held-out 6400 steps. For the
+**live harness**, report every listed seed (1 or 3) with mean/std/min/max when
+n = 3. The **historical** tables below still document an earlier **best-5 of 20**
+campaign on the same op-point — keep those until a 3-seed re-run is verified in
+the same ballpark. Raw logs: [NARMA-30.txt](NARMA-30.txt) ·
+[NARMA-50.txt](NARMA-50.txt) · [NARMA-70.txt](NARMA-70.txt).
 
 **Cost (doc only — no smoke path):** roughly **12–14 minutes per seed** on the
-collect machine (Release). Full order campaign ≈ 20 seeds → on the order of
-**4–5 hours per NARMA order**, or ~12–15 hours for 30+50+70. Not CI-friendly by
-design; treat as a batch validator, not a unit test.
+collect machine (Release). A 3-seed literature run is ~**40–45 min per order**;
+spot is one seed. Not CI-friendly by design; treat as a batch validator, not a
+unit test.
 
 ---
 
@@ -113,10 +112,14 @@ cmake-build-release\NARMA.exe 70
 cmake-build-release\NARMA.exe --help
 ```
 
-`order` is optional (integer ≥ 2). Op-point, seed list, and series length live
-in the `campaign` block at the top of `NARMA.cpp` — match those to the table
-above to reproduce. The harness is a **fixed-M multi-seed survey**
-(`history_depth` in `MakeBaseESNConfig`; only `reservoir.seed` varies per trial).
+`order` is optional (integer ≥ 2). Op-point and series length live in the
+`campaign` block at the top of `NARMA.cpp`. Edit `kReservoirSeeds` for mode:
+
+- **1 seed** — spot check  
+- **3 seeds** — literature stats over all three (list every seed explicitly)
+
+Only `reservoir.seed` varies per trial; `history_depth` is fixed in
+`MakeBaseESNConfig`.
 
 ---
 

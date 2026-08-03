@@ -5,10 +5,11 @@
 /// Usage: NARMA.exe [order]
 ///   order — optional NARMA recurrence order N (>= 2); default kDefaultNarmaOrder.
 ///
-/// Default campaign path: tanh-wrapped NARMA, fixed M and knobs, multi-seed
-/// survey (best-5 of 20 featured). Only the CLI order and reservoir.seed vary.
+/// Campaign path: tanh-wrapped NARMA, fixed op-point. Edit kReservoirSeeds:
+///   1 seed  — spot run
+///   3 seeds — literature band (mean/std/min/max over the three trials)
+/// Only the CLI order and each trial's reservoir.seed vary.
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -40,8 +41,7 @@
 // Layout:
 //   1. Task / series     — what NARMA order series is built from
 //   2. Base ESN op-point — MakeBaseESNConfig(); fixed across seeds/orders
-//   3. Seed sweep        — reservoir seeds (only per-trial axis)
-//   4. Spotlight         — best-k of n seeds featured in the summary
+//   3. Reservoir seeds   — explicit list: 1 = spot, 3 = literature stats
 //
 // Per trial only reservoir.seed changes. CLI order is the only runtime task knob;
 // series data_seed stays fixed so every reservoir seed scores the same u/y series.
@@ -102,23 +102,25 @@ inline ESNConfig MakeBaseESNConfig()
     return cfg;
 }
 
-// --- 3. Seed sweep -----------------------------------------------------------
+// --- 3. Reservoir seeds ------------------------------------------------------
+//
+// Provide the full list here. Length is the survey mode:
+//   1 entry  — spot run (single trial; stats are trivial)
+//   3 entries — literature band (mean / sample-std / min / max over the three)
+//
+// No other sizes. No best-k selection — every listed seed is reported in full.
 
-/// 20 reservoir seeds, same list for N30/N50/N70.
-/// Formula: (73896 + k) * (k + 2) for k = 0..19.
-inline std::vector<uint64_t> MakeReservoirSeedSweep()
-{
-    std::vector<uint64_t> seeds;
-    seeds.reserve(20);
-    for (uint64_t k = 0; k < 20; ++k)
-        seeds.push_back((73896ull + k) * (k + 2ull));
-    return seeds;
-}
+inline constexpr uint64_t kReservoirSeeds[] = {
+    147792ull,  // spot: leave only this line; literature: keep all three
+    221691ull,
+    295592ull,
+};
 
-// --- 4. Spotlight ------------------------------------------------------------
+inline constexpr size_t kNumReservoirSeeds =
+    sizeof(kReservoirSeeds) / sizeof(kReservoirSeeds[0]);
 
-/// Featured band: best-k of n seeds (lowest test NRMSE). Full pool always logged.
-constexpr size_t kBestK = 5;
+static_assert(kNumReservoirSeeds == 1 || kNumReservoirSeeds == 3,
+              "campaign::kReservoirSeeds must have 1 (spot) or 3 (literature) entries");
 
 } // namespace campaign
 
@@ -175,8 +177,8 @@ std::array<double, 4> Stats(const std::vector<double>& v)
     double mn = v[0], mx = v[0], sum = 0.0;
     for (double x : v) {
         sum += x;
-        mn = std::min(mn, x);
-        mx = std::max(mx, x);
+        if (x < mn) mn = x;
+        if (x > mx) mx = x;
     }
     const double mean = sum / static_cast<double>(v.size());
     double var = 0.0;
@@ -212,17 +214,21 @@ int main(int argc, char* argv[])
         return 0;
 
     const ESNConfig base = MakeBaseESNConfig();
-    const std::vector<uint64_t> sweep_reservoir_seeds = MakeReservoirSeedSweep();
+    const size_t nTrials = kNumReservoirSeeds;
     const size_t N = size_t{1} << base.reservoir.dim;
     const float lr_floor = base.readout.lr_max * base.readout.lr_min_frac;
+    const char* mode = (nTrials == 1) ? "spot (1 seed)" : "literature (3 seeds)";
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
-              << " multi-seed survey ===\n\n";
+              << "  [" << mode << "] ===\n\n";
     std::cout << "Task: open-loop system identification — reproduce y(t) from u(t).\n";
-    std::cout << "Fixed op-point; " << sweep_reservoir_seeds.size()
-              << " reservoir seeds; series held fixed (data_seed).\n"
-              << "Featured metric: best-" << kBestK
-              << " of those seeds (lowest test NRMSE).\n\n";
+    std::cout << "Fixed op-point; " << nTrials
+              << " reservoir seed(s); series held fixed (data_seed).\n";
+    if (nTrials == 3)
+        std::cout << "Stats: mean / sample-std / min / max over all 3 seeds "
+                     "(no best-k selection).\n\n";
+    else
+        std::cout << "Spot run: single trial (edit kReservoirSeeds to 3 for a band).\n\n";
 
     // ---- Build the NARMA task ONCE -------------------------------------------
     // Independent of reservoir seed: every trial scores the byte-identical series.
@@ -256,38 +262,34 @@ int main(int argc, char* argv[])
               << "  bias_scaling=" << base.reservoir.bias_scaling
               << "  readout_slices=" << base.readout_slices
               << "  readout.seed=" << base.readout.seed << "\n";
-    std::cout << "Survey:  " << sweep_reservoir_seeds.size() << " res seeds"
-              << "  best-k=" << kBestK
+    std::cout << "Survey:  " << nTrials << " res seed(s)"
               << "  restore_best_epoch="
               << (base.readout.restore_best_epoch ? "true" : "false")
-              << " (holdout_frac=" << base.readout.best_epoch_holdout_frac << ")\n\n";
+              << " (holdout_frac=" << base.readout.best_epoch_holdout_frac << ")\n";
+    std::cout << "Seeds:  ";
+    for (size_t i = 0; i < nTrials; ++i)
+        std::cout << (i ? " " : "") << kReservoirSeeds[i];
+    std::cout << "\n\n";
 
     // Architecture is shared across seeds (only reservoir.seed changes).
     // Probe once so logs show stack + param count without per-trial noise.
     {
         ESNConfig probe = base;
-        probe.reservoir.seed =
-            sweep_reservoir_seeds.empty() ? 42ULL : sweep_reservoir_seeds.front();
+        probe.reservoir.seed = kReservoirSeeds[0];
         ESN probe_esn(probe);
         std::cout << probe_esn.ReadoutArchSummary() << "\n";
     }
 
-    std::cout << "Res seeds (" << sweep_reservoir_seeds.size() << "):";
-    for (uint64_t sd : sweep_reservoir_seeds)
-        std::cout << ' ' << sd;
-    std::cout << "\n";
-
-    // ---- Multi-seed survey --------------------------------------------------
-    const size_t nTrials = sweep_reservoir_seeds.size();
+    // ---- Trials (1 or 3 seeds) ----------------------------------------------
     std::vector<double> nrmse(nTrials, 0.0);
     double target_mean = 0.0;  // identical across every trial (same target series)
 
     for (size_t ti = 0; ti < nTrials; ++ti) {
-        std::cout << "\n  === res_seed " << sweep_reservoir_seeds[ti]
+        std::cout << "\n  === res_seed " << kReservoirSeeds[ti]
                   << "  (" << (ti + 1) << "/" << nTrials << ") ===\n" << std::flush;
 
         ESNConfig cfg = base;
-        cfg.reservoir.seed = sweep_reservoir_seeds[ti];
+        cfg.reservoir.seed = kReservoirSeeds[ti];
 
         NARMATrialResult res = RunNARMATrial(cfg, task);
         target_mean = res.target_mean;
@@ -298,60 +300,27 @@ int main(int argc, char* argv[])
                   << "  (" << std::setprecision(1) << res.train_secs << "s)\n";
     }
 
-    // ---- Aggregate (full pool + best-k spotlight) ---------------------------
-    auto best_indices = [&](size_t k) {
-        std::vector<size_t> order(nTrials);
-        for (size_t ti = 0; ti < nTrials; ++ti)
-            order[ti] = ti;
-        std::partial_sort(order.begin(),
-                          order.begin() + static_cast<std::ptrdiff_t>(k),
-                          order.end(),
-                          [&](size_t a, size_t b) { return nrmse[a] < nrmse[b]; });
-        order.resize(k);
-        return order;
-    };
-
+    // ---- Aggregate (every listed seed; no best-k) ---------------------------
     std::cout << std::fixed;
-    std::cout << "\n=== NARMA-" << narma_order << " multi-seed survey"
+    std::cout << "\n=== NARMA-" << narma_order << " summary"
               << "  (DIM=" << base.reservoir.dim << ", N=" << N
               << ", M=" << base.reservoir.history_depth
-              << ", " << nTrials << " res seeds"
+              << ", " << nTrials << " seed(s)"
               << ", train mean " << std::setprecision(4) << target_mean << ") ===\n";
-    std::cout << "  Stats: all-" << nTrials << " pool + best-"
-              << std::min(kBestK, nTrials) << " of " << nTrials
-              << " (lowest test NRMSE; featured multi-seed band).\n";
 
-    std::cout << "\n  All " << nTrials << " trials (mean/std = multi-seed typical):\n";
-    PrintStatsLine(nrmse);
-
-    {
-        const size_t k = std::min(kBestK, nTrials);
-        std::vector<double> best_vals;
-        best_vals.reserve(k);
-        for (size_t ti : best_indices(k))
-            best_vals.push_back(nrmse[ti]);
-        std::cout << "\n  Best " << k << " of " << nTrials
-                  << " (lowest NRMSE; max = worst of top-" << k << "):\n";
-        PrintStatsLine(best_vals);
-
-        std::cout << "\n  Best-" << k << " seeds (lowest test NRMSE first):\n   ";
-        size_t rank = 0;
-        for (size_t ti : best_indices(k)) {
-            ++rank;
-            std::cout << "  [" << rank << "] "
-                      << sweep_reservoir_seeds[ti]
-                      << "=" << std::setprecision(4) << nrmse[ti];
-        }
-        std::cout << "\n";
+    if (nTrials == 1) {
+        std::cout << "  Spot NRMSE: " << std::setprecision(4) << nrmse[0] << "\n";
+    } else {
+        std::cout << "  All " << nTrials
+                  << " seeds (mean/std/min/max — literature band):\n";
+        PrintStatsLine(nrmse);
     }
 
-    std::cout << "\n  Raw NRMSE — all " << nTrials << " trials:\n    ";
-    for (size_t ti = 0; ti < nTrials; ++ti)
-        std::cout << "  " << std::setw(9) << sweep_reservoir_seeds[ti];
-    std::cout << "\n    ";
-    for (size_t ti = 0; ti < nTrials; ++ti)
-        std::cout << "  " << std::setw(9) << std::setprecision(4) << nrmse[ti];
-    std::cout << "\n";
+    std::cout << "\n  Per-seed NRMSE:\n";
+    for (size_t ti = 0; ti < nTrials; ++ti) {
+        std::cout << "    seed " << kReservoirSeeds[ti]
+                  << "  NRMSE=" << std::setprecision(4) << nrmse[ti] << "\n";
+    }
 
     std::cout << "\nOpen-loop test NRMSE on the held-out "
               << task.te << " steps (train " << task.tr
