@@ -51,7 +51,7 @@ namespace campaign {
 // --- 1. Task / series --------------------------------------------------------
 
 /// Default NARMA recurrence order when main is run with no arguments.
-constexpr size_t kDefaultNarmaOrder = 50;
+constexpr size_t kDefaultNarmaOrder = 70;
 
 /// Collect steps (train 80% / test 20% via MakeNARMATask).
 constexpr size_t kCollect = 32000;
@@ -111,10 +111,15 @@ inline ESNConfig MakeBaseESNConfig()
 // No other sizes. No best-k selection — every listed seed is reported in full.
 
 inline constexpr uint64_t kReservoirSeeds[] = {
-    147792ull,  // spot: leave only this line; literature: keep all three
-    221691ull,
-    295592ull,
+    7934791766227647176ull,  // spot: leave only this line; literature: keep all three
+    8982357012682103037ull,
+    3079493423467196890ull,
 };
+    // inline constexpr uint64_t kReservoirSeeds[] = {
+    //     4112530987988204306ull,  // spot: leave only this line; literature: keep all three
+    //     8982357012682103037ull,
+    //     15208094364242385359ull,
+    // };
 
 inline constexpr size_t kNumReservoirSeeds =
     sizeof(kReservoirSeeds) / sizeof(kReservoirSeeds[0]);
@@ -221,7 +226,7 @@ int main(int argc, char* argv[])
 
     std::cout << "=== HypercubeESN: NARMA-" << narma_order
               << "  [" << mode << "] ===\n\n";
-    std::cout << "Task: open-loop system identification — reproduce y(t) from u(t).\n";
+    std::cout << "Task: open-loop system identification - reproduce y(t) from u(t).\n";
     std::cout << "Fixed op-point; " << nTrials
               << " reservoir seed(s); series held fixed (data_seed).\n";
     if (nTrials == 3)
@@ -312,7 +317,7 @@ int main(int argc, char* argv[])
         std::cout << "  Spot NRMSE: " << std::setprecision(4) << nrmse[0] << "\n";
     } else {
         std::cout << "  All " << nTrials
-                  << " seeds (mean/std/min/max — literature band):\n";
+                  << " seeds (mean/std/min/max - literature band):\n";
         PrintStatsLine(nrmse);
     }
 
@@ -328,3 +333,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
+
