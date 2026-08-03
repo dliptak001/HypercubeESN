@@ -20,17 +20,17 @@ int main()
     /////////////////////////////////////////////////////////////////////////
     // Stage 1
     /////////////////////////////////////////////////////////////////////////
-    // return SeedSweep(/*dim=*/kDim,
-    //                  /*history_depth=*/kM,
-    //                  /*base_esn_seed=*/1002999015000000000ull,
-    //                  /*num_seeds=*/numThreads * 50,
-    //                  /*num_threads=*/numThreads,
-    //                  /*epochs=*/100,
-    //                  /*freerun_runs=*/1000,
-    //                  /*base_orbit_seed=*/kBaseOrbitSeed,
-    //                  /*top_k=*/10,
-    //                  /*spectral_radius=*/kSpectralRadius,
-    //                  /*input_scaling=*/kInputScaling);
+    return SeedSweep(/*dim=*/kDim,
+                     /*history_depth=*/kM,
+                     /*base_esn_seed=*/1002999015000000000ull,
+                     /*num_seeds=*/numThreads * 50,
+                     /*num_threads=*/numThreads,
+                     /*epochs=*/100,
+                     /*freerun_runs=*/1000,
+                     /*base_orbit_seed=*/kBaseOrbitSeed,
+                     /*top_k=*/10,
+                     /*spectral_radius=*/kSpectralRadius,
+                     /*input_scaling=*/kInputScaling);
 
     /////////////////////////////////////////////////////////////////////////
     // Stage 2

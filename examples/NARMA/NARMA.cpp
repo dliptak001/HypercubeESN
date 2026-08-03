@@ -3,11 +3,11 @@
 /// See NARMA.md for the protocol, shared op-point, and campaign results.
 ///
 /// Usage: NARMA.exe [order]
-///   order — optional NARMA recurrence order N (>= 2); default kDefaultNarmaOrder.
+///   order - optional NARMA recurrence order N (>= 2); default kDefaultNarmaOrder.
 ///
 /// Campaign path: tanh-wrapped NARMA, fixed op-point. Edit kReservoirSeeds:
-///   1 seed  — spot run
-///   3 seeds — literature band (mean/std/min/max over the three trials)
+///   1 seed  - spot run
+///   3 seeds - literature band (mean/std/min/max over the three trials)
 /// Only the CLI order and each trial's reservoir.seed vary.
 
 #include <array>
@@ -35,13 +35,13 @@
 #endif
 
 // =============================================================================
-// Campaign configuration — primary knobs (edit here; keep lockstep with NARMA.md)
+// Campaign configuration - primary knobs (edit here; keep lockstep with NARMA.md)
 // =============================================================================
 //
 // Layout:
-//   1. Task / series     — what NARMA order series is built from
-//   2. Base ESN op-point — MakeBaseESNConfig(); fixed across seeds/orders
-//   3. Reservoir seeds   — explicit list: 1 = spot, 3 = literature stats
+//   1. Task / series     - what NARMA order series is built from
+//   2. Base ESN op-point - MakeBaseESNConfig(); fixed across seeds/orders
+//   3. Reservoir seeds   - explicit list: 1 = spot, 3 = literature stats
 //
 // Per trial only reservoir.seed changes. CLI order is the only runtime task knob;
 // series data_seed stays fixed so every reservoir seed scores the same u/y series.
@@ -51,7 +51,7 @@ namespace campaign {
 // --- 1. Task / series --------------------------------------------------------
 
 /// Default NARMA recurrence order when main is run with no arguments.
-constexpr size_t kDefaultNarmaOrder = 70;
+constexpr size_t kDefaultNarmaOrder = 50;
 
 /// Collect steps (train 80% / test 20% via MakeNARMATask).
 constexpr size_t kCollect = 32000;
@@ -59,7 +59,7 @@ constexpr size_t kCollect = 32000;
 /// Reservoir washout before collect.
 constexpr size_t kWarmup = 300;
 
-/// Signal-side RNG — fixes the entire u/y series across all reservoir seeds.
+/// Signal-side RNG - fixes the entire u/y series across all reservoir seeds.
 constexpr uint64_t kDataSeed = 1939;
 
 // --- 2. Base ESN op-point (shared across 30/50/70 and all seeds) --------------
@@ -76,14 +76,14 @@ inline ESNConfig MakeBaseESNConfig()
     cfg.reservoir.spectral_radius = 0.99f;
     cfg.reservoir.input_scaling   = 0.03f;
     cfg.reservoir.leak_rate       = 1.0f;
-    cfg.reservoir.history_depth   = 32;
+    cfg.reservoir.history_depth   = 29;//32;
     cfg.reservoir.bias_scaling    = 0.02f;  // pin campaign default
 
-    // Seam: delay-line ages packed into the readout (B=2 → HCNN start dim 11)
+    // Seam: delay-line ages packed into the readout (B=2 -> HCNN start dim 11)
     cfg.readout_slices = 2;
 
-    // Readout (trainable HCNN) — fixed seed so multi-seed spread is reservoir-side
-    cfg.readout.seed                    = 3423555;
+    // Readout (trainable HCNN) - fixed seed so multi-seed spread is reservoir-side
+    cfg.readout.seed                    = 73423555; //3423555;
     cfg.readout.task                    = ReadoutTask::Regression;
     cfg.readout.activation              = ReadoutActivation::TANH;
     cfg.readout.conv_channels           = 16;
@@ -94,7 +94,7 @@ inline ESNConfig MakeBaseESNConfig()
     cfg.readout.batch_size              = 128;
     cfg.readout.lr_max                  = 0.0015f;
     cfg.readout.lr_min_frac             = 0.005f;  // floor = 7.5e-06
-    // Best-epoch restore scores full training set (holdout_frac=0) — train MSE,
+    // Best-epoch restore scores full training set (holdout_frac=0) - train MSE,
     // not a validation split. Test NRMSE remains a clean held-out metric.
     cfg.readout.restore_best_epoch      = true;
     cfg.readout.best_epoch_holdout_frac = 0.0f;
@@ -105,10 +105,10 @@ inline ESNConfig MakeBaseESNConfig()
 // --- 3. Reservoir seeds ------------------------------------------------------
 //
 // Provide the full list here. Length is the survey mode:
-//   1 entry  — spot run (single trial; stats are trivial)
-//   3 entries — literature band (mean / sample-std / min / max over the three)
+//   1 entry  - spot run (single trial; stats are trivial)
+//   3 entries - literature band (mean / sample-std / min / max over the three)
 //
-// No other sizes. No best-k selection — every listed seed is reported in full.
+// No other sizes. No best-k selection - every listed seed is reported in full.
 
 inline constexpr uint64_t kReservoirSeeds[] = {
     7934791766227647176ull,  // spot: leave only this line; literature: keep all three
@@ -238,7 +238,7 @@ int main(int argc, char* argv[])
     // ---- Build the NARMA task ONCE -------------------------------------------
     // Independent of reservoir seed: every trial scores the byte-identical series.
     NARMATaskConfig tc{narma_order, kDataSeed};
-    tc.tanh_wrap = (NARMA_TANH_WRAP != 0); // campaign: 1 (fixed α β γ δ + outer tanh)
+    tc.tanh_wrap = (NARMA_TANH_WRAP != 0); // campaign: 1 (fixed a b g d + outer tanh)
     NARMATask task = MakeNARMATask(base.reservoir.dim, tc, kCollect, kWarmup);
 
     // Demo schedule + op-point banner (architecture once below).
