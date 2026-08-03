@@ -72,7 +72,8 @@ with best-5 as the representative multi-seed story across 30 / 50 / 70.
 
 ## Shared configuration
 
-Pinned in `NARMA.cpp` `main()` — keep in lockstep with this table.
+Pinned in the `campaign` section at the top of `NARMA.cpp` (`MakeBaseESNConfig`,
+series knobs, reservoir seed list) — keep in lockstep with this table.
 
 | Knob | Value |
 |------|--------|
@@ -113,9 +114,9 @@ cmake-build-release\NARMA.exe --help
 ```
 
 `order` is optional (integer ≥ 2). Op-point, seed list, and series length live
-in `NARMA.cpp` `main()` — match those to the table above to reproduce. The
-harness is a **fixed-M multi-seed survey** (not an M-ladder by default);
-`sweep_M` can hold more depths if you re-open an M study.
+in the `campaign` block at the top of `NARMA.cpp` — match those to the table
+above to reproduce. The harness is a **fixed-M multi-seed survey**
+(`history_depth` in `MakeBaseESNConfig`; only `reservoir.seed` varies per trial).
 
 ---
 
