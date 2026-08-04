@@ -131,29 +131,44 @@ public:
 
     // --- Training ----------------------------------------------------------
 
-    /// @brief Batch-fit the readout on recorded timesteps [0, @p train_size).
-    /// @p targets layout matches @ref R2 (indexed from timestep 0).
+    /// @brief Batch-fit the readout (regression) on recorded timesteps
+    /// [0, @p train_size). @p targets is train_size × NumOutputs() floats.
     /// @throws std::out_of_range if @p train_size > NumCollectedStates().
+    /// @throws std::logic_error if task is Classification.
     void Train(const float* targets, size_t train_size);
 
-    /// @brief Span form of @ref Train. Validates
-    /// @c targets.size() == train_size * NumOutputs() (regression) or
-    /// @c train_size (classification class indices).
+    /// @brief Span form of regression @ref Train.
+    /// @c targets.size() == train_size * NumOutputs().
     void Train(std::span<const float> targets, size_t train_size);
 
-    /// @brief One online gradient step on the **current** readout input (after
-    /// staging drives and @ref ReservoirStep as you choose). Task is fixed at
-    /// construction: regression → NumOutputs() floats; classification → one
-    /// class-index float.
+    /// @brief Batch-fit the readout (classification) on recorded [0, @p train_size).
+    /// @p class_labels is train_size ints in [0, NumOutputs()).
+    /// @throws std::logic_error if task is Regression.
+    void Train(const int* class_labels, size_t train_size);
+
+    /// @brief Span form of classification @ref Train.
+    void Train(std::span<const int> class_labels, size_t train_size);
+
+    /// @brief One online regression step on the **current** readout input.
+    /// @p target is NumOutputs() floats.
+    /// @throws std::logic_error if task is Classification.
     void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
 
-    /// @brief Span form of @ref TrainStep (size must match task layout).
+    /// @brief Span form of regression @ref TrainStep.
     void TrainStep(std::span<const float> target, float lr, float weight_decay = 0.0f);
 
-    /// @brief One online gradient step on a mini-batch of readout inputs you
-    /// supply (each ReadoutInputWidth() floats, e.g. from @ref CopyReadoutInput).
-    /// Regression: count × NumOutputs() targets; classification: count class indices.
+    /// @brief One online classification step on the current readout input.
+    /// @p class_label in [0, NumOutputs()).
+    /// @throws std::logic_error if task is Regression.
+    void TrainStep(int class_label, float lr, float weight_decay = 0.0f);
+
+    /// @brief Online regression mini-batch on caller-supplied readout inputs
+    /// (each ReadoutInputWidth() floats). @p targets is count × NumOutputs().
     void TrainStepBatch(const float* readout_inputs, const float* targets, size_t count,
+                        float lr, float weight_decay = 0.0f);
+
+    /// @brief Online classification mini-batch. @p class_labels is count ints.
+    void TrainStepBatch(const float* readout_inputs, const int* class_labels, size_t count,
                         float lr, float weight_decay = 0.0f);
 
     /// @brief Copy the newest reservoir slice (N floats) into @p out.
@@ -240,14 +255,14 @@ public:
                                          size_t start, size_t count) const;
 
     /// @brief Classification accuracy on recorded [@p start, @p start+@p count).
-    /// @p labels cover [0, start+count) as floats holding class indices.
-    [[nodiscard]] double Accuracy(const float* labels, size_t start, size_t count) const;
+    /// @p labels cover [0, start+count) as integer class indices.
+    [[nodiscard]] double Accuracy(const int* labels, size_t start, size_t count) const;
 
     /// @brief Span form of @ref Accuracy.
-    [[nodiscard]] double Accuracy(std::span<const float> labels, size_t start, size_t count) const;
+    [[nodiscard]] double Accuracy(std::span<const int> labels, size_t start, size_t count) const;
 
     /// @brief Accuracy with a window-only label buffer of length @p count.
-    [[nodiscard]] double AccuracyFromWindow(std::span<const float> labels_window,
+    [[nodiscard]] double AccuracyFromWindow(std::span<const int> labels_window,
                                             size_t start, size_t count) const;
 
     // --- Recorded buffer ---------------------------------------------------

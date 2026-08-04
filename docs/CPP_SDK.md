@@ -518,14 +518,18 @@ preserved.
 ##### `Train`
 
 ```cpp
+// Regression
 void Train(const float* targets, size_t train_size);
+// Classification
+void Train(const int* class_labels, size_t train_size);
 ```
 
 Fit the HCNN on recorded timesteps `[0, train_size)`. A second call **continues**
-from current weights — construct a new ESN for a fresh init.
+from current weights — construct a new ESN for a fresh init. Task is fixed at
+construction; the wrong pointer type throws `std::logic_error`.
 
 - **Regression:** `train_size × NumOutputs()` floats, row-major.
-- **Classification:** `train_size` floats (class indices).
+- **Classification:** `train_size` **ints** (class indices in `[0, NumOutputs())`).
 
 Throws if `train_size > NumCollectedStates()`.
 
@@ -540,17 +544,21 @@ loop length is the caller's.
 ##### `TrainStep`
 
 ```cpp
-void TrainStep(const float* target, float lr, float weight_decay = 0.0f);
+void TrainStep(const float* target, float lr, float weight_decay = 0.0f); // regression
+void TrainStep(int class_label, float lr, float weight_decay = 0.0f);     // classification
 ```
 
 One gradient step on the **current** readout input (assembled after your last
-drive). Regression: `NumOutputs()` floats. Classification: one class-index float.
+drive). Regression: `NumOutputs()` floats. Classification: one integer class
+index.
 
 ##### `TrainStepBatch`
 
 ```cpp
 void TrainStepBatch(const float* readout_inputs, const float* targets, size_t count,
-                    float lr, float weight_decay = 0.0f);
+                    float lr, float weight_decay = 0.0f);  // regression
+void TrainStepBatch(const float* readout_inputs, const int* class_labels, size_t count,
+                    float lr, float weight_decay = 0.0f);  // classification
 ```
 
 Mini-batch of caller-supplied **readout inputs** (`count × ReadoutInputWidth()`).
@@ -573,7 +581,7 @@ void CopyReservoirState(float* out) const;   // N (newest slice only)
 std::vector<float> PredictFromRecorded(size_t timestep) const;
 double R2(const float* targets, size_t start, size_t count) const;
 double NRMSE(const float* targets, size_t start, size_t count) const;
-double Accuracy(const float* labels, size_t start, size_t count) const;
+double Accuracy(const int* labels, size_t start, size_t count) const;
 ```
 
 - **Targets** must cover `[0, start+count)` — pass the full array; methods index
@@ -581,7 +589,8 @@ double Accuracy(const float* labels, size_t start, size_t count) const;
 - **R²:** average of per-output coefficients of determination. 1.0 = perfect.
 - **NRMSE:** mean over outputs of RMSE / std(target). 0 = perfect. Degenerate
   target variance → +inf on that output.
-- **Accuracy:** multi-class argmax; single-output thresholds the logit at 0.
+- **Accuracy:** integer class labels; multi-class argmax; single-output
+  thresholds the logit at 0.
 
 ##### Live / caller-supplied
 

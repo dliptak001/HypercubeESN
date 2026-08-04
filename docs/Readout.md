@@ -292,8 +292,10 @@ weight decay) each call; **momentum** comes from config (SGD).
 
 | Method | Granularity | target |
 |--------|-------------|--------|
-| `TrainStep(state, target, lr, wd)` | one sample | `num_outputs` floats, or one class-index float |
-| `TrainStepBatch(states, targets, count, lr, wd)` | mini-batch | `count × num_outputs`, or `count` class indices |
+| `TrainStep(state, float* target, lr, wd)` | one sample | regression: `num_outputs` floats |
+| `TrainStep(state, int class_label, lr, wd)` | one sample | classification: integer class index |
+| `TrainStepBatch(states, float* targets, …)` | mini-batch | regression: `count × num_outputs` floats |
+| `TrainStepBatch(states, int* labels, …)` | mini-batch | classification: `count` integer class indices |
 
 `state` / each row of `states` is a **readout input** (`NumFeatures()` floats) —
 B blocks of N when used under ESN with B > 1, not necessarily the newest

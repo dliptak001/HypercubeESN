@@ -211,6 +211,10 @@ void ESN::ReservoirClear()
 
 void ESN::Train(const float* targets, size_t train_size)
 {
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::Train(float*): regression only; use int* class_labels for "
+            "classification");
     if (train_size > num_collected_)
         throw std::out_of_range(
             "ESN::Train: train_size (" + std::to_string(train_size) +
@@ -220,37 +224,99 @@ void ESN::Train(const float* targets, size_t train_size)
 
 void ESN::Train(std::span<const float> targets, size_t train_size)
 {
-    const bool cls = esn_config_.readout.task == ReadoutTask::Classification;
-    const size_t expected = cls ? train_size : train_size * readout_.NumOutputs();
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::Train(span<float>): regression only; use span<int> labels for "
+            "classification");
+    const size_t expected = train_size * readout_.NumOutputs();
     if (targets.size() != expected)
         throw std::invalid_argument(
             "ESN::Train: targets.size() (" + std::to_string(targets.size()) +
-            ") must equal " + std::to_string(expected) +
-            (cls ? " (train_size class indices)" : " (train_size * NumOutputs())"));
+            ") must equal train_size * NumOutputs() (" + std::to_string(expected) + ")");
     Train(targets.data(), train_size);
+}
+
+void ESN::Train(const int* class_labels, size_t train_size)
+{
+    if (esn_config_.readout.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "ESN::Train(int*): classification only; use float* targets for "
+            "regression");
+    if (train_size > num_collected_)
+        throw std::out_of_range(
+            "ESN::Train: train_size (" + std::to_string(train_size) +
+            ") exceeds num_collected (" + std::to_string(num_collected_) + ")");
+    readout_.Train(ReadoutInput(0), class_labels, train_size);
+}
+
+void ESN::Train(std::span<const int> class_labels, size_t train_size)
+{
+    if (esn_config_.readout.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "ESN::Train(span<int>): classification only; use span<float> targets "
+            "for regression");
+    if (class_labels.size() != train_size)
+        throw std::invalid_argument(
+            "ESN::Train: class_labels.size() (" + std::to_string(class_labels.size()) +
+            ") must equal train_size (" + std::to_string(train_size) + ")");
+    Train(class_labels.data(), train_size);
 }
 
 void ESN::TrainStep(const float* target, float lr, float weight_decay)
 {
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::TrainStep(float*): regression only; use int class_label for "
+            "classification");
     AssembleReadoutInput();
     readout_.TrainStep(readout_input_.data(), target, lr, weight_decay);
 }
 
 void ESN::TrainStep(std::span<const float> target, float lr, float weight_decay)
 {
-    const bool cls = esn_config_.readout.task == ReadoutTask::Classification;
-    const size_t expected = cls ? 1u : readout_.NumOutputs();
-    if (target.size() != expected)
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::TrainStep(span<float>): regression only; use int class_label "
+            "for classification");
+    if (target.size() != readout_.NumOutputs())
         throw std::invalid_argument(
             "ESN::TrainStep: target.size() (" + std::to_string(target.size()) +
-            ") must equal " + std::to_string(expected));
+            ") must equal NumOutputs() (" + std::to_string(readout_.NumOutputs()) + ")");
     TrainStep(target.data(), lr, weight_decay);
+}
+
+void ESN::TrainStep(int class_label, float lr, float weight_decay)
+{
+    if (esn_config_.readout.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "ESN::TrainStep(int): classification only; use float* target for "
+            "regression");
+    if (class_label < 0
+        || class_label >= static_cast<int>(readout_.NumOutputs()))
+        throw std::invalid_argument(
+            "ESN::TrainStep: class_label out of range [0, NumOutputs())");
+    AssembleReadoutInput();
+    readout_.TrainStep(readout_input_.data(), class_label, lr, weight_decay);
 }
 
 void ESN::TrainStepBatch(const float* readout_inputs, const float* targets,
                          size_t count, float lr, float weight_decay)
 {
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::TrainStepBatch(float*): regression only; use int* class_labels "
+            "for classification");
     readout_.TrainStepBatch(readout_inputs, targets, count, lr, weight_decay);
+}
+
+void ESN::TrainStepBatch(const float* readout_inputs, const int* class_labels,
+                         size_t count, float lr, float weight_decay)
+{
+    if (esn_config_.readout.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "ESN::TrainStepBatch(int*): classification only; use float* targets "
+            "for regression");
+    readout_.TrainStepBatch(readout_inputs, class_labels, count, lr, weight_decay);
 }
 
 void ESN::CopyReservoirState(float* out) const
@@ -507,7 +573,7 @@ double ESN::NRMSEFromWindow(std::span<const float> targets_window,
     return nrmse_sum / static_cast<double>(K);
 }
 
-double ESN::Accuracy(const float* labels, size_t start, size_t count) const
+double ESN::Accuracy(const int* labels, size_t start, size_t count) const
 {
     if (start + count > num_collected_)
         throw std::out_of_range(
@@ -516,24 +582,32 @@ double ESN::Accuracy(const float* labels, size_t start, size_t count) const
     return readout_.Accuracy(ReadoutInput(start), labels + start, count);
 }
 
-double ESN::Accuracy(std::span<const float> labels, size_t start, size_t count) const
+double ESN::Accuracy(std::span<const int> labels, size_t start, size_t count) const
 {
     if (start + count > num_collected_)
         throw std::out_of_range(
             "ESN::Accuracy: start + count (" + std::to_string(start + count) +
             ") > num_collected (" + std::to_string(num_collected_) + ")");
-    RequireFullTargetBuffer("ESN::Accuracy", labels, start, count, 1);
+    const size_t need = start + count;
+    if (labels.size() < need)
+        throw std::invalid_argument(
+            "ESN::Accuracy: labels.size() (" + std::to_string(labels.size()) +
+            ") must be >= start + count (" + std::to_string(need) + ")");
     return Accuracy(labels.data(), start, count);
 }
 
-double ESN::AccuracyFromWindow(std::span<const float> labels_window,
+double ESN::AccuracyFromWindow(std::span<const int> labels_window,
                                size_t start, size_t count) const
 {
     if (start + count > num_collected_)
         throw std::out_of_range(
             "ESN::AccuracyFromWindow: start + count (" + std::to_string(start + count) +
             ") > num_collected (" + std::to_string(num_collected_) + ")");
-    RequireWindowTargetBuffer("ESN::AccuracyFromWindow", labels_window, count, 1);
+    if (labels_window.size() != count)
+        throw std::invalid_argument(
+            "ESN::AccuracyFromWindow: labels_window.size() (" +
+            std::to_string(labels_window.size()) + ") must equal count (" +
+            std::to_string(count) + ")");
     return readout_.Accuracy(ReadoutInput(start), labels_window.data(), count);
 }
 

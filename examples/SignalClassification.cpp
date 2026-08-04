@@ -249,14 +249,15 @@ int main(int argc, char* argv[])
     esn.ReservoirWarmup(signal.data(), kWarmup);
     esn.ReservoirRun(signal.data() + kWarmup, kTrainSize + kTestSize);
 
-    std::vector<float> float_labels(kCollect);
+    // Integer class indices for classification (not float-as-label).
+    std::vector<int> class_labels(kCollect);
     for (size_t t = 0; t < kCollect; ++t)
-        float_labels[t] = static_cast<float>(labels[t]);
+        class_labels[t] = static_cast<int>(labels[t]);
 
     std::cout << "Training on " << kTrainSize << " steps (" << kTrainBlocks
               << " blocks)..." << std::flush;
     auto t0 = std::chrono::steady_clock::now();
-    esn.Train(float_labels.data(), kTrainSize);
+    esn.Train(class_labels.data(), kTrainSize);
     auto t1 = std::chrono::steady_clock::now();
     double secs = std::chrono::duration<double>(t1 - t0).count();
     std::cout << " done (" << std::fixed << std::setprecision(2) << secs << "s)\n\n";

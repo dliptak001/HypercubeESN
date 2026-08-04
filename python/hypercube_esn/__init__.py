@@ -437,9 +437,9 @@ class ESN:
         ----------
         targets : ndarray
             For regression: shape ``(train_size,)`` or
-            ``(train_size * num_outputs,)`` for multi-output.
-            For classification: shape ``(train_size,)`` with class indices
-            as floats (0.0, 1.0, ...).
+            ``(train_size * num_outputs,)`` for multi-output floats.
+            For classification: shape ``(train_size,)`` integer class indices
+            (0, 1, ...). Whole-number floats are accepted and cast.
         """
         self._impl.train(_to_float32(targets))
 
@@ -584,10 +584,8 @@ class ESN:
         Parameters
         ----------
         labels : ndarray, optional
-            Class labels. For multi-class (num_outputs > 1): class indices
-            (0.0, 1.0, 2.0, ...). For binary (num_outputs == 1): values
-            in {-1.0, +1.0}. Same alignment convention as ``r2()``.
-            If omitted, uses targets stored by ``fit()``.
+            Integer class indices (0, 1, 2, ...). Same alignment convention
+            as ``r2()``. If omitted, uses targets stored by ``fit()``.
         start : int, optional
             First timestep index. Default: 0, or ``train_size`` after ``fit()``.
         count : int, optional
@@ -669,7 +667,7 @@ class ESN:
         ----------
         target : float or ndarray
             For regression: shape ``(num_outputs,)`` target values.
-            For classification: a single class index. Converted to float32.
+            For classification: a single integer class index.
         lr : float
             Learning rate for this step.
         weight_decay : float, optional
@@ -694,9 +692,8 @@ class ESN:
             Shape ``(count, reservoir_neuron_count)`` of states from
             :meth:`copy_reservoir_state`. Converted to float32.
         targets : ndarray
-            For regression: shape ``(count, num_outputs)`` target values.
-            For classification: shape ``(count,)`` of class indices.
-            Converted to float32.
+            For regression: shape ``(count, num_outputs)`` float targets.
+            For classification: shape ``(count,)`` integer class indices.
         lr : float
             Learning rate.
         weight_decay : float, optional

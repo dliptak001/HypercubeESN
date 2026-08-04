@@ -4,6 +4,9 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <stdexcept>
+#include <string>
+#include <vector>
 #include "../ESN.h"
 
 namespace py = pybind11;
@@ -165,33 +168,47 @@ PYBIND11_MODULE(_core, m)
            "external_feedback: optional (num_external_feedback_channels,) array for closed loop.")
 
         // ── Batch training ──
+        // Classification: one int label per sample. Regression: float targets.
+        // Forcecast accepts int/float numpy; labels are narrowed to int for HCNN.
         .def("train", [](ESN& self,
                          py::array_t<float, py::array::c_style | py::array::forcecast> targets) {
             auto buf = targets.request();
             size_t total = static_cast<size_t>(buf.size);
             const float* ptr = static_cast<const float*>(buf.ptr);
+            const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
 
-            // targets is laid out [sample][output] row-major, so the number of
-            // training samples is total / num_outputs. For single-output this is
-            // a no-op; for multi-output it converts the flattened buffer length
-            // back into the sample count ESN::Train expects.
-            size_t K = self.NumOutputs();
-            if (total % K != 0)
-                throw std::invalid_argument(
-                    "targets length (" + std::to_string(total) +
-                    ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
-            size_t train_size = total / K;
+            size_t train_size;
+            if (cls) {
+                // One class index per recorded sample (not total / num_outputs).
+                train_size = total;
+            } else {
+                // targets laid out [sample][output] row-major.
+                size_t K = self.NumOutputs();
+                if (K == 0 || total % K != 0)
+                    throw std::invalid_argument(
+                        "targets length (" + std::to_string(total) +
+                        ") must be a multiple of num_outputs (" + std::to_string(K) + ")");
+                train_size = total / K;
+            }
 
             if (train_size > self.NumCollectedStates())
                 throw std::invalid_argument(
                     "train_size (" + std::to_string(train_size) +
                     ") exceeds num_collected_states (" + std::to_string(self.NumCollectedStates()) + ")");
 
-            self.Train(ptr, train_size);
+            if (cls) {
+                std::vector<int> labels(train_size);
+                for (size_t i = 0; i < train_size; ++i)
+                    labels[i] = static_cast<int>(ptr[i]);
+                self.Train(labels.data(), train_size);
+            } else {
+                self.Train(ptr, train_size);
+            }
         },
             py::arg("targets"),
             "Train the HCNN readout on collected states.\n"
-            "Uses the readout config supplied at ESN construction.")
+            "Regression: (train_size * num_outputs,) floats.\n"
+            "Classification: (train_size,) integer class indices.")
 
         // ── Streaming HCNN training (task fixed at construction) ──
         .def("train_step", [](ESN& self,
@@ -199,18 +216,26 @@ PYBIND11_MODULE(_core, m)
                               float lr, float weight_decay) {
             auto buf = target.request();
             const bool cls = self.GetConfig().readout.task == ReadoutTask::Classification;
-            const size_t expected = cls ? 1u : self.NumOutputs();
-            if (static_cast<size_t>(buf.size) != expected)
-                throw std::invalid_argument(
-                    cls ? "target size (" + std::to_string(buf.size) +
-                              ") must equal 1 (class index) for classification"
-                        : "target size (" + std::to_string(buf.size) +
-                              ") must equal num_outputs (" + std::to_string(expected) + ")");
-            self.TrainStep(static_cast<const float*>(buf.ptr), lr, weight_decay);
+            if (cls) {
+                if (static_cast<size_t>(buf.size) != 1u)
+                    throw std::invalid_argument(
+                        "target size (" + std::to_string(buf.size) +
+                        ") must equal 1 (class index) for classification");
+                const int label = static_cast<int>(
+                    static_cast<const float*>(buf.ptr)[0]);
+                self.TrainStep(label, lr, weight_decay);
+            } else {
+                if (static_cast<size_t>(buf.size) != self.NumOutputs())
+                    throw std::invalid_argument(
+                        "target size (" + std::to_string(buf.size) +
+                        ") must equal num_outputs (" +
+                        std::to_string(self.NumOutputs()) + ")");
+                self.TrainStep(static_cast<const float*>(buf.ptr), lr, weight_decay);
+            }
         },
             py::arg("target"), py::arg("lr"), py::arg("weight_decay") = 0.0f,
             "One streaming gradient step on the reservoir's current state.\n"
-            "target: regression -> (num_outputs,) values; classification -> (1,) class index.")
+            "target: regression -> (num_outputs,) floats; classification -> (1,) class index.")
 
         .def("train_step_batch", [](ESN& self,
                                     py::array_t<float, py::array::c_style | py::array::forcecast> states,
@@ -238,15 +263,25 @@ PYBIND11_MODULE(_core, m)
                     "states size (" + std::to_string(sbuf.size) +
                     ") must equal count * readout_input_width (" + std::to_string(count) +
                     " * " + std::to_string(M) + " = " + std::to_string(count * M) + ")");
-            self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
-                                static_cast<const float*>(tbuf.ptr),
-                                count, lr, weight_decay);
+            if (cls) {
+                const float* raw = static_cast<const float*>(tbuf.ptr);
+                std::vector<int> labels(count);
+                for (size_t i = 0; i < count; ++i)
+                    labels[i] = static_cast<int>(raw[i]);
+                self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
+                                    labels.data(), count, lr, weight_decay);
+            } else {
+                self.TrainStepBatch(static_cast<const float*>(sbuf.ptr),
+                                    static_cast<const float*>(tbuf.ptr),
+                                    count, lr, weight_decay);
+            }
         },
             py::arg("states"), py::arg("targets"),
             py::arg("lr"), py::arg("weight_decay") = 0.0f,
             "One streaming gradient step over a mini-batch of pre-accumulated states.\n"
-            "states: (count, reservoir_neuron_count) float array from copy_reservoir_state.\n"
-            "targets: regression -> (count, num_outputs); classification -> (count,) class indices.")
+            "states: (count, readout_input_width) float array.\n"
+            "targets: regression -> (count, num_outputs) floats; "
+            "classification -> (count,) class indices.")
 
         .def("copy_reservoir_state", [](const ESN& self) {
             size_t M = self.ReservoirNeuronCount();
@@ -347,12 +382,15 @@ PYBIND11_MODULE(_core, m)
                             py::array_t<float, py::array::c_style | py::array::forcecast> labels,
                             size_t start, size_t count) {
             auto buf = labels.request();
-            std::span<const float> sp(static_cast<const float*>(buf.ptr),
-                                      static_cast<size_t>(buf.size));
-            return self.Accuracy(sp, start, count);
+            const size_t n = static_cast<size_t>(buf.size);
+            const float* raw = static_cast<const float*>(buf.ptr);
+            std::vector<int> labs(n);
+            for (size_t i = 0; i < n; ++i)
+                labs[i] = static_cast<int>(raw[i]);
+            return self.Accuracy(std::span<const int>(labs.data(), n), start, count);
         }, py::arg("labels"), py::arg("start"), py::arg("count"),
            "Classification accuracy on recorded [start, start+count). "
-           "labels must cover [0, start+count).")
+           "labels: integer class indices covering [0, start+count).")
 
         // ── State access ──
         .def("collected_states", [](const ESN& self) {

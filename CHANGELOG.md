@@ -25,6 +25,13 @@ HypercubeESN v2.0.0 deploy. Checklist: [third_party/HypercubeCNN/VENDORED.md](th
 
 ### Breaking
 
+- **Classification labels are `int`, not float.** `ESN::Train` /
+  `TrainStep` / `TrainStepBatch` / `Accuracy` and the matching `Readout`
+  overloads take integer class indices for classification; regression keeps
+  `float*`. The old “class index stored as float then cast” path is removed.
+  C++ callers must use `const int*` / `int` (see `examples/SignalClassification.cpp`).
+  Python still accepts whole-number arrays and converts at the binding; train
+  sample count for classification is `len(labels)` (not `len / num_outputs`).
 - **Version alignment.** Project, package, and tags are **2.0.0** (was CMake
   0.2.x / Python 1.x). Pin `GIT_TAG v2.0.0` (or later) for FetchContent.
 - **`verbose` default is `false`** (`ReservoirConfig` and Python `ESN`). Demos

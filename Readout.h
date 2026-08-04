@@ -167,34 +167,39 @@ public:
 
     // ----- Batch training -----
 
-    /// @brief Batch-train the CNN on @p num_samples reservoir states (row-major,
-    /// 2^dim floats per sample) against their @p targets, using the epoch count,
-    /// learning-rate schedule, and other hyperparameters from the construction-time
-    /// @ref ReadoutConfig.
-    ///
-    /// @p targets layout: for regression, @p num_samples * num_outputs floats; for
-    /// classification, @p num_samples floats (class indices). Calling @ref Train
-    /// again **continues** from the current weights rather than starting fresh —
-    /// construct a new Readout for an independent fit.
+    /// @brief Batch-train (regression): @p targets is num_samples * num_outputs
+    /// floats. Continues from current weights — new Readout for a fresh fit.
+    /// @throws std::logic_error if task is Classification.
     void Train(const float* states, const float* targets, size_t num_samples);
+
+    /// @brief Batch-train (classification): @p class_labels is num_samples ints
+    /// in [0, num_outputs). Continues from current weights.
+    /// @throws std::logic_error if task is Regression.
+    void Train(const float* states, const int* class_labels, size_t num_samples);
 
     // ----- Streaming training -----
     //
     // One gradient step at a time, interleaved with whatever drives the
-    // reservoir. Both methods dispatch on the construction-time task.
+    // reservoir. Overloads are task-typed (no float class indices).
 
-    /// @brief One streaming (online) gradient step on a single @p state. @p target
-    /// is num_outputs floats for regression, or a single class-index float (cast
-    /// to int) for classification.
-    /// @param lr           learning rate for this step.
-    /// @param weight_decay L2 regularization strength (0 = off).
+    /// @brief One regression step. @p target is num_outputs floats.
+    /// @throws std::logic_error if task is Classification.
     void TrainStep(const float* state, const float* target,
                    float lr, float weight_decay = 0.0f);
 
-    /// @brief One streaming gradient step over @p count states (each num_features
-    /// floats). @p targets is count * num_outputs floats for regression, or count
-    /// class-index floats for classification. Runs the batch in parallel.
+    /// @brief One classification step. @p class_label in [0, num_outputs).
+    /// @throws std::logic_error if task is Regression.
+    void TrainStep(const float* state, int class_label,
+                   float lr, float weight_decay = 0.0f);
+
+    /// @brief Regression mini-batch. @p targets is count * num_outputs floats.
+    /// @throws std::logic_error if task is Classification.
     void TrainStepBatch(const float* states, const float* targets,
+                        size_t count, float lr, float weight_decay = 0.0f);
+
+    /// @brief Classification mini-batch. @p class_labels is count ints.
+    /// @throws std::logic_error if task is Regression.
+    void TrainStepBatch(const float* states, const int* class_labels,
                         size_t count, float lr, float weight_decay = 0.0f);
 
     // ----- Prediction -----
@@ -216,9 +221,10 @@ public:
                             size_t num_samples) const;
 
     /// @brief Classification accuracy over @p num_samples (state, label) pairs —
-    /// the fraction predicted correctly. Multi-class compares argmax to the label;
-    /// a single output is thresholded at 0. (Classification metric.)
-    [[nodiscard]] double Accuracy(const float* states, const float* labels,
+    /// the fraction predicted correctly. Labels are integer class indices.
+    /// Multi-class compares argmax to the label; a single output is thresholded
+    /// at 0. (Classification metric.)
+    [[nodiscard]] double Accuracy(const float* states, const int* labels,
                                   size_t num_samples) const;
 
     // ----- Accessors -----

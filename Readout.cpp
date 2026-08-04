@@ -133,13 +133,16 @@ void Readout::build_architecture()
 void Readout::Train(const float* states, const float* targets,
                     size_t num_samples)
 {
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::Train(float*): regression task only; use int* labels "
+            "for classification");
+
     // net_ is already built (ctor). Train fits the existing network in place;
     // a second Train() continues from the current weights rather than
     // re-randomizing — reconstruct the Readout for a fresh fit.
     const int n = static_cast<int>(num_features_);
     const size_t K = num_outputs_;
-    const bool is_classification =
-        (config_.task == ReadoutTask::Classification);
     best_epoch_ = 0;
 
     const float lr_min = config_.lr_max * config_.lr_min_frac;
@@ -147,19 +150,11 @@ void Readout::Train(const float* states, const float* targets,
                             ? config_.lr_decay_epochs
                             : config_.epochs;
 
-    std::vector<int> int_targets;
-    if (is_classification) {
-        int_targets.resize(num_samples);
-        for (size_t s = 0; s < num_samples; ++s)
-            int_targets[s] = static_cast<int>(targets[s]);
-    }
-
     // Optional tail hold-out for best-epoch selection (train on the prefix).
     size_t n_train = num_samples;
     size_t n_score = num_samples;
     const float* score_states = states;
     const float* score_targets = targets;
-    const int* score_int = is_classification ? int_targets.data() : nullptr;
 
     if (config_.restore_best_epoch && config_.best_epoch_holdout_frac > 0.0f
         && num_samples >= 2) {
@@ -173,72 +168,113 @@ void Readout::Train(const float* states, const float* targets,
         n_train = num_samples - n_val;
         n_score = n_val;
         score_states = states + n_train * static_cast<size_t>(n);
-        if (is_classification) {
-            score_int = int_targets.data() + n_train;
-            score_targets = nullptr;
-        } else {
-            score_targets = targets + n_train * K;
-        }
+        score_targets = targets + n_train * K;
     }
 
-    // Full-capacity view: ESN states are always length N = 2^dim per sample.
     const hcnn::HCNNInputView train_in = hcnn::HCNNInputView::from_full(
         states, static_cast<int>(n_train), n);
 
     hcnn::HCNNTrainer trainer(*net_);
     trainer.params().momentum = config_.momentum;
     trainer.params().weight_decay = config_.weight_decay;
-    // Cosine over the decay horizon (may differ from epochs). Last scheduled
-    // step hits lr_min when horizon > 1 (HCNN cosine_lr contract).
     trainer.set_cosine(config_.lr_max, lr_min, std::max(horizon, 1));
 
-    hcnn::HCNNBestMetricCheckpoint best_reg; // min MSE
-    hcnn::HCNNDualCheckpoint best_cls;       // max accuracy (tie-break loss)
+    hcnn::HCNNBestMetricCheckpoint best_reg;
 
     for (int e = 0; e < config_.epochs; ++e) {
-        if (is_classification) {
-            trainer.train_epoch(train_in, int_targets.data(),
-                                config_.batch_size, e);
-        } else {
-            trainer.train_epoch(train_in, targets, config_.batch_size, e);
-        }
+        trainer.train_epoch(train_in, targets, config_.batch_size, e);
 
         if (!config_.restore_best_epoch || n_score == 0)
             continue;
 
-        // Score set: hold-out tail, or full train when holdout_frac == 0.
-        if (is_classification) {
-            hcnn::HCNNClassEval r = hcnn::evaluate_classification(
-                *net_, score_states, n, score_int,
-                static_cast<int>(n_score));
-            best_cls.observe(*net_, r.loss, r.accuracy, e + 1);
-        } else {
-            hcnn::HCNNRegEval r = hcnn::evaluate_regression(
-                *net_, score_states, n, score_targets,
-                static_cast<int>(n_score), static_cast<int>(K));
-            best_reg.observe(*net_, static_cast<float>(r.mse), e + 1);
-        }
+        hcnn::HCNNRegEval r = hcnn::evaluate_regression(
+            *net_, score_states, n, score_targets,
+            static_cast<int>(n_score), static_cast<int>(K));
+        best_reg.observe(*net_, static_cast<float>(r.mse), e + 1);
     }
 
     if (!config_.restore_best_epoch)
         return;
 
-    // Eval-style restore (moments not reset) — Train ends in inference-ready
-    // weights. Resume online with SetState(..., ResumeTrain) if needed.
-    if (is_classification) {
-        if (best_cls.has_best_acc()) {
-            best_cls.restore_best_acc(*net_);
-            best_epoch_ = best_cls.best_acc_epoch();
-        }
-    } else if (best_reg.has_best()) {
+    if (best_reg.has_best()) {
         best_reg.restore(*net_);
         best_epoch_ = best_reg.best_epoch();
+    }
+}
+
+void Readout::Train(const float* states, const int* class_labels,
+                    size_t num_samples)
+{
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::Train(int*): classification task only; use float* "
+            "targets for regression");
+
+    const int n = static_cast<int>(num_features_);
+    best_epoch_ = 0;
+
+    const float lr_min = config_.lr_max * config_.lr_min_frac;
+    const int horizon = (config_.lr_decay_epochs > 0)
+                            ? config_.lr_decay_epochs
+                            : config_.epochs;
+
+    size_t n_train = num_samples;
+    size_t n_score = num_samples;
+    const float* score_states = states;
+    const int* score_int = class_labels;
+
+    if (config_.restore_best_epoch && config_.best_epoch_holdout_frac > 0.0f
+        && num_samples >= 2) {
+        float frac = config_.best_epoch_holdout_frac;
+        if (frac < 0.0f) frac = 0.0f;
+        if (frac > 0.5f) frac = 0.5f;
+        size_t n_val = static_cast<size_t>(
+            static_cast<float>(num_samples) * frac + 0.5f);
+        if (n_val < 1) n_val = 1;
+        if (n_val >= num_samples) n_val = num_samples / 2;
+        n_train = num_samples - n_val;
+        n_score = n_val;
+        score_states = states + n_train * static_cast<size_t>(n);
+        score_int = class_labels + n_train;
+    }
+
+    const hcnn::HCNNInputView train_in = hcnn::HCNNInputView::from_full(
+        states, static_cast<int>(n_train), n);
+
+    hcnn::HCNNTrainer trainer(*net_);
+    trainer.params().momentum = config_.momentum;
+    trainer.params().weight_decay = config_.weight_decay;
+    trainer.set_cosine(config_.lr_max, lr_min, std::max(horizon, 1));
+
+    hcnn::HCNNDualCheckpoint best_cls;
+
+    for (int e = 0; e < config_.epochs; ++e) {
+        trainer.train_epoch(train_in, class_labels, config_.batch_size, e);
+
+        if (!config_.restore_best_epoch || n_score == 0)
+            continue;
+
+        hcnn::HCNNClassEval r = hcnn::evaluate_classification(
+            *net_, score_states, n, score_int, static_cast<int>(n_score));
+        best_cls.observe(*net_, r.loss, r.accuracy, e + 1);
+    }
+
+    if (!config_.restore_best_epoch)
+        return;
+
+    if (best_cls.has_best_acc()) {
+        best_cls.restore_best_acc(*net_);
+        best_epoch_ = best_cls.best_acc_epoch();
     }
 }
 
 void Readout::TrainStep(const float* state, const float* target,
                         float lr, float weight_decay)
 {
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::TrainStep(float*): regression only; use int class_label "
+            "for classification");
     assert(net_);
     const int n = static_cast<int>(num_features_);
 
@@ -246,17 +282,33 @@ void Readout::TrainStep(const float* state, const float* target,
     p.learning_rate = lr;
     p.momentum = config_.momentum;
     p.weight_decay = weight_decay;
+    net_->TrainStep(state, n, target, p);
+}
 
-    if (config_.task == ReadoutTask::Classification) {
-        net_->TrainStep(state, n, static_cast<int>(target[0]), p);
-    } else {
-        net_->TrainStep(state, n, target, p);
-    }
+void Readout::TrainStep(const float* state, int class_label,
+                        float lr, float weight_decay)
+{
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::TrainStep(int): classification only; use float* target "
+            "for regression");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainStep(state, n, class_label, p);
 }
 
 void Readout::TrainStepBatch(const float* states, const float* targets,
                              size_t count, float lr, float weight_decay)
 {
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::TrainStepBatch(float*): regression only; use int* "
+            "class_labels for classification");
     assert(net_);
     const int n = static_cast<int>(num_features_);
     const int batch = static_cast<int>(count);
@@ -265,17 +317,25 @@ void Readout::TrainStepBatch(const float* states, const float* targets,
     p.learning_rate = lr;
     p.momentum = config_.momentum;
     p.weight_decay = weight_decay;
+    net_->TrainBatch(states, n, targets, batch, p);
+}
 
-    if (config_.task == ReadoutTask::Classification) {
-        // Classification path takes integer class labels; the unified float*
-        // target carries each class index as a float, so narrow here.
-        std::vector<int> labels(count);
-        for (size_t i = 0; i < count; ++i)
-            labels[i] = static_cast<int>(targets[i]);
-        net_->TrainBatch(states, n, labels.data(), batch, p);
-    } else {
-        net_->TrainBatch(states, n, targets, batch, p);
-    }
+void Readout::TrainStepBatch(const float* states, const int* class_labels,
+                             size_t count, float lr, float weight_decay)
+{
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::TrainStepBatch(int*): classification only; use float* "
+            "targets for regression");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+    const int batch = static_cast<int>(count);
+
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainBatch(states, n, class_labels, batch, p);
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +393,7 @@ double Readout::R2(const float* states, const float* targets,
     return r2_sum / static_cast<double>(K);
 }
 
-double Readout::Accuracy(const float* states, const float* labels,
+double Readout::Accuracy(const float* states, const int* labels,
                          const size_t num_samples) const
 {
     if (num_samples == 0) return 0.0;
@@ -349,13 +409,14 @@ double Readout::Accuracy(const float* states, const float* labels,
             const float* row = logits.data() + s * K;
             const int pred = static_cast<int>(
                 std::max_element(row, row + K) - row);
-            if (pred == static_cast<int>(labels[s])) ++correct;
+            if (pred == labels[s]) ++correct;
         }
     } else {
         std::vector<float> preds(num_samples);
         net_->ForwardBatch(states, n, n_samples, preds.data());
         for (size_t s = 0; s < num_samples; ++s) {
-            if ((preds[s] > 0.0f) == (labels[s] > 0.0f)) ++correct;
+            const int pred = (preds[s] > 0.0f) ? 1 : 0;
+            if (pred == labels[s]) ++correct;
         }
     }
     return static_cast<double>(correct) / static_cast<double>(num_samples);
