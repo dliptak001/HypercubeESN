@@ -37,7 +37,7 @@ void HCNN::AddPool(PoolType type) {
     net_->add_pool(type);
 }
 
-void HCNN::RandomizeWeights(float scale, unsigned seed) {
+void HCNN::RandomizeWeights(float scale, uint64_t seed) {
     net_->randomize_all_weights(scale, seed);
 }
 

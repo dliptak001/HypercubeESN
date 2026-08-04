@@ -114,7 +114,7 @@ class ESN:
         Per-Conv-layer activation: "tanh" (default), "relu", "leaky_relu",
         or "none".
     readout_seed : int
-        CNN weight initialization seed. Default: 42.
+        CNN weight initialization seed (full 64-bit). Default: 42.
     readout_num_threads : int
         HCNN worker pool size: 0 = auto, 1 = single-threaded (use for multi-ESN
         hosts), N = N workers. Default: 0.

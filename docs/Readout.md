@@ -250,7 +250,7 @@ struct ReadoutConfig {
     int   lr_decay_epochs = 0;       // 0 = use epochs as cosine horizon
     float weight_decay   = 0.0f;
     float momentum       = 0.0f;     // SGD only; ignored by Adam
-    unsigned seed        = 42;
+    uint64_t seed        = 42;   // full 64-bit HCNN weight-init master seed
     ReadoutActivation activation = ReadoutActivation::TANH;
     size_t num_threads   = 0;        // 0=auto, 1=ST, N=N workers
     bool restore_best_epoch = true;

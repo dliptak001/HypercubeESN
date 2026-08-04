@@ -144,6 +144,13 @@ pending** after Lorenz half-anchored free-run storefront is filled.
 
 ### Fixed
 
+- **`ReadoutConfig::seed` was 32-bit `unsigned`:** assigning a 64-bit value
+  (e.g. NARMA `cfg.readout.seed = 7934791766227647176ull`) silently truncated
+  before HCNN weight init, so Op-point / actual init saw only the low 32 bits
+  (`816937672`). Seed is now `uint64_t` end-to-end (`HCNNConfig::weight_seed`,
+  `HCNN::RandomizeWeights`). Seeds with high half zero keep the historical
+  `mt19937(seed32)` path (bit-identical to old campaigns); wider seeds expand
+  both halves via `seed_seq`.
 - Doc bugs: `history_depth` is recurrent **M**, not readout **B**; scoring
   buffers must cover `[0, start+count)` unless using `*FromWindow`.
 - Power-of carets in markdown; Related Work (Katori) wording.

@@ -161,3 +161,55 @@ HCNN live weight_count: 16593
 Open-loop test NRMSE on the held-out 6400 steps (train 25600). Same series for every seed; only reservoir.seed varies.
 
 Process finished with exit code 0
+
+************************************************
+C:\CLion\HypercubeESN\cmake-build-release\NARMA.exe
+=== HypercubeESN: NARMA-50  [literature (3 seeds)] ===
+
+Task: open-loop system identification - reproduce y(t) from u(t).
+Fixed op-point; 3 reservoir seed(s); series held fixed (data_seed).
+Stats: mean / sample-std / min / max over all 3 seeds (no best-k selection).
+
+Variant: tanh-wrapped (fixed coeffs -- honest order-scaling)
+Stream:  warmup=300  collect=32000  train=25600  test=6400  data_seed=1939
+Coeffs:  alpha=0.3  beta=0.05  gamma=1.5  delta=0.1  u in [0, 0.5]
+Train:   600 epochs  batch=128  lr_max=0.0015  (cosine, floor=7.5e-06)
+Op-point: M=29  sr=0.99  leak=1  input_scaling=0.03  bias_scaling=0.02  readout_slices=2  readout.seed=73423555
+Survey:  3 res seed(s)  restore_best_epoch=true (holdout_frac=0)
+Seeds:  7934791766227647176 13855727669952034446 4944595549670057741
+
+Reservoir: DIM=10  N=1024  M=29  weights(fixed)=307200  [=N*DIM*(M+drives)=1024*10*(29+1)]
+HCNN input: readout_slices=2  B=2 blocks x N=1024  -> start_DIM=11  N_hcnn=2048
+  (start_DIM = reservoir_DIM + log2(B) = 10 + 1; M does not change HCNN size)
+
+HCNN Architecture: Conv(1->16, TANH, bias)  hcnn_DIM=11  N=2048
+                   -> Pool(MAX)  hcnn_DIM 11->10  N 2048->1024
+                   -> FLATTEN
+                   -> Linear(16384 -> 1)
+HCNN parameters (trained): 16593 (208 conv1 + 16385 readout)
+
+HCNN live weight_count: 16593
+
+
+  === res_seed 7934791766227647176  (1/3) ===
+    NRMSE=0.0776  R2=0.9940  (660.7s)
+
+  === res_seed 13855727669952034446  (2/3) ===
+    NRMSE=0.0792  R2=0.9937  (733.8s)
+
+  === res_seed 4944595549670057741  (3/3) ===
+    NRMSE=0.0767  R2=0.9941  (738.2s)
+
+=== NARMA-50 summary  (DIM=10, N=1024, M=29, 3 seed(s), train mean 0.9946) ===
+  All 3 seeds (mean/std/min/max - literature band):
+    mean= 0.0778  std= 0.0013  min= 0.0767  max= 0.0792
+
+  Per-seed NRMSE:
+    seed 7934791766227647176  NRMSE=0.0776
+    seed 13855727669952034446  NRMSE=0.0792
+    seed 4944595549670057741  NRMSE=0.0767
+
+Open-loop test NRMSE on the held-out 6400 steps (train 25600). Same series for every seed; only reservoir.seed varies.
+
+Process finished with exit code 0
+

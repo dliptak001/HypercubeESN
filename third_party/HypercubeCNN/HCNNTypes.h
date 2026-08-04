@@ -10,6 +10,8 @@
  * Included by `HCNN.h`.  Layer/orchestrator headers are private (not installed).
  */
 
+#include <cstdint>
+
 namespace hcnn {
 
 /// Activation after convolution (and optional batch-norm).

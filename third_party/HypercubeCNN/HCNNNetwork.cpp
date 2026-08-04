@@ -108,7 +108,7 @@ void HCNNNetwork::add_pool(PoolType type) {
     invalidate_cached_buffers();
 }
 
-void HCNNNetwork::randomize_all_weights(float scale, unsigned seed) {
+void HCNNNetwork::randomize_all_weights(float scale, uint64_t seed) {
     int final_channels = channel_counts.back();
     int final_N = vertices_at_dim(current_dim);
 
@@ -119,7 +119,20 @@ void HCNNNetwork::randomize_all_weights(float scale, unsigned seed) {
     // Re-apply optimizer (fresh HCNNReadout has its own default moments).
     readout.set_optimizer(optimizer_type_, adam_beta1_, adam_beta2_, adam_eps_);
 
-    std::mt19937 rng(seed);
+    // Full 64-bit master seed → mt19937. Low-half-only seeds (historical
+    // unsigned API / NARMA campaign seeds) keep the single-arg constructor so
+    // bit-identical inits are preserved. Wider seeds expand both halves via
+    // seed_seq (high bits are no longer silently dropped).
+    std::mt19937 rng = [&]() {
+        if ((seed >> 32) == 0ull) {
+            return std::mt19937(
+                static_cast<std::mt19937::result_type>(seed));
+        }
+        const std::uint32_t lo = static_cast<std::uint32_t>(seed);
+        const std::uint32_t hi = static_cast<std::uint32_t>(seed >> 32);
+        std::seed_seq seq{lo, hi};
+        return std::mt19937(seq);
+    }();
     for (auto& layer : conv_layers) {
         layer.randomize_weights(scale, rng);
     }

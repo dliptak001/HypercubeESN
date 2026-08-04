@@ -36,7 +36,7 @@ ESNConfig Lorenz::MakeESNConfig(uint64_t seed)
     cfg.reservoir.bias_scaling = 0.01;
 
     cfg.readout.num_outputs = 3; //[x, y, z]
-    cfg.readout.seed = static_cast<unsigned>(seed);
+    cfg.readout.seed = seed;
     cfg.readout_slices = config::READOUT_SLICES;
     cfg.readout.use_pooling = config::USE_POOLING;
     cfg.readout.num_layers = config::NUM_LAYERS;

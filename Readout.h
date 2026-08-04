@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -99,18 +100,10 @@ struct ReadoutConfig
     int lr_decay_epochs = 0; ///< Cosine decay horizon. 0 = use `epochs`.
     float weight_decay = 0.0f;
     float momentum = 0.9f; ///< SGD momentum (heavy-ball). 0 = plain SGD. Ignored by Adam.
-    // =========================================================================
-    // LOUD NOTE / TODO (seed width):
-    //   ReadoutConfig::seed is still `unsigned` (32-bit on typical hosts).
-    //   ReservoirConfig::seed is `uint64_t`. Hosts that assign one trial seed
-    //   to both (e.g. Lorenz MakeESNConfig: static_cast<unsigned>(seed)) silently
-    //   drop the high 32 bits for HCNN weight init only — reservoir wiring keeps
-    //   the full 64-bit value. Consider promoting this to uint64_t (and plumbing
-    //   it through HypercubeCNN weight_seed / any arch sidecar) so readout init
-    //   matches reservoir seed width and multi-seed surveys do not collide on
-    //   low-32 alone.
-    // =========================================================================
-    unsigned seed = 42; ///< CNN weight initialization seed (see LOUD NOTE above).
+    /// CNN weight-init seed (full 64-bit). Forwarded to HypercubeCNN `weight_seed`.
+    /// Seeds that fit in 32 bits keep the historical mt19937 single-arg path so
+    /// old campaign inits stay bit-identical; wider seeds expand both halves.
+    uint64_t seed = 42;
     ReadoutActivation activation = ReadoutActivation::TANH; ///< Per-Conv-layer activation.
 
     /// HCNN internal worker-pool size. Forwarded to `hcnn::HCNN`:

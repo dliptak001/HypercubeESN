@@ -51,7 +51,7 @@ namespace campaign {
 // --- 1. Task / series --------------------------------------------------------
 
 /// Default NARMA recurrence order when main is run with no arguments.
-constexpr size_t kDefaultNarmaOrder = 50;
+constexpr size_t kDefaultNarmaOrder = 30;
 
 /// Collect steps (train 80% / test 20% via MakeNARMATask).
 constexpr size_t kCollect = 32000;
@@ -83,7 +83,7 @@ inline ESNConfig MakeBaseESNConfig()
     cfg.readout_slices = 2;
 
     // Readout (trainable HCNN) - fixed seed so multi-seed spread is reservoir-side
-    cfg.readout.seed                    = 73423555; //3423555;
+    cfg.readout.seed                    = 7934791766227647176ull;//73423555; //3423555;
     cfg.readout.task                    = ReadoutTask::Regression;
     cfg.readout.activation              = ReadoutActivation::TANH;
     cfg.readout.conv_channels           = 16;
@@ -109,12 +109,17 @@ inline ESNConfig MakeBaseESNConfig()
 //   3 entries - literature band (mean / sample-std / min / max over the three)
 //
 // No other sizes. No best-k selection - every listed seed is reported in full.
-
-inline constexpr uint64_t kReservoirSeeds[] = {
+    inline constexpr uint64_t kReservoirSeeds[] = {
     7934791766227647176ull,  // spot: leave only this line; literature: keep all three
-    8982357012682103037ull,
-    3079493423467196890ull,
+    13855727669952034446ull,
+    4944595549670057741ull,
 };
+
+// inline constexpr uint64_t kReservoirSeeds[] = {
+//     7934791766227647176ull,  // spot: leave only this line; literature: keep all three
+//     8982357012682103037ull,
+//     3079493423467196890ull,
+// };
     // inline constexpr uint64_t kReservoirSeeds[] = {
     //     4112530987988204306ull,  // spot: leave only this line; literature: keep all three
     //     8982357012682103037ull,
@@ -266,7 +271,8 @@ int main(int argc, char* argv[])
               << "  input_scaling=" << base.reservoir.input_scaling
               << "  bias_scaling=" << base.reservoir.bias_scaling
               << "  readout_slices=" << base.readout_slices
-              << "  readout.seed=" << base.readout.seed << "\n";
+              << "  readout.seed="
+              << static_cast<unsigned long long>(base.readout.seed) << "\n";
     std::cout << "Survey:  " << nTrials << " res seed(s)"
               << "  restore_best_epoch="
               << (base.readout.restore_best_epoch ? "true" : "false")

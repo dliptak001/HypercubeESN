@@ -33,7 +33,7 @@ PYBIND11_MODULE(_core, m)
                          float readout_lr_max, float readout_lr_min_frac,
                          int readout_lr_decay_epochs, float readout_weight_decay,
                          float readout_momentum, const char* readout_activation,
-                         unsigned readout_seed,
+                         uint64_t readout_seed,
                          size_t readout_num_threads,
                          bool readout_restore_best_epoch,
                          float readout_best_epoch_holdout_frac) {
@@ -101,7 +101,7 @@ PYBIND11_MODULE(_core, m)
             py::arg("readout_weight_decay")     = 0.0f,
             py::arg("readout_momentum")         = 0.0f,
             py::arg("readout_activation")       = "tanh",
-            py::arg("readout_seed")             = 42u,
+            py::arg("readout_seed")             = 42ULL,
             py::arg("readout_num_threads")      = 0ULL,
             py::arg("readout_restore_best_epoch") = true,
             py::arg("readout_best_epoch_holdout_frac") = 0.0f)

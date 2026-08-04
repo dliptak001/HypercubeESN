@@ -75,7 +75,9 @@ public:
     /// scale <= 0 (default): Xavier/Glorot uniform per layer.
     /// Rebuilds the FLATTEN readout to c_final * N_final; preserves
     /// optimizer + grad_in loop; invalidates cached work buffers.
-    void randomize_all_weights(float scale = 0.0f, unsigned seed = 42);
+    /// Initialize weights from a full 64-bit master seed.
+    /// Seeds with high half zero keep the historical mt19937(seed32) path.
+    void randomize_all_weights(float scale = 0.0f, uint64_t seed = 42);
 
     void embed_input(const float* raw_input, int input_length,
                      float* first_layer_activations) const;

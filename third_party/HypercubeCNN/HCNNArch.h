@@ -309,7 +309,7 @@ struct HCNNConfig {
 
     bool randomize = true;
     float weight_scale = 0.0f;   ///< <= 0 → He/Xavier per layer
-    unsigned weight_seed = 42;
+    uint64_t weight_seed = 42;   ///< Full 64-bit weight-init master seed
 
     /// Param summary for this config (validates layers).
     [[nodiscard]] ArchParamSummary summarize() const {

@@ -103,7 +103,8 @@ public:
     /// Initialize all weights and size the FLATTEN head to the current stack.
     /// Required after construct (with ≥1 conv) and after any AddConv/AddPool.
     /// scale > 0: uniform [-scale, +scale]; scale <= 0: per-layer Xavier/He.
-    void RandomizeWeights(float scale = 0.0f, unsigned seed = 42);
+    /// @p seed is a full 64-bit master seed (see HCNNNetwork::randomize_all_weights).
+    void RandomizeWeights(float scale = 0.0f, uint64_t seed = 42);
 
     // -----------------------------------------------------------------
     //  Mode / optimizer
