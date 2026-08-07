@@ -34,7 +34,7 @@ never leaves the hypercube it was born on.**
 
 <p align="center">
   <strong>HypercubeAI ecosystem</strong><br/>
-  <sub>One geometry. Three libraries. Topology-native intelligence.</sub>
+  <sub>One geometry. Topology-native intelligence.</sub>
 </p>
 
 <p align="center">
@@ -43,13 +43,38 @@ never leaves the hypercube it was born on.**
   <a href="https://github.com/dliptak001/HypercubeCNN"><strong>HypercubeCNN</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dliptak001/HypercubeHopfield"><strong>HypercubeHopfield</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dliptak001/HypercubeWTF"><strong>HypercubeWTF</strong></a>
 </p>
 
-HypercubeESN is a pillar of **HypercubeAI** — a family of tools that treat the
-Boolean hypercube as a first-class computational medium: dynamical reservoirs
-(**ESN**), convolutional learning on the same graph (**CNN**), and associative
-memory (**Hopfield**). Shared vertices, shared XOR neighborhoods, no bolted-on
-grid.
+HypercubeESN is an experiment in the **HypercubeAI** project — our quest to map
+AI and ML strategies onto the hypercube as a computational substrate.
+
+Why the hypercube? A few properties keep showing up — and they explain why a
+frozen reservoir and a HypercubeCNN readout fit together so cleanly:
+
+- **A topology you don’t store** — the graph is specified: connectivity is
+  implicit in the vertex indices; with a seed and a few config scalars the whole
+  reservoir reconstructs mathematically.
+- **Perfect homogeneity** — every vertex has the same degree and the same local
+  world, so local dynamics mean the same thing everywhere — no structural
+  favorites baked in by a random graph.
+- **Cheap navigation** — each neighbor is a few bit operations on the vertex
+  index, not a pointer chase through a stored edge list, so walks stay
+  arithmetic and cache-friendly.
+- **Topology-native pairing** — the readout consumes the reservoir’s output with
+  zero geometric distortion, and the learned kernels exploit the same locality
+  that generated the dynamics. The data never leaves the hypercube it was born
+  on.
+
+Each product in the family is a different architecture on that same foundation:
+
+| Product | Natural data | Role of the hypercube |
+|---------|--------------|------------------------|
+| **[HypercubeESN](https://github.com/dliptak001/HypercubeESN)** | Low-dim **streams** over time | Frozen **reservoir** stepped each sample; multi-slice state → HypercubeCNN readout |
+| **[HypercubeCNN](https://github.com/dliptak001/HypercubeCNN)** | Static patterns on the cube | Trainable **spatial** conv/pool on the cube (no recurrent reservoir) |
+| **[HypercubeHopfield](https://github.com/dliptak001/HypercubeHopfield)** | Patterns / attractors | Associative memory dynamics on the cube |
+| **[HypercubeWTF](https://github.com/dliptak001/HypercubeWTF)** | Static high-dim fields (**no** intrinsic time) | Same **frozen hypercube reservoir** discipline as ESN, driven for a short orbit per sample, then HypercubeCNN on the **end state** |
 
 ---
 
