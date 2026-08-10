@@ -31,14 +31,6 @@ op-point the best-5 clusters stay **tight** at every rung (std ≤ 0.002) — N3
 All-20 pool stats (including outliers) are in [Results](#results-test-nrmse)
 for completeness; they are not the headline.
 
-Raw stdout (authoritative per-trial numbers):
-
-| Order | Log |
-|------:|-----|
-| 30 | [NARMA-30.txt](NARMA-30.txt) |
-| 50 | [NARMA-50.txt](NARMA-50.txt) |
-| 70 | [NARMA-70.txt](NARMA-70.txt) |
-
 ### Is a shared op-point across orders common?
 
 **Somewhat uncommon in the published RC literature — and that is part of the
@@ -92,8 +84,7 @@ Metric: **test NRMSE** = RMSE / std(target) on the held-out 6400 steps. For the
 **live harness**, report every listed seed (1 or 3) with mean/std/min/max when
 n = 3. The **historical** tables below still document an earlier **best-5 of 20**
 campaign on the same op-point — keep those until a 3-seed re-run is verified in
-the same ballpark. Raw logs: [NARMA-30.txt](NARMA-30.txt) ·
-[NARMA-50.txt](NARMA-50.txt) · [NARMA-70.txt](NARMA-70.txt).
+the same ballpark.
 
 **Cost (doc only — no smoke path):** roughly **12–14 minutes per seed** on the
 collect machine (Release). A 3-seed literature run is ~**40–45 min per order**;
