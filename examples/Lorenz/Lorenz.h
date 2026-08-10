@@ -33,7 +33,7 @@ namespace config
     // Hypercube dim (N = 2^DIM). Not constexpr: campaigns pass DIM as an argument.
     // Reservoir requires 5 <= dim <= 16.
     inline size_t DIM = 10;
-    constexpr uint64_t SEED = 7934791766227647176;
+    constexpr uint64_t SEED = 696634088797950509ull;
     // Not constexpr: Parallel* / FreeRun* may reassign for a run (RAII restore).
     inline float SPECTRAL_RADIUS = 0.999f;
     // Not constexpr: Parallel* / FreeRun* may reassign (restored on campaign exit).
@@ -53,6 +53,7 @@ namespace config
     // Not constexpr: campaigns may reassign (surveys / heavy train).
     // Typical: 50–100 rapid A/B; 100–200 refine; 300–500 heavy train.
     inline size_t EPOCHS = 100;
+    constexpr uint64_t READOUT_SEED = 696634088797950509ull;
     constexpr size_t READOUT_SLICES = 1;
     constexpr size_t CONV_CHANNELS = 1;
     constexpr int NUM_LAYERS = 1;

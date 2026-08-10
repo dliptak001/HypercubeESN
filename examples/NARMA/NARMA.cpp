@@ -83,7 +83,7 @@ inline ESNConfig MakeBaseESNConfig()
     cfg.readout_slices = 2;
 
     // Readout (trainable HCNN) - fixed seed so multi-seed spread is reservoir-side
-    cfg.readout.seed                    = 7934791766227647176ull;//73423555; //3423555;
+    cfg.readout.seed                    = 3423555;//73423555; //3423555;
     cfg.readout.task                    = ReadoutTask::Regression;
     cfg.readout.activation              = ReadoutActivation::TANH;
     cfg.readout.conv_channels           = 16;
@@ -110,9 +110,7 @@ inline ESNConfig MakeBaseESNConfig()
 //
 // No other sizes. No best-k selection - every listed seed is reported in full.
     inline constexpr uint64_t kReservoirSeeds[] = {
-    7934791766227647176ull,  // spot: leave only this line; literature: keep all three
-    13855727669952034446ull,
-    4944595549670057741ull,
+    1108635  // spot: leave only this line; literature: keep all three
 };
 
 // inline constexpr uint64_t kReservoirSeeds[] = {
