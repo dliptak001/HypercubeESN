@@ -120,9 +120,9 @@ void HCNNNetwork::randomize_all_weights(float scale, uint64_t seed) {
     readout.set_optimizer(optimizer_type_, adam_beta1_, adam_beta2_, adam_eps_);
 
     // Full 64-bit master seed → mt19937. Low-half-only seeds (historical
-    // unsigned API / NARMA campaign seeds) keep the single-arg constructor so
-    // bit-identical inits are preserved. Wider seeds expand both halves via
-    // seed_seq (high bits are no longer silently dropped).
+    // unsigned API) keep the single-arg constructor so bit-identical inits
+    // are preserved. Wider seeds expand both halves via seed_seq (high bits
+    // are no longer silently dropped).
     std::mt19937 rng = [&]() {
         if ((seed >> 32) == 0ull) {
             return std::mt19937(

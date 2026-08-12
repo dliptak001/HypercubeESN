@@ -1,5 +1,5 @@
-Vendored snapshot of dliptak001/HypercubeCNN @ v1.0.0-2-g8859550
-(commit 885955076fb46ab274fe1941e2ad7bfd698748b9);
+Vendored snapshot of dliptak001/HypercubeCNN @ **v1.0.4**
+(commit `ef1b710e06c13d65a6b6316f6f48a8f61b6ed63d`);
 canonical upstream — do not edit here, re-vendor instead.
 
 Upstream: https://github.com/dliptak001/HypercubeCNN  (Apache-2.0)
@@ -22,37 +22,16 @@ neighbors **plus a self/center tap** at each vertex. Earlier neighbor-only (K = 
 kernels are obsolete for this host; retrain after re-vendoring. Called out in
 [CHANGELOG.md](../../CHANGELOG.md) for HypercubeESN 2.0.
 
----
+**Weight-init seed (this pin):** `HCNNConfig::weight_seed` and
+`HCNN::RandomizeWeights` take full **`uint64_t`**. Seeds with high half zero keep
+the historical `mt19937(seed32)` path; wider seeds expand both halves via
+`seed_seq`. Shipped upstream in HypercubeCNN **v1.0.1**; this tree is a clean
+re-vendor of **v1.0.4** (no local HCNN fork).
 
-## In-tree drift (must land upstream before HypercubeESN v2.0.0 deploy)
+### Re-vendor checklist
 
-**Policy reminder:** this tree is supposed to be a read-only re-vendor of
-[dliptak001/HypercubeCNN](https://github.com/dliptak001/HypercubeCNN). HypercubeESN
-development has temporarily edited files **in this directory** (seed-width and any
-other HCNN fixes). Those edits do **not** automatically flow to the standalone
-GitHub project.
-
-### Release gate (HypercubeESN public **v2.0.0**)
-
-When the HCNN changes have been **vetted** in HypercubeESN and we are **ready to
-tag / deploy HypercubeESN v2.0.0**:
-
-1. **Migrate** the vetted HCNN diffs from this vendored tree into the
-   **GitHub HypercubeCNN** repo (PR + review on upstream).
-2. **Tag** a new HypercubeCNN release (e.g. after v1.0.0) that includes at least:
-   - `uint64_t` weight-init seed end-to-end (`HCNNConfig::weight_seed`,
-     `HCNN::RandomizeWeights`, `HCNNNetwork::randomize_all_weights`)
-   - low-32 historical path when high half is zero; full `seed_seq` expansion
-     for wider seeds
-   - any other HCNN fixes that shipped with HypercubeESN 2.0 (self-tap K=dim+1
-     if not already on the upstream pin, etc.)
-3. **Re-vendor** this directory from that upstream tag/commit; update the pin
-   line at the top of this file and drop or rewrite this “in-tree drift” section
-   so HypercubeESN again matches canonical HypercubeCNN.
-4. Only then **publish** HypercubeESN v2.0.0 (tag / PyPI / GitHub Release) with
-   a clean pin — no permanent fork of HCNN living only under
-   `third_party/HypercubeCNN`.
-
-Do **not** treat “ESN works on feedback” as done for HCNN; **upstream
-HypercubeCNN must receive the same API/behavior** so other consumers and future
-re-vendors stay aligned.
+1. Check out (or archive) the chosen HypercubeCNN tag on the upstream repo.
+2. Copy the vendored content files listed above into this directory (overwrite).
+3. Leave this directory’s `CMakeLists.txt` alone (ESN host glue).
+4. Update the pin line at the top of this file to the new tag/commit.
+5. Build `HypercubeESNCore` (and Python wheels if needed) before committing.

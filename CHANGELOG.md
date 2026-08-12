@@ -11,15 +11,12 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 ## [2.0.0] — TBD (public release)
 
 **Status:** version numbers bumped to 2.0.0 in-tree; **tag / PyPI / GitHub Release
-pending** after Lorenz half-anchored free-run storefront is filled **and**
-vendored HypercubeCNN changes are migrated upstream (see below).
+pending** (storefront / freeze checklist still open — see Validators).
 
-**Release gate — HypercubeCNN upstream:** In-tree HCNN edits under
-`third_party/HypercubeCNN` (notably **64-bit weight_seed / RandomizeWeights**,
-and any other 2.0 HCNN fixes) must be **ported to the GitHub HypercubeCNN
-project**, tagged there, then **re-vendored** into this tree before public
-HypercubeESN v2.0.0 deploy. Checklist: [third_party/HypercubeCNN/VENDORED.md](third_party/HypercubeCNN/VENDORED.md)
-(“In-tree drift”). Do not ship 2.0.0 with a permanent one-way fork of HCNN.
+**HypercubeCNN pin:** clean re-vendor of upstream **v1.0.4** (includes **uint64**
+`weight_seed` / `RandomizeWeights` from HCNN v1.0.1 and **K = dim + 1** self-tap).
+See [third_party/HypercubeCNN/VENDORED.md](third_party/HypercubeCNN/VENDORED.md).
+No permanent one-way HCNN fork in this tree.
 
 **Upgrading from 1.x?** Jump to [Migration notes](#migration-notes-1x-to-20).
 
@@ -162,12 +159,11 @@ HypercubeESN v2.0.0 deploy. Checklist: [third_party/HypercubeCNN/VENDORED.md](th
 - **`ReadoutConfig::seed` was 32-bit `unsigned`:** assigning a 64-bit value
   (e.g. NARMA `cfg.readout.seed = 7934791766227647176ull`) silently truncated
   before HCNN weight init, so Op-point / actual init saw only the low 32 bits
-  (`816937672`). Seed is now `uint64_t` end-to-end (`HCNNConfig::weight_seed`,
-  `HCNN::RandomizeWeights`). Seeds with high half zero keep the historical
-  `mt19937(seed32)` path (bit-identical to old campaigns); wider seeds expand
-  both halves via `seed_seq`. **Before HypercubeESN v2.0.0 public deploy:**
-  migrate this HCNN surface to upstream HypercubeCNN and re-vendor (see
-  [VENDORED.md](third_party/HypercubeCNN/VENDORED.md)).
+  (`816937672`). Seed is now `uint64_t` end-to-end through host
+  `ReadoutConfig::seed` and vendored HypercubeCNN **v1.0.4**
+  (`HCNNConfig::weight_seed`, `HCNN::RandomizeWeights`). Seeds with high half
+  zero keep the historical `mt19937(seed32)` path (bit-identical to old
+  campaigns); wider seeds expand both halves via `seed_seq`.
 - Doc bugs: `history_depth` is recurrent **M**, not readout **B**; scoring
   buffers must cover `[0, start+count)` unless using `*FromWindow`.
 - Power-of carets in markdown; Related Work (Katori) wording.
@@ -190,9 +186,9 @@ HypercubeESN v2.0.0 deploy. Checklist: [third_party/HypercubeCNN/VENDORED.md](th
 4. Replace any FSF usage with external-feedback ports + host policy.
 5. Re-export or re-train pickles if you need new closed-loop / B fields explicitly.
 6. Prefer `dim=` / document `readout_input_width` when B > 1.
-7. **Maintainers (public 2.0.0 tag):** after vetting, **push vendored HCNN
-   changes to GitHub HypercubeCNN**, tag upstream, re-vendor here, then release
-   HypercubeESN — see [VENDORED.md](third_party/HypercubeCNN/VENDORED.md).
+7. **Maintainers:** HCNN is a clean pin of upstream **v1.0.4** (re-vendor only
+   from tagged HypercubeCNN releases — see
+   [VENDORED.md](third_party/HypercubeCNN/VENDORED.md)).
 
 ---
 

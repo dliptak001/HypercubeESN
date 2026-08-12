@@ -284,7 +284,7 @@ wheel): [python/examples/](python/examples/README.md).
 
 **Requirements:** C++23 (GCC 13+, Clang 17+, MSVC 2022+), **CMake 4.1+**.
 
-The HCNN readout is **vendored** in-tree (`third_party/HypercubeCNN/`, pin v1.0.0)
+The HCNN readout is **vendored** in-tree (`third_party/HypercubeCNN/`, pin **v1.0.4**)
 and builds as `HypercubeCNNCore` — no separate install or network fetch.
 
 **From this repo (library + examples):**
@@ -370,7 +370,7 @@ HypercubeESN/
     CPP_SDK.md            C++ static-library consumer guide
     Python_SDK.md         Python SDK API reference
   third_party/
-    HypercubeCNN/         Vendored HypercubeCNN v1.0.0 (read-only; see VENDORED.md)
+    HypercubeCNN/         Vendored HypercubeCNN v1.0.4 (read-only; see VENDORED.md)
 ```
 
 ## Documentation

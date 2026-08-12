@@ -61,8 +61,8 @@ body of the network.
 
 [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) is a standalone
 convolutional library that swaps the 2D pixel grid for a Boolean hypercube. Each
-primitive is the reservoir's geometry from the other side (v1.0.0 facade used by
-this host):
+primitive is the reservoir's geometry from the other side (vendored pin **v1.0.4**;
+see `VENDORED.md`):
 
 - **Exact weight sharing with a self tap (K = dim + 1).** Every vertex has **dim**
   Hamming neighbors (one bit flip each) **plus a self/center contribution** —

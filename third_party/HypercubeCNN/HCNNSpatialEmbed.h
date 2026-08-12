@@ -39,8 +39,20 @@ enum class HCNNSpatialEmbedMode {
     /**
      * Write row-major HxW into out[0 .. H*W). Fill out[H*W .. N) with pad_value.
      * Requires H*W <= N. No resize. plane_side is ignored.
+     * (Formerly RowMajorPad.)
      */
-    RowMajorPad,
+    PadLow,
+
+    /**
+     * Full native image in low addresses plus a centered crop in the tail:
+     *   out[0 .. H*W)              = image (row-major)
+     *   out[H*W .. H*W + crop_h*crop_w) = centered crop (row-major)
+     *   out[H*W + crop_h*crop_w .. N)   = pad_value
+     * Requires H*W <= N. Crop is the largest near-square rectangle with area
+     * <= (N - H*W) that fits in HxW (floor-centered). plane_side is ignored.
+     * MNIST 28x28 @ dim=10 (N=1024): crop 15x16 at (6,6), full occupancy.
+     */
+    PadLowCenter,
 
     /**
      * Bilinear-resize the image to an SxS square with S = floor(sqrt(N))
@@ -69,7 +81,7 @@ struct HCNNSpatialEmbedConfig {
     /// Hypercube dimension. Capacity N = 2^dim. Must be in [1, 30].
     int dim = 10;
 
-    HCNNSpatialEmbedMode mode = HCNNSpatialEmbedMode::RowMajorPad;
+    HCNNSpatialEmbedMode mode = HCNNSpatialEmbedMode::PadLow;
 
     /// Fill value for unused vertices, bilinear OOB, and blank dual-plane grads.
     /// For MNIST-like [-1,1] ink, use -1 (background), not the default 0.
@@ -79,7 +91,7 @@ struct HCNNSpatialEmbedConfig {
      * Optional override for target square side S (ResizeToFit / DualPlaneResize).
      * 0 = automatic: floor(sqrt(N)) or floor(sqrt(N/2)) respectively.
      * If non-zero, must satisfy S*S <= N or 2*S*S <= N for the mode.
-     * Ignored for RowMajorPad.
+     * Ignored for PadLow / PadLowCenter.
      */
     int plane_side = 0;
 
@@ -98,9 +110,13 @@ struct HCNNSpatialEmbedPlan {
     int N = 0;              ///< capacity (= 2^dim), output length of embed()
     int height_in = 0;
     int width_in = 0;
-    int plane_side = 0;     ///< S used for resize modes; 0 for RowMajorPad
-    int pattern_length = 0; ///< occupied floats before pad (H*W, S*S, or 2*S*S)
-    HCNNSpatialEmbedMode mode = HCNNSpatialEmbedMode::RowMajorPad;
+    int plane_side = 0;     ///< S used for resize modes; 0 for PadLow / PadLowCenter
+    int pattern_length = 0; ///< occupied floats before pad
+    int crop_h = 0;         ///< PadLowCenter crop height (else 0)
+    int crop_w = 0;         ///< PadLowCenter crop width (else 0)
+    int crop_row0 = 0;      ///< PadLowCenter crop origin row (else 0)
+    int crop_col0 = 0;      ///< PadLowCenter crop origin col (else 0)
+    HCNNSpatialEmbedMode mode = HCNNSpatialEmbedMode::PadLow;
 };
 
 /**
@@ -112,8 +128,8 @@ struct HCNNSpatialEmbedPlan {
  *
  * @code
  * hcnn::HCNNSpatialEmbedConfig cfg;
- * cfg.dim = 11;
- * cfg.mode = hcnn::HCNNSpatialEmbedMode::DualPlaneResize;
+ * cfg.dim = 10;
+ * cfg.mode = hcnn::HCNNSpatialEmbedMode::PadLowCenter;
  * cfg.pad_value = -1.0f;
  *
  * hcnn::HCNNSpatialEmbedder emb(cfg);
@@ -134,7 +150,7 @@ public:
 
     /**
      * Describe the layout that embed() will produce for this input size.
-     * Throws if RowMajorPad and H*W > N, or if config is invalid.
+     * Throws if PadLow/PadLowCenter and H*W > N, or if config is invalid.
      */
     HCNNSpatialEmbedPlan plan(int height, int width) const;
 
@@ -151,6 +167,7 @@ public:
     /**
      * Embed `batch` images. Each sample is height*width; each output plane is N.
      * out layout: sample-major, stride = N.
+     * batch == 0 is a no-op (null in/out allowed).
      */
     void embed_batch(const float* in, int batch, int height, int width,
                      float* out) const;

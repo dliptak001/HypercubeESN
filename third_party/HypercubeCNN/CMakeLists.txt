@@ -8,7 +8,7 @@
 # publish stays portable across CPUs. The HypercubeCNNCore target name is preserved
 # so consumers link it unchanged.
 #
-# Source list matches upstream HypercubeCNNCore (v1.0.0+): core pipeline + optional
+# Source list matches upstream HypercubeCNNCore (pin v1.0.4): core pipeline + optional
 # public products (spatial, train helpers) that ship in the same static lib.
 
 find_package(Threads REQUIRED)

@@ -234,13 +234,11 @@ inline void print_arch(std::ostream& os,
     int N = 1 << d;
     int c_in = input_channels;
 
-    // "DIM" / "N" here are the *HCNN* hypercube (start_dim, 2^start_dim), which
-    // equals the reservoir only when the ESN feeds a single block (B=1).
-    os << "\nHCNN Architecture: ";
+    os << "\nArchitecture: ";
     bool first_line = true;
     for (const auto& L : layers) {
         if (!first_line)
-            os << "                   -> ";
+            os << "              -> ";
         first_line = false;
 
         if (L.kind == LayerSpec::Kind::Conv) {
@@ -248,10 +246,10 @@ inline void print_arch(std::ostream& os,
                << ", " << activation_name(L.activation);
             if (L.use_bias) os << ", bias";
             if (L.use_bn)   os << ", BN";
-            os << ")  hcnn_DIM=" << d << "  N=" << N << "\n";
+            os << ")  DIM=" << d << "  N=" << N << "\n";
             c_in = L.c_out;
         } else {
-            os << "Pool(" << pool_name(L.pool_type) << ")  hcnn_DIM "
+            os << "Pool(" << pool_name(L.pool_type) << ")  DIM "
                << d << "->" << (d - 1)
                << "  N " << N << "->" << (N / 2) << "\n";
             d -= 1;
@@ -259,12 +257,10 @@ inline void print_arch(std::ostream& os,
         }
     }
 
-    os << "                   -> FLATTEN\n"
-       << "                   -> Linear(" << sum.flatten_features
+    os << "              -> FLATTEN\n"
+       << "              -> Linear(" << sum.flatten_features
        << " -> " << num_outputs << ")\n"
-       // Trained HCNN only — independent of reservoir history_depth M unless the
-       // ESN expands readout start-DIM via more readout_slices (power-of-two B).
-       << "HCNN parameters (trained): " << sum.total << " (";
+       << "Parameters:   " << sum.total << " (";
     for (size_t i = 0; i < sum.conv_params.size(); ++i) {
         if (i) os << " + ";
         os << sum.conv_params[i] << " conv" << (i + 1);

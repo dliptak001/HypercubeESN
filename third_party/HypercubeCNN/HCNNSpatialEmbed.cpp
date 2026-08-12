@@ -43,7 +43,7 @@ void HCNNSpatialEmbedConfig::validate() const {
                     "HCNNSpatialEmbedConfig: 2*plane_side*plane_side exceeds N=2^dim");
             }
         }
-        // RowMajorPad ignores plane_side (no error).
+        // PadLow / PadLowCenter ignore plane_side (no error).
     }
 }
 
@@ -63,6 +63,44 @@ int HCNNSpatialEmbedder::max_dual_plane_side(int N) {
     int s = static_cast<int>(std::floor(std::sqrt(static_cast<double>(N) / 2.0)));
     while (s > 0 && 2LL * s * s > N) --s;
     return s;
+}
+
+/// Largest near-square center crop with area <= rem that fits in HxW.
+/// Tie-break: min |h-w|, then prefer wider (larger w), then smaller h.
+/// Origin is floor-centered: row0 = (H-h)/2, col0 = (W-w)/2.
+static void choose_center_crop(int H, int W, int rem,
+                               int& crop_h, int& crop_w,
+                               int& row0, int& col0) {
+    crop_h = crop_w = row0 = col0 = 0;
+    if (rem < 1 || H < 1 || W < 1) return;
+
+    int best_a = 0;
+    int best_aspect = 0;
+    bool have = false;
+
+    for (int h = 1; h <= H; ++h) {
+        const int w = std::min(W, rem / h);
+        if (w < 1) continue;
+        const int a = h * w;
+        const int aspect = std::abs(h - w);
+        const bool better =
+            !have
+            || a > best_a
+            || (a == best_a && aspect < best_aspect)
+            || (a == best_a && aspect == best_aspect && w > crop_w)
+            || (a == best_a && aspect == best_aspect && w == crop_w && h < crop_h);
+        if (better) {
+            have = true;
+            best_a = a;
+            best_aspect = aspect;
+            crop_h = h;
+            crop_w = w;
+        }
+    }
+    if (have) {
+        row0 = (H - crop_h) / 2;
+        col0 = (W - crop_w) / 2;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,19 +215,36 @@ HCNNSpatialEmbedPlan HCNNSpatialEmbedder::plan(int height, int width) const {
     p.height_in = height;
     p.width_in = width;
     p.mode = cfg_.mode;
+    p.crop_h = p.crop_w = p.crop_row0 = p.crop_col0 = 0;
 
     switch (cfg_.mode) {
-    case HCNNSpatialEmbedMode::RowMajorPad: {
+    case HCNNSpatialEmbedMode::PadLow: {
         const long long need =
             static_cast<long long>(height) * static_cast<long long>(width);
         if (need > p.N) {
             throw std::runtime_error(
                 "HCNNSpatialEmbedder::plan: H*W=" + std::to_string(need)
                 + " exceeds N=2^dim=" + std::to_string(p.N)
-                + " (use ResizeToFit or DualPlaneResize, or increase dim)");
+                + " (use ResizeToFit, DualPlaneResize, or increase dim)");
         }
         p.plane_side = 0;
         p.pattern_length = static_cast<int>(need);
+        break;
+    }
+    case HCNNSpatialEmbedMode::PadLowCenter: {
+        const long long need =
+            static_cast<long long>(height) * static_cast<long long>(width);
+        if (need > p.N) {
+            throw std::runtime_error(
+                "HCNNSpatialEmbedder::plan: H*W=" + std::to_string(need)
+                + " exceeds N=2^dim=" + std::to_string(p.N)
+                + " (PadLowCenter needs H*W <= N; raise dim or use a resize mode)");
+        }
+        const int rem = p.N - static_cast<int>(need);
+        choose_center_crop(height, width, rem,
+                           p.crop_h, p.crop_w, p.crop_row0, p.crop_col0);
+        p.plane_side = 0;
+        p.pattern_length = static_cast<int>(need) + p.crop_h * p.crop_w;
         break;
     }
     case HCNNSpatialEmbedMode::ResizeToFit: {
@@ -216,6 +271,9 @@ HCNNSpatialEmbedPlan HCNNSpatialEmbedder::plan(int height, int width) const {
         p.pattern_length = static_cast<int>(two_planes);
         break;
     }
+    default:
+        throw std::runtime_error(
+            "HCNNSpatialEmbedder::plan: unknown HCNNSpatialEmbedMode");
     }
     return p;
 }
@@ -234,10 +292,26 @@ void HCNNSpatialEmbedder::embed(const float* in, int height, int width,
     std::fill(out, out + N, pad);
 
     switch (cfg_.mode) {
-    case HCNNSpatialEmbedMode::RowMajorPad: {
+    case HCNNSpatialEmbedMode::PadLow: {
         const std::size_t n =
             static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
         std::memcpy(out, in, n * sizeof(float));
+        break;
+    }
+    case HCNNSpatialEmbedMode::PadLowCenter: {
+        const std::size_t n_pix =
+            static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
+        std::memcpy(out, in, n_pix * sizeof(float));
+        if (p.crop_h > 0 && p.crop_w > 0) {
+            float* tail = out + n_pix;
+            const std::size_t row_bytes =
+                static_cast<std::size_t>(p.crop_w) * sizeof(float);
+            for (int y = 0; y < p.crop_h; ++y) {
+                const float* row = in + (p.crop_row0 + y) * width + p.crop_col0;
+                std::memcpy(tail + static_cast<std::size_t>(y) * static_cast<std::size_t>(p.crop_w),
+                            row, row_bytes);
+            }
+        }
         break;
     }
     case HCNNSpatialEmbedMode::ResizeToFit: {
@@ -257,6 +331,9 @@ void HCNNSpatialEmbedder::embed(const float* in, int height, int width,
         grad_magnitude_plane(out, out + plane, S, pad);
         break;
     }
+    default:
+        throw std::runtime_error(
+            "HCNNSpatialEmbedder::embed: unknown HCNNSpatialEmbedMode");
     }
 }
 
@@ -267,6 +344,8 @@ void HCNNSpatialEmbedder::embed_batch(const float* in, int batch,
         throw std::runtime_error(
             "HCNNSpatialEmbedder::embed_batch: batch must be >= 0");
     }
+    if (batch == 0)
+        return;  // no-op; null buffers allowed
     if (!in || !out) {
         throw std::runtime_error("HCNNSpatialEmbedder::embed_batch: null buffer");
     }
