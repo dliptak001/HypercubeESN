@@ -110,7 +110,7 @@ dim, memory depth, and spectral radius.
 ### Lorenz (free-run)
 
 Closed-loop free-run on Lorenz-63: **input-bank self-feedback** (predicted
-`[x, y, z, x*z]` re-injected as the next drive; external feedback off). dim 10,
+`[x, y, z, x*z]` re-injected as the next drive). dim 10,
 M = 2; VPT threshold θ = 0.25. Best orbit VPT in Lyapunov times for three
 trained seeds:
 
@@ -119,11 +119,6 @@ trained seeds:
 | 3079493423467196890 | **14.13** |
 | 696634088797950509 | **13.00** |
 | 7934791766227647176 | **10.67** |
-
-
-> Half-anchored / Janus dual-cursor free-run was explored and **not** adopted for
-> the product storefront; archive only under
-> [`Research Topics/Lorenz_JanusCursor/`](Research%20Topics/Lorenz_JanusCursor/).
 
 ## What is Reservoir Computing?
 
