@@ -31,6 +31,13 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
+**2.0 readout upgrade — self tap (K = dim + 1).** Each HCNN conv site now has
+an explicit **self/center** weight alongside its dim Hamming-1 neighbors
+(kernel width **K = dim + 1**, not neighbor-only **K = dim**). That is the only
+trained stage in HypercubeESN, and the change improved readout quality
+**across the board** (tasks and dims) — not a one-benchmark tweak. Details:
+[docs/Readout.md](docs/Readout.md) · pin [VENDORED.md](third_party/HypercubeCNN/VENDORED.md).
+
 ---
 
 <p align="center">
@@ -111,8 +118,10 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (free-run)
 
-Closed-loop free-run on Lorenz-63 (input-bank self-feedback; dim 10, M = 2).
-Best orbit VPT in Lyapunov times for three trained seeds:
+Closed-loop free-run on Lorenz-63: **input-bank self-feedback** (predicted
+`[x, y, z, x*z]` re-injected as the next drive; external feedback off). dim 10,
+M = 2; VPT threshold θ = 0.25. Best orbit VPT in Lyapunov times for three
+trained seeds:
 
 | ESN seed | Best VPT (LT) |
 |---------:|--------------:|
@@ -121,6 +130,10 @@ Best orbit VPT in Lyapunov times for three trained seeds:
 | 7934791766227647176 | **10.67** |
 
 Top-10 tables and free-run overlays: [Lorenz](examples/Lorenz/README.md)
+
+> Half-anchored / Janus dual-cursor free-run was explored and **not** adopted for
+> the product storefront; archive only under
+> [`Research Topics/Lorenz_JanusCursor/`](Research%20Topics/Lorenz_JanusCursor/).
 
 ## What is Reservoir Computing?
 
@@ -208,7 +221,7 @@ scaling, history depth). A reservoir is *specified*, not stored.
 | History depth | M = `history_depth` (default 16, range 1–64) — each update taps the last M states via an addressable delay line; M = 1 is a single-step ESN, M > 1 deepens temporal memory |
 | Step cost | O(N · dim · M) per timestep — sparse, never O(N²) |
 | Configuration | `ReservoirConfig` (`Reservoir.h`): `seed`, `spectral_radius`, `leak_rate`, `input_scaling`, `history_depth` |
-| Readout | HypercubeCNN; consumes all N reservoir vertices as features |
+| Readout | HypercubeCNN; full N features; conv self tap **K = dim + 1** |
 
 ## Pipeline
 
@@ -234,7 +247,8 @@ power iteration over the M-slice companion operator.
 
 The readout, [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN), is the
 only trained component. It convolves directly on the reservoir's hypercube
-topology (see [What is HypercubeESN?](#what-is-hypercubeesn)) and supports
+topology with a **self tap** at each vertex (**K = dim + 1** — neighbors plus
+center; see [What is HypercubeESN?](#what-is-hypercubeesn)) and supports
 regression (single/multi-output), multi-class classification, and online
 streaming training.
 

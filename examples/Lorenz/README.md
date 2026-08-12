@@ -1,8 +1,12 @@
 # Lorenz — free-run on Lorenz-63
 
 Closed-loop free-run: train a HypercubeESN online on a Lorenz-63 orbit, then
-generate with self-feedback on the **input bank**.
+generate with self-feedback on the **input bank** (predicted `[x, y, z, x*z]`
+re-injected as the next drive; external feedback off). VPT uses θ = 0.25.
 
+Half-anchored **Janus** dual-cursor free-run was explored and dropped for this
+product example; reference archive:
+[`Research Topics/Lorenz_JanusCursor/`](../../Research%20Topics/Lorenz_JanusCursor/).
 
 ---
 

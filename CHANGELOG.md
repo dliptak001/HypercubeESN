@@ -10,8 +10,9 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 
 ## [2.0.0] — TBD (public release)
 
-**Status:** version numbers bumped to 2.0.0 in-tree; **tag / PyPI / GitHub Release
-pending** (storefront / freeze checklist still open — see Validators).
+**Status:** version numbers bumped to 2.0.0 in-tree; storefront validators
+filled (NARMA, MC, Lorenz input-bank free-run). **Tag / PyPI / GitHub Release
+pending** the remaining freeze checklist (tree hygiene, defaults, packaging).
 
 **HypercubeCNN pin:** clean re-vendor of upstream **v1.0.4** (includes **uint64**
 `weight_seed` / `RandomizeWeights` from HCNN v1.0.1 and **K = dim + 1** self-tap).
@@ -68,8 +69,11 @@ No permanent one-way HCNN fork in this tree.
 - **`TargetSpectralRadius()` / `RealizedSpectralRadius()`** on `ESN`.
 - **`PredictFromReadoutInput`** (clearer name for B·N HCNN input; historical
   `PredictFromState` kept).
-- **Lorenz harness:** Janus half-anchored free-run, `FORWARD_ONLY` ablation,
-  GS operational metrics (`duty`, `n_relock`, `n_unlock`, `mean_locked_sojourn`).
+- **Lorenz free-run storefront (input-bank):** closed-loop by re-injecting
+  predicted `[x, y, z, x*z]` on the **input** port (external feedback off).
+  Scoring: VPT (θ = 0.25), duty, VPT×duty, free-run RMSE. Half-anchored
+  **Janus** dual-cursor work is **not** product — archived under
+  `Research Topics/Lorenz_JanusCursor/`.
 - **Lorenz drive (fixed):** 4-in `[x, y, z, x*z]` only (`kNumDriveChannels = 4`).
   Multi-layout enum / `Campaign_DriveLayoutAB` removed (see Changed).
 - **Dim-first campaigns:** `Campaign_SeedSurvey` / `Trace` take reservoir `dim`
@@ -134,7 +138,7 @@ No permanent one-way HCNN fork in this tree.
 - **Lorenz freerun scoring:** primary aggregates are VPT, duty, VPT×duty, and
   free-run RMSE (**top 10%** of ICs per metric; `keep = max(1, ceil(n/10))`);
   GS lock-transition counters dropped from campaign stats. Default
-  `VPT_THRESHOLD=0.2`.
+  `VPT_THRESHOLD=0.25`.
 - **Lorenz weight stems:** save/load use
   `lorenz_seed{S}_D{DIM}_M{M}_in{Nin}` so dim, history depth, and drive width
   do not collide; load must match train-time layout.
@@ -174,7 +178,7 @@ No permanent one-way HCNN fork in this tree.
 |-----------|--------|
 | NARMA N30/50/70 best-5 NRMSE | **0.0441 / 0.0751 / 0.1251** (frozen) |
 | Memory capacity peaks (dim 5…12) | **~30 → ~1400+** (frozen; see MemoryCapacity.md) |
-| Lorenz half-anchored free-run | **TBD** — fill before public tag |
+| Lorenz input-bank free-run (best VPT, LT) | **14.13 / 13.00 / 10.67** (frozen; dim 10, M = 2, θ = 0.25; three ESN seeds — see Lorenz README) |
 
 ### Migration notes (1.x → 2.0) <a id="migration-notes-1x-to-20"></a>
 

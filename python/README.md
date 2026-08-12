@@ -30,6 +30,13 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
+**2.0 readout upgrade — self tap (K = dim + 1).** Each HCNN conv site now has
+an explicit **self/center** weight alongside its dim Hamming-1 neighbors
+(kernel width **K = dim + 1**, not neighbor-only **K = dim**). That is the only
+trained stage in HypercubeESN, and the change improved readout quality
+**across the board** (tasks and dims) — not a one-benchmark tweak. Details:
+[Readout.md](https://github.com/dliptak001/HypercubeESN/blob/main/docs/Readout.md).
+
 ---
 
 <p align="center">
@@ -113,8 +120,10 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (free-run)
 
-Closed-loop free-run on Lorenz-63 (input-bank self-feedback; dim 10, M = 2).
-Best orbit VPT in Lyapunov times for three trained seeds:
+Closed-loop free-run on Lorenz-63: **input-bank self-feedback** (predicted
+`[x, y, z, x*z]` re-injected as the next drive; external feedback off). dim 10,
+M = 2; VPT threshold θ = 0.25. Best orbit VPT in Lyapunov times for three
+trained seeds:
 
 | ESN seed | Best VPT (LT) |
 |---------:|--------------:|
@@ -124,6 +133,9 @@ Best orbit VPT in Lyapunov times for three trained seeds:
 
 Top-10 tables and free-run overlays:
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
+
+> Half-anchored / Janus dual-cursor free-run was explored and **not** adopted
+> for the product storefront (research archive only).
 
 ## Installation
 
@@ -176,7 +188,8 @@ campaigns. Index:
 
 - **Simple API** — `fit()` runs warmup, collect, and batch train in one call
 - **Hypercube dim 5–16** — N = 2<sup>dim</sup> neurons (32…65,536); delay-line depth M
-- **HCNN readout** — convolutions on the hypercube (K = dim+1 self tap), not ridge alone
+- **HCNN readout (self tap)** — conv on the hypercube with **K = dim + 1**
+  (neighbors + center); 2.0 upgrade vs neighbor-only kernels; not ridge alone
 - **Multi-slice readout** — optional B ages packed into the readout (`readout_slices`)
 - **Multi-input** — channels map to contiguous vertex blocks
 - **Closed-loop drive** — external feedback channels + `reservoir_step`
