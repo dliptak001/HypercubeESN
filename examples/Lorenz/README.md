@@ -25,36 +25,32 @@ survey is re-run with the same free-run seating.
 
 ## 2. Pipeline
 
-```text
- LorenzAttractor (RK4 Lorenz-63; σ, ρ, β, dt as configured)
-        │
-        ▼
- LorenzDatastream  — integrate once, normalize → float S[·] ≈ [-1,1]; is a Cursor
-        │
-        │  input port: fixed 4-in [x, y, z, x·z]
-        │    real in train/warmup; prediction in free-run
-        ▼
- ESN  — fixed hypercube reservoir + online HCNN readout (3 outputs: x, y, z)
-        │  external feedback: off
-        ├─ Train()   multi-epoch teacher-forced sweeps (horizon-1, prequential)
-        └─ FreeRun() warmup → generative self-feedback; VPT + RMSE + re-lock proxies
-```
----
+The example trains a HypercubeESN on Lorenz-63, then free-runs it closed-loop
+by feeding its own predictions back as input.
 
-## 3. Drive and targets
+**Orbit.** An RK4 integrator builds one Lorenz-63 trajectory (σ, ρ, β, and `dt`
+as configured). That series is normalized into roughly `[-1, 1]` and walked by a
+cursor: a train window first, then a free-run runway used only for scoring.
 
-Fixed drive (`kNumDriveChannels = 4` in `Lorenz.h`): **`[x, y, z, x·z]`**.
+**What the network sees.** Four inputs at every step: `x`, `y`, `z`, and the
+product `x*z`. During training and warmup those come from the true orbit.
+During free-run they come from the network’s last prediction (`x*z` is rebuilt
+from the predicted `x` and `z`). The readout targets are the three state
+components `(x, y, z)`.
 
-```text
- drive (4):    (x, y, z, x*z)   FillDrive + INPUT_SCALE_CH[4]
- targets (3):  (x, y, z)        ExtractTargets
-```
+**Model.** A fixed hypercube reservoir plus an online-trained HCNN readout.
+External feedback is off — closed-loop coupling is only through the input bank.
 
-- Free-run rebuilds `x*z` from predictions.
+**Train.** Multi-epoch teacher forcing: predict the current state, update the
+readout, inject the true drive, and advance (horizon-1 / prequential).
+
+**Free-run.** Warm up on true data at the end of the train section, then
+generate: predict → pack as the next drive → step the reservoir. Score against
+the held-out orbit (VPT, duty, RMSE, and related lock proxies).
 
 ---
 
-## 4. Results
+## 3. Results
 
 Top 10 free-run orbits by VPT (valid prediction time, Lyapunov times), per ESN seed.
 
