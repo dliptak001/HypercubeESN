@@ -14,13 +14,12 @@ stored, only computed.** **dim** is the hypercube dimension; N =
 Three properties follow:
 
 - **A topology you don't store.** Connectivity is implicit in the vertex indices —
-  no adjacency list, at any size.
+  no adjacency list.
 - **Hidden multi-scale structure.** Full neighbor connectivity with random weights
   turns the cube into nested clusters — local, regional, and global at once —
   that nobody designed in.
 - **Memory you can address.** Each vertex carries a delay line of its own recent
-  past, so the reservoir remembers *specific* lags by construction, not by lucky
-  echoes.
+  past, so the reservoir remembers *specific* lags by construction, not echoes.
 
 The reservoir state is a *signal on that graph*, not an anonymous vector. What
 reads it is [HypercubeCNN](https://github.com/dliptak001/HypercubeCNN) —
@@ -30,12 +29,10 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
-**2.0 readout upgrade — self tap (K = dim + 1).** Each HCNN conv site now has
-an explicit **self/center** weight alongside its dim Hamming-1 neighbors
-(kernel width **K = dim + 1**, not neighbor-only **K = dim**). That is the only
-trained stage in HypercubeESN, and the change improved readout quality
-**across the board** (tasks and dims) — not a one-benchmark tweak. Details:
-[Readout.md](https://github.com/dliptak001/HypercubeESN/blob/main/docs/Readout.md).
+
+**2.0 readout upgrade.** Each HCNN conv site now has
+an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The change significantly improves readout quality
+**across the board** (all tasks and dims). Details: [Readout.md](https://github.com/dliptak001/HypercubeESN/blob/main/docs/Readout.md).
 
 ---
 

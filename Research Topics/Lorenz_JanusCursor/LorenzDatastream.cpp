@@ -25,8 +25,8 @@ LorenzDatastream::LorenzDatastream(const LorenzDatastreamConfig& cfg, bool print
 
     Normalize(Build(cfg.stream_length, cfg.initial_lorenz_state, cfg.lorenz_dt));
 
-    // Construction banner: this run's stream/window geometry (see README.md §2 /
-    // JanusCursor.md §2). Fixed-width cells keep the columns aligned for any config.
+    // Construction banner: this run's stream/window geometry. Fixed-width cells
+    // keep the columns aligned for any config.
 
     const int32_t H = cfg.cursor_span / 2;
     const size_t N = cfg.stream_length;
@@ -97,8 +97,8 @@ std::vector<LorenzAttractor::State> LorenzDatastream::Build(const size_t stream_
 
 void LorenzDatastream::Normalize(const std::vector<LorenzAttractor::State>& raw)
 {
-    // Affine map raw S -> [-1, 1] with a PER-CHANNEL offset but a SINGLE SHARED scale
-    // (README.md §4). Each channel is first centered on its own
+    // Affine map raw S -> [-1, 1] with a PER-CHANNEL offset but a SINGLE SHARED scale.
+    // Each channel is first centered on its own
     // midpoint (x, y straddle zero already; z sits up at ~+24 and gets shifted down),
     // then all three are divided by ONE scale = the widest channel's half-range. Sharing
     // the scale preserves the attractor's true relative amplitudes: the reservoir sees x

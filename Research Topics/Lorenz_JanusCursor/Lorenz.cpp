@@ -612,7 +612,7 @@ static std::string RunTrial(uint64_t esn_seed, uint64_t orbit_seed, int num_runs
 }
 
 // Diagnostic mode: train one ESN seed, free-run until max_runs (or until target
-// orbit_seed is hit), write per-step CSV for plot_freerun_trace.py.
+// orbit_seed is hit), write per-step CSV under traces/.
 //   Lorenz.exe --trace <esn_seed> [max_freeruns=30] [target_orbit_seed=0]
 // target_orbit_seed 0 = dump every free-run; else dump only matching orbits and stop.
 static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orbit)
@@ -686,9 +686,8 @@ static int RunTraceMode(uint64_t esn_seed, int max_freeruns, uint64_t target_orb
             fs::remove(tmp_path, ec);
         }
     }
-    std::printf("[trace] done — %d CSV file(s). Plot:\n"
-                "  python \"Research Topics/Lorenz_JanusCursor/plot_freerun_trace.py\" "
-                "\"Research Topics/Lorenz_JanusCursor/traces/\"seed*_orbit*.csv\n",
+    std::printf("[trace] done — %d CSV file(s) under "
+                "\"Research Topics/Lorenz_JanusCursor/traces/\"\n",
                 dumped);
     return dumped > 0 ? 0 : 1;
 }
