@@ -50,19 +50,19 @@ class ESN:
     dim : int, optional
         Alias for ``reservoir_hypercube_dimension``.
     seed : int
-        RNG seed for weight initialization. Default: 73895 (a surveyed default
-        seed; the realization a seed yields measurably affects performance).
+        RNG seed for weight initialization. Default matches C++
+        ``ReservoirConfig`` (a surveyed seed; the realization a seed yields
+        measurably affects performance).
     spectral_radius : float
-        Target spectral radius for the recurrent weight matrix. Default: 0.99.
-        Tune per task (and per dim when you change size); topology alone does
-        not make one value optimal at every dim. See also
+        Target spectral radius for the recurrent weight matrix. Default: 0.999
+        (matches C++). Tune per task (and per dim when you change size);
+        topology alone does not make one value optimal at every dim. See also
         ``realized_spectral_radius`` after construction.
     input_scaling : float
         Input drive coefficient. Input weights are drawn U(-1,1) then scaled by
         input_scaling/√dim so each vertex's dim-neighbor input sum has
-        fan-in-normalized variance. That is a local weight construction choice,
-        not a promise that one scaling is best at every dim or task. Default:
-        0.5. (The legacy 0.02 was a normalization artifact and no longer applies.)
+        fan-in-normalized variance. Default: 0.02 (matches C++). Retune per
+        task and dim — not a universal optimum.
     leak_rate : float
         Leaky integrator coefficient. 1.0 = full replacement (default),
         < 1.0 adds temporal smoothing.
@@ -81,7 +81,7 @@ class ESN:
     external_feedback_scaling : float
         Scale for external-feedback weights (like input_scaling). Default: 0.5.
     bias_scaling : float
-        Per-neuron bias after tanh; 0 disables. Default: 0.02.
+        Per-neuron bias after tanh; 0 disables. Default: 0.003 (matches C++).
     readout_slices : int
         B delay-line ages packed into the readout (power of two, 1 ≤ B ≤ M).
         Default: 1.
@@ -153,16 +153,16 @@ class ESN:
         reservoir_hypercube_dimension: int | None = None,
         *,
         dim: int | None = None,
-        seed: int = 73895,
-        spectral_radius: float = 0.99,
-        input_scaling: float = 0.5,
+        seed: int = 7934791766227647176,
+        spectral_radius: float = 0.999,
+        input_scaling: float = 0.02,
         leak_rate: float = 1.0,
         num_inputs: int = 1,
         history_depth: int = 16,
         verbose: bool = False,
         num_external_feedback_channels: int = 0,
         external_feedback_scaling: float = 0.5,
-        bias_scaling: float = 0.02,
+        bias_scaling: float = 0.003,
         readout_slices: int = 1,
         readout_num_outputs: int = 1,
         readout_task: str = "regression",
@@ -896,7 +896,7 @@ class ESN:
             num_external_feedback_channels=state.get(
                 "num_external_feedback_channels", 0),
             external_feedback_scaling=state.get("external_feedback_scaling", 0.5),
-            bias_scaling=state.get("bias_scaling", 0.02),
+            bias_scaling=state.get("bias_scaling", 0.003),
             readout_slices=state.get("readout_slices", 1),
             **readout_kwargs,
         )

@@ -8,8 +8,10 @@ changes and migration: [CHANGELOG.md](../CHANGELOG.md).
 
 Deep dives: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md).
 
-**House defaults (2.0):** `verbose = false`, `num_layers = 1` (`0` = auto),
-`readout_slices = 1`, external feedback off (`D = 0`), `bias_scaling = 0.02`.
+**House defaults (2.0):** match `ReservoirConfig` / `ReadoutConfig` in headers —
+`verbose = false`, `spectral_radius = 0.999`, `input_scaling = 0.02`,
+`bias_scaling = 0.003`, `num_layers = 1` (`0` = auto), `readout_slices = 1`,
+external feedback off (`D = 0`).
 
 ## Contents
 
@@ -277,10 +279,10 @@ production callers set dim, seed, spectral radius, and history depth per task
 struct ReservoirConfig
 {
     size_t   dim             = 10;     // N = 1 << dim; range [5, 16]
-    uint64_t seed            = 73895;
-    float    spectral_radius = 0.99f;  // target for recurrent block only
+    uint64_t seed            = 7934791766227647176ULL;
+    float    spectral_radius = 0.999f; // target for recurrent block only
     float    leak_rate       = 1.0f;   // (0, 1]
-    float    input_scaling   = 0.5f;   // weights × scaling/√dim
+    float    input_scaling   = 0.02f;  // weights × scaling/√dim
     size_t   num_inputs      = 1;      // must divide N
     size_t   history_depth   = 16;     // M in [1, 64]
     bool     verbose         = false;  // construction banner; demos may set true
@@ -288,23 +290,23 @@ struct ReservoirConfig
     size_t   num_external_feedback_channels = 0;  // 0 = off; else [1, N]
     float    external_feedback_scaling      = 0.5f;
 
-    float    bias_scaling    = 0.02f;  // after tanh; 0 disables
+    float    bias_scaling    = 0.003f; // after tanh; 0 disables
 };
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `10` | Hypercube dimension; N = 2<sup>dim</sup>. **[5, 16]**. |
-| `seed` | `uint64_t` | `73895` | Master RNG seed (SplitMix64 substreams: recurrent / input / external-feedback / bias / SR probe). Screen per dim/task. |
-| `spectral_radius` | `float` | `0.99` | Target ρ of the **recurrent** companion operator (MN×MN when M > 1). Drive ports are outside the rescale. |
+| `dim` | `size_t` | `10` | Hypercube dimension; N = 2^dim. **[5, 16]**. |
+| `seed` | `uint64_t` | `7934791766227647176` | Master RNG seed (SplitMix64 substreams: recurrent / input / external-feedback / bias / SR probe). Screen per dim/task. |
+| `spectral_radius` | `float` | `0.999` | Target ρ of the **recurrent** companion operator (MN×MN when M > 1). Drive ports are outside the rescale. |
 | `leak_rate` | `float` | `1.0` | `state = (1 − leak) * old + leak * (tanh(s) + bias)`. **(0, 1]**. |
-| `input_scaling` | `float` | `0.5` | Input weights U(−1,1) then × `input_scaling / √dim` (fan-in variance). Local construction, not a universal optimum. Typical O(0.5–3). |
+| `input_scaling` | `float` | `0.02` | Input weights U(−1,1) then × `input_scaling / √dim` (fan-in variance). Local construction, not a universal optimum — retune per task/dim. |
 | `num_inputs` | `size_t` | `1` | Input channels; must divide N. Channel k drives `[k·N/K, (k+1)·N/K)`. |
 | `history_depth` | `size_t` | `16` | Delay-line depth M **[1, 64]**. Recurrent gather over M published slices. Independent of how many ages the readout packs (B). See [Reservoir.md](Reservoir.md). |
 | `verbose` | `bool` | `false` | One construction banner on stdout. |
 | `num_external_feedback_channels` | `size_t` | `0` | D external-feedback channels. **0** = path off. Else **[1, N]** (need not divide N). See [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md). |
 | `external_feedback_scaling` | `float` | `0.5` | Like input; only if D > 0. Outside SR rescale. |
-| `bias_scaling` | `float` | `0.02` | Per-neuron bias U(−1,1)×scale, **after** tanh. **0** disables. Survives `Clear`; not in snapshots. |
+| `bias_scaling` | `float` | `0.003` | Per-neuron bias U(−1,1)×scale, **after** tanh. **0** disables. Survives `Clear`; not in snapshots. |
 
 `GetConfig().spectral_radius` / `ESN::TargetSpectralRadius()` is the **target**.
 Post-secant estimate: `Reservoir::GetRealizedSpectralRadius()` /

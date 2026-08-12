@@ -76,10 +76,14 @@ class TestConstruction:
             ESN(dim=17)
 
     def test_defaults(self):
+        # Match ReservoirConfig (Reservoir.h) / bindings defaults.
         esn = ESN(dim=5)
         assert esn.num_inputs == 1
         assert esn.history_depth == 16
-        assert esn.seed == 73895
+        assert esn.seed == 7934791766227647176
+        assert esn.spectral_radius == pytest.approx(0.999)
+        assert esn.input_scaling == pytest.approx(0.02)
+        assert esn.bias_scaling == pytest.approx(0.003)
         assert esn.dim == 5
         assert esn.readout_slices == 1
         assert esn.num_external_feedback_channels == 0

@@ -153,6 +153,11 @@ No permanent one-way HCNN fork in this tree.
   weights; blobs are not layout-compatible in spirit even when loaders succeed.
 - **`num_layers` default remains 1** (C++ and Python). `0` = auto
   `min(dim-2, 2)`.
+- **Python reservoir defaults match C++ `ReservoirConfig`:** `seed`,
+  `spectral_radius` (0.999), `input_scaling` (0.02), `bias_scaling` (0.003)
+  — same as `Reservoir.h` / pybind defaults (was 73895 / 0.99 / 0.5 / 0.02).
+  Explicit kwargs and task op-points are unchanged; only bare-constructor
+  defaults moved.
 - SDK / README install one-liners: `pip install hypercube-esn` and C++ clone +
   `BasicPrediction` / FetchContent.
 - Documentation pass: Reservoir, Readout, CPP_SDK, Python_SDK, feedback mechanism,
@@ -190,7 +195,10 @@ No permanent one-way HCNN fork in this tree.
 4. Replace any FSF usage with external-feedback ports + host policy.
 5. Re-export or re-train pickles if you need new closed-loop / B fields explicitly.
 6. Prefer `dim=` / document `readout_input_width` when B > 1.
-7. **Maintainers:** HCNN is a clean pin of upstream **v1.0.4** (re-vendor only
+7. If you used bare `ESN(dim=…)` Python defaults, re-check
+   `seed` / `spectral_radius` / `input_scaling` / `bias_scaling` (now match C++
+   `ReservoirConfig`; pass explicit kwargs to keep the old 1.x Python defaults).
+8. **Maintainers:** HCNN is a clean pin of upstream **v1.0.4** (re-vendor only
    from tagged HypercubeCNN releases — see
    [VENDORED.md](third_party/HypercubeCNN/VENDORED.md)).
 

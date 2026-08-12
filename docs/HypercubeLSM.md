@@ -418,7 +418,6 @@ Different phase of matter.*
 | [Reservoir.md](Reservoir.md) | Rate-based hypercube reservoir — topology twin (not unit-model twin) |
 | [Readout.md](Readout.md) | HCNN readout patterns usable for liquid feature fields |
 | [CPP_SDK.md](CPP_SDK.md) | ESN lifecycle language to mirror, not copy |
-| [Rotating-input-map-temporalization.md](Rotating-input-map-temporalization.md) | Static→temporal bridge (HypercubeMLP); possible future spike-encoding neighbor |
 | [docs/README.md](README.md) | Documentation map |
 
 ---

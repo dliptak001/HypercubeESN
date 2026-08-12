@@ -72,17 +72,17 @@ Everything that follows serves those two.
 
 | Field | Default | Range / rule |
 |-------|---------|----------------|
-| `dim` | 10 | **[5, 16]** → N = 2<sup>dim</sup> neurons |
-| `seed` | 73895 | Master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
-| `spectral_radius` | 0.99 | **> 0** — target for recurrent-block rescale only |
+| `dim` | 10 | **[5, 16]** → N = 2^dim neurons |
+| `seed` | 7934791766227647176 | Master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
+| `spectral_radius` | 0.999 | **> 0** — target for recurrent-block rescale only |
 | `leak_rate` | 1.0 | **(0, 1]** — 1 = full replacement each step |
-| `input_scaling` | 0.5 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/dim) |
+| `input_scaling` | 0.02 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/dim) |
 | `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
 | `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
 | `verbose` | false | Construction banner to stdout |
 | `num_external_feedback_channels` (D) | 0 | **0** = path off; else **[1, N]** (need **not** divide N) |
 | `external_feedback_scaling` | 0.5 | Like input: × scaling / √dim (only if D > 0) |
-| `bias_scaling` | 0.02 | U(−1,1)×scale per neuron; **0 disables** bias |
+| `bias_scaling` | 0.003 | U(−1,1)×scale per neuron; **0 disables** bias |
 
 `GetConfig()` returns these fields with `spectral_radius` = the **configured
 target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
@@ -312,7 +312,7 @@ reservoir. Details: [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.m
 
 ## Per-neuron bias (optional)
 
-Drawn once at construction: `U(−1,1) * bias_scaling`. Default scale **0.02**
+Drawn once at construction: `U(−1,1) * bias_scaling`. Default scale **0.003**
 (set `0` for no bias). Fixed model parameter — survives `Clear()`, omitted from
 `TakeSnapshot` / `RestoreSnapshot`. Outside the spectral-radius operator.
 

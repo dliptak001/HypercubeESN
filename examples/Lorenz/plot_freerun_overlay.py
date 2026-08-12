@@ -6,12 +6,12 @@ CSV columns (from FreeRun dump):
 
 Usage (from repo root)::
 
-    python examples/Lorenz/plot_freerun_overlay.py "C:\\HypercubeESN\\results\\traces\\seed..._orbit....csv"
-    python examples/Lorenz/plot_freerun_overlay.py "C:\\HypercubeESN\\results\\traces\\seed..._orbit....png"
+    python examples/Lorenz/plot_freerun_overlay.py path/to/seed..._orbit....csv
+    python examples/Lorenz/plot_freerun_overlay.py path/to/seed..._orbit....png
 
 Pass the FreeRun **CSV** (or a PNG path — the sibling ``.csv`` of the same stem is used).
-CSVs live under ``{config::RESULTS_DIR}/traces/`` (absolute; independent of process CWD).
-Campaign_Trace prints the full path at the end of a run.
+CSVs live under ``{config::RESULTS_DIR}/traces/`` (see ``Lorenz.h``; independent of
+process CWD). Campaign_Trace prints the full path at the end of a run.
 
 Writes a PNG next to the CSV (or to --out-dir) with:
   1) channel-RMS err vs Lyapunov time (+ theta line, lock shading)

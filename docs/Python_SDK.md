@@ -201,16 +201,16 @@ esn.copy_reservoir_state()
 ESN(
     dim=7,                         # or reservoir_hypercube_dimension=7
     *,
-    seed=73895,
-    spectral_radius=0.99,
-    input_scaling=0.5,
+    seed=7934791766227647176,  # matches ReservoirConfig
+    spectral_radius=0.999,
+    input_scaling=0.02,
     leak_rate=1.0,
     num_inputs=1,
     history_depth=16,
     verbose=False,
     num_external_feedback_channels=0,
     external_feedback_scaling=0.5,
-    bias_scaling=0.02,
+    bias_scaling=0.003,
     readout_slices=1,              # B; power of two ≤ history_depth
     readout_num_outputs=1,
     readout_task="regression",
@@ -245,17 +245,17 @@ Closed-loop: set `num_external_feedback_channels=D>0`, then
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `dim` / `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2<sup>dim</sup>. Prefer `dim=`. |
-| `seed` | `int` | `73895` | Master reservoir seed (SplitMix64 substreams). Screen per task. |
-| `spectral_radius` | `float` | `0.99` | Target ρ for the **recurrent** block. |
-| `input_scaling` | `float` | `0.5` | Input weights × `input_scaling / √dim`. Local construction only. |
+| `dim` / `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2^dim. Prefer `dim=`. |
+| `seed` | `int` | `7934791766227647176` | Master reservoir seed (SplitMix64 substreams). Matches C++ `ReservoirConfig`. Screen per task. |
+| `spectral_radius` | `float` | `0.999` | Target ρ for the **recurrent** block. |
+| `input_scaling` | `float` | `0.02` | Input weights × `input_scaling / √dim`. Retune per task/dim. |
 | `leak_rate` | `float` | `1.0` | Leaky integrator; 1.0 = full replacement. |
 | `num_inputs` | `int` | `1` | Channels; must divide N. Channel k drives block `k·N/K`. |
 | `history_depth` | `int` | `16` | Delay-line depth **M ∈ [1, 64]** for the **recurrent** gather — not readout B. |
 | `verbose` | `bool` | `False` | Construction banner. |
 | `num_external_feedback_channels` | `int` | `0` | D closed-loop channels; 0 = off. |
 | `external_feedback_scaling` | `float` | `0.5` | Ext-fb weight scale (like input). |
-| `bias_scaling` | `float` | `0.02` | Per-neuron bias after tanh; 0 disables. |
+| `bias_scaling` | `float` | `0.003` | Per-neuron bias after tanh; 0 disables. |
 | `readout_slices` | `int` | `1` | B ages for the HCNN (power of two, ≤ M). |
 
 ##### Readout (HCNN) parameters
