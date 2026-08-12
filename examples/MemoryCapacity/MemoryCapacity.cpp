@@ -66,7 +66,7 @@ inline ReservoirConfig MakeBaseReservoirConfig()
 {
     ReservoirConfig cfg;
     cfg.dim             = 10;              // N = 4096
-    cfg.seed            = 3079493423467196890ull;//8982357012682103037ull;//7934791766227647176ull;
+    cfg.seed            = 3079493423467196890ull;
     cfg.num_inputs      = 1;
     cfg.spectral_radius = 0.999f;
     cfg.leak_rate       = 1.0f;
