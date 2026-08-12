@@ -100,3 +100,49 @@ Top 10 free-run orbits by VPT (valid prediction time, Lyapunov times), per ESN s
 |    9 |   837812888794294026 |  9.4182 | 0.5425 |
 |   10 | 18122106123368409551 |  9.1466 | 0.5215 |
 
+### Free-run overlays (top 3 by VPT)
+
+PNG traces from [`surveys/`](surveys/) — one free-run per orbit (true vs predicted).
+
+#### esn_seed = 3079493423467196890
+
+**Rank 1** — orbit `16645195261681656633`, VPT 14.1274
+
+![Free-run rank 1 for esn_seed 3079493423467196890](surveys/seed3079493423467196890_orbit16645195261681656633.png)
+
+**Rank 2** — orbit `6778309126854507643`, VPT 10.6861
+
+![Free-run rank 2 for esn_seed 3079493423467196890](surveys/seed3079493423467196890_orbit6778309126854507643.png)
+
+**Rank 3** — orbit `11210554402991580105`, VPT 10.4687
+
+![Free-run rank 3 for esn_seed 3079493423467196890](surveys/seed3079493423467196890_orbit11210554402991580105.png)
+
+#### esn_seed = 696634088797950509
+
+**Rank 1** — orbit `13865526853113044951`, VPT 13.0044
+
+![Free-run rank 1 for esn_seed 696634088797950509](surveys/seed696634088797950509_orbit13865526853113044951.png)
+
+**Rank 2** — orbit `18288530344128635005`, VPT 12.6965
+
+![Free-run rank 2 for esn_seed 696634088797950509](surveys/seed696634088797950509_orbit18288530344128635005.png)
+
+**Rank 3** — orbit `13764847233729438969`, VPT 11.4106
+
+![Free-run rank 3 for esn_seed 696634088797950509](surveys/seed696634088797950509_orbit13764847233729438969.png)
+
+#### esn_seed = 7934791766227647176
+
+**Rank 1** — orbit `342920212748715133`, VPT 10.6680
+
+![Free-run rank 1 for esn_seed 7934791766227647176](surveys/seed7934791766227647176_orbit342920212748715133.png)
+
+**Rank 2** — orbit `2053785022979524342`, VPT 9.9797
+
+![Free-run rank 2 for esn_seed 7934791766227647176](surveys/seed7934791766227647176_orbit2053785022979524342.png)
+
+**Rank 3** — orbit `4381562556728633053`, VPT 9.7080
+
+![Free-run rank 3 for esn_seed 7934791766227647176](surveys/seed7934791766227647176_orbit4381562556728633053.png)
+
