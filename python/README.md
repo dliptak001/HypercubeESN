@@ -113,15 +113,17 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (free-run)
 
-Closed-loop free-run on Lorenz-63. See the C++ example docs; **major rework in
-progress** — scores provisional for **v2.0**.
+Closed-loop free-run on Lorenz-63 (input-bank self-feedback; dim 10, M = 2).
+Best orbit VPT in Lyapunov times for three trained seeds:
 
-| Metric | Result |
-|--------|--------|
-| VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
+| ESN seed | Best VPT (LT) |
+|---------:|--------------:|
+| 3079493423467196890 | **14.13** |
+| 696634088797950509 | **13.00** |
+| 7934791766227647176 | **10.67** |
 
+Top-10 tables and free-run overlays:
 [Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
-· [Cursor](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/Cursor.md)
 
 ## Installation
 

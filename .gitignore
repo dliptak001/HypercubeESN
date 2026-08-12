@@ -30,6 +30,7 @@ examples/Lorenz/TRACKING.md
 examples/Lorenz/TODO_forward_only_ablation.md
 examples/Lorenz/free_run_error_seed13649419.png
 examples/Lorenz/traces/
+examples/Lorenz/reference/
 
 # Research Topics — local ephemeral (survey logs / TRACKING may be force-added)
 Research Topics/Lorenz_JanusCursor/traces/

@@ -111,16 +111,16 @@ theoretical ceiling (MC/F ≈ 1).
 
 ### Lorenz (free-run)
 
-Closed-loop free-run on Lorenz-63: train, then generative self-feedback.
-Report VPT, free-run RMSE, and related scores with the protocol stated in the
-example docs. **Major rework of this example is in progress** — treat numbers
-and harness details as provisional until that lands.
+Closed-loop free-run on Lorenz-63 (input-bank self-feedback; dim 10, M = 2).
+Best orbit VPT in Lyapunov times for three trained seeds:
 
-| Metric | Result |
-|--------|--------|
-| VPT (lt) / free-run RMSE · protocol | **TBD** (example rework) |
+| ESN seed | Best VPT (LT) |
+|---------:|--------------:|
+| 3079493423467196890 | **14.13** |
+| 696634088797950509 | **13.00** |
+| 7934791766227647176 | **10.67** |
 
-[Lorenz](examples/Lorenz/README.md) · [Cursor](examples/Lorenz/Cursor.md)
+Top-10 tables and free-run overlays: [Lorenz](examples/Lorenz/README.md)
 
 ## What is Reservoir Computing?
 
@@ -359,7 +359,7 @@ HypercubeESN/
     StreamingAnomaly.cpp/md      Streaming anomaly detection
     MemoryCapacity/              Jaeger memory-capacity diagnostic
     NARMA/                       NARMA validator (one config · N30/50/70)
-    Lorenz/                      Lorenz attractor free-run (example rework in progress)
+    Lorenz/                      Lorenz attractor free-run (closed-loop VPT storefront)
 
   python/                Python bindings (pybind11 module + pyproject)
   cmake/                 Package config template (find_package support)
