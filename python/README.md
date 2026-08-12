@@ -7,9 +7,7 @@
 
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
 hypercube. Neurons sit on the vertices, each carrying a short delay line of its
-own past, wired to single-bit-flip neighbors by XOR. That topology is **never
-stored, only computed.** **dim** is the hypercube dimension; N =
-2<sup>dim</sup> continuous `tanh` units (dim 5–16 → 32 to 65,536 neurons).
+own past, wired to single-bit-flip neighbors by XOR.
 
 Three properties follow:
 
@@ -32,7 +30,7 @@ never leaves the hypercube it was born on.**
 
 **2.0 readout upgrade.** Each HCNN conv site now has
 an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The change significantly improves readout quality
-**across the board** (all tasks and dims). Details: [Readout.md](https://github.com/dliptak001/HypercubeESN/blob/main/docs/Readout.md).
+**across the board** (for all tasks and dims).
 
 ---
 
@@ -86,25 +84,22 @@ Each product in the family is a different architecture on that same foundation:
 
 Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
 
-### NARMA (open-loop system ID)
+### NARMA
 
-One fixed config, tanh-wrapped orders 30 / 50 / 70; **best 5 of 20** seeds
-(test NRMSE). Same op-point for all three orders.
+tanh-wrapped orders 30 / 50 / 70; **Same operating point (same dim, sr, memory depth, reservoir seed, ...) for all three orders.**
 
-| Order | Best-5 mean |
-|------:|------------:|
-| 30 | **0.0441** |
-| 50 | **0.0751** |
-| 70 | **0.1251** |
+| Order | Best-5 mean test NRMSE |
+|------:|-----------------------:|
+| 30 |             **0.0441** |
+| 50 |             **0.0751** |
+| 70 |             **0.1251** |
 
 [Campaign write-up](https://github.com/dliptak001/HypercubeESN/blob/main/examples/NARMA/NARMA.md)
 
 ### Memory capacity (Jaeger MC)
 
 Linear short-term memory (ridge on reservoir state — not HCNN). **Tunable** via
-dim, delay-line depth M, and spectral radius: peak TotalMC from about **30**
-(dim 5) to **1400+** (dim 12) in the reference grids; small cubes sit near the
-theoretical ceiling (MC/F ≈ 1).
+dim, memory depth, and spectral radius.
 
 | dim | N | Peak TotalMC |
 |----:|--:|-------------:|
