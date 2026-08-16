@@ -36,7 +36,6 @@ an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The ch
 
 <p align="center">
   <strong>HypercubeAI ecosystem</strong><br/>
-  <sub>One geometry. Topology-native intelligence.</sub>
 </p>
 
 <p align="center">
@@ -47,13 +46,16 @@ an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The ch
   <a href="https://github.com/dliptak001/HypercubeHopfield"><strong>HypercubeHopfield</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dliptak001/HypercubeWTF"><strong>HypercubeWTF</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dliptak001/HypercubeEtalon"><strong>HypercubeEtalon</strong></a>
 </p>
 
-HypercubeESN is an experiment in the **HypercubeAI** project — our quest to map
-AI and ML strategies onto the hypercube as a computational substrate.
-
-Why the hypercube? A few properties keep showing up — and they explain why a
-frozen reservoir and a HypercubeCNN readout fit together so cleanly:
+HypercubeESN is an experiment in the **HypercubeAI** project — our quest to
+systematically re-implement classical neural architectures on a Boolean
+hypercube topology instead of Euclidean grids or random graphs. The central
+thesis is “topology-native intelligence”: the hypercube’s algebraic structure
+(vertex-transitive symmetry, Hamming geometry, bitwise addressing) can serve
+as a first-class computational substrate.
 
 - **A topology you don’t store** — the graph is specified: connectivity is
   implicit in the vertex indices; with a seed and a few config scalars the whole
@@ -69,14 +71,7 @@ frozen reservoir and a HypercubeCNN readout fit together so cleanly:
   that generated the dynamics. The data never leaves the hypercube it was born
   on.
 
-Each product in the family is a different architecture on that same foundation:
-
-| Product | Natural data | Role of the hypercube |
-|---------|--------------|------------------------|
-| **[HypercubeESN](https://github.com/dliptak001/HypercubeESN)** | Low-dim **streams** over time | Frozen **reservoir** stepped each sample; multi-slice state → HypercubeCNN readout |
-| **[HypercubeCNN](https://github.com/dliptak001/HypercubeCNN)** | Static patterns on the cube | Trainable **spatial** conv/pool on the cube (no recurrent reservoir) |
-| **[HypercubeHopfield](https://github.com/dliptak001/HypercubeHopfield)** | Patterns / attractors | Associative memory dynamics on the cube |
-| **[HypercubeWTF](https://github.com/dliptak001/HypercubeWTF)** | Static high-dim fields (**no** intrinsic time) | Same **frozen hypercube reservoir** discipline as ESN, driven for a short orbit per sample, then HypercubeCNN on the **end state** |
+Each product in the family is a different architecture on that same foundation.
 
 ---
 
