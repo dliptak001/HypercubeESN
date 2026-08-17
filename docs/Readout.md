@@ -150,9 +150,8 @@ Each step ESN assembles the readout input from the delay line:
 2. Age `k` is copied into **physical block** `ReadoutBlockOf(k)`.
 
 For B ≤ 2 the map is the identity. For B > 2, consecutive ages land on block
-indices that differ in **two** bits (pair map in `ESN::MakeBlockMap`). Reason:
-HCNN conv has **no self term** and only 1-bit neighbors, so a single filter can
-see “velocity” {age0, age1} only if those blocks are two bit-flips apart.
+indices that differ in **two** bits (pair map in `ESN::MakeBlockMap`) so a
+Hamming-1 kernel can see both ages from the midpoint vertices between the pair.
 
 Antipodal pooling mixes **every** bit, including block-index bits when B > 1;
 set `use_pooling = false` to keep block structure intact into the flatten head
@@ -213,7 +212,7 @@ read.
 | Task | `targets` layout | Output | Readout metric |
 |------|------------------|--------|----------------|
 | Regression | `num_samples × num_outputs` (row-major) | raw predictions | `R2` (below) |
-| Classification | `num_samples` class indices as float | logits / argmax | `Accuracy` (below) |
+| Classification | `num_samples` **int** class indices | logits / argmax | `Accuracy` (below) |
 
 **R²:** average of per-output coefficients of determination over the sample set
 (multi-output). Perfect fit → 1.0; degenerate target variance on an output → 0 for
@@ -249,7 +248,7 @@ struct ReadoutConfig {
     float lr_min_frac    = 0.01f;
     int   lr_decay_epochs = 0;       // 0 = use epochs as cosine horizon
     float weight_decay   = 0.0f;
-    float momentum       = 0.0f;     // SGD only; ignored by Adam
+    float momentum       = 0.9f;     // SGD heavy-ball; 0 = plain SGD; ignored by Adam
     uint64_t seed        = 42;   // full 64-bit HCNN weight-init master seed
     ReadoutActivation activation = ReadoutActivation::TANH;
     size_t num_threads   = 0;        // 0=auto, 1=ST, N=N workers
@@ -373,7 +372,7 @@ from construction on) — **not** “has seen training data.”
 |-----|---------|
 | `Train(targets, train_size)` | `Train` on collected readout inputs |
 | `TrainStep` / `TrainStepBatch` | streaming |
-| `Predict` / `PredictFromRecorded` / `PredictFromState` | `PredictRaw` |
+| `Predict` / `PredictFromRecorded` / `PredictFromReadoutInput` (`PredictFromState` alias) | `PredictRaw` |
 | `R2` / `NRMSE` / `Accuracy` | eval helpers (NRMSE is ESN-only) |
 | `GetReadoutState` / `SetReadoutState(..., mode)` | `Weights` / `SetState` |
 | `SaveReadoutHcnnModel` / `LoadReadoutHcnnModel` | HCNW + arch |

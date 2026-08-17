@@ -139,9 +139,9 @@ struct ReadoutConfig
 ///                          channels grow by channel_growth each layer
 /// ```
 /// The stack is built via HypercubeCNN's architecture product (`LayerSpec` /
-/// `HCNNConfig`) from @c dim: by default L = min(dim - 2, 2) Conv(+Pool) stages
-/// (override with @ref ReadoutConfig::num_layers), the first conv using
-/// @ref ReadoutConfig::conv_channels channels.
+/// `HCNNConfig`) from @c dim: house default is one Conv(+Pool) stage
+/// (@c num_layers = 1); @c 0 selects auto @c min(dim - 2, 2). The first conv
+/// uses @ref ReadoutConfig::conv_channels channels.
 ///
 /// ## Lifecycle
 /// Pick a training path:

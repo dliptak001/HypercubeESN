@@ -50,10 +50,9 @@ std::vector<size_t> ESN::MakeBlockMap(const size_t blocks)
         return map;
     }
 
-    // HCNN conv: 1-bit neighbors only, no self term. Two blocks fall in one
-    // filter's reach iff their indices differ in two bits. Map consecutive
-    // logical slots onto (rep, rep ^ 0b11) so {age0, age1} share a filter, then
-    // {age2, age3}, …  `rep` walks indices with low bits 00 or 01 → full permutation.
+    // Consecutive ages on block indices two bits apart: a Hamming-1 kernel at
+    // a midpoint vertex (one bit from each) sees both ages. Map slots onto
+    // (rep, rep ^ 0b11); `rep` walks indices with low bits 00 or 01.
     for (size_t i = 0; i < blocks / 2; ++i)
     {
         const size_t rep = ((i >> 1) << 2) | (i & 1u);
@@ -317,6 +316,54 @@ void ESN::TrainStepBatch(const float* readout_inputs, const int* class_labels,
             "ESN::TrainStepBatch(int*): classification only; use float* targets "
             "for regression");
     readout_.TrainStepBatch(readout_inputs, class_labels, count, lr, weight_decay);
+}
+
+void ESN::TrainStepBatch(std::span<const float> readout_inputs,
+                         std::span<const float> targets,
+                         float lr, float weight_decay)
+{
+    if (esn_config_.readout.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "ESN::TrainStepBatch(span<float>): regression only; use span<int> "
+            "class_labels for classification");
+    if (readout_width_ == 0 || readout_inputs.size() % readout_width_ != 0)
+        throw std::invalid_argument(
+            "ESN::TrainStepBatch: readout_inputs.size() (" +
+            std::to_string(readout_inputs.size()) +
+            ") must be a multiple of ReadoutInputWidth() (" +
+            std::to_string(readout_width_) + ")");
+    const size_t count = readout_inputs.size() / readout_width_;
+    const size_t expected = count * readout_.NumOutputs();
+    if (targets.size() != expected)
+        throw std::invalid_argument(
+            "ESN::TrainStepBatch: targets.size() (" +
+            std::to_string(targets.size()) +
+            ") must equal count * NumOutputs() (" +
+            std::to_string(expected) + ")");
+    TrainStepBatch(readout_inputs.data(), targets.data(), count, lr, weight_decay);
+}
+
+void ESN::TrainStepBatch(std::span<const float> readout_inputs,
+                         std::span<const int> class_labels,
+                         float lr, float weight_decay)
+{
+    if (esn_config_.readout.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "ESN::TrainStepBatch(span<int>): classification only; use span<float> "
+            "targets for regression");
+    if (readout_width_ == 0 || readout_inputs.size() % readout_width_ != 0)
+        throw std::invalid_argument(
+            "ESN::TrainStepBatch: readout_inputs.size() (" +
+            std::to_string(readout_inputs.size()) +
+            ") must be a multiple of ReadoutInputWidth() (" +
+            std::to_string(readout_width_) + ")");
+    const size_t count = readout_inputs.size() / readout_width_;
+    if (class_labels.size() != count)
+        throw std::invalid_argument(
+            "ESN::TrainStepBatch: class_labels.size() (" +
+            std::to_string(class_labels.size()) +
+            ") must equal inferred row count (" + std::to_string(count) + ")");
+    TrainStepBatch(readout_inputs.data(), class_labels.data(), count, lr, weight_decay);
 }
 
 void ESN::CopyReservoirState(float* out) const

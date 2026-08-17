@@ -139,24 +139,3 @@ Concurrent workers self-schedule from an atomic counter; optional RAM budget
 caps worker count. Banner prints live meter + layout.
 
 ---
-
-## Reference campaign (where the tables come from)
-
-Archived single-seed `RunGridSweep` results for dim 5…12. Full cell tables and
-appendices live in [MemoryCapacity_grids.md](MemoryCapacity_grids.md).
-
-| Knob | Value |
-|------|--------|
-| dim | 5 … 12 (one grid each; N = F = 2<sup>dim</sup>) |
-| Spectral radius | 0.90 · 0.95 · 1.00 |
-| Leak | **1.0** for main M × sr grids |
-| `history_depth` M | 1, 2, 4, 8, 16, 32, 40, 48, 56, 64 |
-| `input_scaling` | 0.06 |
-| Reservoir seed | **47397376** |
-| Meter | warmup **4000** · collect **25000** · Kmax **4000** · ridge **1e-4** · train_frac **0.7** · `input_seed` **0xc0ffee** |
-
-| In the grids file | Contents |
-|-------------------|----------|
-| Main M × sr tables | dim 5–12, leak = 1.0 |
-| [Appendix A](MemoryCapacity_grids.md#appendix-a--dim-10-leak--sr--m) | dim 10 leak × sr × M |
-| [Appendix B](MemoryCapacity_grids.md#appendix-b--dim-10-seed-survey-m--3034) | dim 10 seed survey, M = 30–34 |

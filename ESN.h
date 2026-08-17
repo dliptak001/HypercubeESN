@@ -171,6 +171,17 @@ public:
     void TrainStepBatch(const float* readout_inputs, const int* class_labels, size_t count,
                         float lr, float weight_decay = 0.0f);
 
+    /// @brief Span form of regression @ref TrainStepBatch. Row count is
+    /// @c readout_inputs.size() / ReadoutInputWidth(); @p targets must be
+    /// count × NumOutputs().
+    void TrainStepBatch(std::span<const float> readout_inputs, std::span<const float> targets,
+                        float lr, float weight_decay = 0.0f);
+
+    /// @brief Span form of classification @ref TrainStepBatch.
+    /// @c class_labels.size() must equal the inferred row count.
+    void TrainStepBatch(std::span<const float> readout_inputs, std::span<const int> class_labels,
+                        float lr, float weight_decay = 0.0f);
+
     /// @brief Copy the newest reservoir slice (N floats) into @p out.
     /// Not the full multi-slice readout input unless B = 1.
     void CopyReservoirState(float* out) const;
@@ -224,9 +235,9 @@ public:
     void PredictFromReadoutInput(std::span<const float> readout_input, std::span<float> out) const;
 
     /// @brief R² on recorded timesteps [@p start, @p start+@p count).
-    /// @p targets must cover **[0, start+count)** (regression: row-major
-    /// (start+count)×NumOutputs(); classification: start+count floats). Indexed
-    /// from targets[start * NumOutputs()] — pass the full array, not a slice.
+    /// @p targets must cover **[0, start+count)** as row-major
+    /// (start+count)×NumOutputs() floats. Indexed from
+    /// targets[start * NumOutputs()] — pass the full array, not a slice.
     /// Prefer @ref R2 (span) or @ref R2FromWindow when you want length checks.
     /// @throws std::out_of_range if the window exceeds NumCollectedStates().
     [[nodiscard]] double R2(const float* targets, size_t start, size_t count) const;
@@ -237,8 +248,8 @@ public:
     [[nodiscard]] double R2(std::span<const float> targets, size_t start, size_t count) const;
 
     /// @brief R² when @p targets_window holds **only** the scored rows
-    /// (length count × NumOutputs() or count class indices) — not a full [0, end)
-    /// buffer. Recorded states still use @p start.
+    /// (length count × NumOutputs()) — not a full [0, end) buffer. Recorded
+    /// states still use @p start.
     [[nodiscard]] double R2FromWindow(std::span<const float> targets_window,
                                       size_t start, size_t count) const;
 
@@ -311,9 +322,9 @@ public:
 
     /// @brief Physical block index for logical slot @p slot (age 0 = newest).
     ///
-    /// Not the identity when B > 2: HCNN conv has no self term and only 1-bit
-    /// neighbors, so consecutive ages are mapped onto block indices that differ
-    /// in **two** bits (so one filter can see “velocity” {age0, age1}).
+    /// Identity when B ≤ 2. When B > 2, consecutive ages land on block indices
+    /// that differ in **two** bits (pair map) so a Hamming-1 kernel can see both
+    /// ages from the midpoint vertices between the pair.
     /// @throws std::out_of_range if @p slot >= B.
     [[nodiscard]] size_t ReadoutBlockOf(size_t slot) const;
 
