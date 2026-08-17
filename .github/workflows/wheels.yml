@@ -1,3 +1,5 @@
+# Python wheels build the vendored HypercubeCNN (v1.0.4) in-tree with
+# the extension — see third_party/HypercubeCNN/VENDORED.md.
 name: Build wheels
 
 on:

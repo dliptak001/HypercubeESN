@@ -1,24 +1,21 @@
 #include "Readout.h"
+
 #include "HCNN.h"
+#include "HCNNArch.h"
+#include "HCNNTrainHelpers.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstdio>
-#include <numeric>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
-
-Readout::Readout(const ReadoutConfig& cfg)
-    : config_(cfg)
-    , num_outputs_(static_cast<size_t>(cfg.num_outputs))
-{}
-
-Readout::~Readout() = default;
-Readout::Readout(Readout&&) noexcept = default;
-Readout& Readout::operator=(Readout&&) noexcept = default;
 
 // ---------------------------------------------------------------------------
-//  Architecture
+//  Mapping helpers (HCNN stays out of the public header)
 // ---------------------------------------------------------------------------
 
 static hcnn::Activation map_activation(ReadoutActivation a)
@@ -32,38 +29,101 @@ static hcnn::Activation map_activation(ReadoutActivation a)
     return hcnn::Activation::TANH;
 }
 
-void Readout::build_architecture()
+static hcnn::PoolType map_pool(ReadoutPoolType t)
 {
-    assert(config_.dim >= 5);
-    const size_t n = 1ULL << config_.dim;
-    const int d = static_cast<int>(config_.dim);
+    switch (t) {
+        case ReadoutPoolType::Max: return hcnn::PoolType::MAX;
+        case ReadoutPoolType::Avg: return hcnn::PoolType::AVG;
+    }
+    return hcnn::PoolType::MAX;
+}
 
-    // Auto-size layers: min(DIM - 2, 2), at least 1.
-    int layers = (config_.num_layers > 0)
-                     ? config_.num_layers
+static hcnn::OptimizerType map_optimizer(ReadoutOptimizer o)
+{
+    switch (o) {
+        case ReadoutOptimizer::Adam: return hcnn::OptimizerType::ADAM;
+        case ReadoutOptimizer::Sgd:  return hcnn::OptimizerType::SGD;
+    }
+    return hcnn::OptimizerType::ADAM;
+}
+
+static std::vector<hcnn::LayerSpec> make_layer_specs(const ReadoutConfig& cfg)
+{
+    assert(cfg.dim >= 5);
+    const int d = static_cast<int>(cfg.dim);
+
+    int layers = (cfg.num_layers > 0)
+                     ? cfg.num_layers
                      : std::min(d - 2, 2);
     layers = std::max(layers, 1);
-    assert(layers <= d - 2);
+    // Each pool drops one hypercube dimension, so the stack must leave >= 2 behind.
+    // With pooling off the dimension never shrinks and the bound is vacuous.
+    assert(!cfg.use_pooling || layers <= d - 2);
+    assert(cfg.channel_growth >= 1);
+    assert(cfg.conv_channels >= 1);
+
+    const hcnn::Activation act = map_activation(cfg.activation);
+    const hcnn::PoolType pool = map_pool(cfg.pool_type);
+
+    std::vector<hcnn::LayerSpec> specs;
+    specs.reserve(static_cast<size_t>(layers) * (cfg.use_pooling ? 2u : 1u));
+
+    int ch = cfg.conv_channels;
+    for (int i = 0; i < layers; ++i) {
+        specs.push_back(hcnn::LayerSpec::Conv(
+            ch, act, /*bias=*/true, cfg.use_batchnorm));
+        // Antipodal pool mixes every bit (including block-index bits). Conv-only
+        // keeps vertex structure into the FLATTEN head.
+        if (cfg.use_pooling)
+            specs.push_back(hcnn::LayerSpec::Pool(pool));
+        ch *= cfg.channel_growth;
+    }
+    return specs;
+}
+
+// ---------------------------------------------------------------------------
+//  Lifecycle
+// ---------------------------------------------------------------------------
+
+Readout::Readout(const ReadoutConfig& cfg)
+    : config_(cfg)
+    , num_outputs_(static_cast<size_t>(cfg.num_outputs))
+{
+    // Build the network eagerly. build_architecture() needs only the config
+    // (no data, no warm-up), so there is nothing to defer: net_ is a non-null
+    // invariant from construction on.
+    num_features_ = 1ULL << config_.dim;
+    build_architecture();
+    net_->PrepareBuffers();
+}
+
+Readout::~Readout() = default;
+Readout::Readout(Readout&&) noexcept = default;
+Readout& Readout::operator=(Readout&&) noexcept = default;
+
+void Readout::build_architecture()
+{
+    const int d = static_cast<int>(config_.dim);
 
     auto task_type = (config_.task == ReadoutTask::Classification)
                          ? hcnn::TaskType::Classification
                          : hcnn::TaskType::Regression;
-    net_ = std::make_unique<hcnn::HCNN>(
-        d, config_.num_outputs, /*input_channels=*/1,
-        task_type);
 
-    const hcnn::Activation act = map_activation(config_.activation);
-    int ch = config_.conv_channels;
-    for (int i = 0; i < layers; ++i) {
-        net_->AddConv(ch, act, /*use_bias=*/true);
-        net_->AddPool(hcnn::PoolType::MAX);
-        ch *= 2;
-    }
+    hcnn::HCNNConfig hcfg;
+    hcfg.start_dim = d;
+    hcfg.num_outputs = config_.num_outputs;
+    hcfg.input_channels = 1;
+    hcfg.task = task_type;
+    hcfg.num_threads = config_.num_threads;
+    hcfg.layers = make_layer_specs(config_);
+    hcfg.optimizer = map_optimizer(config_.optimizer);
+    hcfg.randomize = true;
+    hcfg.weight_scale = 0.0f; // He/Xavier per layer
+    hcfg.weight_seed = config_.seed;
 
-    net_->RandomizeWeights(0.0f, config_.seed);
-
-    scratch_embedded_.resize(n);
-    scratch_pred_.resize(num_outputs_);
+    // Validate layer list + sizing before allocating (throws on bad stacks).
+    (void)hcfg.summarize();
+    net_ = hcfg.Build();
 }
 
 // ---------------------------------------------------------------------------
@@ -71,159 +131,211 @@ void Readout::build_architecture()
 // ---------------------------------------------------------------------------
 
 void Readout::Train(const float* states, const float* targets,
-                       size_t num_samples)
+                    size_t num_samples)
 {
-    assert(config_.dim >= 5);
-    const size_t n = 1ULL << config_.dim;
-    num_features_ = n;
-    num_outputs_ = static_cast<size_t>(config_.num_outputs);
-    const bool is_classification = (config_.task == ReadoutTask::Classification);
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::Train(float*): regression task only; use int* labels "
+            "for classification");
 
-    build_architecture();
-    net_->SetOptimizer(hcnn::OptimizerType::ADAM);
-    trained_ = true;
+    // net_ is already built (ctor). Train fits the existing network in place;
+    // a second Train() continues from the current weights rather than
+    // re-randomizing — reconstruct the Readout for a fresh fit.
+    const int n = static_cast<int>(num_features_);
+    const size_t K = num_outputs_;
+    best_epoch_ = 0;
 
     const float lr_min = config_.lr_max * config_.lr_min_frac;
     const int horizon = (config_.lr_decay_epochs > 0)
                             ? config_.lr_decay_epochs
                             : config_.epochs;
 
-    std::vector<int> int_targets;
-    if (is_classification) {
-        int_targets.resize(num_samples);
-        for (size_t s = 0; s < num_samples; ++s)
-            int_targets[s] = static_cast<int>(targets[s]);
+    // Optional tail hold-out for best-epoch selection (train on the prefix).
+    size_t n_train = num_samples;
+    size_t n_score = num_samples;
+    const float* score_states = states;
+    const float* score_targets = targets;
+
+    if (config_.restore_best_epoch && config_.best_epoch_holdout_frac > 0.0f
+        && num_samples >= 2) {
+        float frac = config_.best_epoch_holdout_frac;
+        if (frac < 0.0f) frac = 0.0f;
+        if (frac > 0.5f) frac = 0.5f;
+        size_t n_val = static_cast<size_t>(
+            static_cast<float>(num_samples) * frac + 0.5f);
+        if (n_val < 1) n_val = 1;
+        if (n_val >= num_samples) n_val = num_samples / 2;
+        n_train = num_samples - n_val;
+        n_score = n_val;
+        score_states = states + n_train * static_cast<size_t>(n);
+        score_targets = targets + n_train * K;
     }
 
-    std::vector<float> verbose_logits;
-    std::vector<float> verbose_preds;
-    if (config_.verbose && config_.verbose_train_acc) {
-        if (is_classification)
-            verbose_logits.resize(num_samples * num_outputs_);
-        else
-            verbose_preds.resize(num_samples * num_outputs_);
-    }
+    const hcnn::HCNNInputView train_in = hcnn::HCNNInputView::from_full(
+        states, static_cast<int>(n_train), n);
+
+    hcnn::HCNNTrainer trainer(*net_);
+    trainer.params().momentum = config_.momentum;
+    trainer.params().weight_decay = config_.weight_decay;
+    trainer.set_cosine(config_.lr_max, lr_min, std::max(horizon, 1));
+
+    hcnn::HCNNBestMetricCheckpoint best_reg;
 
     for (int e = 0; e < config_.epochs; ++e) {
-        float lr = CosineLR(static_cast<float>(e) / static_cast<float>(horizon),
-                            config_.lr_max, lr_min);
+        trainer.train_epoch(train_in, targets, config_.batch_size, e);
 
-        if (is_classification) {
-            net_->TrainEpoch(
-                states, static_cast<int>(n),
-                int_targets.data(),
-                static_cast<int>(num_samples), config_.batch_size,
-                lr, config_.momentum, config_.weight_decay,
-                /*class_weights=*/nullptr,
-                /*shuffle_seed=*/static_cast<unsigned>(e + 1));
-        } else {
-            net_->TrainEpochRegression(
-                states, static_cast<int>(n),
-                targets,
-                static_cast<int>(num_samples), config_.batch_size,
-                lr, config_.momentum, config_.weight_decay,
-                /*shuffle_seed=*/static_cast<unsigned>(e + 1));
-        }
+        if (!config_.restore_best_epoch || n_score == 0)
+            continue;
 
-        if (config_.verbose) {
-            if (config_.verbose_train_acc) {
-                if (is_classification) {
-                    net_->ForwardBatch(states, static_cast<int>(n),
-                                       static_cast<int>(num_samples),
-                                       verbose_logits.data());
-                    size_t correct = 0;
-                    for (size_t s = 0; s < num_samples; ++s) {
-                        const float* row = verbose_logits.data() + s * num_outputs_;
-                        size_t pred = 0;
-                        float best = row[0];
-                        for (size_t k = 1; k < num_outputs_; ++k)
-                            if (row[k] > best) { best = row[k]; pred = k; }
-                        if (static_cast<int>(pred) == int_targets[s]) ++correct;
-                    }
-                    double acc = 100.0 * correct / num_samples;
-                    std::printf("  epoch %3d/%d  lr=%.5f  train_acc=%.2f%%\n",
-                                e + 1, config_.epochs, lr, acc);
-                } else {
-                    net_->ForwardBatch(states, static_cast<int>(n),
-                                       static_cast<int>(num_samples),
-                                       verbose_preds.data());
-                    double mse = 0.0;
-                    for (size_t i = 0; i < num_samples * num_outputs_; ++i) {
-                        double d = verbose_preds[i] - targets[i];
-                        mse += d * d;
-                    }
-                    mse /= static_cast<double>(num_samples * num_outputs_);
-                    std::printf("  epoch %3d/%d  lr=%.5f  train_mse=%.6f\n",
-                                e + 1, config_.epochs, lr, mse);
-                }
-            } else {
-                std::printf("  epoch %3d/%d  lr=%.5f\n",
-                            e + 1, config_.epochs, lr);
-            }
-            std::fflush(stdout);
-        }
+        hcnn::HCNNRegEval r = hcnn::evaluate_regression(
+            *net_, score_states, n, score_targets,
+            static_cast<int>(n_score), static_cast<int>(K));
+        best_reg.observe(*net_, static_cast<float>(r.mse), e + 1);
     }
 
-    flatten_weights();
+    if (!config_.restore_best_epoch)
+        return;
+
+    if (best_reg.has_best()) {
+        best_reg.restore(*net_);
+        best_epoch_ = best_reg.best_epoch();
+    }
 }
 
-// ---------------------------------------------------------------------------
-//  Online (streaming) training
-// ---------------------------------------------------------------------------
-
-void Readout::InitOnline()
+void Readout::Train(const float* states, const int* class_labels,
+                    size_t num_samples)
 {
-    assert(config_.dim >= 5);
-    const size_t n = 1ULL << config_.dim;
-    num_features_ = n;
-    num_outputs_ = static_cast<size_t>(config_.num_outputs);
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::Train(int*): classification task only; use float* "
+            "targets for regression");
 
-    build_architecture();
-    net_->SetOptimizer(hcnn::OptimizerType::ADAM);
-    net_->PrepareBuffers();
-    trained_ = true;
+    const int n = static_cast<int>(num_features_);
+    best_epoch_ = 0;
+
+    const float lr_min = config_.lr_max * config_.lr_min_frac;
+    const int horizon = (config_.lr_decay_epochs > 0)
+                            ? config_.lr_decay_epochs
+                            : config_.epochs;
+
+    size_t n_train = num_samples;
+    size_t n_score = num_samples;
+    const float* score_states = states;
+    const int* score_int = class_labels;
+
+    if (config_.restore_best_epoch && config_.best_epoch_holdout_frac > 0.0f
+        && num_samples >= 2) {
+        float frac = config_.best_epoch_holdout_frac;
+        if (frac < 0.0f) frac = 0.0f;
+        if (frac > 0.5f) frac = 0.5f;
+        size_t n_val = static_cast<size_t>(
+            static_cast<float>(num_samples) * frac + 0.5f);
+        if (n_val < 1) n_val = 1;
+        if (n_val >= num_samples) n_val = num_samples / 2;
+        n_train = num_samples - n_val;
+        n_score = n_val;
+        score_states = states + n_train * static_cast<size_t>(n);
+        score_int = class_labels + n_train;
+    }
+
+    const hcnn::HCNNInputView train_in = hcnn::HCNNInputView::from_full(
+        states, static_cast<int>(n_train), n);
+
+    hcnn::HCNNTrainer trainer(*net_);
+    trainer.params().momentum = config_.momentum;
+    trainer.params().weight_decay = config_.weight_decay;
+    trainer.set_cosine(config_.lr_max, lr_min, std::max(horizon, 1));
+
+    hcnn::HCNNDualCheckpoint best_cls;
+
+    for (int e = 0; e < config_.epochs; ++e) {
+        trainer.train_epoch(train_in, class_labels, config_.batch_size, e);
+
+        if (!config_.restore_best_epoch || n_score == 0)
+            continue;
+
+        hcnn::HCNNClassEval r = hcnn::evaluate_classification(
+            *net_, score_states, n, score_int, static_cast<int>(n_score));
+        best_cls.observe(*net_, r.loss, r.accuracy, e + 1);
+    }
+
+    if (!config_.restore_best_epoch)
+        return;
+
+    if (best_cls.has_best_acc()) {
+        best_cls.restore_best_acc(*net_);
+        best_epoch_ = best_cls.best_acc_epoch();
+    }
 }
 
-void Readout::TrainOnlineStep(const float* state, int target_class,
-                                 float lr, float weight_decay)
+void Readout::TrainStep(const float* state, const float* target,
+                        float lr, float weight_decay)
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::TrainStep(float*): regression only; use int class_label "
+            "for classification");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
 
-    net_->TrainStep(state, static_cast<int>(n), target_class,
-                    lr, config_.momentum, weight_decay);
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainStep(state, n, target, p);
 }
 
-void Readout::TrainOnlineBatch(const float* states, const int* targets,
-                                  size_t count, float lr, float weight_decay)
+void Readout::TrainStep(const float* state, int class_label,
+                        float lr, float weight_decay)
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::TrainStep(int): classification only; use float* target "
+            "for regression");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
 
-    net_->TrainBatch(states, static_cast<int>(n),
-                     targets, static_cast<int>(count),
-                     lr, config_.momentum, weight_decay);
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainStep(state, n, class_label, p);
 }
 
-void Readout::TrainOnlineStepRegression(const float* state, const float* target,
-                                           float lr, float weight_decay)
+void Readout::TrainStepBatch(const float* states, const float* targets,
+                             size_t count, float lr, float weight_decay)
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
+    if (config_.task != ReadoutTask::Regression)
+        throw std::logic_error(
+            "Readout::TrainStepBatch(float*): regression only; use int* "
+            "class_labels for classification");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+    const int batch = static_cast<int>(count);
 
-    net_->TrainStepRegression(state, static_cast<int>(n), target,
-                              lr, config_.momentum, weight_decay);
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainBatch(states, n, targets, batch, p);
 }
 
-void Readout::TrainOnlineBatchRegression(const float* states, const float* targets,
-                                            size_t count, float lr, float weight_decay)
+void Readout::TrainStepBatch(const float* states, const int* class_labels,
+                             size_t count, float lr, float weight_decay)
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
+    if (config_.task != ReadoutTask::Classification)
+        throw std::logic_error(
+            "Readout::TrainStepBatch(int*): classification only; use float* "
+            "targets for regression");
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+    const int batch = static_cast<int>(count);
 
-    net_->TrainBatchRegression(states, static_cast<int>(n),
-                               targets, static_cast<int>(count),
-                               lr, config_.momentum, weight_decay);
+    hcnn::TrainParams p;
+    p.learning_rate = lr;
+    p.momentum = config_.momentum;
+    p.weight_decay = weight_decay;
+    net_->TrainBatch(states, n, class_labels, batch, p);
 }
 
 // ---------------------------------------------------------------------------
@@ -232,40 +344,17 @@ void Readout::TrainOnlineBatchRegression(const float* states, const float* targe
 
 void Readout::PredictRaw(const float* state, float* output) const
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
-
-    net_->Embed(state, static_cast<int>(n), scratch_embedded_.data());
-    net_->Forward(scratch_embedded_.data(), scratch_pred_.data());
-
-    for (size_t k = 0; k < num_outputs_; ++k)
-        output[k] = scratch_pred_[k];
-}
-
-float Readout::PredictRaw(const float* state) const
-{
-    assert(num_outputs_ == 1);
-    // Write into the correctly-sized scratch buffer, not a single stack float:
-    // the float* overload writes num_outputs_ values, so a &float target would
-    // overflow the stack for a multi-output readout in release builds (where the
-    // assert above is compiled out). Callers needing every channel must use the
-    // float* overload. scratch_pred_ is sized to num_outputs_ in build_architecture().
-    PredictRaw(state, scratch_pred_.data());
-    return scratch_pred_[0];
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+    // HCNN::Predict embeds into internal scratch and writes raw logits / preds.
+    net_->Predict(state, n, output);
 }
 
 int Readout::PredictClass(const float* state) const
 {
-    assert(trained_ && net_);
-    const size_t n = num_features_;
-
-    net_->Embed(state, static_cast<int>(n), scratch_embedded_.data());
-    net_->Forward(scratch_embedded_.data(), scratch_pred_.data());
-
-    return static_cast<int>(
-        std::max_element(scratch_pred_.begin(),
-                         scratch_pred_.begin() + num_outputs_) -
-        scratch_pred_.begin());
+    assert(net_);
+    const int n = static_cast<int>(num_features_);
+    return net_->PredictClass(state, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -273,18 +362,18 @@ int Readout::PredictClass(const float* state) const
 // ---------------------------------------------------------------------------
 
 double Readout::R2(const float* states, const float* targets,
-                      const size_t num_samples) const
+                   const size_t num_samples) const
 {
     if (num_samples == 0) return 0.0;
-    const size_t n = num_features_;
+    const int n = static_cast<int>(num_features_);
     const size_t K = num_outputs_;
+    const int n_samples = static_cast<int>(num_samples);
 
-    // Predict all samples once, cache results.
+    // Batch forward once (multi-output R² is ESN's product metric: average of
+    // per-output R² — not HypercubeCNN's global MSE/variance helper).
     std::vector<float> preds(num_samples * K);
-    for (size_t s = 0; s < num_samples; ++s)
-        PredictRaw(states + s * n, preds.data() + s * K);
+    net_->ForwardBatch(states, n, n_samples, preds.data());
 
-    // Average R2 across outputs.
     double r2_sum = 0.0;
     for (size_t k = 0; k < K; ++k) {
         double tgt_mean = 0.0;
@@ -304,25 +393,30 @@ double Readout::R2(const float* states, const float* targets,
     return r2_sum / static_cast<double>(K);
 }
 
-double Readout::Accuracy(const float* states, const float* labels,
-                            const size_t num_samples) const
+double Readout::Accuracy(const float* states, const int* labels,
+                         const size_t num_samples) const
 {
     if (num_samples == 0) return 0.0;
-    const size_t n = num_features_;
+    const int n = static_cast<int>(num_features_);
+    const size_t K = num_outputs_;
+    const int n_samples = static_cast<int>(num_samples);
     size_t correct = 0;
 
-    if (num_outputs_ > 1) {
-        // Multi-class: argmax vs label.
+    if (K > 1) {
+        std::vector<float> logits(num_samples * K);
+        net_->ForwardBatch(states, n, n_samples, logits.data());
         for (size_t s = 0; s < num_samples; ++s) {
-            int pred = PredictClass(states + s * n);
-            if (pred == static_cast<int>(labels[s])) ++correct;
+            const float* row = logits.data() + s * K;
+            const int pred = static_cast<int>(
+                std::max_element(row, row + K) - row);
+            if (pred == labels[s]) ++correct;
         }
     } else {
-        // Binary: threshold at 0.
+        std::vector<float> preds(num_samples);
+        net_->ForwardBatch(states, n, n_samples, preds.data());
         for (size_t s = 0; s < num_samples; ++s) {
-            float pred_val;
-            PredictRaw(states + s * n, &pred_val);
-            if ((pred_val > 0.0f) == (labels[s] > 0.0f)) ++correct;
+            const int pred = (preds[s] > 0.0f) ? 1 : 0;
+            if (pred == labels[s]) ++correct;
         }
     }
     return static_cast<double>(correct) / static_cast<double>(num_samples);
@@ -332,42 +426,319 @@ double Readout::Accuracy(const float* states, const float* labels,
 //  Serialization
 // ---------------------------------------------------------------------------
 
-const std::vector<double>& Readout::Weights() const
+std::vector<double> Readout::Weights() const
 {
-    if (weights_blob_.empty() && net_) {
-        auto fw = net_->GetWeights();
-        weights_blob_.assign(fw.begin(), fw.end());
-    }
-    return weights_blob_;
+    // Snapshot the live network's weights on demand, by value — a returned copy
+    // can't go stale behind a later TrainStep* call (streaming training mutates
+    // net_ in place).
+    const std::vector<float> fw = net_->GetWeights();
+    return std::vector<double>(fw.begin(), fw.end());
 }
 
-void Readout::flatten_weights()
+void Readout::SetState(std::vector<double> weights, ReadoutLoadMode mode)
 {
-    if (!net_) { weights_blob_.clear(); return; }
-    auto fw = net_->GetWeights();
-    weights_blob_.assign(fw.begin(), fw.end());
+    // net_ is built (optimizer + buffers prepared) in the ctor — load the saved
+    // weights straight into the existing, ready-to-train network.
+    if (weights.empty()) return;
+    const std::vector<float> fw(weights.begin(), weights.end());
+    const bool reset_moments = (mode == ReadoutLoadMode::ResumeTrain);
+    net_->SetWeights(fw, reset_moments);
 }
 
-void Readout::rebuild_from_blob()
+// ---------------------------------------------------------------------------
+//  HypercubeCNN-native model I/O (HCNW + arch sidecar)
+// ---------------------------------------------------------------------------
+
+static const char* activation_token(ReadoutActivation a)
 {
-    if (weights_blob_.empty() || config_.dim == 0) return;
-
-    // Reconstruct the network from stored config if needed.
-    if (!net_) {
-        build_architecture();
+    switch (a) {
+        case ReadoutActivation::TANH:       return "tanh";
+        case ReadoutActivation::RELU:       return "relu";
+        case ReadoutActivation::LEAKY_RELU: return "leaky_relu";
+        case ReadoutActivation::NONE:       return "none";
     }
-
-    std::vector<float> fw(weights_blob_.begin(), weights_blob_.end());
-    net_->SetWeights(fw);
+    return "tanh";
 }
 
-void Readout::SetState(std::vector<double> weights)
+static const char* pool_token(ReadoutPoolType t)
 {
-    weights_blob_ = std::move(weights);
-    num_features_ = (config_.dim >= 5) ? (1ULL << config_.dim) : 0;
+    return (t == ReadoutPoolType::Avg) ? "avg" : "max";
+}
 
-    if (!weights_blob_.empty()) {
-        rebuild_from_blob();
-        trained_ = true;
+static const char* optimizer_token(ReadoutOptimizer o)
+{
+    return (o == ReadoutOptimizer::Sgd) ? "sgd" : "adam";
+}
+
+static const char* hcnn_act_token(hcnn::Activation a)
+{
+    switch (a) {
+        case hcnn::Activation::TANH:       return "tanh";
+        case hcnn::Activation::RELU:       return "relu";
+        case hcnn::Activation::LEAKY_RELU: return "leaky_relu";
+        case hcnn::Activation::NONE:       return "none";
     }
+    return "tanh";
+}
+
+static const char* hcnn_pool_token(hcnn::PoolType t)
+{
+    return (t == hcnn::PoolType::AVG) ? "avg" : "max";
+}
+
+/// Strip a trailing known extension so callers may pass either a stem or a path.
+static std::string path_stem_normalized(std::string path)
+{
+    auto ends_with = [&](const char* ext) {
+        const size_t n = std::char_traits<char>::length(ext);
+        return path.size() >= n
+            && path.compare(path.size() - n, n, ext) == 0;
+    };
+    if (ends_with(".hcnw"))
+        path.resize(path.size() - 5);
+    else if (ends_with(".arch.json"))
+        path.resize(path.size() - 10);
+    return path;
+}
+
+static bool file_exists(const std::string& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    return static_cast<bool>(in);
+}
+
+/// Minimal JSON number/bool/string extractors for our fixed sidecar schema.
+static bool json_find_int(const std::string& s, const char* key, long long& out)
+{
+    const std::string pat = std::string("\"") + key + "\"";
+    size_t p = s.find(pat);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + pat.size());
+    if (p == std::string::npos) return false;
+    ++p;
+    while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+    try {
+        size_t idx = 0;
+        out = std::stoll(s.substr(p), &idx);
+        return idx > 0;
+    } catch (...) {
+        return false;
+    }
+}
+
+static bool json_find_bool(const std::string& s, const char* key, bool& out)
+{
+    const std::string pat = std::string("\"") + key + "\"";
+    size_t p = s.find(pat);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + pat.size());
+    if (p == std::string::npos) return false;
+    ++p;
+    while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+    if (s.compare(p, 4, "true") == 0) {
+        out = true;
+        return true;
+    }
+    if (s.compare(p, 5, "false") == 0) {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+static bool json_find_string(const std::string& s, const char* key, std::string& out)
+{
+    const std::string pat = std::string("\"") + key + "\"";
+    size_t p = s.find(pat);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + pat.size());
+    if (p == std::string::npos) return false;
+    p = s.find('"', p + 1);
+    if (p == std::string::npos) return false;
+    const size_t q = s.find('"', p + 1);
+    if (q == std::string::npos) return false;
+    out = s.substr(p + 1, q - p - 1);
+    return true;
+}
+
+void Readout::SaveHcnnModel(const std::string& path_stem) const
+{
+    assert(net_);
+    if (path_stem.empty())
+        throw std::invalid_argument("Readout::SaveHcnnModel: empty path_stem");
+
+    const std::string stem = path_stem_normalized(path_stem);
+    const std::string hcnw_path = stem + ".hcnw";
+    const std::string arch_path = stem + ".arch.json";
+
+    hcnn::save_weights(*net_, hcnw_path);
+
+    const auto layers = make_layer_specs(config_);
+    const auto sum = hcnn::summarize_arch(
+        static_cast<int>(config_.dim), config_.num_outputs, /*input_channels=*/1,
+        layers);
+
+    std::ofstream out(arch_path);
+    if (!out)
+        throw std::runtime_error(
+            "Readout::SaveHcnnModel: cannot open " + arch_path);
+
+    out << "{\n"
+        << "  \"format\": \"hypercube_esn_readout_arch\",\n"
+        << "  \"version\": " << kArchSidecarVersion << ",\n"
+        << "  \"start_dim\": " << config_.dim << ",\n"
+        << "  \"num_outputs\": " << config_.num_outputs << ",\n"
+        << "  \"input_channels\": 1,\n"
+        << "  \"task\": \""
+        << (config_.task == ReadoutTask::Classification ? "classification"
+                                                        : "regression")
+        << "\",\n"
+        << "  \"num_layers\": " << config_.num_layers << ",\n"
+        << "  \"use_pooling\": " << (config_.use_pooling ? "true" : "false")
+        << ",\n"
+        << "  \"pool_type\": \"" << pool_token(config_.pool_type) << "\",\n"
+        << "  \"conv_channels\": " << config_.conv_channels << ",\n"
+        << "  \"channel_growth\": " << config_.channel_growth << ",\n"
+        << "  \"use_batchnorm\": "
+        << (config_.use_batchnorm ? "true" : "false") << ",\n"
+        << "  \"optimizer\": \"" << optimizer_token(config_.optimizer)
+        << "\",\n"
+        << "  \"activation\": \"" << activation_token(config_.activation)
+        << "\",\n"
+        << "  \"weight_count\": " << net_->GetWeightCount() << ",\n"
+        << "  \"param_total\": " << sum.total << ",\n"
+        << "  \"layers\": [\n";
+
+    for (size_t i = 0; i < layers.size(); ++i) {
+        const auto& L = layers[i];
+        out << "    {";
+        if (L.kind == hcnn::LayerSpec::Kind::Conv) {
+            out << "\"kind\": \"conv\", \"c_out\": " << L.c_out
+                << ", \"activation\": \"" << hcnn_act_token(L.activation)
+                << "\", \"bias\": " << (L.use_bias ? "true" : "false")
+                << ", \"bn\": " << (L.use_bn ? "true" : "false");
+        } else {
+            out << "\"kind\": \"pool\", \"type\": \""
+                << hcnn_pool_token(L.pool_type) << "\"";
+        }
+        out << "}" << (i + 1 < layers.size() ? "," : "") << "\n";
+    }
+    out << "  ]\n"
+        << "}\n";
+    if (!out)
+        throw std::runtime_error(
+            "Readout::SaveHcnnModel: write failed for " + arch_path);
+}
+
+void Readout::LoadHcnnModel(const std::string& path_stem, ReadoutLoadMode mode)
+{
+    assert(net_);
+    if (path_stem.empty())
+        throw std::invalid_argument("Readout::LoadHcnnModel: empty path_stem");
+
+    const std::string stem = path_stem_normalized(path_stem);
+    const std::string hcnw_path = stem + ".hcnw";
+    const std::string arch_path = stem + ".arch.json";
+
+    if (!file_exists(hcnw_path))
+        throw std::runtime_error(
+            "Readout::LoadHcnnModel: missing " + hcnw_path);
+
+    // Validate arch sidecar against the live readout when present.
+    if (file_exists(arch_path)) {
+        std::ifstream in(arch_path);
+        if (!in)
+            throw std::runtime_error(
+                "Readout::LoadHcnnModel: cannot open " + arch_path);
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        const std::string text = ss.str();
+
+        std::string format;
+        if (!json_find_string(text, "format", format)
+            || format != "hypercube_esn_readout_arch") {
+            throw std::runtime_error(
+                "Readout::LoadHcnnModel: " + arch_path
+                + " is not a hypercube_esn_readout_arch sidecar");
+        }
+
+        long long version = 0;
+        if (!json_find_int(text, "version", version)
+            || version != kArchSidecarVersion) {
+            throw std::runtime_error(
+                "Readout::LoadHcnnModel: unsupported arch sidecar version in "
+                + arch_path + " (need " + std::to_string(kArchSidecarVersion)
+                + ")");
+        }
+
+        auto require_int = [&](const char* key, long long expect) {
+            long long v = 0;
+            if (!json_find_int(text, key, v) || v != expect) {
+                throw std::runtime_error(
+                    std::string("Readout::LoadHcnnModel: arch mismatch on '")
+                    + key + "' (file=" + std::to_string(v)
+                    + ", live=" + std::to_string(expect) + ")");
+            }
+        };
+        auto require_bool = [&](const char* key, bool expect) {
+            bool v = false;
+            if (!json_find_bool(text, key, v) || v != expect) {
+                throw std::runtime_error(
+                    std::string("Readout::LoadHcnnModel: arch mismatch on '")
+                    + key + "'");
+            }
+        };
+        auto require_str = [&](const char* key, const std::string& expect) {
+            std::string v;
+            if (!json_find_string(text, key, v) || v != expect) {
+                throw std::runtime_error(
+                    std::string("Readout::LoadHcnnModel: arch mismatch on '")
+                    + key + "' (file='" + v + "', live='" + expect + "')");
+            }
+        };
+
+        require_int("start_dim", static_cast<long long>(config_.dim));
+        require_int("num_outputs", config_.num_outputs);
+        require_int("input_channels", 1);
+        require_str("task",
+                    config_.task == ReadoutTask::Classification
+                        ? "classification"
+                        : "regression");
+        // num_layers 0 means auto in config — compare resolved layer count via
+        // weight_count / expanded stack rather than raw knob when 0.
+        if (config_.num_layers > 0)
+            require_int("num_layers", config_.num_layers);
+        require_bool("use_pooling", config_.use_pooling);
+        require_str("pool_type", pool_token(config_.pool_type));
+        require_int("conv_channels", config_.conv_channels);
+        require_int("channel_growth", config_.channel_growth);
+        require_bool("use_batchnorm", config_.use_batchnorm);
+        require_str("activation", activation_token(config_.activation));
+
+        long long file_wc = 0;
+        if (json_find_int(text, "weight_count", file_wc)
+            && static_cast<size_t>(file_wc) != net_->GetWeightCount()) {
+            throw std::runtime_error(
+                "Readout::LoadHcnnModel: weight_count mismatch (file="
+                + std::to_string(file_wc) + ", live="
+                + std::to_string(net_->GetWeightCount()) + ")");
+        }
+    }
+
+    const bool reset_moments = (mode == ReadoutLoadMode::ResumeTrain);
+    hcnn::load_weights(*net_, hcnw_path, reset_moments);
+}
+
+std::string Readout::ArchSummary() const
+{
+    assert(net_);
+    const auto layers = make_layer_specs(config_);
+    const auto sum = hcnn::summarize_arch(
+        static_cast<int>(config_.dim), config_.num_outputs, /*input_channels=*/1,
+        layers);
+    std::ostringstream os;
+    hcnn::print_arch(os, static_cast<int>(config_.dim), config_.num_outputs,
+                     /*input_channels=*/1, layers, sum);
+    os << "HCNN live weight_count: " << net_->GetWeightCount() << "\n";
+    return os.str();
 }

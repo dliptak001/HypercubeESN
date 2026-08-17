@@ -3,25 +3,46 @@
 
 #include "HCNNNetwork.h"
 #include "ThreadPool.h"
-#include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <stdexcept>
 #include <string>
 
 namespace hcnn {
 
+int HCNNNetwork::vertices_at_dim(int dim) {
+    // Signed 32-bit int holds 2^30; dim 31+ overflows or is shift-UB on 32-bit int.
+    if (dim < 0 || dim > 30) {
+        throw std::runtime_error(
+            "HCNNNetwork: dimension out of range for N=2^dim (need 0..30), got "
+            + std::to_string(dim));
+    }
+    return static_cast<int>(std::uint32_t{1} << dim);
+}
+
+void HCNNNetwork::invalidate_cached_buffers() {
+    step_buf_ready_ = false;
+    batch_bufs_ready = false;
+    infer_bufs_ready = false;
+}
+
 HCNNNetwork::HCNNNetwork(int dim, int num_outputs, int input_channels,
-                         TaskType task_type, LossType loss_type,
-                         size_t num_threads)
+                         TaskType task_type, size_t num_threads)
     : start_dim(dim), current_dim(dim), num_outputs(num_outputs),
       input_channels(input_channels),
-      task_type_(task_type), loss_type_(loss_type),
+      task_type_(task_type),
       readout(num_outputs, 1),
-      thread_pool(std::make_unique<ThreadPool>(num_threads)) {
-    if (dim < 3 || dim > 32) {
-        throw std::runtime_error("HCNNNetwork requires 3 <= start_dim <= 32");
+      // num_threads: 0 = auto pool, 1 = no background workers (caller-only),
+      // N > 1 = N background workers. Single-threaded mode avoids nested
+      // oversubscription when the host already parallelizes across networks.
+      thread_pool(num_threads == 1
+                      ? std::unique_ptr<ThreadPool>{}
+                      : std::make_unique<ThreadPool>(num_threads)) {
+    // Cap at 30 so N = 2^dim fits in signed 32-bit int (and shift is defined).
+    if (dim < 3 || dim > 30) {
+        throw std::runtime_error("HCNNNetwork requires 3 <= start_dim <= 30");
     }
     if (input_channels < 1) {
         throw std::runtime_error("HCNNNetwork requires input_channels >= 1");
@@ -29,25 +50,7 @@ HCNNNetwork::HCNNNetwork(int dim, int num_outputs, int input_channels,
     if (num_outputs < 1) {
         throw std::runtime_error("HCNNNetwork requires num_outputs >= 1");
     }
-    // Resolve LossType::Default to the natural pairing for the task.
-    if (loss_type_ == LossType::Default) {
-        loss_type_ = (task_type_ == TaskType::Classification)
-                        ? LossType::CrossEntropy
-                        : LossType::MSE;
-    }
-    // Validate loss / task compatibility.
-    if (task_type_ == TaskType::Classification &&
-        loss_type_ != LossType::CrossEntropy) {
-        throw std::runtime_error(
-            "HCNNNetwork: Classification task requires LossType::CrossEntropy "
-            "(or LossType::Default)");
-    }
-    if (task_type_ == TaskType::Regression &&
-        loss_type_ != LossType::MSE) {
-        throw std::runtime_error(
-            "HCNNNetwork: Regression task requires LossType::MSE "
-            "(or LossType::Default)");
-    }
+    // Loss is fixed by task: Classification → softmax CE, Regression → MSE.
     channel_counts.push_back(input_channels);
 }
 
@@ -58,10 +61,13 @@ void HCNNNetwork::add_conv(int c_out, Activation activation, bool use_bias,
     int c_in = channel_counts.back();
     conv_layers.emplace_back(current_dim, c_in, c_out, activation, use_bias, use_batchnorm);
     conv_layers.back().set_thread_pool(thread_pool.get());
+    conv_layers.back().set_optimizer(optimizer_type_, adam_beta1_, adam_beta2_,
+                                     adam_eps_);
     channel_counts.push_back(c_out);
     is_conv_layer.push_back(true);
-    batch_bufs_ready = false;
-    infer_bufs_ready = false;
+    // Head size / weight blob no longer match the stack until re-randomize.
+    weights_initialized_ = false;
+    invalidate_cached_buffers();
 }
 
 void HCNNNetwork::set_training(bool training) const {
@@ -70,38 +76,77 @@ void HCNNNetwork::set_training(bool training) const {
 
 void HCNNNetwork::set_optimizer(OptimizerType type, float beta1,
                                 float beta2, float eps) {
+    optimizer_type_ = type;
+    adam_beta1_ = beta1;
+    adam_beta2_ = beta2;
+    adam_eps_ = eps;
     for (auto& layer : conv_layers) layer.set_optimizer(type, beta1, beta2, eps);
     readout.set_optimizer(type, beta1, beta2, eps);
     adam_timestep_ = 0;
 }
 
+void HCNNNetwork::reset_optimizer_moments() {
+    for (auto& layer : conv_layers) layer.clear_optimizer_moments();
+    readout.clear_optimizer_moments();
+    adam_timestep_ = 0;
+}
+
 void HCNNNetwork::add_pool(PoolType type) {
+    // Leave at least dim 1 (N=2). Pooling at dim 0 is shift-UB in HCNNPool.
+    if (current_dim < 2) {
+        throw std::runtime_error(
+            "HCNNNetwork::add_pool: current_dim=" + std::to_string(current_dim)
+            + " < 2 (cannot pool further)");
+    }
     pool_layers.emplace_back(current_dim, type);
     pool_layers.back().set_thread_pool(thread_pool.get());
     current_dim -= 1;
     channel_counts.push_back(channel_counts.back());
     is_conv_layer.push_back(false);
-    batch_bufs_ready = false;
-    infer_bufs_ready = false;
+    // Head size / weight blob no longer match the stack until re-randomize.
+    weights_initialized_ = false;
+    invalidate_cached_buffers();
 }
 
-void HCNNNetwork::randomize_all_weights(float scale, unsigned seed) {
+void HCNNNetwork::randomize_all_weights(float scale, uint64_t seed) {
     int final_channels = channel_counts.back();
-    int final_N = 1 << current_dim;
+    int final_N = vertices_at_dim(current_dim);
 
+    // Preserve A/B grad_in loop; rebuild head to full FLATTEN size.
+    const ReadoutGradInLoop gin_loop = readout.get_grad_in_loop();
     readout = HCNNReadout(num_outputs, final_channels * final_N);
+    readout.set_grad_in_loop(gin_loop);
+    // Re-apply optimizer (fresh HCNNReadout has its own default moments).
+    readout.set_optimizer(optimizer_type_, adam_beta1_, adam_beta2_, adam_eps_);
 
-    std::mt19937 rng(seed);
+    // Full 64-bit master seed → mt19937. Low-half-only seeds (historical
+    // unsigned API) keep the single-arg constructor so bit-identical inits
+    // are preserved. Wider seeds expand both halves via seed_seq (high bits
+    // are no longer silently dropped).
+    std::mt19937 rng = [&]() {
+        if ((seed >> 32) == 0ull) {
+            return std::mt19937(
+                static_cast<std::mt19937::result_type>(seed));
+        }
+        const std::uint32_t lo = static_cast<std::uint32_t>(seed);
+        const std::uint32_t hi = static_cast<std::uint32_t>(seed >> 32);
+        std::seed_seq seq{lo, hi};
+        return std::mt19937(seq);
+    }();
     for (auto& layer : conv_layers) {
         layer.randomize_weights(scale, rng);
     }
     readout.randomize_weights(scale, rng);
     adam_timestep_ = 0;
+    // Head size (and any prior PrepareBuffers) may have been wrong before
+    // randomize; drop caches so next train/infer reallocates to match.
+    invalidate_cached_buffers();
+    weights_initialized_ = true;
 }
 
 void HCNNNetwork::embed_input(const float* raw_input, int input_length,
                               float* out) const {
-    int N = 1 << start_dim;
+    int N = vertices_at_dim(start_dim);
     int total = input_channels * N;
     if (input_length > total) {
         throw std::runtime_error("Input length exceeds capacity ("
@@ -117,6 +162,11 @@ void HCNNNetwork::embed_input(const float* raw_input, int input_length,
 }
 
 void HCNNNetwork::forward(const float* first_layer_activations, float* logits) const {
+    if (!weights_initialized_) {
+        throw std::logic_error(
+            "HCNNNetwork::forward: call randomize_all_weights() first "
+            "(required after construct or after add_conv/add_pool)");
+    }
     if (conv_layers.empty()) {
         throw std::runtime_error("HCNNNetwork::forward called with no conv layers");
     }
@@ -128,7 +178,7 @@ void HCNNNetwork::forward(const float* first_layer_activations, float* logits) c
     EvalModeGuard eval_guard(conv_layers);
 
     // Compute max buffer size across all layers (including multi-channel input)
-    int cur_N = 1 << start_dim;
+    int cur_N = vertices_at_dim(start_dim);
     int max_size = input_channels * cur_N;
     size_t ci = 0, pi = 0;
     for (size_t i = 0; i < is_conv_layer.size(); ++i) {
@@ -145,12 +195,11 @@ void HCNNNetwork::forward(const float* first_layer_activations, float* logits) c
     if (static_cast<int>(fwd_buf1_.size()) < max_size) {
         fwd_buf1_.resize(max_size);
         fwd_buf2_.resize(max_size);
-        fwd_readout_avg_.resize(readout.get_input_channels());
     }
     float* current  = fwd_buf1_.data();
     float* next_buf = fwd_buf2_.data();
 
-    cur_N = 1 << start_dim;
+    cur_N = vertices_at_dim(start_dim);
     int input_size = input_channels * cur_N;
     for (int i = 0; i < input_size; ++i) current[i] = first_layer_activations[i];
 
@@ -168,13 +217,15 @@ void HCNNNetwork::forward(const float* first_layer_activations, float* logits) c
         std::swap(current, next_buf);
     }
 
-    readout.forward(current, logits, 1, fwd_readout_avg_.data());
+    // Final map is channel-major [c * N + v]; FLATTEN treats that buffer as
+    // a flat feature vector of length c_final * N_final.
+    readout.forward(current, logits);
 }
 
 void HCNNNetwork::prepare_inference_buffers() {
     if (infer_bufs_ready) return;
 
-    int N = 1 << start_dim;
+    int N = vertices_at_dim(start_dim);
     int total = input_channels * N;
     size_t nt = thread_pool ? thread_pool->NumThreads() : 1;
 
@@ -203,6 +254,14 @@ void HCNNNetwork::prepare_inference_buffers() {
 
 void HCNNNetwork::forward_batch(const float* flat_inputs, int input_length,
                                 int batch_size, float* logits_out) {
+    if (!weights_initialized_) {
+        throw std::logic_error(
+            "HCNNNetwork::forward_batch: call randomize_all_weights() first "
+            "(required after construct or after add_conv/add_pool)");
+    }
+    if (conv_layers.empty()) {
+        throw std::runtime_error("HCNNNetwork::forward_batch called with no conv layers");
+    }
     if (batch_size <= 0) {
         throw std::invalid_argument("HCNNNetwork::forward_batch: batch_size must be > 0");
     }
@@ -211,7 +270,7 @@ void HCNNNetwork::forward_batch(const float* flat_inputs, int input_length,
     // Inference: force BN eval mode and restore on exit (see forward()).
     EvalModeGuard eval_guard(conv_layers);
 
-    int total = input_channels * (1 << start_dim);
+    int total = input_channels * vertices_at_dim(start_dim);
     int K = num_outputs;
 
     auto process_one = [&](size_t tid, int s) {
@@ -234,7 +293,7 @@ void HCNNNetwork::forward_batch(const float* flat_inputs, int input_length,
             }
             std::swap(current, next_buf);
         }
-        readout.forward(current, logits_out + s * K, 1);
+        readout.forward(current, logits_out + s * K);
     };
 
     if (thread_pool && batch_size > 1) {
@@ -281,15 +340,12 @@ void HCNNNetwork::prepare_all_buffers() {
     prepare_inference_buffers();
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // Lazily allocate persistent per-thread buffers on first train_batch call.
 // Subsequent calls reuse the same memory — only accumulators are zeroed.
-// ---------------------------------------------------------------------------
 void HCNNNetwork::prepare_batch_buffers() {
     if (batch_bufs_ready) return;
 
-    int N = 1 << start_dim;
+    int N = vertices_at_dim(start_dim);
     int num_layers = static_cast<int>(is_conv_layer.size());
     size_t num_conv = conv_layers.size();
     size_t nt = thread_pool ? thread_pool->NumThreads() : 1;
@@ -370,9 +426,8 @@ void HCNNNetwork::prepare_batch_buffers() {
             b.bn_bg[ci].resize(conv_layers[ci].get_bn_grad_size());
             b.bn_save[ci].resize(conv_layers[ci].get_bn_save_size());
         }
-        // Work buffers for compute_gradients (avoid per-call heap allocs)
-        b.conv_work.resize(max_layer_size); // HCNNConv needs c_out*N, max_layer_size >= that
-        b.readout_work.resize(readout.get_input_channels());
+        // Work buffer for HCNNConv::compute_gradients (avoid per-call heap allocs)
+        b.conv_work.resize(max_layer_size); // c_out*N, max_layer_size >= that
     }
 
     batch_bufs_ready = true;
@@ -421,17 +476,10 @@ void HCNNNetwork::train_batch(const float* flat_inputs, int input_length,
 }
 
 // ---------------------------------------------------------------------------
-//  Loss-gradient helpers
+//  Loss-gradient helpers (task-fixed: CE or MSE)
 // ---------------------------------------------------------------------------
 //
-// Both helpers compute dL/d(logits) for a single sample.  They are
-// dispatched on loss_type_ so future loss functions (Huber, L1, focal, ...)
-// can be added by extending the switch with a new case — no changes to
-// train_step / train_batch or the regression counterparts.
-//
-// The readout layer itself is loss-agnostic — it consumes grad_logits as
-// an input and updates weights accordingly, so all loss semantics live
-// here and nowhere else.
+// The readout is loss-agnostic; all loss semantics live here.
 // ---------------------------------------------------------------------------
 
 void HCNNNetwork::compute_classification_grad(const float* logits,
@@ -443,36 +491,29 @@ void HCNNNetwork::compute_classification_grad(const float* logits,
         throw std::logic_error("compute_classification_grad: called on a "
                                "Regression task");
     }
-    switch (loss_type_) {
-    case LossType::CrossEntropy: {
-        // softmax: p[i] = exp(logits[i] - max) / sum(exp(logits[j] - max))
-        // cross-entropy loss: L = -log(p[target_class])
-        // gradient: dL/d(logits[i]) = p[i] - (i == target_class ? 1 : 0)
-        float max_logit = logits[0];
-        for (int i = 1; i < num_outputs; ++i) {
-            if (logits[i] > max_logit) max_logit = logits[i];
-        }
-        float sum_exp = 0.0f;
-        for (int i = 0; i < num_outputs; ++i) {
-            probs_scratch[i] = std::exp(logits[i] - max_logit);
-            sum_exp += probs_scratch[i];
-        }
+    // Softmax + cross-entropy:
+    //   p[i] = exp(logits[i] - max) / sum(exp(...))
+    //   dL/d(logits[i]) = p[i] - 1[i == target]
+    float max_logit = logits[0];
+    for (int i = 1; i < num_outputs; ++i) {
+        if (logits[i] > max_logit) max_logit = logits[i];
+    }
+    float sum_exp = 0.0f;
+    for (int i = 0; i < num_outputs; ++i) {
+        probs_scratch[i] = std::exp(logits[i] - max_logit);
+        sum_exp += probs_scratch[i];
+    }
+    // Pathological all-underflow: fall back to uniform (avoid 0/0).
+    if (!(sum_exp > 0.0f)) {
+        const float inv_k = 1.0f / static_cast<float>(num_outputs);
+        for (int i = 0; i < num_outputs; ++i) probs_scratch[i] = inv_k;
+    } else {
         for (int i = 0; i < num_outputs; ++i) probs_scratch[i] /= sum_exp;
-        for (int i = 0; i < num_outputs; ++i) {
-            grad_logits_out[i] = class_weight *
-                (probs_scratch[i] - (i == target_class ? 1.0f : 0.0f));
-        }
-        return;
     }
-    case LossType::MSE:
-    case LossType::Default:
-        // Default is resolved in the constructor, so reaching it here is
-        // a programmer error (loss_type_ was left in Default state).  MSE
-        // on a classification task is rejected in the constructor.
-        throw std::logic_error("compute_classification_grad: invalid "
-                               "loss_type_ for classification task");
+    for (int i = 0; i < num_outputs; ++i) {
+        grad_logits_out[i] = class_weight *
+            (probs_scratch[i] - (i == target_class ? 1.0f : 0.0f));
     }
-    throw std::logic_error("compute_classification_grad: unknown loss_type_");
 }
 
 void HCNNNetwork::compute_regression_grad(const float* logits,
@@ -482,28 +523,11 @@ void HCNNNetwork::compute_regression_grad(const float* logits,
         throw std::logic_error("compute_regression_grad: called on a "
                                "Classification task");
     }
-    switch (loss_type_) {
-    case LossType::MSE: {
-        // MSE loss: L = (1 / num_outputs) * sum_i (pred[i] - target[i])^2
-        // gradient: dL/d(pred[i]) = (2 / num_outputs) * (pred[i] - target[i])
-        //
-        // The 2/num_outputs scale is absorbed by the learning rate in
-        // practice — what matters is the direction of the gradient, and
-        // the relative magnitudes across outputs.  Use (pred - target)
-        // directly, matching PyTorch's reduction='sum' convention for a
-        // single sample.  Callers choose a learning rate consistent with
-        // this scale.
-        for (int i = 0; i < num_outputs; ++i) {
-            grad_logits_out[i] = logits[i] - target[i];
-        }
-        return;
+    // Sum-style MSE for one sample: dL/d(pred[i]) = pred[i] - target[i]
+    // (LR absorbs the usual 2/K mean-MSE scale).
+    for (int i = 0; i < num_outputs; ++i) {
+        grad_logits_out[i] = logits[i] - target[i];
     }
-    case LossType::CrossEntropy:
-    case LossType::Default:
-        throw std::logic_error("compute_regression_grad: invalid "
-                               "loss_type_ for regression task");
-    }
-    throw std::logic_error("compute_regression_grad: unknown loss_type_");
 }
 
 // ---------------------------------------------------------------------------
@@ -562,7 +586,7 @@ void HCNNNetwork::train_batch_regression(const float* flat_inputs,
 void HCNNNetwork::prepare_step_buffers() {
     if (step_buf_ready_) return;
 
-    const int N = 1 << start_dim;
+    const int N = vertices_at_dim(start_dim);
     const int total = input_channels * N;
     const int num_layers = static_cast<int>(is_conv_layer.size());
 
@@ -606,7 +630,6 @@ void HCNNNetwork::prepare_step_buffers() {
     step_buf_.logits.resize(num_outputs);
     step_buf_.probs.resize(num_outputs);
     step_buf_.grad_logits.resize(num_outputs);
-    step_buf_.readout_avg.resize(readout.get_input_channels());
     step_buf_.grad_a.resize(max_act_size);
     step_buf_.grad_b.resize(max_act_size);
 
@@ -617,6 +640,11 @@ void HCNNNetwork::train_step_impl(const float* raw_input, int input_length,
                                   const LossGradStepFn& loss_grad,
                                   float learning_rate, float momentum,
                                   float weight_decay) {
+    if (!weights_initialized_) {
+        throw std::logic_error(
+            "HCNNNetwork::train_step: call randomize_all_weights() first "
+            "(required after construct or after add_conv/add_pool)");
+    }
     if (conv_layers.empty()) {
         throw std::runtime_error("HCNNNetwork::train_step_impl called with no conv layers");
     }
@@ -654,8 +682,7 @@ void HCNNNetwork::train_step_impl(const float* raw_input, int input_length,
 
     std::fill(step_buf_.logits.begin(), step_buf_.logits.end(), 0.0f);
     readout.forward(cache[num_layers].activation.data(),
-                    step_buf_.logits.data(), 1,
-                    step_buf_.readout_avg.data());
+                    step_buf_.logits.data());
 
     loss_grad(step_buf_.logits.data(), step_buf_.grad_logits.data(),
               step_buf_.probs.data());
@@ -664,9 +691,8 @@ void HCNNNetwork::train_step_impl(const float* raw_input, int input_length,
     std::fill(step_buf_.grad_a.begin(), step_buf_.grad_a.begin() + final_sz, 0.0f);
     readout.backward(step_buf_.grad_logits.data(),
                      cache[num_layers].activation.data(),
-                     1, step_buf_.grad_a.data(), learning_rate, momentum,
-                     weight_decay, adam_timestep_,
-                     step_buf_.readout_avg.data());
+                     step_buf_.grad_a.data(), learning_rate, momentum,
+                     weight_decay, adam_timestep_);
 
     ci = conv_layers.size();
     pi = pool_layers.size();
@@ -705,6 +731,11 @@ void HCNNNetwork::train_batch_impl(const float* flat_inputs, int input_length,
                                    const LossGradBatchFn& loss_grad,
                                    float learning_rate, float momentum,
                                    float weight_decay) {
+    if (!weights_initialized_) {
+        throw std::logic_error(
+            "HCNNNetwork::train_batch: call randomize_all_weights() first "
+            "(required after construct or after add_conv/add_pool)");
+    }
     if (conv_layers.empty()) {
         throw std::runtime_error("HCNNNetwork::train_batch_impl called with no conv layers");
     }
@@ -765,8 +796,7 @@ void HCNNNetwork::train_batch_impl(const float* flat_inputs, int input_length,
         // Readout forward
         auto& final_c = b.cache[num_layers];
         std::fill(b.logits.begin(), b.logits.end(), 0.0f);
-        readout.forward(final_c.activation.data(), b.logits.data(), 1,
-                        b.readout_work.data());
+        readout.forward(final_c.activation.data(), b.logits.data());
 
         // Loss gradient (provided by caller).  b.probs is per-thread scratch
         // for classification softmax; regression callbacks ignore it.
@@ -776,9 +806,8 @@ void HCNNNetwork::train_batch_impl(const float* flat_inputs, int input_length,
         int final_size = layer_info_[num_layers].channels * layer_info_[num_layers].N;
         std::fill(b.grad_a.begin(), b.grad_a.begin() + final_size, 0.0f);
         readout.compute_gradients(b.grad_logits.data(), final_c.activation.data(),
-                                  1, b.grad_a.data(),
-                                  b.rw_grad.data(), b.rb_grad.data(),
-                                  b.readout_work.data());
+                                  b.grad_a.data(),
+                                  b.rw_grad.data(), b.rb_grad.data());
 
         for (int i = 0; i < readout.get_weight_size(); ++i)
             a.readout_weight_grad[i] += b.rw_grad[i];

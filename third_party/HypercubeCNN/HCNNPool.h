@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "HCNNTypes.h"
+
 #include <vector>
 #include <cstdint>
 
@@ -10,31 +12,20 @@ namespace hcnn {
 
 class ThreadPool;
 
-enum class PoolType { MAX, AVG };
-
 /**
  * @class HCNNPool
- * @brief Antipodal pooling layer.  Pairs each vertex `v` with its bitwise
- *        complement `v ^ (2^DIM - 1)` -- the maximally distant vertex on the
- *        hypercube -- and reduces DIM by 1.
+ * @brief Antipodal pooling layer — private implementation.
  *
- * Reduction is exact: the lower-half vertex survives, the output is a
- * perfect (DIM-1)-dimensional sub-hypercube with N/2 vertices.  No
- * interpolation, no border handling, no overlap.
+ * Not installed.  Use `HCNN::AddPool` from application code.  In-tree tests
+ * may include this header.
  *
- * Two reductions:
- *   - PoolType::MAX -- keep the larger of the pair (and remember which one
- *                      survived for the backward pass).
- *   - PoolType::AVG -- arithmetic mean of the pair.
- *
- * Stateless apart from the configured input dimension and reduction type;
- * carries no learnable parameters.  Forward writes max indices into a
- * caller-provided vector when MAX pooling needs them for backward.
- *
- * Power-user class: ordinary SDK consumers should use HCNN.
+ * Pairs each vertex `v` with its complement `v ^ (2^DIM - 1)` and reduces
+ * DIM by 1 (MAX or AVG).  Stateless — no learnable parameters.
  */
 class HCNNPool {
 public:
+    /// @param input_dim  Hypercube dim before pool; requires 2 <= dim <= 30
+    ///                   (N = 2^dim fits in signed 32-bit int; leaves dim >= 1).
     HCNNPool(int input_dim, PoolType type = PoolType::MAX);
 
     void forward(const float* in, float* out, int num_channels,
@@ -48,6 +39,7 @@ public:
     int get_input_N() const { return input_N; }
     int get_output_N() const { return output_N; }
 
+    /// Non-owning; pool must outlive any ForEach that uses it.
     void set_thread_pool(ThreadPool* tp) { thread_pool = tp; }
 
 private:

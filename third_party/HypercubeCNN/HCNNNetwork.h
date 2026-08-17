@@ -3,6 +3,18 @@
 
 #pragma once
 
+// =============================================================================
+// PRIVATE IMPLEMENTATION — not part of the installed SDK.
+//
+// Boundary policy:
+//   1. This header (and Conv/Pool/Readout/ThreadPool) is never installed.
+//      Only HCNN.cpp and in-tree tests include it.
+//   2. Not a second public API.  Apps use hcnn::HCNN only.
+//   3. User-facing features land on HCNN first; this class gains only what
+//      the facade needs (no parallel public knobs).
+// =============================================================================
+
+#include "HCNNTypes.h"
 #include "HCNNConv.h"
 #include "HCNNPool.h"
 #include "HCNNReadout.h"
@@ -14,79 +26,29 @@
 namespace hcnn {
 
 class ThreadPool;
-
-/// Task the network is being trained for.  Controls the training API
-/// shape (integer class targets vs. float regression targets), the
-/// interpretation of raw readout outputs, and — unless overridden via
-/// `LossType` — the default loss function.
-///
-/// - `Classification`: raw readout outputs are logits, trained through
-///   softmax + cross-entropy loss.  Use `train_step` / `train_batch` /
-///   `TrainEpoch` with integer class targets.
-/// - `Regression`: raw readout outputs are real-valued predictions,
-///   trained through MSE loss (by default).  Use
-///   `train_step_regression` / `train_batch_regression` /
-///   `TrainEpochRegression` with `const float*` targets of length
-///   `num_outputs`.
-enum class TaskType { Classification, Regression };
-
-/// Loss function used by training.
-///
-/// - `Default`: infer from `TaskType` — CrossEntropy for Classification,
-///   MSE for Regression.  This is the normal path.
-/// - `CrossEntropy`: softmax + cross-entropy.  Only valid when
-///   `TaskType == Classification`.
-/// - `MSE`: mean squared error.  Only valid when
-///   `TaskType == Regression`.
-///
-/// Additional loss functions (Huber, L1, ...) will slot in here as
-/// future enum values with no API break — the gradient dispatch in
-/// `HCNNNetwork::compute_classification_grad` and
-/// `HCNNNetwork::compute_regression_grad` is designed to accommodate
-/// them with a single case statement.
-enum class LossType { Default, CrossEntropy, MSE };
+class HCNN;  // sole public owner (PIMPL)
 
 /**
  * @class HCNNNetwork
- * @brief Internal pipeline orchestrator: input embedding → conv/pool stack
- *        → readout, plus the inference, training, and batch-dispatch logic
- *        that drives them.
+ * @brief Private pipeline orchestrator owned by `HCNN` (PIMPL).
  *
- * Wrapped by `HCNN` (the canonical SDK front door).  Most consumers should
- * use `HCNN`; this class is re-exported for power users who need direct
- * weight access (e.g. for serialization or gradient checking) or who want
- * to bypass the wrapper for custom training loops.
+ * Not installed.  Not for application code.  In-tree tests may include this
+ * header to exercise lifecycle / layer contracts.
  *
- * Owns:
- *   - `vector<HCNNConv>` and `vector<HCNNPool>` interleaved per `is_conv_layer`
- *   - `HCNNReadout` (sized lazily by `randomize_all_weights` based on
- *     readout type and final layer geometry)
- *   - A `ThreadPool` shared across all layers
- *   - Persistent per-thread inference buffers (`ibufs_`)
- *   - Persistent per-thread training buffers and gradient accumulators
- *     (`tbufs_`, `accum_`), allocated lazily on first `train_batch`
- *   - Persistent ping-pong scratch (`fwd_buf1_` / `fwd_buf2_`) used by
- *     single-sample `forward()`
- *
- * Threading: three strategies coexist but never nest.  `train_batch` and
- * `forward_batch` parallelize across samples; `HCNNConv::forward` /
- * `backward` parallelize across vertices when DIM is large enough.  The
- * RAII `LayerThreadGuard` disables per-layer vertex threading during batch
- * dispatch to keep the non-reentrant ThreadPool safe.  The RAII
- * `BNStatsGuard` suppresses per-sample running-stats EMA updates during
- * batch-parallel forward passes (race-free reduction happens after).  The
- * RAII `EvalModeGuard` makes `forward()` / `forward_batch()` observably
- * const w.r.t. batch-norm training state.
- *
- * Non-copyable, non-movable -- the owned ThreadPool has live worker
- * threads.
+ * Owns conv/pool stacks, FLATTEN readout, ThreadPool, and train/infer scratch.
+ * Non-copyable, non-movable (live worker threads).  Instance is exclusive-use:
+ * host must not call concurrently on the same network.
  */
 class HCNNNetwork {
+    friend class HCNN;
+
 public:
+    /// @param num_threads 0 = auto pool, 1 = single-threaded (no workers),
+    ///        N > 1 = N background workers. See HCNN constructor.
+    /// @param start_dim Hypercube dimension in [3, 30] (N = 2^dim fits in int).
     HCNNNetwork(int start_dim, int num_outputs = 10,
                 int input_channels = 1,
                 TaskType task_type = TaskType::Classification,
-                LossType loss_type = LossType::Default,
                 size_t num_threads = 0);
     ~HCNNNetwork();
 
@@ -95,29 +57,34 @@ public:
     HCNNNetwork(HCNNNetwork&&) = delete;
     HCNNNetwork& operator=(HCNNNetwork&&) = delete;
 
+    /// Clears weights_initialized_ (call randomize_all_weights before train/infer).
     void add_conv(int c_out, Activation activation = Activation::RELU,
                   bool use_bias = true, bool use_batchnorm = false);
+    /// Antipodal pool; requires current_dim >= 2.  Clears weights_initialized_.
     void add_pool(PoolType type = PoolType::MAX);
 
     /// Set training mode (true) or eval mode (false) for all layers with BN.
     void set_training(bool training) const;
 
-    /// Configure the optimizer for all layers. Resets timestep.
+    /// Configure the optimizer for all layers (and any layers added later).
+    /// Resets the global Adam timestep. Survives randomize_all_weights.
     void set_optimizer(OptimizerType type, float beta1 = 0.9f,
                        float beta2 = 0.999f, float eps = 1e-8f);
 
     /// Initialize all weights.  scale > 0: uniform [-scale, +scale].
     /// scale <= 0 (default): Xavier/Glorot uniform per layer.
-    void randomize_all_weights(float scale = 0.0f, unsigned seed = 42);
+    /// Rebuilds the FLATTEN readout to c_final * N_final; preserves
+    /// optimizer + grad_in loop; invalidates cached work buffers.
+    /// Initialize weights from a full 64-bit master seed.
+    /// Seeds with high half zero keep the historical mt19937(seed32) path.
+    void randomize_all_weights(float scale = 0.0f, uint64_t seed = 42);
 
     void embed_input(const float* raw_input, int input_length,
                      float* first_layer_activations) const;
 
-    /// Single-sample forward pass.  Reads existing batch-norm mode (caller's
-    /// responsibility to call set_training(false) before inference).  Reuses
-    /// persistent ping-pong scratch buffers — no per-call allocation in steady
-    /// state.  Not thread-safe with respect to other forward() / train_step()
-    /// calls on the same network (the persistent scratch is shared).
+    /// Single-sample forward pass.  Reuses persistent ping-pong scratch —
+    /// no per-call allocation in steady state.  Not safe concurrent with
+    /// other forward() / train_* on the same instance.
     void forward(const float* first_layer_activations, float* logits) const;
 
     /// Batch inference: embed + forward for multiple samples in parallel.
@@ -133,8 +100,9 @@ public:
                     float weight_decay = 0.0f,
                     const float* class_weights = nullptr);
 
-    /// Mini-batch training: process batch_size samples in parallel, average
-    /// gradients, then apply a single weight update. Requires ThreadPool.
+    /// Mini-batch training: process batch_size samples in parallel (when a
+    /// ThreadPool is present and batch_size > 1), average gradients, then
+    /// apply a single weight update.  Serial path if no pool or batch_size==1.
     /// `flat_inputs` is `batch_size * input_length` contiguous floats.
     /// class_weights: optional per-class loss scaling (length num_outputs).
     /// Classification only — throws std::logic_error if task_type_ is
@@ -163,11 +131,18 @@ public:
                                 float weight_decay = 0.0f);
 
     int get_start_dim() const { return start_dim; }
-    int get_start_N() const { return 1 << start_dim; }
+    int get_start_N() const { return vertices_at_dim(start_dim); }
+    int get_current_dim() const { return current_dim; }
     int get_input_channels() const { return input_channels; }
     int get_num_outputs() const { return num_outputs; }
     TaskType get_task_type() const { return task_type_; }
-    LossType get_loss_type() const { return loss_type_; }
+    OptimizerType get_optimizer_type() const { return optimizer_type_; }
+
+    /// Zero all layer optimizer moments and reset the Adam timestep to 0.
+    void reset_optimizer_moments();
+
+    /// True after a successful randomize_all_weights (full FLATTEN head sized).
+    bool weights_initialized() const { return weights_initialized_; }
 
     HCNNConv& get_conv(size_t i) { return conv_layers[i]; }
     const HCNNConv& get_conv(size_t i) const { return conv_layers[i]; }
@@ -180,16 +155,25 @@ public:
 
     /// Eagerly allocate all internal work buffers (single-step, batch,
     /// inference).  Each is idempotent — safe to call multiple times.
+    /// Prefer calling after randomize_all_weights so readout-sized buffers match.
     void prepare_all_buffers();
 
 private:
+    /// N = 2^dim for dim in [0, 30] (fits in signed 32-bit int).
+    static int vertices_at_dim(int dim);
+
+    /// Drop lazy step/batch/inference buffer caches (arch or head changed).
+    void invalidate_cached_buffers();
+
     int start_dim;
     int current_dim;
     int num_outputs;
     int input_channels;
     TaskType task_type_;
-    LossType loss_type_;
     int adam_timestep_{0};     // Global optimizer timestep (incremented per train_step/train_batch)
+    OptimizerType optimizer_type_ = OptimizerType::ADAM;
+    float adam_beta1_ = 0.9f, adam_beta2_ = 0.999f, adam_eps_ = 1e-8f;
+    bool weights_initialized_{false};  // true after randomize_all_weights
     std::vector<HCNNConv> conv_layers;
     std::vector<HCNNPool> pool_layers;
     std::vector<bool> is_conv_layer;
@@ -225,7 +209,6 @@ private:
         std::vector<std::vector<float>> bn_gg, bn_bg;  // per-conv BN gamma/beta grads
         std::vector<std::vector<float>> bn_save;        // per-conv BN inv_std cache
         std::vector<float> conv_work;     // work buf for HCNNConv::compute_gradients
-        std::vector<float> readout_work;  // work buf for HCNNReadout::compute_gradients
     };
 
     bool batch_bufs_ready{false};
@@ -272,23 +255,15 @@ private:
                           float learning_rate, float momentum,
                           float weight_decay);
 
-    // Compute dL/d(logits) for a single sample under a classification loss.
-    // `probs_scratch` must point to at least `num_outputs` floats and
-    // receives the softmax of `logits` as a side effect (callers that
-    // care about the softmax, e.g. for loss reporting, can read it).
-    // Dispatches internally on `loss_type_` so future classification
-    // losses (e.g. focal loss) can slot in with no caller change.
-    // Throws std::logic_error if called on a Regression task.
+    // Softmax CE: dL/d(logits).  `probs_scratch` receives softmax as a side
+    // effect.  Throws if task is not Classification.
     void compute_classification_grad(const float* logits, int target_class,
                                      float class_weight,
                                      float* probs_scratch,
                                      float* grad_logits_out) const;
 
-    // Compute dL/d(logits) for a single sample under a regression loss.
-    // `target` is a pointer to `num_outputs` real-valued targets.
-    // Dispatches internally on `loss_type_` so future regression losses
-    // (Huber, L1, ...) can slot in with no caller change.  Throws
-    // std::logic_error if called on a Classification task.
+    // Sum-style MSE: dL/d(pred[i]) = pred[i] - target[i].  Throws if task
+    // is not Regression.
     void compute_regression_grad(const float* logits, const float* target,
                                  float* grad_logits_out) const;
 
@@ -307,7 +282,6 @@ private:
     // layer in the network and reused across calls.
     mutable std::vector<float> fwd_buf1_;
     mutable std::vector<float> fwd_buf2_;
-    mutable std::vector<float> fwd_readout_avg_;
 
     // --- Persistent single-step training buffers (allocated once, reused every train_step) ---
     struct StepCache {
@@ -323,7 +297,6 @@ private:
         std::vector<int> layer_ch;
         std::vector<float> logits, probs, grad_logits;
         std::vector<float> grad_a, grad_b;
-        std::vector<float> readout_avg;
     };
     bool step_buf_ready_{false};
     StepBuf step_buf_;

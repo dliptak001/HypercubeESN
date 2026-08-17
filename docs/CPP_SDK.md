@@ -1,32 +1,44 @@
 # HypercubeESN C++ SDK
 
-Static C++ library for reservoir computing on Boolean hypercube graphs.
+Static C++ library for reservoir computing on Boolean hypercube graphs: a fixed
+`Reservoir` plus a trainable HypercubeCNN `Readout`, wrapped by `ESN`.
+
+**Package version 2.0.0** (`project(HypercubeESN VERSION 2.0.0)`). Breaking
+changes and migration: [CHANGELOG.md](../CHANGELOG.md).
+
+Deep dives: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md).
+
+**House defaults (2.0):** match `ReservoirConfig` / `ReadoutConfig` in headers —
+`verbose = false`, `spectral_radius = 0.999`, `input_scaling = 0.02`,
+`bias_scaling = 0.003`, `num_layers = 1` (`0` = auto), `readout_slices = 1`,
+external feedback off (`D = 0`).
 
 ## Contents
 
 - [What's in the SDK](#whats-in-the-sdk)
 - [Building from source](#building-from-source)
 - [Using the SDK](#using-the-sdk)
-  - [CMake FetchContent (recommended)](#cmake-fetchcontent-recommended)
-  - [Installed SDK (find_package)](#installed-sdk-find_package)
+- [Pipeline vocabulary](#pipeline-vocabulary)
 - [API Reference](#api-reference)
   - [Hypercube dimension: dim](#hypercube-dimension-dim)
   - [Enums](#enums)
   - [ReservoirConfig](#reservoirconfig)
   - [ReadoutConfig](#readoutconfig)
+  - [ESNConfig](#esnconfig)
   - [ESN](#esn)
+  - [Standalone Reservoir and Readout](#standalone-reservoir-and-readout)
 - [Dependencies](#dependencies)
 
 ## What's in the SDK
 
-After installation, the SDK contains:
+After installation:
 
 ```
 <prefix>/
   include/HypercubeESN/
-    ESN.h              -- The public API (the only header consumers include)
-    Reservoir.h        -- Internal: included by ESN.h
-    Readout.h      -- Transitive: types used by the ESN API (ReadoutConfig, ReadoutTask)
+    ESN.h              -- public API (the only header consumers need)
+    Reservoir.h        -- included by ESN.h
+    Readout.h          -- types used by the ESN API (ReadoutConfig, enums)
   lib/
     libHypercubeESNCore.a
   lib/cmake/HypercubeESN/
@@ -35,13 +47,18 @@ After installation, the SDK contains:
     HypercubeESNConfigVersion.cmake
 ```
 
-Consumers include `<HypercubeESN/ESN.h>` (installed SDK) or `"ESN.h"` (FetchContent) and link against `HypercubeESN::HypercubeESNCore`. The other headers are present because ESN.h includes them; there is no need to include them directly, but their public types (`ReadoutConfig`, `ReadoutTask`) are part of the API surface.
+Include `<HypercubeESN/ESN.h>` (installed) or `"ESN.h"` (FetchContent) and link
+`HypercubeESN::HypercubeESNCore` (or `HypercubeESNCore` in FetchContent builds).
+`Reservoir.h` / `Readout.h` come along transitively; their public types are part
+of the API surface.
 
-The SDK depends on a second static library — **HypercubeCNN** — that provides the convolutional readout. It is vendored in-tree at `third_party/HypercubeCNN`, so no sibling checkout or network fetch is needed. HypercubeESNCore transitively links to it, so consumers don't need to reference it explicitly. See [Dependencies](#dependencies).
+The convolutional readout comes from **HypercubeCNN**, vendored at
+`third_party/HypercubeCNN`. HypercubeESNCore links it transitively — consumers
+do not name it. See [Dependencies](#dependencies).
 
 ## Building from source
 
-Requirements: C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+), CMake 4.1+.
+Requirements: C++23 (GCC 13+, Clang 17+, MSVC 2022+), CMake 4.1+.
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -53,10 +70,6 @@ cmake --install build --prefix /path/to/sdk
 
 ### CMake FetchContent (recommended)
 
-The simplest way to use HypercubeESN in a CMake project. No installation, no
-manual downloads -- CMake pulls the source from GitHub and builds it alongside
-your project.
-
 ```cmake
 cmake_minimum_required(VERSION 4.1)
 project(MyApp)
@@ -67,7 +80,7 @@ include(FetchContent)
 FetchContent_Declare(
     HypercubeESN
     GIT_REPOSITORY https://github.com/dliptak001/HypercubeESN.git
-    GIT_TAG        v1.0.0
+    GIT_TAG        v2.0.0   # pin a release tag when cut; check GitHub Releases
 )
 FetchContent_MakeAvailable(HypercubeESN)
 
@@ -80,19 +93,14 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Pin `GIT_TAG` to a release tag (e.g., `v1.0.0`) for reproducible builds.
-Include paths are set automatically -- just `#include "ESN.h"`.
+Pin `GIT_TAG` to a release for reproducible builds. Include paths are set
+automatically — `#include "ESN.h"`.
 
-**Note:** HypercubeCNN is vendored in-tree at `third_party/HypercubeCNN`, so it
-is fetched along with HypercubeESN — no sibling checkout or extra configuration.
-See [Dependencies](#dependencies).
+HypercubeCNN is vendored in-tree; no sibling checkout or network fetch.
 
-### Installed SDK (find_package)
-
-If you prefer to install the library once and link against it:
+### Installed SDK (`find_package`)
 
 ```bash
-# Build and install
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 cmake --install build --prefix /path/to/sdk
@@ -110,8 +118,6 @@ add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE HypercubeESN::HypercubeESNCore)
 ```
 
-Configure with the SDK path:
-
 ```bash
 cmake -B build -DCMAKE_PREFIX_PATH=/path/to/sdk
 cmake --build build
@@ -119,8 +125,7 @@ cmake --build build
 
 ### Minimal example
 
-This example uses FetchContent-style includes (`"ESN.h"`). For an installed SDK,
-use `<HypercubeESN/ESN.h>` instead.
+FetchContent-style include (`"ESN.h"`). Installed SDK: `<HypercubeESN/ESN.h>`.
 
 ```cpp
 #include "ESN.h"
@@ -130,32 +135,29 @@ use `<HypercubeESN/ESN.h>` instead.
 
 int main()
 {
-    constexpr size_t DIM = 7;         // 2^7 = 128 neurons
+    constexpr size_t dim = 7;         // N = 128 (= 2⁷) neurons
     constexpr size_t warmup = 200;
     constexpr size_t collect = 2000;
 
-    // Generate a sine wave
     std::vector<float> signal(warmup + collect + 1);
     for (size_t t = 0; t < signal.size(); ++t)
         signal[t] = std::sin(0.1f * static_cast<float>(t));
 
-    // ESN config bundles reservoir + readout. Start from the struct
-    // defaults, set the surveyed reservoir values + readout hyperparameters.
     ESNConfig cfg;
-    cfg.reservoir.dim  = DIM;              // hypercube dimension (5-16)
+    cfg.reservoir.dim  = dim;              // hypercube dimension (5-16)
     cfg.reservoir.seed = 74119;            // per-task surveyed seed
     cfg.readout.epochs     = 25;
     cfg.readout.batch_size = 128;
     cfg.readout.lr_max     = 0.003f;
+    // cfg.readout_slices = 1;             // default: newest reservoir slice only
     ESN esn(cfg);
 
-    // Drive and train
-    esn.Warmup(signal.data(), warmup);
-    esn.Run(signal.data() + warmup, collect);
+    esn.ReservoirWarmup(signal.data(), warmup);
+    esn.ReservoirRun(signal.data() + warmup, collect);
 
     std::vector<float> targets(collect);
     for (size_t t = 0; t < collect; ++t)
-        targets[t] = signal[warmup + t + 1];  // predict next value
+        targets[t] = signal[warmup + t + 1];  // next-step targets
 
     size_t train_size = 1400;
     size_t test_size = collect - train_size;
@@ -171,11 +173,45 @@ int main()
 
 ---
 
+## Pipeline vocabulary
+
+```
+  inputs [+ optional ext-fb]
+       │
+       ▼
+  Reservoir (fixed)
+       │
+       ▼
+  SliceAt(0 .. B-1)  ── pack B blocks of N ──▶  HCNN readout (trained) ──▶ y
+```
+
+Only the readout emits **y**. External feedback is an *input* into the reservoir
+(caller-owned closed-loop drive), not a second path to **y**.
+
+| Term | Meaning |
+|------|---------|
+| **Timestep** | One `ReservoirStep` |
+| **N** | Reservoir neurons = 2<sup>dim</sup> (`ReservoirNeuronCount`) |
+| **M** | `history_depth` — delay-line depth the recurrent gather uses |
+| **B** | `readout_slices` — power of two, 1 ≤ B ≤ M; ages packed into the readout |
+| **Reservoir state** | Newest slice only (`Outputs` / `CopyReservoirState`) — N floats |
+| **Readout input** | What the HCNN sees: B blocks of N (`ReadoutInputWidth`) |
+| **Open loop** | Task input only |
+| **Closed loop** | Also stage `external_feedback` on the reservoir |
+
+**Not thread-safe.** Const predict paths share a scratch buffer — one ESN per
+thread.
+
+---
+
 ## API Reference
 
 ### Hypercube dimension: `dim`
 
-`dim` is a runtime `ReservoirConfig` field controlling the hypercube dimension. The reservoir has N = 2^dim neurons, sized at construction. Valid range is **dim 5-16**, enforced by `Reservoir::Create` (out-of-range throws `std::invalid_argument`). A single concrete `Reservoir`/`ESN` type serves every dimension — there are no longer per-DIM template instantiations.
+`ReservoirConfig::dim` sets the reservoir hypercube size. N = 2<sup>dim</sup> neurons at
+construction. Valid range **[5, 16]** — out of range throws
+`std::invalid_argument`. One concrete `Reservoir` / `ESN` type serves every
+dimension (no per-dim templates).
 
 | dim   | Neurons     | Typical use |
 |-------|-------------|-------------|
@@ -183,180 +219,231 @@ int main()
 | 6     | 64          | Light benchmarks |
 | 7     | 128         | Standard benchmarks |
 | 8     | 256         | Production, complex tasks |
-| 9-12  | 512-4096    | Research, high-capacity tasks |
-| 13-16 | 8192-65536  | Large-scale research |
+| 9–12  | 512–4096    | Research, high-capacity tasks |
+| 13–16 | 8192–65536  | Large-scale research |
+
+When `readout_slices = B > 1`, the HCNN start dimension is
+`reservoir.dim + log2(B)` (set by ESN — do not set `readout.dim` yourself).
 
 ### Enums
 
-#### `ReadoutTask`
+Declared in `Readout.h`.
 
-Task head for the HCNN readout. Declared in `Readout.h`.
+#### `ReadoutTask`
 
 | Value | Description |
 |-------|-------------|
-| `Regression` | MSE loss, de-centered predictions. `num_outputs` sets the number of regression targets. |
-| `Classification` | Softmax + cross-entropy loss. `num_outputs` sets the number of classes. Targets are float class indices; predictions are raw logits (use `argmax`). |
+| `Regression` | MSE loss. Raw network outputs at inference (no automatic target centering). `num_outputs` = number of targets. |
+| `Classification` | Softmax + cross-entropy in the **loss** only. `num_outputs` = number of classes. Labels are **`int`** class indices in `[0, num_outputs)`; `Predict` returns raw logits (argmax for the label). |
 
 #### `ReadoutActivation`
 
-Activation applied after each Conv layer in the readout's CNN stack. Declared in `Readout.h`; set via `ReadoutConfig::activation`.
+Per-Conv activation (`ReadoutConfig::activation`).
 
 | Value | Description |
 |-------|-------------|
-| `TANH` | Hyperbolic tangent (default). |
-| `RELU` | Rectified linear. |
-| `LEAKY_RELU` | Leaky rectified linear. |
-| `NONE` | Identity (no activation). |
+| `TANH` | Hyperbolic tangent (default) |
+| `RELU` | Rectified linear |
+| `LEAKY_RELU` | Leaky rectified linear |
+| `NONE` | Identity |
+
+#### `ReadoutPoolType`
+
+| Value | Description |
+|-------|-------------|
+| `Max` | Antipodal max pool (default when pooling is on) |
+| `Avg` | Antipodal average pool |
+
+#### `ReadoutOptimizer`
+
+| Value | Description |
+|-------|-------------|
+| `Adam` | Default |
+| `Sgd` | Heavy-ball SGD; uses `momentum` |
+
+#### `ReadoutLoadMode`
+
+| Value | Description |
+|-------|-------------|
+| `Eval` | Load parameters only (default; safe for inference) |
+| `ResumeTrain` | Also reset optimizer moments for continued online training |
 
 ---
 
 ### ReservoirConfig
 
-Configuration struct for reservoir construction. The struct defaults are a sensible general starting point; production callers set the dimension, seed, spectral radius, and history depth explicitly per task (surveyed offline), then override any other fields they care about.
+Construction-time reservoir parameters. Defaults are a sensible starting point;
+production callers set dim, seed, spectral radius, and history depth per task
+(surveyed offline).
 
 ```cpp
 struct ReservoirConfig
 {
-    size_t   dim             = 10;     // hypercube dimension; N = 2^dim (5-16)
-    uint64_t seed            = 73895;
-    float    spectral_radius = 0.99f;
-    float    leak_rate       = 1.0f;
-    float    input_scaling   = 0.5f;   // DIM-invariant input drive
-    size_t   num_inputs      = 1;
-    size_t   history_depth   = 16;
-    float    history_floor   = 1.0f;   // depth taper K in [0.1, 1.0]; 1.0 = none
-    bool     verbose         = true;
-};
+    size_t   dim             = 10;     // N = 1 << dim; range [5, 16]
+    uint64_t seed            = 7934791766227647176ULL;
+    float    spectral_radius = 0.999f; // target for recurrent block only
+    float    leak_rate       = 1.0f;   // (0, 1]
+    float    input_scaling   = 0.02f;  // weights × scaling/√dim
+    size_t   num_inputs      = 1;      // must divide N
+    size_t   history_depth   = 16;     // M in [1, 64]
+    bool     verbose         = false;  // construction banner; demos may set true
 
-// Typical:
-ReservoirConfig cfg;          // struct defaults
-cfg.dim             = 8;      // hypercube dimension (N = 256)
-cfg.seed            = 74119;  // per-task surveyed seed
-cfg.spectral_radius = 0.99f;  // per-DIM/task
-cfg.history_depth   = 16;     // per-task recurrent delay-line depth
+    size_t   num_external_feedback_channels = 0;  // 0 = off; else [1, N]
+    float    external_feedback_scaling      = 0.5f;
+
+    float    bias_scaling    = 0.003f; // after tanh; 0 disables
+};
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `10` | Hypercube dimension; the reservoir has N = 2^dim neurons, sized at construction. Must be in [5, 16] — `Reservoir::Create` throws `std::invalid_argument` otherwise. |
-| `seed` | `uint64_t` | `73895` | RNG seed for weight initialization. Different seeds produce measurably different performance; screen per DIM/task and set explicitly. |
-| `spectral_radius` | `float` | `0.99` | Target spectral radius of the recurrent operator (the MN×MN augmented companion operator when `history_depth` > 1). Controls the echo-state property — how quickly past inputs fade. Tune per DIM/task. |
-| `leak_rate` | `float` | `1.0` | Leaky-integrator coefficient. `state = (1 - leak_rate) * old_output + leak_rate * tanh(drive)`. At 1.0, each step fully replaces state; values < 1.0 add explicit temporal carryover. |
-| `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights are drawn U(-1,1) then scaled by `input_scaling / √DIM`; the `1/√DIM` fan-in normalization makes a given value deliver the same `tanh` drive at any DIM (**DIM-invariant by construction** — not the legacy fixed `0.02`, which was a readout-standardization artifact). Task-dependent, typically O(0.5–3). |
-| `num_inputs` | `size_t` | `1` | Number of input channels; must divide N evenly. In multi-input mode (K channels), channel k drives the contiguous vertex block `[k*N/K, (k+1)*N/K)`. |
-| `history_depth` | `size_t` | `16` | Per-vertex output-history depth M (the recurrent delay line): each `Step` sums over the M most-recent output slices, each with its own weights. Must be in [1, 64]; M = 1 is the legacy single-slice reservoir. See [Reservoir.md](Reservoir.md). |
-| `history_floor` | `float` | `1.0` | Depth-taper floor K. Recurrent weights are linearly scaled by slice from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less. Applied before the spectral-radius rescale (which then normalizes overall magnitude, preserving the relative per-slice profile). Must be in [0.1, 1.0]; `1.0` = no taper (identity), and the taper has no effect when `history_depth == 1`. |
-| `verbose` | `bool` | `true` | Print the per-construction reservoir banner with the seed/leak/input-scaling, depth-taper floor, and spectral-radius rescale (`[Reservoir DIM=… M=… seed=… leak=… in_scale=… hist_floor=… SR target=… post=… (secant iters=…)]`). |
+| `dim` | `size_t` | `10` | Hypercube dimension; N = 2^dim. **[5, 16]**. |
+| `seed` | `uint64_t` | `7934791766227647176` | Master RNG seed (SplitMix64 substreams: recurrent / input / external-feedback / bias / SR probe). Screen per dim/task. |
+| `spectral_radius` | `float` | `0.999` | Target ρ of the **recurrent** companion operator (MN×MN when M > 1). Drive ports are outside the rescale. |
+| `leak_rate` | `float` | `1.0` | `state = (1 − leak) * old + leak * (tanh(s) + bias)`. **(0, 1]**. |
+| `input_scaling` | `float` | `0.02` | Input weights U(−1,1) then × `input_scaling / √dim` (fan-in variance). Local construction, not a universal optimum — retune per task/dim. |
+| `num_inputs` | `size_t` | `1` | Input channels; must divide N. Channel k drives `[k·N/K, (k+1)·N/K)`. |
+| `history_depth` | `size_t` | `16` | Delay-line depth M **[1, 64]**. Recurrent gather over M published slices. Independent of how many ages the readout packs (B). See [Reservoir.md](Reservoir.md). |
+| `verbose` | `bool` | `false` | One construction banner on stdout. |
+| `num_external_feedback_channels` | `size_t` | `0` | D external-feedback channels. **0** = path off. Else **[1, N]** (need not divide N). See [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md). |
+| `external_feedback_scaling` | `float` | `0.5` | Like input; only if D > 0. Outside SR rescale. |
+| `bias_scaling` | `float` | `0.003` | Per-neuron bias U(−1,1)×scale, **after** tanh. **0** disables. Survives `Clear`; not in snapshots. |
 
-> **Note:** `output_fraction` (reservoir->readout subsampling) lives on `ESNConfig`, not `ReservoirConfig` — the reservoir does not consume it. See [ESN](#esn). `float output_fraction = 1.0` — fraction of N vertices used as readout features, in range (0.0, 1.0]; must yield a power-of-2 stride. At 0.5, a stride-selected sub-hypercube of N/2 vertices is passed to the readout. The mapping is lossy: intermediate values round down to the nearest power-of-2 stride (e.g. `0.4` → effectively `0.5`), and values that would yield a non-power-of-2 stride (e.g. `0.3`) throw. Exactly-honored values: `{1.0, 0.5, 0.25, 0.125, 0.0625, ...}`.
+`GetConfig().spectral_radius` / `ESN::TargetSpectralRadius()` is the **target**.
+Post-secant estimate: `Reservoir::GetRealizedSpectralRadius()` /
+`ESN::RealizedSpectralRadius()`.
 
 ---
 
 ### ReadoutConfig
 
-Configuration struct for the HCNN readout's architecture and training.
+HCNN architecture and training. Under ESN, `dim` is overwritten to
+`reservoir.dim + log2(B)` — leave it at 0.
 
 ```cpp
 struct ReadoutConfig {
-    size_t dim           = 0;        // input feature dim = 2^dim; set internally by ESN — do not set
+    size_t dim           = 0;        // set by ESN — do not set
     int num_outputs      = 1;
     ReadoutTask task     = ReadoutTask::Regression;
-    int num_layers       = 1;        // Conv+Pool pairs; 0 = auto: min(DIM-2, 2)
-    int conv_channels    = 16;       // doubles per layer
+    int num_layers       = 1;        // typical; 0 = auto min(dim-2, 2)
+    bool use_pooling     = true;
+    ReadoutPoolType pool_type = ReadoutPoolType::Max;
+    int conv_channels    = 16;
+    int channel_growth   = 2;
+    bool use_batchnorm   = false;
+    ReadoutOptimizer optimizer = ReadoutOptimizer::Adam;
     int epochs           = 200;
     int batch_size       = 32;
-    float lr_max         = 0.0015f;
+    float lr_max         = 0.0015f;  // keep ≤ ~0.005
     float lr_min_frac    = 0.01f;
     int   lr_decay_epochs = 0;       // 0 = use epochs
     float weight_decay   = 0.0f;
-    float momentum       = 0.0f;     // heavy-ball SGD momentum; 0 = plain
-    unsigned seed        = 42;
-    bool verbose         = false;
-    bool verbose_train_acc = false;
-    ReadoutActivation activation = ReadoutActivation::TANH;  // per-Conv-layer
+    float momentum       = 0.9f;     // SGD heavy-ball; 0 = plain SGD; ignored by Adam
+    uint64_t seed        = 42;       // full 64-bit HCNN weight-init seed
+    ReadoutActivation activation = ReadoutActivation::TANH;
+    size_t num_threads   = 0;        // 0=auto, 1=ST, N=N workers
+    bool restore_best_epoch = true;
+    float best_epoch_holdout_frac = 0.0f;
 };
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `dim` | `size_t` | `0` | Input feature dimension (features per sample = 2^dim). **Set internally by the ESN** from `output_fraction` — consumers do not set this; any value here is overwritten at construction. |
-| `num_outputs` | `int` | `1` | Number of output neurons. For regression: number of targets. For classification: number of classes. |
-| `task` | `ReadoutTask` | `Regression` | Task head. See [ReadoutTask](#readouttask). |
-| `num_layers` | `int` | `1` | Number of Conv+Pool pairs. `1` (default) builds a single Conv+Pool layer. `0` auto-computes `min(DIM - 2, 2)`. Each Pool halves the hypercube dimension, capped by `DIM - 2` (HCNNConv requires DIM >= 3). |
-| `conv_channels` | `int` | `16` | Base channel count for the first Conv layer. Doubles per layer (16, 32 for a 2-layer stack). |
-| `epochs` | `int` | `200` | Training epochs (batch mode). Structured signals saturate at ~25 epochs; chaotic signals need ~2000. Ignored in online mode. |
-| `batch_size` | `int` | `32` | Mini-batch size (batch mode). Use 128+ on multi-core CPUs to saturate threading. |
-| `lr_max` | `float` | `0.0015` | Peak learning rate for cosine annealing. **Keep <= 0.005 to avoid weight divergence into denormal/NaN territory.** |
-| `lr_min_frac` | `float` | `0.01` | Cosine schedule floor as fraction of `lr_max`. Effective `lr_min = lr_max * lr_min_frac`. |
-| `lr_decay_epochs` | `int` | `0` | Cosine decay horizon. 0 = use `epochs`. Set > epochs to trace only a prefix of the cosine curve (keeps lr high when shortening a run). |
+| `dim` | `size_t` | `0` | Features per sample = 2<sup>dim</sup>. **Set by ESN** from reservoir dim + log2(B). |
+| `num_outputs` | `int` | `1` | Regression targets or class count. |
+| `task` | `ReadoutTask` | `Regression` | Task head. |
+| `num_layers` | `int` | `1` | Conv(+Pool) stages. Default **1** (house default for most tasks). `0` → auto `min(dim − 2, 2)`. With pooling: assert `n ≤ dim − 2`. |
+| `use_pooling` | `bool` | `true` | Antipodal pool after each conv (mixes every bit, including block-index bits when B > 1). |
+| `pool_type` | `ReadoutPoolType` | `Max` | Max or Avg when pooling is on. |
+| `conv_channels` | `int` | `16` | First-layer channels. |
+| `channel_growth` | `int` | `2` | Multiplier after each stage. |
+| `use_batchnorm` | `bool` | `false` | Per-conv BN; grows the weight blob. |
+| `optimizer` | `ReadoutOptimizer` | `Adam` | Forwarded to HypercubeCNN. |
+| `epochs` | `int` | `200` | Batch-train epochs. Ignored by online `TrainStep*`. |
+| `batch_size` | `int` | `32` | Mini-batch size (batch mode). |
+| `lr_max` | `float` | `0.0015` | Cosine peak. **Keep ≤ ~0.005** to avoid NaN. |
+| `lr_min_frac` | `float` | `0.01` | Floor = `lr_max * lr_min_frac`. |
+| `lr_decay_epochs` | `int` | `0` | Cosine horizon; `0` = use `epochs`. |
 | `weight_decay` | `float` | `0.0` | L2 weight decay. |
-| `momentum` | `float` | `0.0` | Heavy-ball SGD momentum. `0` = plain SGD; `0.9` is typical for a wider CNN head. |
-| `seed` | `unsigned` | `42` | Seed for weight initialization. |
-| `verbose` | `bool` | `false` | Print per-epoch lr to stdout. |
-| `verbose_train_acc` | `bool` | `false` | Also compute and print training accuracy (classification) or MSE (regression) each epoch. Costs one extra forward pass per epoch. |
-| `activation` | `ReadoutActivation` | `TANH` | Activation applied after each Conv layer. See [ReadoutActivation](#readoutactivation). |
+| `momentum` | `float` | `0.9` | SGD heavy-ball; `0` = plain SGD. Ignored by Adam (the default optimizer). |
+| `seed` | `uint64_t` | `42` | HCNN weight-init seed (full 64-bit). |
+| `activation` | `ReadoutActivation` | `TANH` | After each Conv. |
+| `num_threads` | `size_t` | `0` | HCNN workers: `0` auto, `1` single-threaded (use for multi-ESN hosts), `N` workers. |
+| `restore_best_epoch` | `bool` | `true` | Restore best epoch (min MSE / max accuracy) at end of `Train`. |
+| `best_epoch_holdout_frac` | `float` | `0.0` | Tail hold-out for scoring; train on prefix. `0` = score full train set. Clamped to [0, 0.5]. |
 
-**Architecture:** the default `num_layers = 1` builds a single Conv+Pool layer (16 channels). Set `num_layers = 0` for auto-sizing — `min(DIM - 2, 2)` Conv+Pool pairs with channels doubling per layer. See [Readout.md](Readout.md) for the full design notes.
+See [Readout.md](Readout.md) and the vendor pin in
+[../third_party/HypercubeCNN/VENDORED.md](../third_party/HypercubeCNN/VENDORED.md).
 
 ---
 
-### ESN
-
-The complete pipeline wrapper: Reservoir -> Readout. Constructed from a single `ESNConfig` that bundles the reservoir and readout configs (the hypercube dimension comes from `cfg.reservoir.dim`); no further config arguments are passed to `Train` / `InitOnline`.
+### ESNConfig
 
 ```cpp
 struct ESNConfig {
     ReservoirConfig reservoir;
     ReadoutConfig   readout;
-    float           output_fraction = 1.0f;  // reservoir->readout subsampling; (0.0, 1.0], power-of-2 stride
+    // B ages packed into the readout (power of two, 1 ≤ B ≤ history_depth).
+    // ESN sets readout.dim = reservoir.dim + log2(B).
+    size_t          readout_slices = 1;
 };
-
-// Construction (dimension comes from cfg.reservoir.dim)
-ESN esn(cfg);
-
-// Reservoir driving
-esn.Warmup(inputs, num_steps);
-esn.Run(inputs, num_steps);
-esn.ClearStates();
-esn.ResetReservoirOnly();
-
-// Batch training (readout hyperparameters come from cfg.readout)
-esn.Train(targets, train_size);
-
-// Online (streaming) training
-esn.InitOnline(warmup_inputs, warmup_count);
-esn.TrainLiveStep(target_class, lr, weight_decay);
-esn.TrainLiveBatch(states, targets, count, lr, weight_decay);
-esn.TrainLiveStepRegression(target, lr, weight_decay);
-esn.TrainLiveBatchRegression(states, targets, count, lr, weight_decay);
-esn.CopyLiveState(out);
-
-// Prediction & evaluation (collected states)
-esn.PredictRaw(timestep);
-esn.PredictRaw(timestep, output);
-esn.R2(targets, start, count);
-esn.NRMSE(targets, start, count);
-esn.Accuracy(labels, start, count);
-
-// Prediction (live reservoir state)
-esn.PredictLiveRaw();
-esn.PredictLiveRaw(output);
-esn.PredictFromState(state, output);   // run readout on a caller-supplied state
-
-// State access & persistence
-esn.SelectedStates();
-esn.NumCollected();
-esn.NumOutputs();
-esn.NumOutputVerts();
-esn.NumInputs();
-esn.Dim();                   // hypercube dimension (cfg.reservoir.dim)
-esn.Size();                  // reservoir neuron count N = 2^Dim()
-esn.GetConfig();             // returns ESNConfig
-esn.GetReadoutState();
-esn.SetReadoutState(state);
 ```
 
+| Field | Description |
+|-------|-------------|
+| `reservoir` | Fixed dynamical core. |
+| `readout` | HCNN architecture + training. Leave `dim` at 0. |
+| `readout_slices` | B delay-line ages (newest first). Must be ≥ 1, a **power of two**, and ≤ `reservoir.history_depth`. B = 1 → readout input is one N-vector. B = 2 → two blocks, identity map. B > 2 → consecutive ages land on block indices two bits apart (pair map) so a Hamming-1 kernel can see both from midpoint vertices. Widening B does **not** change reservoir dynamics. |
+
 ---
+
+### ESN
+
+Complete pipeline: Reservoir → pack B slices → Readout. Constructed from one
+`ESNConfig`. Readout hyperparameters are fixed at construction — no per-call
+config overloads on `Train`. **Move-only** (not copyable). Pointer APIs have
+`std::span` overloads that check lengths.
+
+```cpp
+ESN esn(cfg);
+
+// Drive
+esn.ReservoirStep(inputs, external_feedback /* optional */);
+esn.ReservoirWarmup(inputs, num_steps);          // or span (count = size / NumInputs)
+esn.ReservoirRun(inputs, num_steps);
+esn.ReservoirRun(inputs, num_steps, /*clear_recorded=*/true);
+esn.ReservoirClear();
+
+// Batch train / score on recorded readout inputs
+esn.Train(targets, train_size);
+esn.R2(targets, start, count);            // full buffer covering [0, start+count)
+esn.R2FromWindow(window, start, count);   // window-only targets
+esn.NRMSE(targets, start, count);
+esn.Accuracy(labels, start, count);       // int labels
+
+// Streaming
+esn.TrainStep(target, lr, weight_decay);
+esn.TrainStepBatch(readout_inputs, targets, count, lr, weight_decay);
+esn.CopyReadoutInput(out);      // B×N
+esn.CopyReservoirState(out);    // N only (newest slice)
+
+// Predict
+esn.Predict();
+esn.PredictFromRecorded(timestep);
+esn.PredictFromReadoutInput(readout_input);  // B·N; PredictFromState is an alias
+
+// Persist / inspect
+esn.GetConfig();
+esn.Dim();                       // == ReservoirHypercubeDimension()
+esn.TargetSpectralRadius();
+esn.RealizedSpectralRadius();
+esn.GetReadoutState();
+esn.SetReadoutState(state, mode);
+esn.SaveReadoutHcnnModel(stem);
+esn.LoadReadoutHcnnModel(stem, mode);
+esn.ReadoutArchSummary();
+esn.ReadoutBestEpoch();
+```
 
 #### Construction
 
@@ -364,19 +451,16 @@ esn.SetReadoutState(state);
 explicit ESN(const ESNConfig& cfg);
 ```
 
-Creates the reservoir from `cfg.reservoir` and prepares the readout with `cfg.readout`. Reservoir weights are generated and spectral-radius-rescaled at construction time; the HCNN readout itself is built when `Train()` or `InitOnline()` is called.
-
-**Parameters:**
-- `cfg` -- Full ESN configuration. See [ReservoirConfig](#reservoirconfig) and [ReadoutConfig](#readoutconfig).
-
-The recommended construction pattern starts from the default-constructed `ESNConfig`, sets the dimension and surveyed reservoir values explicitly, then overrides task-specific readout hyperparameters:
+Builds the reservoir (`Create`) and the HCNN eagerly (`MakeReadoutConfig` fills
+`readout.dim`). Both weight sets are ready before the first `Train` / `TrainStep`.
 
 ```cpp
-ESNConfig cfg;                                    // reservoir/readout defaulted
-cfg.reservoir.dim             = 8;                // hypercube dimension (N = 256)
-cfg.reservoir.seed            = 74119;            // surveyed seed
-cfg.reservoir.spectral_radius = 0.99f;            // per-DIM/task
-cfg.readout.epochs     = 1000;                    // task-driven overrides
+ESNConfig cfg;
+cfg.reservoir.dim             = 8;
+cfg.reservoir.seed            = 74119;
+cfg.reservoir.spectral_radius = 0.99f;
+cfg.readout_slices            = 1;       // or 2, 4, … ≤ history_depth
+cfg.readout.epochs     = 1000;
 cfg.readout.batch_size = 512;
 cfg.readout.lr_max     = 0.001f;
 ESN esn(cfg);
@@ -384,327 +468,276 @@ ESN esn(cfg);
 
 ---
 
-#### Reservoir Driving
+#### Reservoir driving
 
-##### `Warmup`
+##### `ReservoirStep`
+
+Pointer and `std::span` overloads (span form validates lengths):
 
 ```cpp
-void Warmup(const float* inputs, size_t num_steps);
+void ReservoirStep(const float* inputs, const float* external_feedback = nullptr);
+void ReservoirStep(std::span<const float> inputs,
+                   std::span<const float> external_feedback = {});
 ```
 
-Drives the reservoir for `num_steps` timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training.
+One timestep: stage task `inputs` (`NumInputs()` floats), optionally stage
+**external** feedback (`NumExternalFeedbackChannels()` floats, or `nullptr` to
+skip), then `Reservoir::Step`. No learning.
 
-**Parameters:**
-- `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Each timestep has `num_inputs` consecutive values (one per channel). When `num_inputs == 1` (default), this is simply `num_steps` scalars. Values are **not** clamped — pass already-bounded signals (the `1/√DIM` input normalization sets the `tanh` operating point via `input_scaling`).
-- `num_steps` -- Number of timesteps to drive. Typical: 100-500 depending on task.
+Throws if `external_feedback` is non-null when D = 0.
+
+##### `ReservoirWarmup`
+
+```cpp
+void ReservoirWarmup(const float* inputs, size_t num_steps);
+void ReservoirWarmup(std::span<const float> inputs);  // count = size / NumInputs()
+```
+
+Drive without recording (wash out zero initial state). Layout: `num_steps ×
+NumInputs()` row-major. **No** external feedback — use `ReservoirStep` if needed.
+Typical warmup: 100–500 steps. Span form requires `inputs.size()` to be a
+multiple of `NumInputs()`.
+
+Values are **not** clamped; pass already-bounded signals.
+
+##### `ReservoirRun`
+
+```cpp
+void ReservoirRun(const float* inputs, size_t num_steps, bool clear_recorded = false);
+void ReservoirRun(std::span<const float> inputs, bool clear_recorded = false);
+```
+
+Drive and **append** each assembled readout input (B×N) to the internal buffer
+for `Train` / metrics. Same input layout as warmup. No external feedback.
+
+`clear_recorded = true` discards prior rows first (live reservoir and readout
+weights untouched).
+
+##### `ReservoirClear`
+
+```cpp
+void ReservoirClear();
+```
+
+Zero reservoir dynamics (state + history). Recorded rows and readout weights are
+preserved.
 
 ---
 
-##### `Run`
-
-```cpp
-void Run(const float* inputs, size_t num_steps);
-```
-
-Drives the reservoir for `num_steps` timesteps, recording the **subsampled** state at each step (`NumOutputVerts()` floats — the stride-selected vertices set by `output_fraction`, not the full N). States are appended to the internal buffer -- multiple `Run()` calls accumulate.
-
-**Parameters:**
-- `inputs` -- Pointer to `num_steps * num_inputs` floats, row-major. Same layout as `Warmup()`.
-- `num_steps` -- Number of timesteps to drive and record.
-
----
-
-##### `ClearStates`
-
-```cpp
-void ClearStates();
-```
-
-Clears all collected states. The reservoir's live internal state is **not** reset -- it retains its current activation. The trained readout is also preserved.
-
-Use this between independent sequences: clear the collected data, then `Warmup()` + `Run()` on a new input sequence without rebuilding the ESN.
-
----
-
-##### `ResetReservoirOnly`
-
-```cpp
-void ResetReservoirOnly();
-```
-
-Zeros the reservoir's internal state — `vtx_state_` plus every output-history slice. Recurrent weights, input weights, and all hyperparameters are untouched. Collected states are **not** cleared. The trained readout is preserved.
-
-Use for episodic tasks where each episode starts from a clean slate (e.g., per-sequence reset).
-
----
-
-#### Batch Training
+#### Batch training
 
 ##### `Train`
 
 ```cpp
+// Regression
 void Train(const float* targets, size_t train_size);
+void Train(std::span<const float> targets, size_t train_size);
+// Classification
+void Train(const int* class_labels, size_t train_size);
+void Train(std::span<const int> class_labels, size_t train_size);
 ```
 
-Trains the HCNN readout on the first `train_size` collected states. Readout hyperparameters come from the `cfg.readout` passed to the constructor — there are no per-call config overloads.
+Fit the HCNN on recorded timesteps `[0, train_size)`. A second call **continues**
+from current weights — construct a new ESN for a fresh init. Task is fixed at
+construction; the wrong pointer / span type throws `std::logic_error`.
 
-**Parameters:**
-- `targets` -- Target values. Layout depends on `cfg.readout.task`:
-  - **Regression:** `train_size * cfg.readout.num_outputs` floats, row-major.
-  - **Classification:** `train_size` floats (float class indices).
-- `train_size` -- Number of training samples from collected state index 0.
+- **Regression:** `train_size × NumOutputs()` floats, row-major. Span size must
+  equal that product.
+- **Classification:** `train_size` **ints** (class indices in `[0, NumOutputs())`).
+  Span size must equal `train_size`.
+
+Throws if `train_size > NumCollectedStates()`.
 
 ---
 
-#### Online (Streaming) Training
+#### Streaming training
 
-For applications where data arrives continuously. The reservoir advances one step at a time; the readout is updated via per-sample or mini-batch gradient steps.
+CNN is built at construction — no separate init. Warm up the reservoir, then
+interleave `ReservoirStep` with `TrainStep` / `Predict`. `epochs` is ignored;
+loop length is the caller's.
 
-##### `InitOnline`
+##### `TrainStep`
 
 ```cpp
-void InitOnline(const float* warmup_inputs, size_t warmup_count);
+void TrainStep(const float* target, float lr, float weight_decay = 0.0f); // regression
+void TrainStep(std::span<const float> target, float lr, float weight_decay = 0.0f);
+void TrainStep(int class_label, float lr, float weight_decay = 0.0f);     // classification
 ```
 
-Initializes the HCNN readout for online training. Internally calls `Warmup()` on the warmup inputs to drive the reservoir to a representative state, then builds the CNN architecture from `cfg.readout` (passed at construction) and sets the Adam optimizer. After this call the reservoir's live state reflects having processed `warmup_count` steps; `NumCollected()` is unchanged (Warmup does not collect). Call before any `TrainLive*` method.
+One gradient step on the **current** readout input (assembled after your last
+drive). Regression: `NumOutputs()` floats. Classification: one integer class
+index. Online hosts typically schedule `lr` with `CosineLR` /
+`ExponentialDecayLR` from `Readout.h` (`epochs` is ignored here).
 
-**Parameters:**
-- `warmup_inputs` -- Warmup signal: `warmup_count * num_inputs` floats. These drive the reservoir forward without collecting state.
-- `warmup_count` -- Number of warmup timesteps.
-
-`cfg.readout.epochs` is ignored in online mode — the loop epoch count is determined by the caller's training loop.
-
----
-
-##### `TrainLiveStep` (classification)
+##### `TrainStepBatch`
 
 ```cpp
-void TrainLiveStep(float target_class, float lr, float weight_decay);
+void TrainStepBatch(const float* readout_inputs, const float* targets, size_t count,
+                    float lr, float weight_decay = 0.0f);  // regression
+void TrainStepBatch(const float* readout_inputs, const int* class_labels, size_t count,
+                    float lr, float weight_decay = 0.0f);  // classification
+void TrainStepBatch(std::span<const float> readout_inputs, std::span<const float> targets,
+                    float lr, float weight_decay = 0.0f);
+void TrainStepBatch(std::span<const float> readout_inputs, std::span<const int> class_labels,
+                    float lr, float weight_decay = 0.0f);
 ```
 
-Single-sample online gradient step on the reservoir's current live state. Classification only -- `target_class` is cast to int internally.
+Mini-batch of caller-supplied **readout inputs** (`count × ReadoutInputWidth()`).
+Assemble rows with `CopyReadoutInput` (not `CopyReservoirState`, unless B = 1).
+Span forms infer `count` from `readout_inputs.size() / ReadoutInputWidth()`.
 
----
-
-##### `TrainLiveBatch` (classification)
+##### `CopyReadoutInput` / `CopyReservoirState`
 
 ```cpp
-void TrainLiveBatch(const float* states, const int* targets,
-                    size_t count, float lr);
-void TrainLiveBatch(const float* states, const int* targets,
-                    size_t count, float lr, float weight_decay);
+void CopyReadoutInput(float* out) const;     // ReadoutInputWidth() = B×N
+void CopyReadoutInput(std::span<float> out) const;
+void CopyReservoirState(float* out) const;   // N (newest slice only)
+void CopyReservoirState(std::span<float> out) const;
 ```
-
-Mini-batch online gradient step. `states` is `count` rows of `NumOutputVerts()` floats (from `CopyLiveState`). `targets` is `count` int class indices. Parallelized across threads. The no-`weight_decay` overload inherits `cfg.readout.weight_decay`; the explicit form overrides it for this call.
 
 ---
 
-##### `TrainLiveStepRegression`
+#### Prediction and evaluation
+
+##### Recorded window
 
 ```cpp
-void TrainLiveStepRegression(const float* target, float lr,
-                             float weight_decay);
+std::vector<float> PredictFromRecorded(size_t timestep) const;
+double R2(const float* targets, size_t start, size_t count) const;
+double R2(std::span<const float> targets, size_t start, size_t count) const;
+double R2FromWindow(std::span<const float> targets_window, size_t start, size_t count) const;
+double NRMSE(const float* targets, size_t start, size_t count) const;
+double NRMSEFromWindow(std::span<const float> targets_window, size_t start, size_t count) const;
+double Accuracy(const int* labels, size_t start, size_t count) const;
+double AccuracyFromWindow(std::span<const int> labels_window, size_t start, size_t count) const;
 ```
 
-Single-sample online gradient step on the reservoir's current live state. `target` is `NumOutputs()` floats.
+- **`R2` / `NRMSE` / `Accuracy`:** targets must cover `[0, start+count)` — pass
+  the full array; methods index from `start`. Do not pre-slice.
+- **`*FromWindow`:** targets / labels are **only** the scored rows (`count`
+  samples). Recorded states still use `start`. Use these when you already hold
+  a sliced buffer.
+- **R²:** average of per-output coefficients of determination. 1.0 = perfect.
+  Regression layout: stride = `NumOutputs()`.
+- **NRMSE:** mean over outputs of RMSE / std(target). 0 = perfect. Degenerate
+  target variance → +inf on that output.
+- **Accuracy:** integer class labels; multi-class argmax; single-output
+  thresholds the logit at 0.
 
----
-
-##### `TrainLiveBatchRegression`
+##### Live / caller-supplied
 
 ```cpp
-void TrainLiveBatchRegression(const float* states, const float* targets,
-                              size_t count, float lr, float weight_decay);
+std::vector<float> Predict() const;                    // assemble live, then forward
+void Predict(float* out) const;
+void Predict(std::span<float> out) const;
+std::vector<float> PredictFromReadoutInput(const float* readout_input) const;
+void PredictFromReadoutInput(const float* readout_input, float* out) const;
+std::vector<float> PredictFromReadoutInput(std::span<const float> readout_input) const;
+void PredictFromReadoutInput(std::span<const float> readout_input, std::span<float> out) const;
+// Historical aliases — same as PredictFromReadoutInput:
+std::vector<float> PredictFromState(const float* readout_input) const;
+void PredictFromState(const float* readout_input, float* out) const;
 ```
 
-Mini-batch online gradient step for regression. `states` is `count` rows of `NumOutputVerts()` floats. `targets` is `count * NumOutputs()` floats (row-major).
+`PredictFromReadoutInput` never reads the reservoir — pass a
+`ReadoutInputWidth()` buffer (e.g. from `CopyReadoutInput`). Softmax is **not**
+applied; classification returns logits.
 
 ---
 
-##### `CopyLiveState`
+#### State access and accessors
 
 ```cpp
-void CopyLiveState(float* out) const;
+std::vector<float> CollectedStates() const;  // T × ReadoutInputWidth(), row-major
 ```
 
-Copies the current subsampled reservoir state into `out` (`NumOutputVerts()` floats). Use to accumulate states for `TrainLiveBatch` / `TrainLiveBatchRegression`.
+`CollectedStates` is the recorded **readout inputs** (B×N per row), not just
+the newest reservoir slice. Name is historical.
+
+| Method | Returns |
+|--------|---------|
+| `NumCollectedStates()` | Rows recorded by `ReservoirRun` |
+| `NumInputs()` | Input channels per timestep |
+| `NumOutputs()` | Readout width (targets or classes) |
+| `NumExternalFeedbackChannels()` | D (0 = no ext-fb port) |
+| `ReservoirHypercubeDimension()` / `Dim()` | `cfg.reservoir.dim` |
+| `ReservoirNeuronCount()` | N = 2<sup>dim</sup> |
+| `ReadoutInputWidth()` | B × N |
+| `ReadoutBlockCount()` | B |
+| `ReadoutBlockOf(slot)` | Physical block index for logical age `slot` |
+| `TargetSpectralRadius()` | Configured recurrent ρ target |
+| `RealizedSpectralRadius()` | Post-rescale estimate from construction |
+| `GetConfig()` | `ESNConfig` with derived `readout.dim` filled |
 
 ---
 
-#### Prediction and Evaluation (Collected States)
+#### Readout persistence
 
-##### `PredictRaw` (scalar)
+Reservoir weights are deterministic from config + seed. Persist `GetConfig()` and
+the readout.
 
-```cpp
-[[nodiscard]] float PredictRaw(size_t timestep) const;
-```
+**`ESN::ReadoutState`**
 
-Returns the scalar prediction for a collected timestep. Asserts `NumOutputs() == 1`.
-
-**Parameters:**
-- `timestep` -- Index into collected states, in [0, NumCollected()).
-
----
-
-##### `PredictRaw` (multi-output)
-
-```cpp
-void PredictRaw(size_t timestep, float* output) const;
-```
-
-Writes `NumOutputs()` floats to `output` for a collected timestep. For regression: de-centered predictions. For classification: raw logits (apply argmax for predicted class).
-
----
-
-##### `R2`
-
-```cpp
-[[nodiscard]] double R2(const float* targets, size_t start, size_t count) const;
-```
-
-R-squared on collected timesteps [start, start+count).
-
-**Parameters:**
-- `targets` -- Must span timesteps [0, start+count): `(start+count) * NumOutputs()` floats (row-major). Indexed from `targets[start * NumOutputs()]`.
-- `start` -- First timestep index.
-- `count` -- Number of timesteps to evaluate.
-
-**Returns:** R² averaged across outputs. 1.0 = perfect. Can be negative.
-
----
-
-##### `NRMSE`
-
-```cpp
-[[nodiscard]] double NRMSE(const float* targets, size_t start, size_t count) const;
-```
-
-Normalized RMSE on collected timesteps. Same `targets` layout as `R2`.
-
-**Returns:** NRMSE averaged across outputs. 0.0 = perfect. 1.0 = predicts the mean.
-
----
-
-##### `Accuracy`
-
-```cpp
-[[nodiscard]] double Accuracy(const float* labels, size_t start, size_t count) const;
-```
-
-Classification accuracy on collected timesteps.
-
-**Parameters:**
-- `labels` -- Must span timesteps [0, start+count): `(start+count)` floats (class indices). Indexed from `labels[start]`.
-- `start` -- First timestep index.
-- `count` -- Number of timesteps to evaluate.
-
-**Returns:** Fraction correct in [0.0, 1.0].
-
----
-
-#### Prediction (Live Reservoir State)
-
-For streaming inference without collecting states.
-
-##### `PredictLiveRaw` (scalar)
-
-```cpp
-[[nodiscard]] float PredictLiveRaw() const;
-```
-
-Scalar prediction from the reservoir's current live state. Asserts `NumOutputs() == 1`.
-
----
-
-##### `PredictLiveRaw` (multi-output)
-
-```cpp
-void PredictLiveRaw(float* output) const;
-```
-
-Writes `NumOutputs()` floats to `output` from the reservoir's current live state. For autoregressive / streaming inference loops.
-
----
-
-##### `PredictFromState`
-
-```cpp
-void PredictFromState(const float* state, float* output) const;
-```
-
-Runs the readout on a caller-supplied state buffer (already subsampled to `NumOutputVerts()` floats, e.g. from `CopyLiveState`), writing `NumOutputs()` floats to `output`. Unlike `PredictLiveRaw`, it does not read the live reservoir — letting the caller modify the readout input (e.g. brand a side channel onto the first few slots) before prediction. This is the prequential predict-then-train primitive used by the streaming examples.
-
----
-
-#### State Access and Persistence
-
-##### `SelectedStates`
-
-```cpp
-[[nodiscard]] std::vector<float> SelectedStates() const;
-```
-
-Returns stride-selected vertices from all collected states: `NumCollected() * NumOutputVerts()` floats, row-major.
-
----
-
-##### Accessors
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `NumCollected()` | `size_t` | Timesteps recorded by `Run()`. |
-| `NumOutputs()` | `size_t` | From `cfg.readout.num_outputs` (set at construction). |
-| `NumOutputVerts()` | `size_t` | Number of selected vertices M = ceil(N / stride). |
-| `NumInputs()` | `size_t` | Number of input channels from config. |
-| `Dim()` | `size_t` | Hypercube dimension of the underlying reservoir (`cfg.reservoir.dim`). |
-| `Size()` | `size_t` | Reservoir neuron count N = 2^`Dim()`. |
-| `GetConfig()` | `ESNConfig` | Full config used to construct this ESN (both reservoir and readout). |
-
----
-
-##### Readout State Serialization
-
-The ESN exposes its trained readout state for save/restore. The reservoir weights are deterministic from the seed, so only the config (`GetConfig()`) and readout state (`GetReadoutState()`) need to be persisted. On restore, construct a fresh `ESN` from the saved `ESNConfig` (which carries `reservoir.dim`) and call `SetReadoutState` — the readout config travels with the `ESNConfig`, so no separate `SetCNNConfig` step is needed.
-
-**`ReadoutState` struct** (nested in `ESN`):
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `weights` | `std::vector<double>` | Opaque flattened blob of all conv kernels, biases, and dense-head weights. Round-trip only -- do not interpret. |
-| `is_trained` | `bool` | True if the readout has been trained. |
+| Field | Description |
+|-------|-------------|
+| `weights` | Opaque `vector<double>` (unversioned HCNN blob). Round-trip only. |
+| `is_trained` | True if the network exists (true after construction — not “has seen data”). |
 
 | Method | Description |
 |--------|-------------|
-| `GetReadoutState()` | Extract trained readout for serialization. |
-| `SetReadoutState(state)` | Restore a previously saved readout state. Reconstructs the CNN from stored config + weight blob. |
-
-**Example: save and restore a trained model**
+| `GetReadoutState()` | Snapshot weights |
+| `SetReadoutState(state, mode=Eval)` | Inject into the live net. No-op if `!is_trained` |
+| `ReadoutBestEpoch()` | 1-based best epoch after last batch `Train` with restore, else 0 |
+| `SaveReadoutHcnnModel(stem)` | Portable `stem.hcnw` + `stem.arch.json` |
+| `LoadReadoutHcnnModel(stem, mode=Eval)` | Load after arch sidecar validation |
+| `ReadoutArchSummary()` | Human-readable stack + parameter counts |
 
 ```cpp
-// Save
-ESNConfig cfg     = esn.GetConfig();         // includes both reservoir and readout
-auto      state   = esn.GetReadoutState();
-// serialize cfg + state using your preferred format
+ESNConfig cfg   = esn.GetConfig();
+auto      state = esn.GetReadoutState();
+// serialize cfg + state …
 
-// Restore
-ESN restored(cfg);           // cfg.reservoir.dim restores the dimension
+ESN restored(cfg);
 restored.SetReadoutState(state);
-// Ready to predict -- no retraining needed.
 ```
 
-A standalone `Reservoir` is likewise self-describing: `reservoir.GetConfig()` returns the full `ReservoirConfig`, and `Reservoir::Create(reservoir.GetConfig())` rebuilds an identical reservoir (the weights are deterministic in the seed). The returned `spectral_radius` is the configured target; `GetRealizedSpectralRadius()` exposes the post-rescale value separately.
+---
+
+### Standalone Reservoir and Readout
+
+Most adopters only construct `ESN`. `Reservoir.h` and `Readout.h` are still
+public (included by `ESN.h`).
+
+**Reservoir** — `Reservoir::Create(cfg)` returns `unique_ptr<Reservoir>`
+(non-copyable, non-movable). Per-step contract: `InjectInput` / optional
+`InjectExternalFeedback`, then `Step()`, then `Outputs()` / `SliceAt(age)`.
+`Clear()` zeros dynamics. `TakeSnapshot` / `RestoreSnapshot` round-trip the
+delay line (not weights). `GetConfig()` + seed rebuilds matching weights;
+`GetRealizedSpectralRadius()` is the post-rescale estimate.
+
+**Readout** — construct from `ReadoutConfig` (set `dim` yourself if you are
+not going through ESN). `Train` / `TrainStep*` / `PredictRaw` / `PredictClass`
+/ `R2` / `Accuracy` / `Weights` / `SetState` / `SaveHcnnModel`. Online hosts
+schedule `lr` with the free functions in `Readout.h`:
+
+```cpp
+float CosineLR(float progress, float lr_max, float lr_min);
+float ExponentialDecayLR(float progress, float lr_max, float lr_min);
+```
+
+`progress` is clamped to [0, 1]. Batch `Train` uses HCNN's own cosine schedule
+from `epochs` / `lr_decay_epochs` instead.
 
 ---
 
 ## Dependencies
 
-HypercubeESN depends on a single external project:
+**HypercubeCNN** — hypercube convolutional stack used by `Readout`.
 
-**HypercubeCNN** -- library providing the hypercube convolutional network used by `Readout`.
-
-- Location: **vendored** as a read-only snapshot at `third_party/HypercubeCNN` (see its `VENDORED.md` for the pinned upstream commit). No sibling checkout or network fetch — the build is offline and version-pinned.
-- Built **transitively** as part of the HypercubeESN build via `add_subdirectory(third_party/HypercubeCNN)`; a small in-tree shim CMakeLists builds only its `HypercubeCNNCore` static lib — no separate pre-build step.
-- Public headers are re-exported through `HypercubeESNCore`'s include interface, so consumers of HypercubeESN do not need to add HypercubeCNN to their own link line -- `target_link_libraries(my_app PRIVATE HypercubeESNCore)` pulls it in transitively.
-- The HCNN headers used by HypercubeESN consumers are the ones re-exported by `Readout.h` (forward-declared `hcnn::HCNN` via PIMPL); the full HCNN API is not part of the public HypercubeESN surface.
+- Vendored read-only snapshot at `third_party/HypercubeCNN` (see `VENDORED.md`).
+- Built transitively via `add_subdirectory`; offline and version-pinned.
+- Linked through HypercubeESNCore — consumers only link HypercubeESNCore.
+- Public HypercubeESN surface is ESN / Reservoir / Readout types; full HCNN API
+  is not re-exported (`hcnn::HCNN` is PIMPL'd inside `Readout`).
 
 No other external dependencies beyond the C++ standard library.

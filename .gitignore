@@ -21,3 +21,16 @@ Thumbs.db
 # Claude Code (development only)
 .claude/
 CLAUDE.md
+
+# Local release runbooks / ephemeral experiment notes (not for the public tree)
+# Delete tracked copies at 2.0 cutover if still present (see docs/migration_2.0.0.md).
+docs/migration_2.0.0.md
+docs/Rotating-input-map-temporalization.md
+examples/Lorenz/TRACKING.md
+examples/Lorenz/TODO_forward_only_ablation.md
+examples/Lorenz/free_run_error_seed13649419.png
+examples/Lorenz/traces/
+examples/Lorenz/reference/
+
+# Research Topics — local ephemeral (survey logs / TRACKING may be force-added)
+Research Topics/Lorenz_JanusCursor/traces/

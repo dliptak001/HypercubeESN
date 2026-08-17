@@ -7,6 +7,9 @@
 # The core inherits the parent project's compile flags instead, so anything we
 # publish stays portable across CPUs. The HypercubeCNNCore target name is preserved
 # so consumers link it unchanged.
+#
+# Source list matches upstream HypercubeCNNCore (pin v1.0.4): core pipeline + optional
+# public products (spatial, train helpers) that ship in the same static lib.
 
 find_package(Threads REQUIRED)
 
@@ -16,6 +19,9 @@ add_library(HypercubeCNNCore STATIC
     HCNNNetwork.cpp
     HCNNReadout.cpp
     HCNN.cpp
+    HCNNSpatialAug.cpp
+    HCNNSpatialEmbed.cpp
+    HCNNTrainHelpers.cpp
 )
 add_library(HypercubeCNN::HypercubeCNNCore ALIAS HypercubeCNNCore)
 

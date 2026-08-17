@@ -1,32 +1,43 @@
 # HypercubeESN Python SDK
 
-Python bindings for reservoir computing on Boolean hypercube graphs.
+Python bindings for the HypercubeESN C++ library: a fixed Boolean-hypercube
+reservoir plus a trainable HypercubeCNN readout, exposed as one `ESN` class.
+
+Deep dives on the C++ core: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md)
+· [CPP_SDK.md](CPP_SDK.md).
+
+Package version: **2.0.0** (`hypercube_esn.__version__`).
 
 ## Contents
 
 - [Installation](#installation)
-- [Quick Start](#quick-start)
-- [API Reference](#api-reference)
-  - [The dim parameter](#the-dim-parameter)
-  - [ESN](#esn)
-  - [Streaming / Online Training](#streaming--online-training)
-- [Input Data Layout](#input-data-layout)
+- [Quick start](#quick-start)
+- [Pipeline vocabulary](#pipeline-vocabulary)
+- [API reference](#api-reference)
+- [Input data layout](#input-data-layout)
+- [Data types](#data-types)
+- [Error handling](#error-handling)
+- [Model persistence](#model-persistence)
+- [Limitations](#limitations)
 - [Dependencies](#dependencies)
 
 ## Installation
 
 ### From PyPI (recommended)
 
-Pre-built wheels are available for Python 3.10-3.13 on Windows (x64),
-Linux (x86_64, aarch64), and macOS (x86_64, arm64):
+Pre-built wheels for Python 3.10–3.14 on Windows (x64), Linux (x86_64, aarch64),
+and macOS (x86_64, arm64):
 
 ```bash
 pip install hypercube-esn
 ```
 
+Import as `import hypercube_esn as he` (package name on PyPI is `hypercube-esn`).
+
 ### From source
 
-Requirements: Python 3.10+, a C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+), CMake 3.20+.
+Requirements: Python 3.10+, C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+),
+CMake 3.20+, scikit-build-core, pybind11, NumPy.
 
 ```bash
 git clone https://github.com/dliptak001/HypercubeESN.git
@@ -34,8 +45,7 @@ cd HypercubeESN/python
 pip install .
 ```
 
-On Windows with MinGW, install build dependencies and set compiler environment
-variables before building:
+On Windows with MinGW, put the toolchain on `PATH` and set the generator:
 
 ```powershell
 pip install scikit-build-core pybind11 numpy
@@ -49,12 +59,33 @@ pip install . --no-build-isolation
 
 ### Running tests
 
+From the **repository root** (so the source tree does not shadow the installed
+`_core` extension):
+
 ```bash
-pip install ".[test]"
+pip install "./python[test]"
 pytest python/tests/
 ```
 
-## Quick Start
+`--import-mode=importlib` is already set in `python/pyproject.toml`.
+
+### Examples
+
+Short runnable hosts (public API only) live under
+[`python/examples/`](../python/examples/README.md) in the **git tree**. They are
+**not** installed by the PyPI wheel — clone the repo (or open the files on
+GitHub), install the package, then run from the repository root:
+
+```bash
+pip install hypercube-esn
+python python/examples/basic_prediction.py
+python python/examples/classification.py
+```
+
+These teach the SDK on easy synthetic signals. Paper / release validators remain
+the C++ campaigns under `examples/` (NARMA, MemoryCapacity, Lorenz).
+
+## Quick start
 
 ### Simple (recommended)
 
@@ -64,11 +95,11 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
+esn = he.ESN(dim=7, seed=73895)
 esn.fit(signal, warmup=200)       # warmup, run, train in one call
 
-print(f"R² = {esn.r2():.6f}")     # test R²
-print(f"NRMSE = {esn.nrmse():.6f}")  # test NRMSE
+print(f"R² = {esn.r2():.6f}")     # held-out test R²
+print(f"NRMSE = {esn.nrmse():.6f}")
 ```
 
 ### Explicit (full control)
@@ -79,9 +110,9 @@ import hypercube_esn as he
 
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
-esn = he.ESN(dim=7)
-esn.warmup(signal[:200])
-esn.run(signal[200:-1])
+esn = he.ESN(dim=7, seed=73895)
+esn.reservoir_warmup(signal[:200])
+esn.reservoir_run(signal[200:-1])
 
 targets = signal[201:]
 esn.train(targets[:1400])
@@ -92,11 +123,37 @@ print(f"R² = {r2:.6f}")
 
 ---
 
-## API Reference
+## Pipeline vocabulary
 
-### The `dim` parameter
+Same story as the C++ core:
 
-`dim` controls the hypercube dimension. The reservoir has N = 2^dim neurons. Supported values: 5-16.
+```
+  inputs [+ optional external feedback]
+    │
+    ▼
+  Reservoir (fixed)
+    │
+    ▼
+  pack B ages (N each)  ──▶  HCNN readout (trained) ──▶ y
+```
+
+| Term | Meaning |
+|------|---------|
+| **N** | Reservoir neurons = 2<sup>dim</sup> (`reservoir_neuron_count`) |
+| **M** | `history_depth` — delay-line depth used by the **recurrent** gather |
+| **B** | Delay-line ages packed into the readout (`readout_slices`). Power of two, 1 ≤ B ≤ M. Default 1. |
+| **Reservoir state** | Newest published slice (`copy_reservoir_state`) — N floats |
+| **Readout input** | What the HCNN trains/predicts on (`copy_readout_input`) — B·N floats |
+
+Only the readout is trained. The reservoir is frozen after construction.
+
+---
+
+## API reference
+
+### The `reservoir_hypercube_dimension` parameter
+
+Controls reservoir hypercube size. N = 2<sup>dim</sup>. Supported: **5–16**.
 
 | dim  | Neurons   | Typical use |
 |------|-----------|-------------|
@@ -104,182 +161,208 @@ print(f"R² = {r2:.6f}")
 | 6    | 64        | Light benchmarks |
 | 7    | 128       | Standard benchmarks |
 | 8    | 256       | Production, complex tasks |
-| 9-16 | 512-65536 | Research, high-capacity tasks |
-
-For dim 9+, reduce `output_fraction` to control readout input size (e.g., 0.25 for dim 10).
+| 9–16 | 512–65536 | Research, high-capacity tasks |
 
 ---
 
 ### ESN
 
-Owns the full Reservoir → Readout pipeline. The core API covers construction,
-batch training, prediction, and evaluation. Additional streaming/online methods
-are available for advanced use (see [Streaming / Online Training](#streaming--online-training)).
+Owns the full Reservoir → Readout pipeline.
 
 ```python
 import hypercube_esn as he
 
-# Construction
-esn = he.ESN(dim=7)                                                    # defaults
-esn = he.ESN(dim=7, leak_rate=0.3, history_depth=8)                    # custom config
+esn = he.ESN(dim=7)  # or reservoir_hypercube_dimension=7
+esn = he.ESN(dim=7, leak_rate=0.3, history_depth=8, readout_slices=2)
 
-# High-level pipeline (recommended)
-esn.fit(signal, warmup=200)                     # warmup + run + train
-esn.fit(inputs, targets=labels, warmup=200)     # explicit targets (multi-input)
-esn.r2()                                        # test R² (no args after fit)
-esn.nrmse()                                     # test NRMSE
+# High-level
+esn.fit(signal, warmup=200)
+esn.r2(); esn.nrmse()
 
-# Low-level pipeline (full control)
-esn.warmup(inputs)                # drive without recording
-esn.run(inputs)                   # drive and collect states
-esn.clear_states()                # clear collected data (keeps readout)
-esn.train(targets)                # HCNN readout (config fixed at construction)
+# Low-level drive
+esn.reservoir_warmup(inputs)
+esn.reservoir_run(inputs)
+esn.reservoir_run(inputs, clear_recorded=True)
+esn.reservoir_step(u_t, fb_t)   # closed loop when D > 0
+esn.reservoir_clear()
+esn.train(targets)
 
-# Prediction & evaluation
-esn.predict_raw(timestep)           # single continuous prediction
-esn.predictions()                   # all predictions as ndarray
-esn.r2(targets, start=1400)         # R² from index 1400 to end
-esn.nrmse(targets, start, count)    # normalized RMSE
-esn.accuracy(labels, start, count)  # classification accuracy
+# Predict / score
+esn.predict()
+esn.predict_from_recorded(t)
+esn.predict_from_readout_input(x)  # alias: predict_from_state
+esn.predictions()
+esn.r2(targets, start=1400)
+esn.nrmse(targets, start, count)
+esn.accuracy(labels, start, count)
 
-# State access
-esn.selected_states()               # stride-selected states as ndarray
+# State
+esn.collected_states()          # (T, B·N)
+esn.copy_readout_input()        # (B·N,)
+esn.copy_reservoir_state()      # (N,) newest slice
+
+# Persist
+esn.save("model.pkl"); he.ESN.load("model.pkl")
 ```
+
+**Not thread-safe.** One `ESN` instance per thread (const predict paths share
+scratch, same as C++).
 
 ---
 
 #### Construction
 
 ```python
-ESN(dim, *, seed=73895, spectral_radius=0.99, input_scaling=0.5,
-    leak_rate=1.0, num_inputs=1, history_depth=16, history_floor=1.0,
-    output_fraction=1.0,
-    readout_num_outputs=1, readout_task="regression", ...)
+ESN(
+    dim=7,                         # or reservoir_hypercube_dimension=7
+    *,
+    seed=7934791766227647176,  # matches ReservoirConfig
+    spectral_radius=0.999,
+    input_scaling=0.02,
+    leak_rate=1.0,
+    num_inputs=1,
+    history_depth=16,
+    verbose=False,
+    num_external_feedback_channels=0,
+    external_feedback_scaling=0.5,
+    bias_scaling=0.003,
+    readout_slices=1,              # B; power of two ≤ history_depth
+    readout_num_outputs=1,
+    readout_task="regression",
+    readout_num_layers=1,          # house default; 0 = auto min(dim-2, 2)
+    readout_conv_channels=16,
+    readout_epochs=200,
+    readout_batch_size=32,
+    readout_lr_max=0.0015,
+    readout_lr_min_frac=0.01,
+    readout_lr_decay_epochs=0,
+    readout_weight_decay=0.0,
+    readout_momentum=0.0,
+    readout_activation="tanh",
+    readout_seed=42,
+    readout_num_threads=0,
+    readout_restore_best_epoch=True,
+    readout_best_epoch_holdout_frac=0.0,
+)
 ```
 
-Creates the reservoir and computes output selection parameters from `output_fraction`. The reservoir weights are generated and spectral-radius-rescaled at construction time. The readout (HCNN) configuration is also fixed at construction via the `readout_*` keyword arguments and consumed by `train()` / `init_online()`.
+Reservoir weights are drawn and spectral-radius-rescaled at construction. The
+HCNN is built eagerly from the `readout_*` kwargs and is ready before the first
+`train` / `train_step`.
 
-**Reservoir parameters:**
+**Still C++-only** (not yet in Python): `use_pooling` / pool type / batch-norm /
+optimizer choice / channel growth (C++ struct defaults: pooling on, Adam, …).
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `dim` | `int` | — | Hypercube dimension (5-16). N = 2^dim neurons. |
-| `seed` | `int` | `73895` | RNG seed for weight initialization. Every seed produces a valid weight topology; different seeds yield measurably different performance. `73895` is a surveyed default; run a seed survey to tune for your task. |
-| `spectral_radius` | `float` | `0.99` | Target spectral radius. DIM-invariant across all dim values (vertex-transitive topology property). No per-size re-tuning needed. |
-| `input_scaling` | `float` | `0.5` | Input drive coefficient. Input weights carry a 1/√dim fan-in normalization, so a given value yields the same `tanh` drive at any dim. (The legacy `0.02` was a normalization artifact and no longer applies.) |
-| `leak_rate` | `float` | `1.0` | Leaky integrator coefficient. 1.0 = full replacement. < 1.0 adds smoothing. |
-| `num_inputs` | `int` | `1` | Number of input channels. Channel k drives the contiguous vertex block `[k·N/num_inputs, (k+1)·N/num_inputs)`. |
-| `history_depth` | `int` | `16` | Delay-line depth M: how many past output slices the readout sees, in [1, 64]. Deeper lines extend short-range temporal memory. |
-| `history_floor` | `float` | `1.0` | Depth taper K in [0.1, 1.0]. Recurrent weights are linearly scaled from just below 1.0 at the most-recent history slice down to K at the deepest, so older states influence the next state less; applied before the spectral-radius rescale. `1.0` = no taper; no effect when `history_depth == 1`. |
-| `verbose` | `bool` | `True` | Print the one-line reservoir construction banner. Set `False` to silence it. |
-| `output_fraction` | `float` | `1.0` | Fraction of N vertices used as readout features, in (0.0, 1.0]. |
+Closed-loop: set `num_external_feedback_channels=D>0`, then
+`esn.reservoir_step(u_t, fb_t)` each step.
 
-**Readout (HCNN) parameters:**
+##### Reservoir parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `readout_num_outputs` | `int` | `1` | Number of outputs (classes for classification, targets for regression). |
+| `dim` / `reservoir_hypercube_dimension` | `int` | — | Hypercube dim **[5, 16]**. N = 2^dim. Prefer `dim=`. |
+| `seed` | `int` | `7934791766227647176` | Master reservoir seed (SplitMix64 substreams). Matches C++ `ReservoirConfig`. Screen per task. |
+| `spectral_radius` | `float` | `0.999` | Target ρ for the **recurrent** block. |
+| `input_scaling` | `float` | `0.02` | Input weights × `input_scaling / √dim`. Retune per task/dim. |
+| `leak_rate` | `float` | `1.0` | Leaky integrator; 1.0 = full replacement. |
+| `num_inputs` | `int` | `1` | Channels; must divide N. Channel k drives block `k·N/K`. |
+| `history_depth` | `int` | `16` | Delay-line depth **M ∈ [1, 64]** for the **recurrent** gather — not readout B. |
+| `verbose` | `bool` | `False` | Construction banner. |
+| `num_external_feedback_channels` | `int` | `0` | D closed-loop channels; 0 = off. |
+| `external_feedback_scaling` | `float` | `0.5` | Ext-fb weight scale (like input). |
+| `bias_scaling` | `float` | `0.003` | Per-neuron bias after tanh; 0 disables. |
+| `readout_slices` | `int` | `1` | B ages for the HCNN (power of two, ≤ M). |
+
+##### Readout (HCNN) parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `readout_num_outputs` | `int` | `1` | Regression targets or class count. |
 | `readout_task` | `str` | `"regression"` | `"regression"` or `"classification"`. |
-| `readout_num_layers` | `int` | `0` | Conv+Pool pairs. 0 = auto: min(dim-2, 2). |
-| `readout_conv_channels` | `int` | `16` | Base channels (doubles per layer). |
-| `readout_epochs` | `int` | `200` | Training epochs. |
+| `readout_num_layers` | `int` | `1` | Conv(+Pool) stages. Default **1**. **`0` = auto** `min(dim−2, 2)`. |
+| `readout_conv_channels` | `int` | `16` | First-layer channels (then × channel growth in C++ default stack). |
+| `readout_epochs` | `int` | `200` | Batch-train epochs. |
 | `readout_batch_size` | `int` | `32` | Mini-batch size. |
-| `readout_lr_max` | `float` | `0.0015` | Cosine annealing peak learning rate. Keep <= 0.005 to avoid NaN. |
-| `readout_lr_min_frac` | `float` | `0.01` | Floor = lr_max · lr_min_frac. |
-| `readout_lr_decay_epochs` | `int` | `0` | Cosine decay horizon. 0 = use `readout_epochs`. |
+| `readout_lr_max` | `float` | `0.0015` | Cosine peak. Keep ≤ ~0.005 to avoid NaN. |
+| `readout_lr_min_frac` | `float` | `0.01` | Floor = `lr_max * lr_min_frac`. |
+| `readout_lr_decay_epochs` | `int` | `0` | Cosine horizon; `0` = use `readout_epochs`. |
 | `readout_weight_decay` | `float` | `0.0` | L2 weight decay. |
-| `readout_momentum` | `float` | `0.0` | Heavy-ball SGD momentum. 0 = plain SGD; 0.9 typical for CNN training. |
-| `readout_activation` | `str` | `"tanh"` | Per-Conv-layer activation: `"tanh"`, `"relu"`, `"leaky_relu"`, or `"none"`. |
-| `readout_seed` | `int` | `42` | CNN weight initialization seed. |
-| `readout_verbose` | `bool` | `False` | Print per-epoch learning rate. |
-| `readout_verbose_train_acc` | `bool` | `False` | Also print training accuracy/MSE each epoch. |
+| `readout_momentum` | `float` | `0.0` | SGD momentum if the C++ optimizer is SGD. Python does not expose optimizer choice (C++ default is Adam, which ignores this). |
+| `readout_activation` | `str` | `"tanh"` | `"tanh"`, `"relu"`, `"leaky_relu"`, or `"none"`. |
+| `readout_seed` | `int` | `42` | HCNN weight init seed. |
+| `readout_num_threads` | `int` | `0` | HCNN workers: `0` auto, `1` single-threaded (multi-ESN hosts), `N` workers. |
+| `readout_restore_best_epoch` | `bool` | `True` | Restore best epoch after batch `train` (min MSE / max accuracy). |
+| `readout_best_epoch_holdout_frac` | `float` | `0.0` | Tail hold-out for best-epoch scoring; `0` = score full train set. |
 
 ---
 
-#### High-Level Pipeline
+#### High-level pipeline
 
 ##### `fit(inputs, targets=None, *, warmup=200, train_size=None, train_frac=None, horizon=1) → ESN`
 
-One-call pipeline that performs warmup, run, train, and stores targets for zero-argument evaluation. Returns `self` for method chaining.
+Warmup → run → train with a train/test split. Stores targets so `r2()` /
+`nrmse()` / `accuracy()` work with no arguments. Returns `self`.
 
-**Two modes:**
-
-**Auto-target** (`targets=None`, single-input only): generates next-step prediction targets from the input signal, shifted by `horizon` steps.
-
-```python
-esn.fit(signal, warmup=200)                   # next-step, 70% train
-esn.fit(signal, warmup=200, train_size=1400)  # next-step, explicit split
-esn.fit(signal, warmup=200, horizon=5)        # 5-step-ahead prediction
-```
-
-**Explicit-target** (any `num_inputs`): uses the provided targets array directly. Required for multi-input ESN and classification tasks. `horizon` is ignored.
-
-```python
-# Multi-input: predict channel 0
-esn.fit(inputs, targets=ch0[201:], warmup=200)
-
-# Classification
-esn.fit(signal, targets=labels, warmup=200)
-```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `inputs` | `ndarray` | — | Input signal. Shape `(steps,)` or `(steps, num_inputs)`. |
-| `targets` | `ndarray` | `None` | One target per collected state. Required for multi-input. |
-| `warmup` | `int` | `200` | Timesteps for transient washout. |
-| `train_size` | `int` | `None` | Training samples. Mutually exclusive with `train_frac`. |
-| `train_frac` | `float` | `None` | Training fraction. Default 0.7 when neither is given. |
-| `horizon` | `int` | `1` | Auto-target prediction horizon. Ignored with explicit targets. |
-
-**After `fit()`**, call `r2()`, `nrmse()`, or `accuracy()` with no arguments to evaluate the held-out test portion:
+**Auto-target** (`targets=None`, single-input only): next-step (or
+`horizon`-step) targets from the signal.
 
 ```python
 esn.fit(signal, warmup=200)
-print(esn.r2())       # test R²
-print(esn.nrmse())    # test NRMSE
-print(esn.train_size) # number of training samples
-print(esn.test_size)  # number of test samples
+esn.fit(signal, warmup=200, train_size=1400)
+esn.fit(signal, warmup=200, horizon=5)
+```
+
+**Explicit-target** (any `num_inputs`): one target row per collected state.
+Required for multi-input and classification. `horizon` is ignored.
+
+```python
+esn.fit(inputs, targets=ch0[201:], warmup=200)
+esn.fit(signal, targets=labels, warmup=200)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `inputs` | `ndarray` | — | `(steps,)` or `(steps, num_inputs)` |
+| `targets` | `ndarray` | `None` | One target per collected state (explicit mode) |
+| `warmup` | `int` | `200` | Transient washout steps |
+| `train_size` | `int` | `None` | Train count; exclusive with `train_frac` |
+| `train_frac` | `float` | `None` | Train fraction; default **0.7** if neither set |
+| `horizon` | `int` | `1` | Auto-target shift; ignored with explicit targets |
+
+```python
+esn.fit(signal, warmup=200)
+print(esn.r2())
+print(esn.train_size, esn.test_size)
 ```
 
 ---
 
-#### Low-Level Pipeline
+#### Low-level driving
 
-The methods below give full control over each step. Use these for multi-step workflows, streaming, or when `fit()` doesn't match your use case.
+##### `reservoir_warmup(inputs)`
 
-##### `warmup(inputs)`
+Drive without recording. Shape `(num_steps,)` or `(num_steps, num_inputs)`.
+Converted to float32.
 
-Drive the reservoir for a number of timesteps without recording state. Use this to wash out the reservoir's initial transient (zero state) before collecting data for training.
+##### `reservoir_run(inputs, *, clear_recorded=False)`
 
-**Parameters:**
-- `inputs` — NumPy array of input values. Shape `(num_steps,)` for single-input or `(num_steps, num_inputs)` for multi-input. Converted to float32 automatically.
+Drive and **append** recorded readout inputs. `clear_recorded=True` discards
+prior rows and any cached `fit()` targets first (live reservoir and trained
+readout stay).
 
-**Notes:**
-- Does not allocate memory or record states.
-- The reservoir's internal state is updated in-place.
+##### `reservoir_clear()`
 
----
+Zero reservoir dynamics. Recorded rows and readout weights are preserved.
 
-##### `run(inputs)`
+##### `reservoir_step(inputs, external_feedback=None)`
 
-Drive the reservoir and record the subsampled state vector at each step. States are appended — multiple `run()` calls accumulate.
+One timestep. `inputs` is `(num_inputs,)`. When
+`num_external_feedback_channels = D > 0`, pass `external_feedback` as `(D,)`
+(omit or `None` to skip this step). Raises if feedback is given while D = 0.
 
-**Parameters:**
-- `inputs` — NumPy array. Same shape convention as `warmup()`.
-
-**Notes:**
-- After `run()`, collected states are available for training and evaluation.
-- Features are computed lazily when first needed (by `train()`, `r2()`, etc.).
-
----
-
-##### `clear_states()`
-
-Clear all collected states and cached features. The reservoir's live internal state is **not** reset — it retains its current activation. The trained readout is also preserved.
-
-Use this between independent sequences: clear the collected data, then `warmup()` + `run()` on a new input sequence without rebuilding the ESN.
+Closed-loop hosts: construct with D > 0, then interleave `reservoir_step` with
+`predict` / `train_step`. `reservoir_warmup` / `reservoir_run` do **not** take
+feedback.
 
 ---
 
@@ -287,130 +370,86 @@ Use this between independent sequences: clear the collected data, then `warmup()
 
 ##### `train(targets)`
 
-Train the HCNN readout on training samples taken from the start of the collected states. For single-output readouts the sample count is `len(targets)`. For multi-output readouts (`num_outputs > 1`) targets are laid out `[sample][output]` row-major, so the sample count is `len(targets) // num_outputs`. The readout configuration is the one supplied at construction time (the `readout_*` keyword arguments).
+Batch-fit the HCNN on the prefix of collected rows.
 
-**Parameters:**
+- **Regression:** `(train_size,)` or `(train_size, num_outputs)` / flat
+  `(train_size * num_outputs,)`. Sample count is `len(targets) // num_outputs`.
+- **Classification:** `(train_size,)` integer class indices in
+  `[0, num_outputs)`. Whole-number floats are accepted and cast. Sample count
+  is `len(targets)` — **not** divided by `num_outputs`.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `targets` | `ndarray` | — | Target values. Regression: `(train_size,)` or `(train_size · num_outputs,)`. Classification: `(train_size,)` float class labels. |
+Raises if that count exceeds `num_collected_states`, or (regression) if the
+length is not a multiple of `num_outputs`.
 
-**Notes:**
-- Raises `ValueError` if the implied `train_size` (`len(targets) // num_outputs`) exceeds `num_collected`, or if `len(targets)` is not a multiple of `num_outputs`.
-- Calling `train()` again replaces the previous solution entirely.
-- To change the readout architecture or training schedule, construct a new `ESN` with different `readout_*` arguments.
-
----
-
-#### Prediction and Evaluation
-
-##### `predict_raw(timestep) → float`
-
-Return the raw continuous prediction for a single collected timestep.
-
-**Parameters:**
-- `timestep` — Index into collected states, in [0, num_collected).
-
-**Returns:** Continuous float prediction. For regression: the predicted value. For binary classification (single output): threshold at 0.0. For multi-class classification: a single logit (use `accuracy()` for evaluation, which applies argmax internally).
-
-**Requires `num_outputs == 1`.** Scalar prediction raises `ValueError` for multi-output readouts — use `predict_raw_multi()` instead.
+A second `train()` **continues** from current weights (same as C++). Construct a
+new `ESN` for a fresh random init. Architecture / schedule changes also require a
+new instance.
 
 ---
 
-##### `predict_raw_multi(timestep) → ndarray`
+#### Prediction and evaluation
 
-Multi-output prediction for a single collected timestep. Returns a 1D float32 array of shape `(num_outputs,)`. Works for any `num_outputs` (including 1).
+##### `predict() → ndarray`
 
-**Parameters:**
-- `timestep` — Index into collected states, in [0, num_collected).
+Live prediction from the current reservoir / readout input. Shape
+`(num_outputs,)`. Softmax is **not** applied (classification returns logits).
 
----
+##### `predict_from_recorded(timestep) → ndarray`
+
+One recorded row. Shape `(num_outputs,)`.
 
 ##### `predictions() → ndarray`
 
-Return predictions for all collected timesteps as a 1D float32 array of shape `(num_collected,)`. Requires `num_outputs == 1` (one scalar per timestep); raises `ValueError` for multi-output readouts — use `predictions_multi()` to retrieve all channels, or `r2()` / `nrmse()` to evaluate them.
+All recorded rows: `(num_collected_states, num_outputs)`.
 
----
+##### `predict_from_readout_input(readout_input) → ndarray`
 
-##### `predictions_multi() → ndarray`
+Forward a caller-supplied vector of length **`readout_input_width`** (B·N).
+Equals one reservoir slice only when B = 1. Shape `(num_outputs,)`.
+`predict_from_state` is a historical alias (same contract).
 
-Multi-output predictions for all collected timesteps as a 2D float32 array of shape `(num_collected, num_outputs)`. Works for any `num_outputs` (including 1).
-
----
-
-##### `predict_from_state(state) → ndarray`
-
-Run the readout on a caller-supplied subsampled reservoir state of shape `(num_output_verts,)` (e.g. one returned by `copy_live_state()`). Returns a 1D float32 array of shape `(num_outputs,)`.
-
----
-
-##### `r2(targets=None, start=None, count=None) → float`
-
-Compute R-squared (coefficient of determination) on a slice of collected states.
-
-```
-R² = 1 - SS_res / SS_tot
-```
-
-**Calling conventions:**
+##### `r2` / `nrmse` / `accuracy`
 
 ```python
-esn.r2()                       # after fit(): test R² (uses stored targets)
-esn.r2(targets)                # all collected states
-esn.r2(targets, start=1400)    # from index 1400 to end
-esn.r2(targets, start=0, count=1400)  # first 1400 states only
+esn.r2()                              # after fit(): test window
+esn.r2(targets)                       # all collected
+esn.r2(targets, start=1400)           # from 1400 to end
+esn.r2(targets, start=0, count=1400)
 ```
 
-**Parameters:**
-- `targets` — Target array, index-aligned with collected states (`targets[i]` is the target for collected state `i`). If omitted, uses targets stored by `fit()`.
-- `start` — First timestep index. Default: 0, or `train_size` after `fit()`.
-- `count` — Number of timesteps to evaluate. Default: all remaining from `start`.
+Same argument conventions for `nrmse` and `accuracy`.
 
-**Returns:** R² value. 1.0 = perfect. 0.0 = predicts the mean. Can be negative.
+- **Targets** are index-aligned with collected states — pass the full array and
+  use `start` / `count`. Do **not** pre-slice targets.
 
-> **Warning:** Do not slice the targets array before passing. The `start` parameter indexes into **both** the internal feature buffer and the target array simultaneously. Slicing targets shifts the alignment and produces wrong results silently. Use the `start` parameter instead.
->
-> ```python
-> esn.r2(targets, start=1400)      # CORRECT
-> esn.r2(targets[1400:])           # WRONG — evaluates training features against test targets
-> ```
+```python
+esn.r2(targets, start=1400)   # correct
+esn.r2(targets[1400:])        # wrong alignment
+```
+
+- **R²:** average of per-output coefficients of determination.
+- **NRMSE:** RMSE / std(target), averaged over outputs (C++ semantics).
+- **Accuracy:** multi-class = argmax match; single-output thresholds logit at 0
+  (labels typically in {−1, +1} for the binary head).
 
 ---
 
-##### `nrmse(targets=None, start=None, count=None) → float`
+#### State access
 
-Compute Normalized Root Mean Squared Error on a slice of collected states.
+##### `collected_states() → ndarray`
 
-```
-NRMSE = sqrt(MSE) / sqrt(Var(targets))
-```
+Shape `(num_collected_states, readout_input_width)` — each row is a recorded
+**readout input** (B·N), not just the newest reservoir slice.
 
-**Parameters:** Same conventions as `r2()`.
+##### `copy_readout_input() → ndarray`
 
-**Returns:** NRMSE value. 0.0 = perfect. 1.0 = as bad as predicting the mean.
+Live readout input: `(readout_input_width,)`. This is the row shape for
+`train_step_batch` / `predict_from_readout_input`.
 
----
+##### `copy_reservoir_state() → ndarray`
 
-##### `accuracy(labels=None, start=None, count=None) → float`
-
-Compute classification accuracy on a slice of collected states.
-
-- **Multi-class** (`num_outputs > 1`): computes argmax over class logits and compares to the label. Labels are float class indices (0.0, 1.0, 2.0, ...).
-- **Binary** (`num_outputs == 1`): thresholds prediction at 0.0 and compares sign to label. Labels are {-1.0, +1.0}.
-
-**Parameters:** Same conventions as `r2()`.
-
-**Returns:** Fraction correct in [0.0, 1.0].
-
----
-
-#### State and Feature Access
-
-##### `selected_states() → ndarray`
-
-Extract stride-selected vertices from all collected states.
-
-**Returns:** Array of shape `(num_collected, num_output_verts)`, dtype float32.
+Newest slice only: `(reservoir_neuron_count,)`. Equals the readout row only
+when B = 1.
 
 ---
 
@@ -418,75 +457,84 @@ Extract stride-selected vertices from all collected states.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `dim` | `int` | Hypercube dimension. |
-| `N` | `int` | Number of neurons (2^dim). |
-| `num_collected` | `int` | Timesteps recorded by `run()`. |
-| `num_outputs` | `int` | Number of readout outputs (after training). |
-| `num_inputs` | `int` | Number of input channels. |
-| `output_fraction` | `float` | Fraction of vertices used as readout input. |
-| `num_output_verts` | `int` | Number of selected output vertices M. |
-| `history_depth` | `int` | Delay-line depth M (past output slices the readout sees). |
-| `history_floor` | `float` | Depth taper K: deepest-history recurrent weight scale (1.0 = no taper). |
-| `seed` | `int` | RNG seed used to initialize reservoir weights. |
-| `spectral_radius` | `float` | Target spectral radius. |
-| `leak_rate` | `float` | Leaky integrator coefficient. |
-| `input_scaling` | `float` | Input drive coefficient. |
-| `train_size` | `int \| None` | Training samples from `fit()`, or None. |
-| `test_size` | `int \| None` | Test samples from `fit()`, or None. |
+| `dim` / `reservoir_hypercube_dimension` | `int` | Reservoir dim |
+| `reservoir_neuron_count` | `int` | N = 2<sup>dim</sup> |
+| `num_collected_states` | `int` | Rows from `reservoir_run` |
+| `num_outputs` | `int` | Readout width |
+| `num_inputs` | `int` | Input channels |
+| `num_external_feedback_channels` | `int` | D (0 = path off) |
+| `history_depth` | `int` | M (recurrent delay line) |
+| `readout_slices` | `int` | B ages packed into the readout |
+| `readout_input_width` | `int` | B·N |
+| `seed` | `int` | Reservoir master seed |
+| `spectral_radius` / `target_spectral_radius` | `float` | Configured SR **target** |
+| `realized_spectral_radius` | `float` | Post-rescale estimate |
+| `leak_rate` | `float` | Leak coefficient |
+| `input_scaling` | `float` | Input drive scale |
+| `external_feedback_scaling` | `float` | Ext-fb weight scale |
+| `bias_scaling` | `float` | Per-neuron bias scale (0 = off) |
+| `verbose` | `bool` | Construction banner flag |
+| `train_size` | `int \| None` | From `fit()`, else `None` |
+| `test_size` | `int \| None` | From `fit()`, else `None` |
+| `readout_best_epoch` | `int` | 1-based best epoch after restore, else 0 |
 
 ---
 
-#### Streaming / Online Training
-
-For applications where data arrives continuously. These methods mirror the C++
-streaming API (see `docs/CPP_SDK.md` for detailed parameter documentation).
+#### Streaming / online training
 
 | Method | Description |
 |--------|-------------|
-| `init_online(warmup_inputs)` | Initialize HCNN for streaming. Runs warmup, builds CNN. Call before `train_live_*`. |
-| `train_live_step(target_class, lr, weight_decay=0.0)` | Single-sample online gradient step (classification). |
-| `train_live_batch(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (classification). |
-| `train_live_step_regression(target, lr, weight_decay=0.0)` | Single-sample online gradient step (regression). |
-| `train_live_batch_regression(states, targets, lr, weight_decay=0.0)` | Mini-batch online gradient step (regression). |
-| `copy_live_state()` | Copy current subsampled reservoir state for batch accumulation. Returns `(num_output_verts,)` array. |
-| `predict_live_raw()` | Scalar prediction from current live state. Requires `num_outputs == 1` (raises `ValueError` otherwise). |
-| `predict_live_raw_multi()` | Multi-output prediction from current live state. Returns `(num_outputs,)` array. |
+| `reservoir_warmup(inputs)` | Settle before online steps |
+| `reservoir_step(u, fb=None)` | One live step (optional ext-fb) |
+| `train_step(target, lr, weight_decay=0.0)` | One step on the live readout input. Regression: `(num_outputs,)`; classification: one class index |
+| `train_step_batch(states, targets, lr, weight_decay=0.0)` | Mini-batch. `states`: `(count, readout_input_width)` from `copy_readout_input`. Targets: `(count, num_outputs)` or `(count,)` class indices |
+| `copy_readout_input()` | Live B·N row for batch accumulation |
+| `predict()` | Live prediction |
 
-#### Reservoir State Management
-
-| Method | Description |
-|--------|-------------|
-| `reset_reservoir_only()` | Zero the reservoir state; collected states and trained readout are preserved. For episodic tasks. |
+`readout_epochs` is ignored in online mode — the caller owns the schedule
+(e.g. cosine on `lr`).
 
 ---
 
-## Input Data Layout
+#### HCNN-native export
 
-Input arrays follow row-major layout:
+| Method | Description |
+|--------|-------------|
+| `save_readout_hcnn_model(path_stem)` | Write `stem.hcnw` + `stem.arch.json` |
+| `load_readout_hcnn_model(path_stem, *, mode="eval")` | Load; `mode` is `"eval"` or `"resume_train"` |
+| `readout_arch_summary()` | Human-readable stack + parameter counts |
+| `readout_best_epoch` | 1-based best epoch after restore, else 0 |
 
-**Single-input** (num_inputs=1):
+---
+
+## Input data layout
+
+Row-major, C-contiguous float32 preferred.
+
+**Single-input** (`num_inputs=1`):
+
 ```python
-inputs = signal[200:400]  # shape (200,) — 200 timesteps
+inputs = signal[200:400]  # shape (200,)
 ```
 
-**Multi-input** (num_inputs=K):
+**Multi-input** (`num_inputs=K`):
+
 ```python
 inputs = np.column_stack([ch1, ch2, ch3])  # shape (num_steps, 3)
 ```
 
-Each row contains one value per channel. The array is flattened internally to match the C++ convention: `[step0_ch0, step0_ch1, ..., step1_ch0, ...]`. Channel k drives the contiguous vertex block `[k·N/K, (k+1)·N/K)`.
+Flattened internally as `[step0_ch0, step0_ch1, …, step1_ch0, …]`. Channel k
+drives vertices `[k·N/K, (k+1)·N/K)`.
 
-Arrays of any numeric dtype are automatically converted to C-contiguous float32.
+Any numeric dtype is converted to C-contiguous float32 at the boundary.
 
 ---
 
-## Data Types
+## Data types
 
-The C++ reservoir operates entirely in **float32** — weights, states, features, and readout. This is by design: the tanh nonlinearity squashes values to [-1, 1], weights are random, and the topology's inherent noise far exceeds float32 rounding error. Float64 would produce identical results.
-
-All input arrays (signals, targets, labels) are automatically converted to C-contiguous float32 before being passed to C++. NumPy defaults to float64, so this conversion happens silently on most calls. No precision is lost in practice.
-
-If you want to avoid the conversion overhead on hot paths, pre-cast your arrays:
+The C++ core is **float32** throughout (weights, states, features, readout).
+Inputs and targets are converted automatically. Pre-cast hot paths if you want
+to skip conversion:
 
 ```python
 signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
@@ -494,73 +542,76 @@ signal = np.sin(np.linspace(0, 20 * np.pi, 2000)).astype(np.float32)
 
 ---
 
-## Error Handling
+## Error handling
 
-The Python bindings validate arguments at the boundary and raise clear exceptions:
+- **`ValueError`** — dim outside 5–16; bad `train_size`; regression targets
+  length not a multiple of `num_outputs`; input size not divisible by
+  `num_inputs`; invalid `readout_activation`; missing targets when evaluating
+  without `fit()`; etc.
+- **`IndexError` / range errors** — `predict_from_recorded` past the buffer;
+  `r2` / `nrmse` / `accuracy` window past `num_collected_states`.
 
-- **`ValueError`** — invalid `dim` (not 5-16), `train_size > num_collected` (for multi-output, `train_size = len(targets) // num_outputs`; also raised when `len(targets)` is not a multiple of `num_outputs`), input array size not divisible by `num_inputs`, or a scalar predictor (`predict_raw`, `predict_live_raw`, `predictions`) called on a multi-output readout (`num_outputs > 1`).
-- **`IndexError`** — `predict_raw(timestep)` with `timestep >= num_collected`, or `r2`/`nrmse`/`accuracy` with `start + count > num_collected`.
-
-These checks happen before calling into C++, so you get a Python traceback instead of a crash.
+Validation runs at the Python / pybind boundary before C++ work.
 
 ---
 
-## Model Persistence
+## Model persistence
 
-Trained ESN models can be saved to disk and restored without retraining. The reservoir weights are deterministic from the seed, so only the config and trained readout are persisted. Files are compact (typically < 1 MB).
+Reservoir weights are deterministic from config + seed; pickle stores config and
+the trained readout. Files are compact (typically under 1 MB).
 
-#### `esn.save(path)`
+##### `esn.save(path)` / `ESN.load(path)`
 
-Save the trained ESN to a file (standard Python pickle).
+Standard pickle:
 
 ```python
-esn = he.ESN(dim=7)
 esn.fit(signal, warmup=200)
 esn.save("model.pkl")
-```
 
-#### `ESN.load(path) -> ESN`
-
-Load a saved ESN. Returns a new ESN with the trained readout intact and zero collected states.
-
-```python
 loaded = he.ESN.load("model.pkl")
-loaded.warmup(new_signal[:200])
-loaded.run(new_signal[200:])
+loaded.reservoir_warmup(new_signal[:200])
+loaded.reservoir_run(new_signal[200:])
 preds = loaded.predictions()
 ```
 
-#### Pickle support
-
-ESN objects support `pickle.dumps()` / `pickle.loads()` directly:
-
-```python
-import pickle
-data = pickle.dumps(esn)
-restored = pickle.loads(data)
-```
-
-#### What is and isn't saved
+Also works with `pickle.dumps` / `pickle.loads`. Persistence format version is
+internal (`_PERSISTENCE_VERSION`); newer pickles on older installs raise a clear
+upgrade error.
 
 | Saved | Not saved |
 |-------|-----------|
-| All constructor parameters (dim, seed, spectral_radius, etc.) | Collected states (regenerate with `warmup()` + `run()`) |
-| Trained readout weights | Cached features |
-| Readout config (task, architecture) | `fit()` targets and train/test split |
+| Constructor parameters (reservoir + `readout_*`) | Collected states |
+| Trained readout weights | `fit()` targets and train/test split |
+
+Restored ESNs have zero collected states — re-drive before recorded prediction
+APIs.
+
+Portable HCNN-only export (no full ESN pickle): `save_readout_hcnn_model` /
+`load_readout_hcnn_model` (architecture must match).
 
 ---
 
 ## Limitations
 
-- **No scikit-learn compatibility.** The ESN is a temporal pipeline (input order matters, warmup required, states accumulate sequentially), not a static feature→label model. The sklearn estimator protocol assumes i.i.d. samples and row-shuffled cross-validation, which would destroy the temporal structure.
-- **No raw buffer access.** The C++ SDK exposes raw state buffers for diagnostics. The Python bindings provide `selected_states()` and `predictions()` instead, which return NumPy arrays.
+- **No scikit-learn estimator protocol.** The ESN is a temporal pipeline (order
+  matters, warmup required, states accumulate). Row-shuffled CV would destroy
+  that structure.
+- **Not thread-safe.** One instance per thread.
+- **HCNN shape knobs still partial in Python.** Pooling / BN / optimizer /
+  channel growth stay at C++ defaults (pooling on, Adam). Multi-slice B,
+  external feedback, and bias_scaling **are** exposed.
+- **Scoring buffers:** `r2` / `nrmse` / `accuracy` with an explicit array need
+  targets that cover index **0 through start+count−1** (not a window slice).
+  After `fit()`, the no-argument forms score the held-out tail.
+- **Defaults (2.0):** `verbose=False`, `readout_num_layers=1` (0 = auto),
+  `readout_slices=1`, external feedback off. See [CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
 ## Dependencies
 
-**Runtime:** NumPy >= 1.21
+**Runtime:** NumPy ≥ 1.21
 
-**Build time:** scikit-build-core >= 0.10, pybind11 >= 2.13, C++23 compiler (GCC 13+, Clang 17+, MSVC 2022+), CMake 3.20+. HypercubeCNN is vendored in-tree (no separate install).
-
-Pre-built wheels bundle HypercubeCNN statically, so no action is needed when installing from PyPI. When building from source, HypercubeCNN is vendored as a read-only snapshot at `third_party/HypercubeCNN` and built automatically — no sibling checkout or network fetch required.
+**Build:** scikit-build-core ≥ 0.10, pybind11 ≥ 3.0, C++23 compiler, CMake
+3.20+. HypercubeCNN is vendored in-tree and linked statically into the
+extension — no separate install for PyPI wheels or from-source builds.

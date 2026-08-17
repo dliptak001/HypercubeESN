@@ -11,14 +11,19 @@ order below.
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [Reservoir.md](Reservoir.md) | How the hypercube reservoir works — topology, connectivity, timestep mechanics, deep-vertex history depth, spectral-radius tuning, DIM-invariant input drive |
+| [Reservoir.md](Reservoir.md) | Hypercube reservoir — topology, timestep, history depth, SR, drive ports (input / external feedback) |
 | [Readout.md](Readout.md) | HCNN readout architecture, training algorithm, and streaming mode |
+| [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md) | External-feedback port (caller-owned closed loop) |
+| [ActivationFunctionA.md](ActivationFunctionA.md) | **Archive** — central-slope tanh envelope experiments (implementation removed) |
+| [HypercubeLSM.md](HypercubeLSM.md) | **Concept** — HypercubeLSM: spiking liquid state machine on the hypercube (ESN’s event-native sibling; own future project) |
+| [HypercubeLSM_primer.md](HypercubeLSM_primer.md) | **Concept primer** — clocked LIF equations + multi-τ readout features for Hypercube people |
 
 These documents cover the full pipeline:
 
 ```
-Input ──> Reservoir (N states) ──────────────────────> Readout ──> Prediction
-           [Reservoir.md]                               [Readout.md]
+Input (+ optional external feedback)
+        ──> Reservoir (N states) ──> Readout ──> Prediction
+             [Reservoir.md]          [Readout.md]
 ```
 
 ### 2. See it in action
@@ -29,11 +34,12 @@ The `examples/` directory contains worked examples, each with a companion
 | Example | What it demonstrates |
 |---------|---------------------|
 | [BasicPrediction](../examples/BasicPrediction.md) | Simplest end-to-end demo — predict a sine wave. Start here. |
-| [SignalClassification](../examples/SignalClassification.md) | Reservoir as feature extractor for multi-class waveform recognition |
+| [SignalClassification](../examples/SignalClassification.md) | Process-mode ID (Cruise/Chatter/Ramp/Spin-up); conf + TTL stream |
 | [StreamingAnomaly](../examples/StreamingAnomaly.md) | Anomaly detection in a simulated industrial process |
-| [StreamingText](../examples/StreamingText/StreamingText.md) | Streaming prequential character memorization of a text corpus |
-| [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger memory-capacity benchmark — the reservoir's linear short-term memory |
+| [MemoryCapacity](../examples/MemoryCapacity/MemoryCapacity.md) | Jaeger linear MC diagnostic — how to run + at-a-glance peaks |
+| [MemoryCapacity_grids](../examples/MemoryCapacity/MemoryCapacity_grids.md) | Archived TotalMC grids (dim 5–12) + seed/leak appendices |
 | [NARMA](../examples/NARMA/NARMA.md) | Nonlinear system-identification benchmark — memory depth × nonlinear mixing |
+| [Lorenz](../examples/Lorenz/README.md) | Lorenz-63 closed-loop free-run (input-bank self-feedback; VPT storefront) |
 
 ### 3. Build with the SDK
 
@@ -43,6 +49,12 @@ API reference for embedding HypercubeESN in your own project:
 |----------|-------------------|
 | [CPP_SDK.md](CPP_SDK.md) | C++ static library: build, install, `find_package` / FetchContent, full `ESN` / `ReservoirConfig` / `ReadoutConfig` API reference |
 | [Python_SDK.md](Python_SDK.md) | Python bindings: install, fit/predict, streaming, persistence |
+| [CHANGELOG.md](../CHANGELOG.md) | **2.0.0** release notes, breaking changes, 1.x → 2.0 migration |
+
+### 4. Maintainers (dependency)
+
+HypercubeCNN is vendored under `third_party/HypercubeCNN/` (pin and re-vendor rule:
+[VENDORED.md](../third_party/HypercubeCNN/VENDORED.md)). Do not hand-edit the snapshot.
 
 ## Key source files
 

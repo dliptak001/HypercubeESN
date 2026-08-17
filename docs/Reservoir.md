@@ -1,385 +1,392 @@
-# Reservoir — The Hypercube Echo-State Network
+# Reservoir — fixed hypercube dynamics
 
-The reservoir is the engine of the whole system: a fixed recurrent network that
-turns an input stream into a high-dimensional state the readout can learn from.
-What makes this one unusual is the shape it takes. Its neurons sit on the vertices
-of a Boolean hypercube, wired to their single-bit-flip neighbors by XOR — a
-topology that is never stored, only computed.
+The reservoir is the fixed half of HypercubeESN: a recurrent network that turns
+an input stream into a high-dimensional state the readout can learn from. Only
+the readout is trained. What makes this reservoir unusual is the shape it takes —
+neurons sit on the vertices of a Boolean hypercube, each carrying a short delay
+line of its own past, wired to single-bit-flip neighbors by XOR. That topology
+is never stored, only computed.
 
-That one decision ripples outward into three properties worth the read:
+Three properties follow:
 
-- **A topology you don't store.** Connectivity is implicit in the vertex
-  indices — no adjacency list, at any size.
-- **Hidden multi-scale structure.** Full neighbor connectivity with random
-  weights turns the cube into a continuum of nested clusters — local, regional,
-  and global at once — that nobody designed in.
+- **A topology you don't store.** Connectivity is implicit in the vertex indices —
+  no adjacency list, at any size.
+- **Hidden multi-scale structure.** Full neighbor connectivity with random weights
+  turns the cube into nested clusters — local, regional, and global at once —
+  that nobody designed in.
 - **Memory you can address.** Each vertex carries a delay line of its own recent
   past, so the reservoir remembers *specific* lags by construction, not by lucky
   echoes.
 
-The rest of this document builds these from the ground up: the graph and its
-wiring, the structure that emerges from it, the per-vertex memory — then the
-mechanics of a timestep, input, spectral radius, and cost.
+Implementation: `Reservoir` / `ReservoirConfig` in `Reservoir.h` and
+`Reservoir.cpp`. Instances come only from `Reservoir::Create(cfg)`. The ESN
+wrapper owns a reservoir and layers multi-slice packing plus the HCNN readout on
+top — see [Readout.md](Readout.md) and [CPP_SDK.md](CPP_SDK.md).
+
+## Role in the pipeline
+
+```
+  inputs [+ optional ext-fb]
+       │
+       ▼
+  Reservoir (fixed) ──▶ SliceAt(0..M-1) published delay line
+       │
+       │   ESN packs B ≤ M ages → readout input (B×N)
+       ▼
+  HCNN readout (trained) ──▶ y
+```
+
+Only the readout emits **y**. The reservoir never writes the task output; it
+publishes state the readout (or host) reads. **External feedback** is an *input*
+back into the reservoir — caller-owned closed-loop drive (for example a previous
+prediction), not a second path to **y**.
+
+Vocabulary used with ESN:
+
+| Term | Meaning |
+|------|---------|
+| **N** | Neuron count = 2<sup>dim</sup>; length of one published slice |
+| **M** | `history_depth` — delay-line length the recurrent gather uses |
+| **Reservoir state** | Newest slice only (`Outputs()` / `SliceAt(0)`) |
+| **Readout input** | B packed blocks of N assembled by ESN (`B = readout_slices`) — equals reservoir state only when B = 1 |
 
 ## The reservoir, briefly
 
-In reservoir computing, a recurrent network is used as a fixed nonlinear
-dynamical system: its internal weights are set once and frozen, and only the
-readout is trained. The reservoir's job is to lift a low-dimensional input into a
-high-dimensional state that nonlinearly encodes the input's recent history; the
-readout — here a learned convolutional network on the hypercube
-([Readout.md](Readout.md)), not the traditional ridge regression — reads the
-features it needs back out.
+In reservoir computing a recurrent network is a fixed nonlinear dynamical system:
+internal weights are set once and frozen; only the readout is trained. The
+reservoir lifts a low-dimensional input into a high-dimensional state that
+nonlinearly encodes recent history. HypercubeESN's readout is a learned
+convolutional network on the hypercube ([Readout.md](Readout.md)), not ridge
+regression on a flat vector.
 
 A reservoir is only as good as two properties:
 
 1. **Rich dynamics** — different inputs trace distinguishably different state
    trajectories.
-2. **Fading memory** — the state reflects recent history, and lets both the
-   distant past and the initial condition wash out.
+2. **Fading memory** — the state reflects recent history, and both the distant
+   past and the initial condition wash out.
 
 Everything that follows serves those two.
 
+## ReservoirConfig (defaults and ranges)
+
+| Field | Default | Range / rule |
+|-------|---------|----------------|
+| `dim` | 10 | **[5, 16]** → N = 2^dim neurons |
+| `seed` | 7934791766227647176 | Master seed; named substreams via SplitMix64 (recurrent / input / external-feedback / bias / SR probe) |
+| `spectral_radius` | 0.999 | **> 0** — target for recurrent-block rescale only |
+| `leak_rate` | 1.0 | **(0, 1]** — 1 = full replacement each step |
+| `input_scaling` | 0.02 | Drive strength; weights × `input_scaling` / √dim (fan-in variance; retune per task/dim) |
+| `num_inputs` | 1 | **≥ 1** and must **divide N** evenly |
+| `history_depth` (M) | 16 | **[1, 64]** — delay-line length |
+| `verbose` | false | Construction banner to stdout |
+| `num_external_feedback_channels` (D) | 0 | **0** = path off; else **[1, N]** (need **not** divide N) |
+| `external_feedback_scaling` | 0.5 | Like input: × scaling / √dim (only if D > 0) |
+| `bias_scaling` | 0.003 | U(−1,1)×scale per neuron; **0 disables** bias |
+
+`GetConfig()` returns these fields with `spectral_radius` = the **configured
+target**, not the realized estimate — use `GetRealizedSpectralRadius()` for the
+post-secant value. `Create(GetConfig())` rebuilds matching weight blocks from
+`seed`.
+
 ## A topology you don't store
 
-Most echo-state networks wire their neurons at random — generate a sparse graph,
-store it, and trust it. HypercubeESN doesn't store a graph at all. Its N = 2^DIM
+Most echo-state networks wire neurons at random — generate a sparse graph, store
+it, and trust it. HypercubeESN does not store a graph at all. Its N = 2<sup>dim</sup>
 neurons sit on the vertices of a **Boolean hypercube**: each vertex is addressed
-by a DIM-bit binary index, and two vertices are neighbors exactly when their
+by a dim-bit binary index, and two vertices are neighbors exactly when their
 indices differ in a single bit.
 
-That definition *is* the whole graph. A neighbor along bit `i` is just
-`v XOR (1 << i)` — one instruction, computed on demand. No adjacency list is
-built, stored, or serialized; the entire connectivity lives in the binary
-representation of the vertex addresses. Double the neurons and the "wiring
-diagram" still costs nothing — because there is no wiring diagram, only
-arithmetic.
+That definition *is* the whole graph. A neighbor along bit `i` is
+`v XOR (1 << i)` (`NearestMask(i)`) — one instruction, computed on demand. No
+adjacency list is built, stored, or serialized.
 
-| DIM | N (neurons) | Connections/neuron | Recurrent edges/slice (N·DIM) |
-|-----|-------------|--------------------|-------------------------------|
-| 5   | 32          | 5                  | 160                           |
-| 6   | 64          | 6                  | 384                           |
-| 7   | 128         | 7                  | 896                           |
-| 8   | 256         | 8                  | 2,048                         |
-| 9   | 512         | 9                  | 4,608                         |
-| 10  | 1024        | 10                 | 10,240                        |
+| dim | N (neurons) | Connections/neuron | Edges/slice (N·dim) |
+|-----|-------------|--------------------|---------------------|
+| 5   | 32          | 5                  | 160                 |
+| 6   | 64          | 6                  | 384                 |
+| 7   | 128         | 7                  | 896                 |
+| 8   | 256         | 8                  | 2,048               |
+| 9   | 512         | 9                  | 4,608               |
+| 10  | 1,024       | 10                 | 10,240              |
 
-The last column is the directed-edge count of a *single* recurrent slice — pure
-topology (N vertices × DIM neighbors). The number of stored *weights* is larger
-and grows with `history_depth` M: each of the M slices gets its own N·DIM
-recurrent block plus one N·DIM input block, for a total of **N · DIM · (M+1)**
-(e.g. DIM 10, M 16 → 10,240 × 17 ≈ 174K). See
-[Deep vertices](#deep-vertices-memory-you-can-address).
+The last column is the directed-edge count of a *single* recurrent slice. Stored
+**weights** are larger and depend on M and optional external feedback (see
+[Weight layout](#weight-layout)).
 
-DIM is constrained to **[5, 16]** — 32 to 65,536 neurons, the practical range for
-reservoir computing.
+dim is constrained to **[5, 16]** — 32 to 65,536 neurons.
 
 ### Every single-bit-flip neighbor
 
-Each neuron receives from *all* DIM of its Hamming-distance-1 neighbors — every
-vertex one bit-flip away, nothing further:
+Each gather (input, external feedback, recurrent) uses *all* dim
+Hamming-distance-1 neighbors:
 
 ```
-Mask for neighbor i: 1 << i, for i = 0 to DIM - 1
-  i=0: mask=1            (flip bit 0)
-  i=1: mask=2            (flip bit 1)
-  i=2: mask=4            (flip bit 2)
-  ...
-  i=DIM-1: mask=1<<(DIM-1) (flip the top bit)
+mask for neighbor i: 1 << i,  i = 0 .. dim-1
 ```
 
-The masks are computed inline from the loop index — a single XOR per neighbor
-lookup, no adjacency storage. Using the *full* DIM neighbors rather than a
-truncated subset is not an arbitrary choice: it's what gives the next section its
-structure. Hold onto that — it's where the hypercube stops being a tidy diagram
-and starts doing something surprising.
+Using the full dim neighbors (not a truncated subset) is what gives the next
+section its structure.
 
 ## The hidden structure: multi-scale soft modularity
 
-Here is the surprising part the last section promised. Full neighbor
-connectivity is geometrically uniform — every vertex wired identically to its DIM
-neighbors — yet the *weighted* graph is anything but. Random weights, read the
-right way, hide a whole hierarchy of structure inside the plain cube.
+Full neighbor connectivity is geometrically uniform — every vertex wired
+identically to its dim neighbors — yet the *weighted* graph is not. Random
+weights, read the right way, hide a hierarchy of structure inside the plain cube.
 
-Start with a single edge. Recurrent weights are drawn from a symmetric uniform
-distribution, so plenty of them land near zero. A near-zero `weight[v][i]` is a
-**soft cut** of the bit-`i` edge into vertex `v` — signal crossing it is
-attenuated to noise. These soft cuts happen independently per `(vertex, bit)`, so
-they line up along no global axis at all.
+Recurrent weights are drawn from a symmetric uniform distribution, so plenty land
+near zero. A near-zero weight on bit-`i` into vertex `v` is a **soft cut** of that
+edge. Soft cuts happen independently per `(vertex, bit)`.
 
-Now sweep a threshold. Pick any cutoff on weight magnitude and keep only the edges
-above it: the surviving subgraph's connected components partition the cube into
-clusters. These are *not* neat geometric sub-hypercubes — this is **bond
-percolation on the cube**, with a critical threshold near `1/DIM`. Slide the
-cutoff and the graph slides with it, smoothly, between a dust of fragments and a
-single giant component.
+Sweep a magnitude cutoff and keep only edges above it: the surviving subgraph's
+components partition the cube (bond percolation, critical scale near `1/dim`).
+Every vertex lives in **all** of these partitions at once — tight local clusters
+at a strict cutoff, regional merges as the cutoff loosens, full cube at zero
+cutoff.
 
-The real payoff is that **every vertex lives in all of these partitions at once**.
-Its DIM incoming weights span every bit direction with different magnitudes, so:
-
-- at a **strict** cutoff (only the strongest weights), the vertex sits in a small,
-  tight cluster of its most-connected neighbors — *local* structure;
-- as the cutoff **loosens**, that cluster merges outward through whichever
-  directions carry middling weights — *regional* structure;
-- at **zero** cutoff, everything reconnects into the full hypercube — *global*
-  structure.
-
-There is no single "correct" partition — only a continuum of nested clusterings,
-local at strong weights, regional at moderate, global at weak. The reservoir is
-compartmentalized and fully connected at the same time, depending on which scale
-you read it.
-
-Contrast the obvious alternative: wire only DIM−1 of the bit directions
-globally — say, omit bit 0 at every vertex. That yields a *deterministic, globally
-disjoint* split: two exact (DIM−1)-subcubes with no edges between them, no mixing,
-ever. Information injected in one half can never reach the other. Full-DIM
-connectivity with random weights is qualitatively different — it buys both the
-**compartmentalization** of random clusters (local regions free to specialize
-their dynamics) and the **scale-spanning overlap** that lets information cross
-between them through whichever directions carry strong weights.
-
-This multi-scale soft modularity is plausibly a real part of why full-DIM
-connectivity beats dimensionally-truncated variants — and the claim is testable: a
-DIM−1-truncated reservoir, matched on every other hyperparameter, should fail on
-any task whose input and target require crossing the omitted axis.
+A global dim−1 truncation (omit one bit axis everywhere) would split the cube into
+two disjoint subcubes forever. Full-dim random weights buy both compartmentalization
+and scale-spanning overlap. That multi-scale soft modularity is a product story
+about the random graph, not a separate code path.
 
 ## Deep vertices: memory you can address
 
-A standard echo-state network keeps exactly one step of feedback: each neuron
-reads its neighbors' *last* output and nothing older. Anything the reservoir
-"remembers" further back has to survive by recirculating through the recurrent
-loop — an exponentially-fading echo with no addressable past. The `history_depth`
-extension (codename *deep vertices*) replaces that echo with an explicit,
-addressable **delay line**: the reservoir retains the M most-recent output slices,
-and every vertex update sums over both its DIM spatial neighbors *and* those M
-temporal slices.
+A standard ESN keeps one step of feedback. `history_depth` M keeps an addressable
+**delay line** of the M most-recent published output slices. Each vertex update
+sums over dim spatial neighbors **and** those M temporal slices.
 
-### From a vector of neighbors to a kernel over space × time
+### Space × time kernel
 
-At M = 1, each vertex applies a length-DIM weight vector to its neighbors — a
-purely spatial filter. At depth M it applies an **M × DIM weight bank** instead:
-one independent weight per `(slice, axis)` pair. Read as a small convolution,
-every vertex becomes a fixed **spatiotemporal FIR kernel**, sweeping the cube's
-local neighborhood across the last M steps. The recurrent weight count grows from
-N·DIM to N·DIM·M, initialized at scale `1/√(DIM·M)` so the per-vertex drive
-variance is independent of both DIM and M *before* the spectral-radius rescale.
+At M = 1 each vertex applies a length-dim weight vector to its neighbors. At depth
+M it applies an **M × dim weight bank** — one weight per `(slice, axis)`. Recurrent
+weights for that bank are filled at scale `1/√(dim·M)` (before the spectral-radius
+rescale).
 
 ### Depth resolves; leak blurs
 
-This is a different lever from the leaky integrator, and the contrast is the whole
-point. `leak_rate` smears the past into the present with a single exponential
-time-constant — it **blurs**. The delay line exposes the past as M distinct,
-separately-weighted taps the readout can address one by one — it **resolves**. The
-two compose: leak sets how fast a single slice forgets; depth sets how many
-cleanly-separated slices exist to be read at all. A target that depends on a
-*specific* lag — not a smeared average of recent input — is exactly the kind a
-delay line can serve and a leaky integrator cannot.
+`leak_rate` smears past into present with one exponential time-constant. The delay
+line exposes M separately weighted taps. They compose: leak sets how fast one
+slice forgets; depth sets how many cleanly separated slices exist.
 
-Stacking M slices also changes what "spectral radius" means: the reservoir's true
-state becomes the MN-dimensional stack of all slices, and the recurrence turns
-into a companion-form operator over that stack. That story — and how
-`Initialize()` hits a target radius for M > 1 — lives in
-[Spectral radius](#spectral-radius-tuning-the-edge-of-chaos).
+The true linear state for spectral-radius work is the **MN-dimensional** stack of
+slices; see [Spectral radius](#spectral-radius-tuning-the-edge-of-chaos).
 
-### One ring, one memcpy, and a clean M = 1 fallback
+### Ring buffer
 
-The M slices live in a single `M·N` buffer addressed through M rotating pointers,
-so aging the history costs one `memcpy` per step regardless of M (the mechanics
-are in [Anatomy of a timestep](#anatomy-of-a-timestep)). `history_depth` may be
-any integer in **[1, 64]** — it need not be a power of two — and at M = 1 the ring
-degenerates to a single slot: the rotation is a no-op, the weight layout and RNG
-draws match the legacy single-step reservoir, and dynamics are preserved
-**bit-for-bit**.
+Slices live in one `M·N` buffer with M rotating pointers (`slice_ptrs_`). Aging
+costs one pointer rotation + one `memcpy` of N floats per `Step()`, independent of
+M. `history_depth` ∈ **[1, 64]**. At M = 1 the ring is a single slot and dynamics
+match a single-step reservoir.
 
-One honest caveat: depth is **not** a hypercube trick. Adding a delay line is a
-generic recurrent move; nothing about it exploits XOR addressing. Its value is
-*orthogonal* to the topology — depth adds representational reach at each vertex
-(its own multi-step state and kernel), while the topology work above sharpens the
-cube's spatial graph. The two compose cleanly because the kernel is still
-*labelled by axis*: any hypercube-native idea — per-axis weight sharing,
-Walsh-band analysis, time-gated axes — lifts straight into the `M × DIM` weight
-bank.
+Depth is a generic recurrent move, orthogonal to XOR topology: the kernel is still
+labelled by axis, so hypercube structure remains readable.
+
+ESN may pack only **B ≤ M** ages into the readout (`readout_slices`); the
+reservoir still always runs the full M-deep recurrent gather. Widening the
+readout view does not change reservoir dynamics.
+
+## Weight layout
+
+`vtx_weight_` is one contiguous float array:
+
+```
+[ input:  N × dim ]
+[ external feedback: N × dim ]  # only if num_external_feedback_channels > 0
+[ recurrent: N × M × dim ]      # layout [vertex][slice][axis], matches UpdateState
+```
+
+| Block | Size | Init scale (pre-SR) | In SR rescale? |
+|-------|------|---------------------|----------------|
+| Input | N·dim | `input_scaling / √dim` | **No** |
+| External feedback | N·dim or 0 | `external_feedback_scaling / √dim` | **No** |
+| Recurrent | N·dim·M | `1/√(dim·M)` | **Yes** (whole block, one scalar) |
+
+Total weights:
+
+```
+N · dim · (M + 1 + [ext-fb ? 1 : 0])
+```
+
+Example: dim 10, M 16, no external feedback → 10,240 × 17 ≈ 174K floats.
+
+Named RNG substreams (SplitMix64 of the master seed): Recurrent, Input,
+ExternalFeedback, Bias, SrProbe — labels are part of the weight-draw ABI.
 
 ## Anatomy of a timestep
 
-With the concepts in hand, here is the machinery. Each vertex carries three
-per-step quantities:
+Per-step quantities:
 
-- `vtx_state_[v]` — scratch for *this* step's newly computed state, written by
-  `UpdateState` and published at the end of `Step()`.
-- `vtx_output_history_` — the ring of the M = `history_depth` most-recent published
-  output slices (M = 16 by default), addressed through M rotating `slice_ptrs_`.
-  Slice 0 is the latest output — what neighbors read and what `Outputs()` returns;
-  slice `j` is the output from `j` steps ago.
-- `vtx_input_[v]` — the per-step injected field set by `InjectInput()`. It is
-  summed through its **own** input-weight block (decoupled from the recurrent
-  weights) inside `UpdateState`, never written into the output ring, and zeroed
-  after every `Step()`.
+- `vtx_state_[v]` — this step's newly computed state (write target of `UpdateState`).
+- `vtx_output_history_` / `slice_ptrs_` — ring of M published slices. **Slice 0** is
+  newest (`Outputs()`, recurrent age 0). Slice `j` is age `j`.
+- `vtx_input_[v]` — staged input field; cleared after every `Step()`.
+- `vtx_ext_feedback_[v]` — staged external feedback if D > 0; cleared every `Step()`.
+- `vtx_bias_[v]` — fixed U(−1,1)×`bias_scaling` (or zero if scale is 0); **not**
+  cleared by `Clear` / not in snapshots.
 
-The split between `vtx_state_` (the write target) and the output ring (the read
-source) is what makes the update **synchronous**: every vertex reads only the
-published slices and the injected input, and writes only to `vtx_state_`. No
-vertex ever sees a half-updated neighbor, so the per-vertex updates are mutually
-independent — and trivially parallelizable.
+Updates are **synchronous**: every vertex reads only published slices and staged
+drives, writes only `vtx_state_`.
 
-Two small design choices keep the history clean. First, the injected input lives
-in its own buffer with its own weight block, so the M output slices hold *pure
-activations* — no input contamination, which matters the moment M > 1 and those
-slices become a delay line the readout reads. Second, because input is a
-separately-weighted term (never folded into the published output), the leaky
-integrator's carryover is simply slice 0 — last step's clean activation, read
-directly — with no separate "previous" buffer and no risk of double-counting the
-drive.
+### Contract
 
-### Phase 1 — compute new states (independent across vertices)
+```
+InjectInput(...)             // optional per channel you need this step
+InjectExternalFeedback(...)  // optional, if D > 0
+Step()                       // update all neurons, age ring, clear staged drives
+// read Outputs() / SliceAt(age)
+```
 
-For each vertex `v`, the drive `s` is two sums: an input term through its own
-weight block, and a recurrent term over the M history slices, each slice carrying
-its own DIM weights.
+Staged input / external feedback are **consumed and zeroed** by `Step()` — re-stage
+every timestep.
+
+### Phase 1 — compute new states (per vertex `v`)
 
 ```
 s = 0
-# (a) input term — decoupled input weights W_in (an N·DIM block)
-for i = 0 to DIM - 1:
+# (a) input — neighbor gather on vtx_input_
+for i = 0 .. dim-1:
     s += input[v XOR (1<<i)] * W_in[v][i]
-# (b) recurrent term — M slices × DIM axes, one weight per (slice, axis)
-for j = 0 to M - 1:
-    for i = 0 to DIM - 1:
+
+# (b) external feedback — same gather (omitted if D == 0)
+for i = 0 .. dim-1:
+    s += ext_fb[v XOR (1<<i)] * W_ext[v][i]
+
+# (c) recurrent — M slices × dim axes
+for j = 0 .. M-1:
+    for i = 0 .. dim-1:
         s += slice_j[v XOR (1<<i)] * W_rec[v][j][i]
-activation = tanh(s)
-state[v] = (1 - leak_rate) * slice_0[v] + leak_rate * activation
+
+activation = tanh(s) + bias[v]
+state[v]   = (1 - leak_rate) * slice_0[v] + leak_rate * activation
 ```
 
-`slice_j` is `slice_ptrs_[j]`, and `slice_0[v]` — last step's output — is the
-leaky-integrator carryover. At M = 1 the recurrent term collapses to a single
-slice (the [deep-vertices](#deep-vertices-memory-you-can-address) bit-for-bit
-fallback). `leak_rate` (default 1.0) sets how fast a neuron replaces its state: at
-1.0 the old state is fully overwritten each step; at 0.3, 70% persists — a leaky
-integrator that smooths dynamics and stretches temporal memory.
+The nonlinearity is plain **`tanh(s)`**. Bias is added **after** the nonlinearity,
+before the leak blend. (An experimental central-slope envelope was studied and
+removed; see the archived notes in [ActivationFunctionA.md](ActivationFunctionA.md).)
+
+For a single input channel the injected field is uniform, so the input gather is
+equivalent to one scalar times the sum of the row of `W_in`; the code still uses
+the general multi-input form (neighbors can straddle channel blocks when
+`num_inputs > 1`).
 
 ### Phase 2 — age the ring and publish
 
 ```
-rotate slice_ptrs_ by one       # oldest physical slot becomes the new slice 0
-memcpy(slice_ptrs_[0], state, N * sizeof(float))   # publish into new slice 0
-memset(input, 0, N * sizeof(float))                # consume the injected drive
+rotate slice_ptrs_ by one          # oldest physical slot becomes new slice 0
+memcpy(slice_ptrs_[0], state, N)   # publish
+memset(input, 0, N)
+if ext-fb configured: memset(ext_fb, 0, N)
 ```
 
-Aging is a **pointer rotation**, not a data shuffle: the M slice pointers rotate
-so what was slice `j` becomes slice `j+1`, the oldest slot is recycled as the new
-slice 0, and the freshly computed state is `memcpy`'d into it — one `memcpy` per
-`Step()` regardless of M, the older slices never moving. Because every vertex read
-only last step's published slices (never another vertex's just-computed
-`vtx_state_`), the loop is embarrassingly parallel; the shipped `Step()` runs it
-serially.
+Shipped `Step()` runs the vertex loop **serially** (embarrassingly parallel in
+principle).
 
 ## Input injection
 
-Input enters through `InjectInput(channel, value)`, called **before** each
-`Step()`. The raw scalar for channel `c` is broadcast across that channel's
-contiguous vertex block — with a single input, that's the whole cube:
+`InjectInput(channel, value)` before `Step()`. Channel `c` writes `value` onto
+vertices `[c·B, (c+1)·B)` with `B = N / num_inputs` (exact division required).
 
-```
-input[v] = value     for v in [c·B, (c+1)·B),   B = N / num_inputs
-```
-
-The reservoir never clamps the value; callers pass already-bounded signals. The
-randomness enters later, inside `UpdateState`, where each vertex sums its DIM
-neighbors' injected fields through the **decoupled input-weight block** W_in (the
-first N·DIM weights, drawn uniform[−1, 1] × `input_scaling`/√DIM):
-
-```
-s += input[v XOR (1<<i)] · W_in[v][i]     for i = 0 .. DIM-1
-```
-
-So a flat single-channel drive still lands as a *distinct per-vertex random
-projection* — each vertex's own random sum of DIM input weights. The buffer is
-zeroed after every `Step()` and never written into the output ring, keeping the M
-history slices free of input contamination. And because the `1/√DIM` factor
-normalizes the input fan-in, a given `input_scaling` delivers the same `tanh`
-drive at every DIM — DIM-invariant by construction (default `0.5`).
+The reservoir does not clamp; callers pass already-bounded signals. Randomness is
+in the **weights**, not the broadcast. After `Step()`, the input buffer is zero —
+history slices stay free of raw input (only post-activation state is published).
 
 ### Multi-input mode
 
-For K channels (`num_inputs = K`), each drives a **contiguous block** of B = N/K
-vertices:
+K channels → K contiguous blocks of B = N/K vertices. Cross-channel mixing still
+occurs through recurrent bit-flips near block boundaries.
 
-- channel 0 → vertices [0, B)
-- channel 1 → vertices [B, 2B)
-- channel k → vertices [k·B, (k+1)·B)
+## External feedback injection (optional)
 
-K must divide N evenly (validated at construction). The channels don't stay walled
-off: cross-channel mixing happens for free through the recurrent nearest-neighbor
-bit-flips, which connect vertices across adjacent block boundaries — so every
-channel still reaches the whole reservoir within a few steps.
+When `num_external_feedback_channels = D > 0`, a second driver path mirrors input:
+
+- Own weight block (outside spectral-radius rescale — does **not** guarantee
+  closed-loop stability).
+- `InjectExternalFeedback(channel, value)` or `InjectExternalFeedback(ptr, count)`
+  with `count == D`.
+- Block size `floor(N/D)`: if D does not divide N, the tail vertices stay at
+  reset-zero as *sources* but still receive drive via neighbor gather.
+
+Typical closed-loop use at the ESN layer: pass the last step's readout-derived
+signal as `external_feedback` to `ESN::ReservoirStep`. Policy lives outside the
+reservoir. Details: [ReservoirFeedbackMechanism.md](ReservoirFeedbackMechanism.md).
+
+## Per-neuron bias (optional)
+
+Drawn once at construction: `U(−1,1) * bias_scaling`. Default scale **0.003**
+(set `0` for no bias). Fixed model parameter — survives `Clear()`, omitted from
+`TakeSnapshot` / `RestoreSnapshot`. Outside the spectral-radius operator.
 
 ## Spectral radius: tuning the edge of chaos
 
-The spectral radius is the reservoir's master dial — it sets where the dynamics
-sit between dead and chaotic:
+The spectral radius sets where dynamics sit between dead and chaotic:
 
-- **Too low** — the state forgets almost immediately. Short fading memory, weak on
-  anything that needs history.
-- **Just right** — rich dynamics with stable fading memory: the "edge of chaos"
-  where reservoir computing earns its keep. The sweet spot is topology- and
-  task-dependent.
-- **Too high** — useful structure dissolves into chaos that no longer tracks the
-  input.
+- **Too low** — short fading memory.
+- **Just right** — rich dynamics with stable fading memory (“edge of chaos”).
+- **Too high** — chaos that no longer tracks the input.
 
-### What operator, exactly?
+### What operator?
 
-At M = 1 the radius is just the dominant eigenvalue of the N × N recurrent matrix.
-At depth M it is something subtler, and getting it right is what makes deep
-vertices behave. The reservoir's true state is the stacked **MN-dimensional**
-vector of all M slices, and one `Step()` is a tanh of a linear map whose linear
-part is a **companion-form operator**: the top block mixes the slices by the
-recurrent weights, while the lower blocks merely shift slice `j` into slice `j+1`
-— the aging. The spectral radius is therefore estimated by power iteration on this
-MN × MN companion operator (`EstimateSpectralRadius`, up to 500 iterations with a
-convergence check), so the reported value is the true spectral abscissa of the
-*M-step* recurrence, not of any single slice.
+At M = 1 the radius is the dominant eigenvalue of the N × N recurrent matrix. At
+depth M the linear state is the MN-vector of all slices; one step's linear map is a
+**companion-form** operator (top block mixes slices by recurrent weights; lower
+blocks shift ages). Only the **recurrent** weight block participates;
+input / external feedback / bias are outside the estimate.
 
 ### Hitting the target
 
-Recurrent weights start from uniform[−1, 1] scaled by `1/√(DIM·M)`, then the whole
-recurrent block is rescaled so the companion operator's radius matches the target.
-Only the recurrent block is touched; the decoupled input block stays fixed at
-`input_scaling`/√DIM, so input drive and recurrent dynamics tune independently.
+1. Fill recurrent weights ~ U(−1,1) / √(dim·M).
+2. **Secant root-find** on a global scale so estimated ρ ≈ target (relative tol
+   0.1%, max 20 secant evals). M = 1 is nearly one-shot; M > 1 is nonlinear in the
+   scale.
+3. `EstimateSpectralRadius` uses power iteration on the companion operator with
+   **Gelfand (geometric-mean) growth rates** (complex dominant pairs / rotation),
+   burn-in (32), and stability checks — hard cap **1500** iterations per eval
+   (not a fixed 500-step naive power method).
 
-**Optional depth taper (`history_floor`).** Between those two steps — after the
-`1/√(DIM·M)` fill, before the radius rescale — each slice's weights can be
-linearly tapered so older history contributes less: slice `i` is scaled by
-`1 − (1−K)·(i+1)/M`, ramping from just below 1.0 at the most-recent slice to the
-floor `K = history_floor` (in [0.1, 1.0]) at the deepest. Because the subsequent
-rescale multiplies the entire recurrent block by a single scalar, it preserves
-this *relative* per-slice profile while still hitting the target radius. Two clean
-no-ops fall out: `K = 1.0` (the default) is the identity, and at `M = 1` the taper
-is a single uniform factor the rescale fully absorbs — so deep-history bit-for-bit
-preservation at M = 1 is unaffected.
+`verbose` prints one line: dim, M, seed, leak, input_scaling, SR target / post,
+secant iters.
 
-The rescale is a **secant root-find** on the weight scale, not a single multiply —
-because for M > 1 the companion operator's dominant eigenvalue is a *nonlinear*
-function of that scale (a longer operator's spectrum doesn't move linearly under
-uniform scaling). At M = 1 the relationship is exactly linear and the root-find
-lands on target in one step. See `Reservoir.cpp` (`Initialize()` and
-`EstimateSpectralRadius()`) for the full rationale.
+Input drive and recurrent dynamics still interact through the nonlinearity and
+depth: surveyed spectral radius and M are not fully independent in practice.
 
-One coupling to keep in mind: the same input drive now feeds the edge-of-chaos
-balance through M times as many recurrent pathways, so the surveyed spectral
-radius and the chosen depth **interact** — they do not tune independently of each
-other.
+## Snapshots
+
+`TakeSnapshot()` captures `vtx_state_` and the history ring in **logical age
+order** (slice 0 first). Staged input / external feedback buffers are not
+included (empty between steps). Weights and bias are not included — restore only
+onto the same (or identically configured) reservoir.
+
+`RestoreSnapshot` copies state + history, re-homes the ring to canonical rotation,
+and clears staged drives. Replaying the same injections afterward is bit-exact.
+Fidelity is covered by the CTest target `reservoir_snapshot`
+(`tests/reservoir_snapshot.cpp`).
+
+`SliceAt(age)` is the live delay-line view (age 0 ≡ `Outputs()`); throws if
+`age ≥ history_depth`. Prefer this over raw buffer layout (ring rotation makes
+physical block order meaningless).
 
 ## Computational properties
 
-- **O(N · DIM · (M+1)) per step** (M = `history_depth`, default 16) — each vertex
-  sums DIM weighted neighbor reads for the input term plus DIM for each of the M
-  history slices, against O(N²) for a dense ESN.
-- **N · DIM · (M+1) weights total** — an N·DIM input block plus an N·DIM·M
-  recurrent block, and still zero adjacency storage (neighbors computed by XOR).
-- **No pointer-chasing.** A neighbor address is arithmetic — `v XOR (1<<i)` — not
-  a load from an adjacency table, so the table a random graph must keep hot in
-  cache simply doesn't exist, and there's no dependent indirect load. The
-  per-vertex weight blocks are walked contiguously, which streams cleanly. The
-  neighbor *state* reads are a different story — high-bit flips land N/2 apart in
-  the buffer, so that gather is a strided scatter, not a cache-local sweep; the
-  cache win is in the wiring, not the gather.
+- **Time per step:** O(N · dim · M) recurrent + O(N · dim) per enabled drive port
+  (input always; + external feedback) — i.e.
+  **O(N · dim · (M + 1 + [ext]))**, vs O(N²) for a dense ESN.
+- **Weights:** **N · dim · (M + 1 + [ext])** as above; zero adjacency storage.
+- **Neighbor addresses** are arithmetic (`v XOR (1<<i)`); weight rows are contiguous.
+  Neighbor *state* gathers are still strided (high-bit flips jump by N/2).
+- **Parallelism:** vertex updates are independent; the released `Step()` is serial.
+
+## Public surface (quick index)
+
+| API | Role |
+|-----|------|
+| `Create(cfg)` | Only construction path |
+| `InjectInput` / `InjectExternalFeedback` | Stage drives |
+| `Step` | One timestep |
+| `Outputs` / `SliceAt` | Newest state / delay-line age |
+| `Clear` | Zero state + history; keep weights and bias |
+| `GetConfig` / `GetRealizedSpectralRadius` | Inspect |
+| `TakeSnapshot` / `RestoreSnapshot` | Branch / replay |
+| `Dim` / `Size` | dim / N |
+
+ESN owns a `Reservoir` and layers warmup, multi-slice readout packing, and the
+HCNN readout on top — see [Readout.md](Readout.md) and [CPP_SDK.md](CPP_SDK.md).

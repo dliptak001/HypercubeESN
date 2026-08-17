@@ -74,34 +74,36 @@ Normal signal ──> ESN ──> HCNN train     Live signal ──> ESN ──>
    compute RMSE.
 3. If the window RMSE exceeds the threshold, flag as anomaly.
 
-Between windows, `ClearStates()` clears the collected output buffer
-(so the readout can index the new window's timesteps from zero). The
+Between windows, `ReservoirRun(..., clear_recorded=true)` clears the recorded output
+buffer (so the readout can index the new window's timesteps from zero). The
 reservoir neurons' live activations are not reset — they carry over,
 which is what allows the model to detect when dynamics have changed
 and to recover gradually when they return to normal.
 
 ## What to expect
 
-DIM=8, 256 neurons, `history_depth = 16` and `spectral_radius = 0.99`
-(realized ~0.99), readout on all 256 vertices, `input_scaling = 1.9`,
-`conv_channels = 8`, `leak_rate = 1.0` (full replacement — the struct
-default, no override). Trained once in Phase 1 (2,800 samples, 1000 epochs,
-batch 64, `lr_max = 0.0015` cosine, ~12 s); Phase 2 is frozen prediction.
-The numbers below come from a representative run; exact values track the
-random seed and HCNN init, but the qualitative pattern is reproducible.
+dim=7, 128 neurons, `history_depth = 24` and `spectral_radius = 0.99`
+(realized ~0.99), readout on all 128 vertices, `input_scaling = 0.1`,
+`conv_channels = 16`, `leak_rate = 1.0` (full replacement — the struct
+default, no override). Trained once in Phase 1 (2,800 samples,
+1000 epochs, batch 64, `lr_max = 0.0015` cosine, ~28 s on a typical
+Release build); Phase 2 is frozen prediction. The numbers below come from
+a representative run; exact values track the random seed and HCNN init,
+but the qualitative pattern is reproducible.
 
-Baseline RMSE: ~0.0061, threshold ~0.061 (10x).
+Baseline RMSE: ~0.0060, threshold ~0.060 (10x).
 
 | Window | Condition   | RMSE          | Ratio   | Status                  |
 |--------|-------------|---------------|---------|-------------------------|
 | 1-5    | Normal      | ~0.006        | ~1.0    |                         |
-| 6-8    | Noise spike | ~0.071-0.073  | ~12     | **ANOMALY**             |
-| 9-13   | Normal      | ~0.006-0.007  | ~1.0-1.2| instant recovery        |
-| 14-16  | DC drift    | ~0.268-0.276  | ~44-45  | **ANOMALY**             |
-| 17     | Normal      | ~0.027        | ~4.4    | recovers (under 10x)    |
+| 6-8    | Noise spike | ~0.070-0.073  | ~12     | **ANOMALY**             |
+| 9      | Normal      | ~0.008        | ~1.4    | mild residual           |
+| 10-13  | Normal      | ~0.006        | ~1.0    | back to baseline        |
+| 14-16  | DC drift    | ~0.317-0.320  | ~52-53  | **ANOMALY**             |
+| 17     | Normal      | ~0.042        | ~7.0    | residual (under 10x)    |
 | 18-21  | Normal      | ~0.006        | ~1.0    |                         |
-| 22-24  | Freq shift  | ~0.229-0.244  | ~37-40  | **ANOMALY**             |
-| 25     | Normal      | ~0.104        | ~17     | **ANOMALY** (washout)   |
+| 22-24  | Freq shift  | ~0.339-0.377  | ~56-62  | **ANOMALY**             |
+| 25     | Normal      | ~0.184        | ~30     | **ANOMALY** (washout)   |
 | 26-30  | Normal      | ~0.006        | ~1.0    |                         |
 
 Flagged windows: 10 (9 anomaly + 1 washout).
@@ -109,20 +111,20 @@ Flagged windows: 10 (9 anomaly + 1 washout).
 **What to notice:**
 
 - **Clean detection of all three anomaly types.** Every anomaly window
-  is flagged with ratios well above the 10x threshold — the two structured
-  anomalies (drift, freq shift) land at ~37-45x.
-- **Instant recovery from noise spike.** Random noise has no persistent
-  effect on reservoir state — the next normal window is back to baseline.
-- **Drift produces the strongest signal (~45x)** because the additive
-  offset compounds across the window during the anomaly itself; once the
-  signal returns to normal the offset is gone, so the first normal window
-  recovers well below the 10x line (~4.4x).
+  is flagged well above the 10x threshold — noise ~12x, DC drift ~52-53x,
+  freq shift ~56-62x (strongest structured signal in this config).
+- **Near-instant recovery from noise spike.** Random noise leaves little
+  persistent state — first normal window ~1.4x, then baseline. No washout
+  flag.
+- **DC drift is a strong structured alarm (~52-53x).** Once the offset
+  ends, one residual normal window sits at ~7x (under threshold, not
+  flagged), then baseline. No washout flag.
 - **One washout window after the frequency shift.** Changed dynamics leave
   a trace in the reservoir's recurrent/delay-line state that outlasts the
-  anomaly by one window, producing a single above-threshold "normal"
-  window before recovery. This washout is a feature, not a false positive
-  — it confirms the reservoir hasn't fully stabilized yet, exactly what you
-  want an alarm to signal.
+  anomaly by one window (~30x still flagged as "Normal"), then recovery.
+  That washout is a feature, not a false positive — it confirms the
+  reservoir hasn't fully stabilized yet, exactly what you want an alarm
+  to signal.
 
 ### Effect of leak rate on anomaly detection
 
@@ -178,8 +180,7 @@ example uses frozen-readout mode to demonstrate pure anomaly detection.
 ## Build and run
 
 cmake/g++ ship with CLion and are not on `PATH`. Build the Release tree with
-the bundled toolchain (see [Building and Running](../README.md#building-and-running-c)
-in the project README), then run the `StreamingAnomaly` target:
+the bundled toolchain, then run the `StreamingAnomaly` target:
 
 ```
 cmake-build-release\StreamingAnomaly.exe

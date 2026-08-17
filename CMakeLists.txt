@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.1)
-project(HypercubeESN VERSION 0.2.4)
+project(HypercubeESN VERSION 2.0.0)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,7 +40,9 @@ target_link_libraries(HypercubeESNCore PUBLIC $<BUILD_INTERFACE:HypercubeCNNCore
 # was built without LTO support (cc1plus: "LTO support has not been enabled
 # in this configuration").  Would need a different MinGW distribution.
 target_compile_options(HypercubeESNCore PRIVATE
-        $<$<CONFIG:Release>:-O3 -march=native -mtune=native -ffast-math>
+        # -march=x86-64-v2 (SSE4.2/POPCNT, ~2009+) keeps Release binaries portable to
+        # other machines; -march=native would bake in this CPU's ISA and SIGILL elsewhere.
+        $<$<CONFIG:Release>:-O3 -march=x86-64-v2 -ffast-math>
         $<$<CONFIG:Debug>:-O0 -g>
         -Wall -Wextra -Wno-unknown-pragmas
 )
@@ -49,19 +51,27 @@ if(MINGW)
     target_link_options(HypercubeESNCore PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
-# ——— Executables: only when building standalone (not via FetchContent) ———
+# ——— Tests + examples: only when building standalone (not via FetchContent) ———
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    add_executable(HypercubeESN main.cpp)
+    enable_testing()
+
+    # Reservoir snapshot/restore + Create(GetConfig) fidelity (not a product entry point).
+    add_executable(reservoir_snapshot tests/reservoir_snapshot.cpp)
+    add_test(NAME reservoir_snapshot COMMAND reservoir_snapshot)
+
     add_executable(BasicPrediction examples/BasicPrediction.cpp)
     add_executable(SignalClassification examples/SignalClassification.cpp)
     add_executable(StreamingAnomaly examples/StreamingAnomaly.cpp)
     add_executable(MemoryCapacity examples/MemoryCapacity/MemoryCapacity.cpp)
     add_executable(NARMA examples/NARMA/NARMA.cpp)
-    file(GLOB STREAMING_TEXT_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/examples/StreamingText/*.cpp)
-    add_executable(StreamingText ${STREAMING_TEXT_SOURCES})
+    add_executable(Lorenz
+        examples/Lorenz/main.cpp
+        examples/Lorenz/Campaigns.cpp
+        examples/Lorenz/Lorenz.cpp
+        examples/Lorenz/LorenzDatastream.cpp)
 
-    set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA StreamingText)
-    set(EXE_TARGETS HypercubeESN ${EXAMPLE_TARGETS})
+    set(EXAMPLE_TARGETS BasicPrediction SignalClassification StreamingAnomaly MemoryCapacity NARMA Lorenz)
+    set(EXE_TARGETS reservoir_snapshot ${EXAMPLE_TARGETS})
 
     foreach(tgt IN LISTS EXE_TARGETS)
         target_link_libraries(${tgt} PRIVATE HypercubeESNCore)
@@ -69,12 +79,20 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
 
     foreach(tgt IN LISTS EXE_TARGETS)
         target_compile_options(${tgt} PRIVATE
-                $<$<CONFIG:Release>:-O3 -march=native -mtune=native -ffast-math>
+                # -march=x86-64-v2 (SSE4.2/POPCNT, ~2009+) keeps Release binaries portable to
+        # other machines; -march=native would bake in this CPU's ISA and SIGILL elsewhere.
+        $<$<CONFIG:Release>:-O3 -march=x86-64-v2 -ffast-math>
                 $<$<CONFIG:Debug>:-O0 -g>
                 -Wall -Wextra -Wno-unknown-pragmas
         )
 
         if(MINGW)
+            # libgcc/libstdc++ are linked statically, so only libwinpthread-1.dll must
+            # ride along at deploy time. Ship it FROM THE SAME toolchain that built the
+            # exe: a stale copy is missing newer symbols (e.g. nanosleep64) and fails
+            # with "entry point not found". Full/partial -static of winpthread is not an
+            # option here — this mingw-w64 15.2.0 static libwinpthread.a references an
+            # unresolvable __intrinsic_setjmpex.
             target_link_options(${tgt} PRIVATE -static-libgcc -static-libstdc++)
             # Workaround for a gcc 13.1 MinGW bug where
             # `std::type_info::operator==` in <typeinfo> is emitted out-of-line

@@ -49,7 +49,7 @@ Input signal ──> Reservoir ──> Readout ──> Prediction
 
 ## What to expect
 
-DIM=8, 256 neurons, `history_depth=16` and `spectral_radius=0.99` (realized
+dim=8, 256 neurons, `history_depth=16` and `spectral_radius=0.99` (realized
 ~0.99), `input_scaling=0.09`, `leak_rate=1.0` (full replacement — the struct
 default, no override). Sine prediction is trivially easy:
 
@@ -83,7 +83,7 @@ SignalClassification) are where the architecture shows its capacity.
 
 - **HCNN layer count.** The readout uses one Conv+Pool pair
   (`num_layers = 1`, the struct default — not overridden in the source).
-  Set `cfg.readout.num_layers = 0` for auto-sizing (`min(DIM-2, 2)` pairs)
+  Set `cfg.readout.num_layers = 0` for auto-sizing (`min(dim-2, 2)` pairs)
   or increase to see how depth affects fit on a trivial signal.
 
 - **Change the signal.** Replace `sin(0.1t)` with a more complex waveform
@@ -96,8 +96,7 @@ SignalClassification) are where the architecture shows its capacity.
 ## Build and run
 
 cmake/g++ ship with CLion and are not on `PATH`. Build the Release tree with
-the bundled toolchain (see [Building and Running](../README.md#building-and-running-c)
-in the project README), then run the `BasicPrediction` target:
+the bundled toolchain, then run the `BasicPrediction` target:
 
 ```
 cmake-build-release\BasicPrediction.exe
