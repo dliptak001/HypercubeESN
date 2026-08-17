@@ -20,7 +20,7 @@ Readout host usage (facade-native train/infer): see docs/Readout.md and docs/CPP
 **Notable geometry (this pin):** conv kernels use **K = dim + 1** — dim Hamming-1
 neighbors **plus a self/center tap** at each vertex. Earlier neighbor-only (K = dim)
 kernels are obsolete for this host; retrain after re-vendoring. Called out in
-[CHANGELOG.md](../../CHANGELOG.md) for HypercubeESN 2.0.
+[CHANGELOG.md](../../CHANGELOG.md) for HypercubeESN 2.0.0.
 
 **Weight-init seed (this pin):** `HCNNConfig::weight_seed` and
 `HCNN::RandomizeWeights` take full **`uint64_t`**. Seeds with high half zero keep

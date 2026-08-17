@@ -5,6 +5,8 @@
 [![Python](https://img.shields.io/pypi/pyversions/hypercube_esn)](https://pypi.org/project/hypercube-esn/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/dliptak001/HypercubeESN/blob/main/LICENSE)
 
+Package version **2.0.0**.
+
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
 hypercube. Neurons sit on the vertices, each carrying a short delay line of its
 own past, wired to single-bit-flip neighbors by XOR.

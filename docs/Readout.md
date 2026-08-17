@@ -67,7 +67,7 @@ see `VENDORED.md`):
 - **Exact weight sharing with a self tap (K = dim + 1).** Every vertex has **dim**
   Hamming neighbors (one bit flip each) **plus a self/center contribution** —
   kernel width **K = dim + 1**, shared across all vertices. Older HCNN builds used
-  neighbors only (K = dim); the self tap is a **v2.0 / vendored-pin** upgrade that
+  neighbors only (K = dim); the self tap is a **2.0.0 / vendored-pin** upgrade that
   improved readout performance broadly. The hypercube is vertex-transitive, so
   sharing is exact under the Z₂ⁿ symmetry; neighbor lookup is XOR, with no
   adjacency list and no image border to pad. (ESN always feeds **full capacity**

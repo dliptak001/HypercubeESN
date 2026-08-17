@@ -458,7 +458,7 @@ class ESN:
         return self._impl.predict()
 
     def predict_from_recorded(self, timestep: int) -> np.ndarray:
-        """Predict from a recorded timestep (after :meth:`run`).
+        """Predict from a recorded timestep (after :meth:`reservoir_run`).
 
         Parameters
         ----------
@@ -634,25 +634,27 @@ class ESN:
         return targets, start, count
 
     def collected_states(self) -> np.ndarray:
-        """Return all collected states.
+        """Return all collected readout inputs.
 
         Returns
         -------
         ndarray
-            Array of shape ``(num_collected_states, reservoir_neuron_count)``.
+            Array of shape ``(num_collected_states, readout_input_width)``.
+            Each row is B·N (equals ``reservoir_neuron_count`` only when B = 1).
         """
         return self._impl.collected_states()
 
     # ── Streaming / online training ──
 
     def copy_reservoir_state(self) -> np.ndarray:
-        """Copy the current reservoir state.
+        """Copy the newest reservoir slice.
 
         Returns
         -------
         ndarray
-            1D array of shape ``(reservoir_neuron_count,)``. Accumulate these across
-            steps to build the ``states`` batch for :meth:`train_step_batch`.
+            1D array of shape ``(reservoir_neuron_count,)``. For
+            :meth:`train_step_batch` / :meth:`predict_from_readout_input`,
+            use :meth:`copy_readout_input` (B·N) unless B = 1.
         """
         return self._impl.copy_reservoir_state()
 
@@ -689,8 +691,8 @@ class ESN:
         Parameters
         ----------
         states : ndarray
-            Shape ``(count, reservoir_neuron_count)`` of states from
-            :meth:`copy_reservoir_state`. Converted to float32.
+            Shape ``(count, readout_input_width)`` of rows from
+            :meth:`copy_readout_input`. Converted to float32.
         targets : ndarray
             For regression: shape ``(count, num_outputs)`` float targets.
             For classification: shape ``(count,)`` integer class indices.

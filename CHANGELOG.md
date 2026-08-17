@@ -8,11 +8,11 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 
 ---
 
-## [2.0.0] — TBD (public release)
+## [2.0.0] — 2026-08-17
 
-**Status:** version numbers bumped to 2.0.0 in-tree; storefront validators
-filled (NARMA, MC, Lorenz input-bank free-run). **Tag / PyPI / GitHub Release
-pending** the remaining freeze checklist (tree hygiene, defaults, packaging).
+**Status:** public release. CMake, the C++ package, and the PyPI wheel are
+aligned at 2.0.0. Storefront validators frozen (NARMA, MC, Lorenz input-bank
+free-run).
 
 **HypercubeCNN pin:** clean re-vendor of upstream **v1.0.4** (includes **uint64**
 `weight_seed` / `RandomizeWeights` from HCNN v1.0.1 and **K = dim + 1** self-tap).

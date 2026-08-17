@@ -228,10 +228,11 @@ class TestStreamingValidation:
 class TestSurfaceParity:
 
     EXPECTED = [
-        "reservoir_warmup", "reservoir_run", "reservoir_clear", "fit", "train",
+        "reservoir_warmup", "reservoir_run", "reservoir_clear", "reservoir_step",
+        "fit", "train",
         "train_step", "train_step_batch",
-        "copy_reservoir_state", "predict", "predict_from_recorded",
-        "predict_from_state",
+        "copy_reservoir_state", "copy_readout_input", "predict",
+        "predict_from_recorded", "predict_from_state", "predict_from_readout_input",
         "predictions", "r2", "nrmse", "accuracy",
         "collected_states", "save", "load",
         "save_readout_hcnn_model", "load_readout_hcnn_model",

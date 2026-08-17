@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 
+**Version 2.0.0**
+
 **HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
 vertices, each carrying a short delay line of its own past, wired to
 single-bit-flip neighbors by XOR.
@@ -376,7 +378,7 @@ HypercubeESN/
 
 | Document | Covers |
 |---|---|
-| [CHANGELOG.md](CHANGELOG.md) | **v2.0** release notes, breaking changes, migration |
+| [CHANGELOG.md](CHANGELOG.md) | **2.0.0** release notes, breaking changes, migration |
 | [docs/Reservoir.md](docs/Reservoir.md) | Hypercube graph, connectivity, deep-vertex history depth, leaky integrator, spectral-radius tuning, input fan-in scaling |
 | [docs/Readout.md](docs/Readout.md) | HCNN readout architecture, training algorithm, streaming mode, ESN interface |
 | [docs/Python_SDK.md](docs/Python_SDK.md) | Python SDK: pip install, fit/predict API, streaming, persistence |
