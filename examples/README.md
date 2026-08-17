@@ -68,12 +68,18 @@ test NRMSE). Full write-up: [`NARMA/NARMA.md`](NARMA/NARMA.md).
 
 ---
 
+## Lorenz
+
+Primary **closed-loop** validator: Lorenz-63 free-run via **input-bank
+self-feedback** (predicted `[x, y, z, x*z]` re-injected as the next drive).
+VPT at θ = 0.25. Full write-up: [`Lorenz/README.md`](Lorenz/README.md).
+
+---
+
 ## Building
 
 Example targets build automatically alongside the main harness; build the
-Release tree with the bundled toolchain (see
-[Building and Running](../README.md#building-and-running-c) in the project
-README), then run any target from `cmake-build-release`:
+Release tree with the bundled toolchain, then run any target from `cmake-build-release`:
 
 ```
 cmake-build-release\BasicPrediction.exe

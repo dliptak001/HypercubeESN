@@ -96,8 +96,7 @@ SignalClassification) are where the architecture shows its capacity.
 ## Build and run
 
 cmake/g++ ship with CLion and are not on `PATH`. Build the Release tree with
-the bundled toolchain (see [Building and Running](../README.md#building-and-running-c)
-in the project README), then run the `BasicPrediction` target:
+the bundled toolchain, then run the `BasicPrediction` target:
 
 ```
 cmake-build-release\BasicPrediction.exe

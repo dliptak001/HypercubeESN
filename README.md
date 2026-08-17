@@ -13,7 +13,7 @@ single-bit-flip neighbors by XOR.
 Three properties follow:
 
 - **A topology you don't store.** Connectivity is implicit in the vertex indices —
-  no adjacency list
+  no adjacency list.
 - **Hidden multi-scale structure.** Full neighbor connectivity with random weights
   turns the cube into nested clusters — local, regional, and global at once —
   that nobody designed in.
@@ -28,12 +28,12 @@ topology-native: the readout consumes the reservoir with zero distortion, and
 the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
-**2.0 readout upgrade.** Each HCNN conv site now has
-an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The change significantly improves readout quality
-**across the board** (for all tasks and dims).
+**2.0 readout upgrade.** Each HCNN conv site now has an explicit
+**self/center** weight alongside its dim Hamming-1 neighbors. The change
+significantly improves readout quality **across the board** (for all tasks
+and dims).
 
 ---
-
 
 <p align="center">
   <strong>HypercubeAI ecosystem</strong><br/>
@@ -79,11 +79,14 @@ Each product in the family is a different architecture on that same foundation.
 ## Headline results
 
 Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
-Details: [NARMA](examples/NARMA/NARMA.md) · [MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) · [Lorenz](examples/Lorenz/README.md).
+Details: [NARMA](examples/NARMA/NARMA.md) ·
+[MemoryCapacity](examples/MemoryCapacity/MemoryCapacity.md) ·
+[Lorenz](examples/Lorenz/README.md).
 
 ### NARMA
 
-tanh-wrapped orders 30 / 50 / 70; **Same operating point (same dim, sr, memory depth, reservoir seed, ...) for all three orders.**
+tanh-wrapped orders 30 / 50 / 70; **Same operating point (same dim, sr,
+memory depth, reservoir seed, ...) for all three orders.**
 
 | Order | Best-5 mean test NRMSE |
 |------:|-----------------------:|
@@ -106,9 +109,9 @@ dim, memory depth, and spectral radius.
 ### Lorenz (free-run)
 
 Closed-loop free-run on Lorenz-63: **input-bank self-feedback** (predicted
-`[x, y, z, x*z]` re-injected as the next drive). dim 10,
-M = 2; VPT threshold θ = 0.25. Best orbit VPT in Lyapunov times for three
-trained seeds:
+`[x, y, z, x*z]` re-injected as the next drive). dim 10, M = 2; VPT
+threshold θ = 0.25. Best orbit VPT in Lyapunov times for three trained
+seeds:
 
 | ESN seed | Best VPT (LT) |
 |---------:|--------------:|
@@ -279,8 +282,9 @@ wheel): [python/examples/](python/examples/README.md).
 
 **Requirements:** C++23 (GCC 13+, Clang 17+, MSVC 2022+), **CMake 4.1+**.
 
-The HCNN readout is **vendored** in-tree (`third_party/HypercubeCNN/`, pin **v1.0.4**)
-and builds as `HypercubeCNNCore` — no separate install or network fetch.
+The HCNN readout is **vendored** in-tree (`third_party/HypercubeCNN/`,
+pin **v1.0.4**) and builds as `HypercubeCNNCore` — no separate install
+or network fetch.
 
 **From this repo (library + examples):**
 
@@ -319,7 +323,7 @@ A full `cmake --build build` also produces:
 | `StreamingAnomaly` | Streaming anomaly detection with recovery dynamics |
 | `MemoryCapacity` | Jaeger memory-capacity diagnostic (white-noise MC sweep) |
 | `NARMA` | NARMA open-loop validator (orders 30/50/70, best-5 NRMSE 0.0441 / 0.0751 / 0.1251) — [NARMA.md](examples/NARMA/NARMA.md) |
-| `Lorenz` | Lorenz attractor tracking / free-run |
+| `Lorenz` | Lorenz attractor tracking / free-run — [README](examples/Lorenz/README.md) |
 
 Start with `BasicPrediction` to see the pipeline end-to-end. Each example has a
 companion `.md` file with a detailed walkthrough.

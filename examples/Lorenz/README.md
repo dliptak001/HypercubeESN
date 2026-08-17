@@ -23,8 +23,6 @@ survey is re-run with the same free-run seating.
 | Well-tuned (N = 100–500, careful SR / scaling) | **~10–15 LT** |
 | Extreme optimized / noiseless claims | **>30 LT** (definition- and solver-sensitive) |
 
-**Papers:** [Doan et al.](https://arxiv.org/abs/1906.11122) · [Hurley et al.](https://arxiv.org/abs/2508.06730) · local PDFs under [`reference/`](reference/)
-
 ---
 
 ## 2. Pipeline

@@ -140,8 +140,7 @@ all switch blocks eventually lock under this config.
 ## Build and run
 
 cmake/g++ ship with CLion and are not on `PATH`. Build the Release tree with
-the bundled toolchain (see [Building and Running](../README.md#building-and-running-c)
-in the project README), then run the `SignalClassification` target:
+the bundled toolchain, then run the `SignalClassification` target:
 
 ```
 cmake-build-release\SignalClassification.exe

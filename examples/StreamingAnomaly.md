@@ -180,8 +180,7 @@ example uses frozen-readout mode to demonstrate pure anomaly detection.
 ## Build and run
 
 cmake/g++ ship with CLion and are not on `PATH`. Build the Release tree with
-the bundled toolchain (see [Building and Running](../README.md#building-and-running-c)
-in the project README), then run the `StreamingAnomaly` target:
+the bundled toolchain, then run the `StreamingAnomaly` target:
 
 ```
 cmake-build-release\StreamingAnomaly.exe

@@ -28,9 +28,10 @@ the learned kernels exploit the locality that generated the dynamics. **The data
 never leaves the hypercube it was born on.**
 
 
-**2.0 readout upgrade.** Each HCNN conv site now has
-an explicit **self/center** weight alongside its dim Hamming-1 neighbors. The change significantly improves readout quality
-**across the board** (for all tasks and dims).
+**2.0 readout upgrade.** Each HCNN conv site now has an explicit
+**self/center** weight alongside its dim Hamming-1 neighbors. The change
+significantly improves readout quality **across the board** (for all tasks
+and dims).
 
 ---
 
@@ -81,7 +82,8 @@ Primary validators — open-loop (NARMA, MC) and closed-loop free-run (Lorenz).
 
 ### NARMA
 
-tanh-wrapped orders 30 / 50 / 70; **Same operating point (same dim, sr, memory depth, reservoir seed, ...) for all three orders.**
+tanh-wrapped orders 30 / 50 / 70; **Same operating point (same dim, sr,
+memory depth, reservoir seed, ...) for all three orders.**
 
 | Order | Best-5 mean test NRMSE |
 |------:|-----------------------:|
@@ -108,15 +110,17 @@ dim, memory depth, and spectral radius.
 ### Lorenz (free-run)
 
 Closed-loop free-run on Lorenz-63: **input-bank self-feedback** (predicted
-`[x, y, z, x*z]` re-injected as the next drive). dim 10,
-M = 2; VPT threshold θ = 0.25. Best orbit VPT in Lyapunov times for three
-trained seeds:
+`[x, y, z, x*z]` re-injected as the next drive). dim 10, M = 2; VPT
+threshold θ = 0.25. Best orbit VPT in Lyapunov times for three trained
+seeds:
 
 | ESN seed | Best VPT (LT) |
 |---------:|--------------:|
 | 3079493423467196890 | **14.13** |
 | 696634088797950509 | **13.00** |
 | 7934791766227647176 | **10.67** |
+
+[Lorenz](https://github.com/dliptak001/HypercubeESN/blob/main/examples/Lorenz/README.md)
 
 ## Installation
 
@@ -168,7 +172,8 @@ campaigns. Index:
 ## Features
 
 - **Simple API** — `fit()` runs warmup, collect, and batch train in one call
-- **Hypercube dim 5–16** — N = 2<sup>dim</sup> neurons (32…65,536); delay-line depth M
+- **Hypercube dim 5–16** — N = 2<sup>dim</sup> neurons (32…65,536);
+  delay-line depth M
 - **HCNN readout (self tap)** — conv on the hypercube with **K = dim + 1**
   (neighbors + center); 2.0 upgrade vs neighbor-only kernels; not ridge alone
 - **Multi-slice readout** — optional B ages packed into the readout (`readout_slices`)
