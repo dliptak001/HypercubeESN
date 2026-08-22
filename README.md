@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 
-**Version 2.0.0**
+**Version 2.0.1**
 
 **HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
 vertices, each carrying a short delay line of its own past, wired to

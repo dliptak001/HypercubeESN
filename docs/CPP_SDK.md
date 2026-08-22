@@ -3,7 +3,7 @@
 Static C++ library for reservoir computing on Boolean hypercube graphs: a fixed
 `Reservoir` plus a trainable HypercubeCNN `Readout`, wrapped by `ESN`.
 
-**Package version 2.0.0** (`project(HypercubeESN VERSION 2.0.0)`). Breaking
+**Package version 2.0.1** (`project(HypercubeESN VERSION 2.0.1)`). Breaking
 changes and migration: [CHANGELOG.md](../CHANGELOG.md).
 
 Deep dives: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md).

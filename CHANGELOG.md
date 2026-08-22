@@ -8,6 +8,15 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 
 ---
 
+## [2.0.1] — 2026-08-22
+
+### Changed
+
+- Add HypercubeCascade to the HypercubeAI ecosystem banner in the root and
+  Python READMEs.
+
+---
+
 ## [2.0.0] — 2026-08-17
 
 **Status:** public release. CMake, the C++ package, and the PyPI wheel are
