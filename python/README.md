@@ -51,6 +51,8 @@ and dims).
   <a href="https://github.com/dliptak001/HypercubeWTF"><strong>HypercubeWTF</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dliptak001/HypercubeEtalon"><strong>HypercubeEtalon</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/dliptak001/HypercubeCascade"><strong>HypercubeCascade</strong></a>
 </p>
 
 HypercubeESN is an experiment in the **HypercubeAI** project — our quest to
