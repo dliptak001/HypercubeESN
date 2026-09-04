@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 
-**Version 2.0.1**
+**Version 2.0.2**
 
 **HypercubeESN** — reservoir computing on a Boolean hypercube. Neurons sit on the
 vertices, each carrying a short delay line of its own past, wired to
@@ -55,6 +55,12 @@ and dims).
   <a href="https://github.com/dliptak001/HypercubeCascade"><strong>HypercubeCascade</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dliptak001/HypercubeLCN"><strong>HypercubeLCN</strong></a>
+</p>
+
+<p align="center">
+  📄 Foundational paper:
+  <a href="docs/Boolean_hypercubes_as_a_neural_substrate.pdf"><em>Boolean Hypercubes as a Neural Substrate</em></a>
+  (D.&nbsp;C.&nbsp;Liptak, 2026)
 </p>
 
 HypercubeESN is an experiment in the **HypercubeAI** project — our quest to

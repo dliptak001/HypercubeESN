@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 4.1)
-project(HypercubeESN VERSION 2.0.1)
+project(HypercubeESN VERSION 2.0.2)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

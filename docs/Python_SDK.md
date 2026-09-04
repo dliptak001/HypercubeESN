@@ -6,7 +6,7 @@ reservoir plus a trainable HypercubeCNN readout, exposed as one `ESN` class.
 Deep dives on the C++ core: [Reservoir.md](Reservoir.md) · [Readout.md](Readout.md)
 · [CPP_SDK.md](CPP_SDK.md).
 
-Package version: **2.0.1** (`hypercube_esn.__version__`).
+Package version: **2.0.2** (`hypercube_esn.__version__`).
 
 ## Contents
 

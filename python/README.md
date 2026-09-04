@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/hypercube_esn)](https://pypi.org/project/hypercube-esn/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/dliptak001/HypercubeESN/blob/main/LICENSE)
 
-Package version **2.0.1**.
+Package version **2.0.2**.
 
 Python bindings for **HypercubeESN** — reservoir computing on a Boolean
 hypercube. Neurons sit on the vertices, each carrying a short delay line of its
@@ -55,6 +55,12 @@ and dims).
   <a href="https://github.com/dliptak001/HypercubeCascade"><strong>HypercubeCascade</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/dliptak001/HypercubeLCN"><strong>HypercubeLCN</strong></a>
+</p>
+
+<p align="center">
+  📄 Foundational paper:
+  <a href="https://github.com/dliptak001/HypercubeESN/blob/main/docs/Boolean_hypercubes_as_a_neural_substrate.pdf"><em>Boolean Hypercubes as a Neural Substrate</em></a>
+  (D.&nbsp;C.&nbsp;Liptak, 2026)
 </p>
 
 HypercubeESN is an experiment in the **HypercubeAI** project — our quest to

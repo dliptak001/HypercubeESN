@@ -8,6 +8,16 @@ first public major aligned across CMake, the C++ package, and the PyPI wheel.
 
 ---
 
+## [2.0.2] — 2026-09-04
+
+### Changed
+
+- Add the foundational paper "Boolean Hypercubes as a Neural Substrate"
+  (D. C. Liptak, 2026) to `docs/` and link it from the HypercubeAI ecosystem
+  section of the root and Python READMEs.
+
+---
+
 ## [2.0.1] — 2026-08-22
 
 ### Changed
